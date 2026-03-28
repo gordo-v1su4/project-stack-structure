@@ -13,6 +13,8 @@ export function buildReadout(params: {
   joinClips: JoinClip[];
   minDur: number;
   maxDur: number;
+  lowEnergyRange: number;
+  highEnergyRange: number;
   chaos: number;
   onsetBoost: number;
   rampPreset: RampPreset;
@@ -32,6 +34,8 @@ export function buildReadout(params: {
     joinClips,
     minDur,
     maxDur,
+    lowEnergyRange,
+    highEnergyRange,
     chaos,
     onsetBoost,
     rampPreset,
@@ -77,8 +81,10 @@ export function buildReadout(params: {
     return [
       ["Min Dur", `${minDur.toFixed(2)}s`],
       ["Max Dur", `${maxDur.toFixed(2)}s`],
-      ["Chaos", chaos.toFixed(2)],
+      ["Low Eng", lowEnergyRange.toFixed(2)],
+      ["High Eng", highEnergyRange.toFixed(2)],
       ["Onset", onsetBoost.toFixed(2)],
+      ["Chaos", chaos.toFixed(2)],
     ];
   }
   return [

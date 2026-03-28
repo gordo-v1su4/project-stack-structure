@@ -46,6 +46,8 @@ export default function StudioApp() {
   const [chaos, setChaos] = useState(0.35);
   const [onsetBoost, setOnsetBoost] = useState(0.6);
   const [energyReactive, setEnergyReactive] = useState(true);
+  const [lowEnergyRange, setLowEnergyRange] = useState(0.36);
+  const [highEnergyRange, setHighEnergyRange] = useState(0.68);
 
   const [rampPreset, setRampPreset] = useState<RampPreset>("dynamic");
   const [minSpeed, setMinSpeed] = useState(0.5);
@@ -104,6 +106,8 @@ export default function StudioApp() {
         joinClips,
         minDur,
         maxDur,
+        lowEnergyRange,
+        highEnergyRange,
         chaos,
         onsetBoost,
         rampPreset,
@@ -123,6 +127,8 @@ export default function StudioApp() {
       joinClips,
       minDur,
       maxDur,
+      lowEnergyRange,
+      highEnergyRange,
       chaos,
       onsetBoost,
       rampPreset,
@@ -217,6 +223,8 @@ export default function StudioApp() {
                 chaos={chaos}
                 onsetBoost={onsetBoost}
                 energyReactive={energyReactive}
+                lowEnergyRange={lowEnergyRange}
+                highEnergyRange={highEnergyRange}
                 activeClip={activeClip}
                 onMinDur={setMinDur}
                 onMaxDur={setMaxDur}
@@ -224,6 +232,8 @@ export default function StudioApp() {
                 onChaos={setChaos}
                 onOnsetBoost={setOnsetBoost}
                 onEnergyReactive={setEnergyReactive}
+                onLowEnergyRange={(value) => setLowEnergyRange(Math.min(value, highEnergyRange - 0.05))}
+                onHighEnergyRange={(value) => setHighEnergyRange(Math.max(value, lowEnergyRange + 0.05))}
                 onActiveClip={setActiveClip}
               />
             )}
