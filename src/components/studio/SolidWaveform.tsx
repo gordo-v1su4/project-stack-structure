@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useRef } from "react";
 import { fmt } from "./math";
 
 type SolidWaveformProps = {
@@ -26,33 +26,75 @@ export function SolidWaveform({
   label = "SOURCE",
   showRuler = true,
 }: SolidWaveformProps) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const W = 1000;
   const rulerH = showRuler ? 22 : 0;
   const waveH = height - rulerH;
   const H = waveH * 2;
-  const mid = H / 2;
-
-  const topPath = useMemo(() => {
-    if (points.length < 2) return "";
-    const step = W / (points.length - 1);
-    let d = `M 0 ${mid}`;
-    points.forEach((v, i) => {
-      const x = i * step;
-      const y = mid - v * mid * 0.92;
-      d += ` L ${x} ${y}`;
-    });
-    for (let i = points.length - 1; i >= 0; i--) {
-      const x = i * step;
-      const y = mid + points[i] * mid * 0.92;
-      d += ` L ${x} ${y}`;
-    }
-    d += " Z";
-    return d;
-  }, [points, mid]);
-
   const ph = playhead * W;
   const totalBeats = totalBars * beatsPerBar;
-  const gradId = `wg-${label.replace(/\s/g, "-")}`;
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || waveH <= 0) return;
+
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    canvas.width = Math.floor(W * dpr);
+    canvas.height = Math.floor(waveH * dpr);
+    canvas.style.width = `${W}px`;
+    canvas.style.height = `${waveH}px`;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, waveH);
+
+    const bg = ctx.createLinearGradient(0, 0, 0, waveH);
+    bg.addColorStop(0, "rgba(14, 14, 14, 0.96)");
+    bg.addColorStop(0.5, "rgba(8, 8, 8, 0.92)");
+    bg.addColorStop(1, "rgba(14, 14, 14, 0.96)");
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, waveH);
+
+    const centerY = waveH / 2;
+    ctx.strokeStyle = "rgba(110, 110, 110, 0.14)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, centerY);
+    ctx.lineTo(W, centerY);
+    ctx.stroke();
+
+    if (!points.length) return;
+
+    const accentFill = hexToRgba(accent, 0.9);
+    const accentHighlight = hexToRgba(accent, 1);
+    const trailFill = "rgba(40, 40, 40, 0.65)";
+    const trailHighlight = "rgba(70, 70, 70, 0.42)";
+    const innerHeight = Math.max(centerY - 3, 1);
+
+    for (let x = 0; x < W; x += 1) {
+      const startIndex = Math.floor((x / W) * points.length);
+      const endIndex = Math.max(startIndex + 1, Math.floor(((x + 1) / W) * points.length));
+      let peak = 0;
+
+      for (let index = startIndex; index < endIndex; index += 1) {
+        peak = Math.max(peak, Math.abs(points[index] ?? 0));
+      }
+
+      const top = Math.max(1, centerY - peak * innerHeight);
+      const bottom = Math.min(waveH - 1, centerY + peak * innerHeight);
+      const barHeight = Math.max(1, bottom - top);
+      const isAhead = x <= ph;
+
+      ctx.fillStyle = isAhead ? accentFill : trailFill;
+      ctx.fillRect(x, top, 1, barHeight);
+
+      const shimmerY = centerY - peak * innerHeight * 0.35;
+      ctx.fillStyle = isAhead ? accentHighlight : trailHighlight;
+      ctx.fillRect(x, Math.max(1, shimmerY), 1, Math.max(1, barHeight * 0.14));
+    }
+  }, [W, waveH, ph, accent, points]);
 
   return (
     <div className="relative border border-[#1e1e1e] rounded-[2px] bg-[#070707] overflow-hidden" style={{ height }}>
@@ -60,21 +102,9 @@ export function SolidWaveform({
         {label}
       </div>
 
-      <svg
-        className="absolute left-0 right-0"
-        style={{ top: rulerH, height: waveH }}
-        viewBox={`0 0 ${W} ${H}`}
-        preserveAspectRatio="none"
-      >
-        <defs>
-          <linearGradient id={gradId} x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stopColor={accent} stopOpacity="0.9" />
-            <stop offset={`${playhead * 100}%`} stopColor={accent} stopOpacity="0.85" />
-            <stop offset={`${playhead * 100}%`} stopColor="#2e2e2e" stopOpacity="0.7" />
-            <stop offset="100%" stopColor="#1e1e1e" stopOpacity="0.6" />
-          </linearGradient>
-        </defs>
+      <canvas ref={canvasRef} className="absolute left-0 right-0" style={{ top: rulerH, height: waveH }} />
 
+      <svg className="absolute left-0 right-0" style={{ top: rulerH, height: waveH }} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
         {Array.from({ length: totalBeats + 1 }, (_, i) => {
           const x = (i / totalBeats) * W;
           const isBar = i % beatsPerBar === 0;
@@ -90,8 +120,6 @@ export function SolidWaveform({
             />
           );
         })}
-
-        <path d={topPath} fill={`url(#${gradId})`} />
 
         <line x1={ph} y1={0} x2={ph} y2={H} stroke={accent} strokeWidth={1.5} />
         <polygon points={`${ph - 5},0 ${ph + 5},0 ${ph},10`} fill={accent} />
@@ -154,4 +182,17 @@ export function SolidWaveform({
       </div>
     </div>
   );
+}
+
+function hexToRgba(hex: string, alpha: number) {
+  const normalized = hex.replace("#", "");
+  const value = normalized.length === 3
+    ? normalized.split("").map((part) => `${part}${part}`).join("")
+    : normalized;
+
+  const int = Number.parseInt(value, 16);
+  const r = (int >> 16) & 255;
+  const g = (int >> 8) & 255;
+  const b = int & 255;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }

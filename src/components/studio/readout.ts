@@ -4,9 +4,11 @@ import type { JoinClip, RampPreset, ShuffleMode, Tab } from "./types";
 export function buildReadout(params: {
   tab: Tab;
   clipDur: number;
+  splitSegmentCount: number;
   gpu: number;
   bpm: number;
   barsPerSeg: number;
+  beatSplitSegmentCount: number;
   shuffleMode: ShuffleMode;
   minScore: number;
   lookahead: number;
@@ -15,6 +17,7 @@ export function buildReadout(params: {
   maxDur: number;
   lowEnergyRange: number;
   highEnergyRange: number;
+  beatJoinReady: boolean;
   chaos: number;
   onsetBoost: number;
   rampPreset: RampPreset;
@@ -25,9 +28,11 @@ export function buildReadout(params: {
   const {
     tab,
     clipDur,
+    splitSegmentCount,
     gpu,
     bpm,
     barsPerSeg,
+    beatSplitSegmentCount,
     shuffleMode,
     minScore,
     lookahead,
@@ -36,6 +41,7 @@ export function buildReadout(params: {
     maxDur,
     lowEnergyRange,
     highEnergyRange,
+    beatJoinReady,
     chaos,
     onsetBoost,
     rampPreset,
@@ -47,7 +53,7 @@ export function buildReadout(params: {
   if (tab === "split") {
     return [
       ["Clip Dur", `${clipDur}s`],
-      ["Est Clips", Math.floor(300 / clipDur)],
+      ["Est Clips", splitSegmentCount],
       ["GPU", `${gpu.toFixed(0)}%`],
       ["Codec", "H.264"],
     ];
@@ -56,14 +62,14 @@ export function buildReadout(params: {
     return [
       ["BPM", bpm],
       ["Bars/Seg", barsPerSeg],
-      ["Segments", Math.floor(16 / barsPerSeg)],
+      ["Segments", beatSplitSegmentCount],
       ["Confidence", "94%"],
     ];
   }
   if (tab === "shuffle") {
     return [
       ["Mode", shuffleMode],
-      ["Clips", 12],
+      ["Clips", joinClips.length],
       ["Min Score", minScore.toFixed(2)],
       ["Lookahead", lookahead],
     ];
@@ -78,6 +84,15 @@ export function buildReadout(params: {
     ];
   }
   if (tab === "beatjoin") {
+    if (!beatJoinReady) {
+      return [
+        ["Source", "Awaiting upload"],
+        ["State", "Locked"],
+        ["Low Eng", lowEnergyRange.toFixed(2)],
+        ["High Eng", highEnergyRange.toFixed(2)],
+      ];
+    }
+
     return [
       ["Min Dur", `${minDur.toFixed(2)}s`],
       ["Max Dur", `${maxDur.toFixed(2)}s`],

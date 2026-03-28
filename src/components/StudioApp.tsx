@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import type { Dispatch, SetStateAction } from "react";
 import { NAV } from "./studio/constants";
 import { ProcessActionBar } from "./studio/ProcessActionBar";
 import { buildReadout } from "./studio/readout";
@@ -14,7 +15,9 @@ import { StudioHeader } from "./studio/StudioHeader";
 import { StudioRightPanel } from "./studio/StudioRightPanel";
 import { StudioSidebar } from "./studio/StudioSidebar";
 import { StudioStatusBar } from "./studio/StudioStatusBar";
-import type { ColorGradient, JoinClip, RampPreset, ShuffleMode, Tab } from "./studio/types";
+import { buildShuffleQueue } from "./studio/shuffleQueue";
+import { buildBeatSegments, buildSourceClipSpans, buildStandardSegments } from "./studio/sourceTimeline";
+import type { BeatJoinAnalysis, ColorGradient, JoinClip, RampPreset, ShuffleMode, Tab } from "./studio/types";
 
 export default function StudioApp() {
   const [tab, setTab] = useState<Tab>("split");
@@ -29,16 +32,15 @@ export default function StudioApp() {
   const [barsPerSeg, setBarsPerSeg] = useState(2);
   const [bpm] = useState(130);
   const [sensitivity, setSensitivity] = useState(68);
+  const [sourceClipDurations] = useState([96, 104, 100]);
 
-  const [shuffleMode, setShuffleMode] = useState<ShuffleMode>("color");
+  const [shuffleMode, setShuffleMode] = useState<ShuffleMode>("motion");
   const [minScore, setMinScore] = useState(0.5);
   const [lookahead, setLookahead] = useState(3);
   const [keepPct, setKeepPct] = useState(70);
   const [colorGradient, setColorGradient] = useState<ColorGradient>("Sunset");
 
-  const [joinClips, setJoinClips] = useState<JoinClip[]>(() =>
-    Array.from({ length: 12 }, (_, i) => ({ id: i, on: true }))
-  );
+  const [joinClipStates, setJoinClipStates] = useState<Record<number, boolean>>({});
 
   const [minDur, setMinDur] = useState(0.12);
   const [maxDur, setMaxDur] = useState(0.8);
@@ -48,6 +50,7 @@ export default function StudioApp() {
   const [energyReactive, setEnergyReactive] = useState(true);
   const [lowEnergyRange, setLowEnergyRange] = useState(0.36);
   const [highEnergyRange, setHighEnergyRange] = useState(0.68);
+  const [beatJoinAnalysis, setBeatJoinAnalysis] = useState<BeatJoinAnalysis | null>(null);
 
   const [rampPreset, setRampPreset] = useState<RampPreset>("dynamic");
   const [minSpeed, setMinSpeed] = useState(0.5);
@@ -75,6 +78,38 @@ export default function StudioApp() {
     return () => clearInterval(id);
   }, []);
 
+  const sourceClips = useMemo(() => buildSourceClipSpans(sourceClipDurations), [sourceClipDurations]);
+  const splitSegments = useMemo(() => buildStandardSegments(sourceClips, clipDur), [sourceClips, clipDur]);
+  const beatSplitSegments = useMemo(() => buildBeatSegments(sourceClips, bpm, barsPerSeg), [sourceClips, bpm, barsPerSeg]);
+  const beatSplitClipCount = Math.max(1, beatSplitSegments.length);
+  const joinClips = useMemo(
+    () =>
+      Array.from({ length: beatSplitClipCount }, (_, index) => ({
+        id: index,
+        on: joinClipStates[index] ?? true,
+      })),
+    [beatSplitClipCount, joinClipStates]
+  );
+  const splitActiveClip = Math.min(activeClip, Math.max(0, splitSegments.length - 1));
+  const beatActiveClip = Math.min(activeClip, Math.max(0, beatSplitClipCount - 1));
+
+  const handleJoinClips: Dispatch<SetStateAction<JoinClip[]>> = (value) => {
+    setJoinClipStates((previous) => {
+      const current = Array.from({ length: beatSplitClipCount }, (_, index) => ({
+        id: index,
+        on: previous[index] ?? true,
+      }));
+      const next = typeof value === "function" ? value(current) : value;
+
+      return next.reduce<Record<number, boolean>>((accumulator, clip) => {
+        if (clip.id >= 0 && clip.id < beatSplitClipCount) {
+          accumulator[clip.id] = clip.on;
+        }
+        return accumulator;
+      }, {});
+    });
+  };
+
   function runProcess() {
     if (isRunning) return;
     setIsRunning(true);
@@ -97,9 +132,11 @@ export default function StudioApp() {
       buildReadout({
         tab,
         clipDur,
+        splitSegmentCount: splitSegments.length,
         gpu,
         bpm,
         barsPerSeg,
+        beatSplitSegmentCount: beatSplitSegments.length,
         shuffleMode,
         minScore,
         lookahead,
@@ -108,6 +145,7 @@ export default function StudioApp() {
         maxDur,
         lowEnergyRange,
         highEnergyRange,
+        beatJoinReady: beatJoinAnalysis !== null,
         chaos,
         onsetBoost,
         rampPreset,
@@ -118,9 +156,11 @@ export default function StudioApp() {
     [
       tab,
       clipDur,
+      splitSegments.length,
       gpu,
       bpm,
       barsPerSeg,
+      beatSplitSegments.length,
       shuffleMode,
       minScore,
       lookahead,
@@ -129,6 +169,7 @@ export default function StudioApp() {
       maxDur,
       lowEnergyRange,
       highEnergyRange,
+      beatJoinAnalysis,
       chaos,
       onsetBoost,
       rampPreset,
@@ -140,6 +181,19 @@ export default function StudioApp() {
 
   const tabLabel = NAV.find((n) => n.key === tab)?.label ?? "";
   const tabSub = NAV.find((n) => n.key === tab)?.sub ?? "";
+  const shuffleQueue = useMemo(
+    () =>
+      buildShuffleQueue({
+        clipCount: joinClips.length,
+        shuffleMode,
+        activeClip: beatActiveClip,
+        minScore,
+        lookahead,
+        keepPct,
+        colorGradient,
+      }),
+    [joinClips.length, shuffleMode, beatActiveClip, minScore, lookahead, keepPct, colorGradient]
+  );
 
   function handleSelectTab(t: Tab) {
     setTab(t);
@@ -164,7 +218,9 @@ export default function StudioApp() {
                 playhead={playhead}
                 bpm={bpm}
                 clipDur={clipDur}
-                activeClip={activeClip}
+                sourceClips={sourceClips}
+                segments={splitSegments}
+                activeClip={splitActiveClip}
                 onClipDur={setClipDur}
                 onActiveClip={setActiveClip}
               />
@@ -175,8 +231,10 @@ export default function StudioApp() {
                 playhead={playhead}
                 bpm={bpm}
                 barsPerSeg={barsPerSeg}
+                sourceClips={sourceClips}
+                segments={beatSplitSegments}
                 sensitivity={sensitivity}
-                activeClip={activeClip}
+                activeClip={beatActiveClip}
                 onBarsPerSeg={setBarsPerSeg}
                 onSensitivity={setSensitivity}
                 onActiveClip={setActiveClip}
@@ -187,12 +245,14 @@ export default function StudioApp() {
               <ShuffleTab
                 playhead={playhead}
                 bpm={bpm}
+                clipCount={joinClips.length}
+                clipOrder={shuffleQueue}
                 shuffleMode={shuffleMode}
                 minScore={minScore}
                 lookahead={lookahead}
                 keepPct={keepPct}
                 colorGradient={colorGradient}
-                activeClip={activeClip}
+                activeClip={beatActiveClip}
                 onShuffleMode={setShuffleMode}
                 onMinScore={setMinScore}
                 onLookahead={setLookahead}
@@ -207,8 +267,10 @@ export default function StudioApp() {
                 playhead={playhead}
                 bpm={bpm}
                 joinClips={joinClips}
-                activeClip={activeClip}
-                onJoinClips={setJoinClips}
+                clipOrder={shuffleQueue}
+                shuffleMode={shuffleMode}
+                activeClip={beatActiveClip}
+                onJoinClips={handleJoinClips}
                 onActiveClip={setActiveClip}
               />
             )}
@@ -225,7 +287,10 @@ export default function StudioApp() {
                 energyReactive={energyReactive}
                 lowEnergyRange={lowEnergyRange}
                 highEnergyRange={highEnergyRange}
-                activeClip={activeClip}
+                analysis={beatJoinAnalysis}
+                clipOrder={shuffleQueue}
+                shuffleMode={shuffleMode}
+                activeClip={beatActiveClip}
                 onMinDur={setMinDur}
                 onMaxDur={setMaxDur}
                 onEnergyResp={setEnergyResp}
@@ -234,6 +299,7 @@ export default function StudioApp() {
                 onEnergyReactive={setEnergyReactive}
                 onLowEnergyRange={(value) => setLowEnergyRange(Math.min(value, highEnergyRange - 0.05))}
                 onHighEnergyRange={(value) => setHighEnergyRange(Math.max(value, lowEnergyRange + 0.05))}
+                onAnalysisChange={setBeatJoinAnalysis}
                 onActiveClip={setActiveClip}
               />
             )}
@@ -264,6 +330,8 @@ export default function StudioApp() {
               done={done}
               isRunning={isRunning}
               progress={progress}
+              disabled={tab === "beatjoin" && !beatJoinAnalysis}
+              disabledReason="Upload a song to unlock Beat Join."
               onRun={runProcess}
               onResetDone={() => setDone(false)}
             />
