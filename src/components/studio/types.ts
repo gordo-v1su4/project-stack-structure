@@ -8,6 +8,22 @@ export type ColorGradient = "Rainbow" | "Sunset" | "Ocean";
 
 export type JoinClip = { id: number; on: boolean };
 
+export interface UploadedVideoSource {
+  id: number;
+  name: string;
+  duration: number;
+  size: number;
+  thumbnailUrl: string;
+}
+
+export interface SegmentPreview {
+  clipId: number;
+  label: string;
+  duration: number;
+  thumbnailUrl?: string;
+  sourceClipIds: number[];
+}
+
 export interface BeatJoinSection {
   label: string;
   start: number;

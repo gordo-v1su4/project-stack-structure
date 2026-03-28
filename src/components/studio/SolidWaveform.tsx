@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { fmt } from "./math";
 
 type SolidWaveformProps = {
@@ -26,87 +26,110 @@ export function SolidWaveform({
   label = "SOURCE",
   showRuler = true,
 }: SolidWaveformProps) {
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const W = 1000;
+  const [width, setWidth] = useState(0);
   const rulerH = showRuler ? 22 : 0;
   const waveH = height - rulerH;
-  const H = waveH * 2;
-  const ph = playhead * W;
+  const canvasWidth = Math.max(1, width);
+  const ph = playhead * canvasWidth;
   const totalBeats = totalBars * beatsPerBar;
 
   useEffect(() => {
+    const node = wrapperRef.current;
+    if (!node) return;
+
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+      setWidth(Math.max(1, Math.floor(entry.contentRect.width)));
+    });
+
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || waveH <= 0) return;
+    if (!canvas || waveH <= 0 || canvasWidth <= 0) return;
 
     const dpr = Math.min(2, window.devicePixelRatio || 1);
-    canvas.width = Math.floor(W * dpr);
+    canvas.width = Math.floor(canvasWidth * dpr);
     canvas.height = Math.floor(waveH * dpr);
-    canvas.style.width = `${W}px`;
+    canvas.style.width = `${canvasWidth}px`;
     canvas.style.height = `${waveH}px`;
 
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, W, waveH);
+    ctx.clearRect(0, 0, canvasWidth, waveH);
 
     const bg = ctx.createLinearGradient(0, 0, 0, waveH);
     bg.addColorStop(0, "rgba(14, 14, 14, 0.96)");
     bg.addColorStop(0.5, "rgba(8, 8, 8, 0.92)");
     bg.addColorStop(1, "rgba(14, 14, 14, 0.96)");
     ctx.fillStyle = bg;
-    ctx.fillRect(0, 0, W, waveH);
+    ctx.fillRect(0, 0, canvasWidth, waveH);
 
     const centerY = waveH / 2;
     ctx.strokeStyle = "rgba(110, 110, 110, 0.14)";
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(0, centerY);
-    ctx.lineTo(W, centerY);
+    ctx.lineTo(canvasWidth, centerY);
     ctx.stroke();
 
     if (!points.length) return;
 
-    const accentFill = hexToRgba(accent, 0.9);
-    const accentHighlight = hexToRgba(accent, 1);
-    const trailFill = "rgba(40, 40, 40, 0.65)";
-    const trailHighlight = "rgba(70, 70, 70, 0.42)";
+    const accentFill = hexToRgba(accent, 0.72);
+    const accentHighlight = hexToRgba(accent, 0.95);
+    const trailFill = "rgba(42, 42, 42, 0.7)";
+    const trailHighlight = "rgba(96, 96, 96, 0.36)";
     const innerHeight = Math.max(centerY - 3, 1);
 
-    for (let x = 0; x < W; x += 1) {
-      const startIndex = Math.floor((x / W) * points.length);
-      const endIndex = Math.max(startIndex + 1, Math.floor(((x + 1) / W) * points.length));
-      let peak = 0;
+    for (let x = 0; x < canvasWidth; x += 1) {
+      const startIndex = Math.floor((x / canvasWidth) * points.length);
+      const endIndex = Math.max(startIndex + 1, Math.floor(((x + 1) / canvasWidth) * points.length));
+      let min = 1;
+      let max = -1;
 
       for (let index = startIndex; index < endIndex; index += 1) {
-        peak = Math.max(peak, Math.abs(points[index] ?? 0));
+        const value = clampPoint(points[index] ?? 0);
+        min = Math.min(min, -value);
+        max = Math.max(max, value);
       }
 
-      const top = Math.max(1, centerY - peak * innerHeight);
-      const bottom = Math.min(waveH - 1, centerY + peak * innerHeight);
+      const top = Math.max(1, centerY - max * innerHeight);
+      const bottom = Math.min(waveH - 1, centerY - min * innerHeight);
       const barHeight = Math.max(1, bottom - top);
       const isAhead = x <= ph;
 
       ctx.fillStyle = isAhead ? accentFill : trailFill;
       ctx.fillRect(x, top, 1, barHeight);
 
-      const shimmerY = centerY - peak * innerHeight * 0.35;
+      const center = centerY - ((max + min) * 0.5) * innerHeight;
       ctx.fillStyle = isAhead ? accentHighlight : trailHighlight;
-      ctx.fillRect(x, Math.max(1, shimmerY), 1, Math.max(1, barHeight * 0.14));
+      ctx.fillRect(x, Math.max(1, center - 0.75), 1, Math.max(1, barHeight * 0.14));
     }
-  }, [W, waveH, ph, accent, points]);
+  }, [waveH, ph, accent, points, canvasWidth]);
 
   return (
-    <div className="relative border border-[#1e1e1e] rounded-[2px] bg-[#070707] overflow-hidden" style={{ height }}>
+    <div ref={wrapperRef} className="relative border border-[#1e1e1e] rounded-[2px] bg-[#070707] overflow-hidden" style={{ height }}>
       <div className="absolute top-[3px] left-[8px] text-[9px] uppercase tracking-[0.18em] text-[#3a3a3a] z-10 pointer-events-none">
         {label}
       </div>
 
-      <canvas ref={canvasRef} className="absolute left-0 right-0" style={{ top: rulerH, height: waveH }} />
+      <canvas ref={canvasRef} className="absolute inset-x-0 w-full" style={{ top: rulerH, height: waveH }} />
 
-      <svg className="absolute left-0 right-0" style={{ top: rulerH, height: waveH }} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
+      <svg
+        className="absolute inset-x-0 w-full"
+        style={{ top: rulerH, height: waveH }}
+        viewBox={`0 0 ${canvasWidth} ${waveH}`}
+        preserveAspectRatio="none"
+      >
         {Array.from({ length: totalBeats + 1 }, (_, i) => {
-          const x = (i / totalBeats) * W;
+          const x = (i / totalBeats) * canvasWidth;
           const isBar = i % beatsPerBar === 0;
           return (
             <line
@@ -114,14 +137,14 @@ export function SolidWaveform({
               x1={x}
               y1={0}
               x2={x}
-              y2={H}
+              y2={waveH}
               stroke={isBar ? "#252525" : "#141414"}
               strokeWidth={isBar ? 1.2 : 0.6}
             />
           );
         })}
 
-        <line x1={ph} y1={0} x2={ph} y2={H} stroke={accent} strokeWidth={1.5} />
+        <line x1={ph} y1={0} x2={ph} y2={waveH} stroke={accent} strokeWidth={1.5} />
         <polygon points={`${ph - 5},0 ${ph + 5},0 ${ph},10`} fill={accent} />
       </svg>
 
@@ -130,9 +153,9 @@ export function SolidWaveform({
           className="absolute top-0 left-0 right-0 border-b border-[#1a1a1a] bg-[#0a0a0a]"
           style={{ height: rulerH }}
         >
-          <svg className="w-full h-full" viewBox={`0 0 ${W} ${rulerH * 2}`} preserveAspectRatio="none">
+          <svg className="w-full h-full" viewBox={`0 0 ${canvasWidth} ${rulerH * 2}`} preserveAspectRatio="none">
             {Array.from({ length: totalBeats }, (_, i) => {
-              const x = (i / totalBeats) * W;
+              const x = (i / totalBeats) * canvasWidth;
               const bar = Math.floor(i / beatsPerBar) + 1;
               const beat = (i % beatsPerBar) + 1;
               const isBarStart = beat === 1;
@@ -195,4 +218,8 @@ function hexToRgba(hex: string, alpha: number) {
   const g = (int >> 8) & 255;
   const b = int & 255;
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function clampPoint(value: number) {
+  return Math.max(0, Math.min(1, Math.abs(value)));
 }

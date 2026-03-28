@@ -6,7 +6,7 @@ import { ParamSlider } from "../ParamSlider";
 import { SolidWaveform } from "../SolidWaveform";
 import { VideoClip } from "../VideoClip";
 import { WAVE_MAIN } from "../waveData";
-import type { ColorGradient, ShuffleMode } from "../types";
+import type { ColorGradient, SegmentPreview, ShuffleMode } from "../types";
 
 const GRADIENT_COLORS: Record<ColorGradient, string[]> = {
   Rainbow: ["#e03030", "#e07030", "#d0d030", "#30c030", "#3080e0", "#8030c0"],
@@ -19,6 +19,7 @@ type ShuffleTabProps = {
   bpm: number;
   clipCount: number;
   clipOrder: number[];
+  segmentPreviews: SegmentPreview[];
   shuffleMode: ShuffleMode;
   minScore: number;
   lookahead: number;
@@ -38,6 +39,7 @@ export function ShuffleTab({
   bpm,
   clipCount,
   clipOrder,
+  segmentPreviews,
   shuffleMode,
   minScore,
   lookahead,
@@ -51,6 +53,17 @@ export function ShuffleTab({
   onColorGradient,
   onActiveClip,
 }: ShuffleTabProps) {
+  if (clipCount === 0) {
+    return (
+      <div className="rounded-[2px] border border-dashed border-[#222] bg-[#090909] px-4 py-10 text-center">
+        <div className="text-[13px] text-[#b0b0b0]">Shuffle is waiting for video clips.</div>
+        <div className="mt-2 text-[10px] uppercase tracking-[0.14em] text-[#555]">
+          Upload source video in Standard Split or Beat Split first, then the generated segment queue will appear here.
+        </div>
+      </div>
+    );
+  }
+
   return (
     <>
       <SolidWaveform
@@ -144,17 +157,23 @@ export function ShuffleTab({
         </div>
 
         <div className="grid grid-cols-6 gap-2">
-          {Array.from({ length: clipCount }, (_, i) => (
-            <VideoClip
-              key={i}
-              idx={i}
-              active={i === activeClip}
-              mode={shuffleMode}
-              showColorBars={shuffleMode === "color"}
-              matchScore={0.4 + sv(i * 3 + activeClip * 0.7) * 0.55}
-              onClick={() => onActiveClip(i)}
-            />
-          ))}
+          {Array.from({ length: clipCount }, (_, i) => {
+            const preview = segmentPreviews[i];
+            return (
+              <VideoClip
+                key={i}
+                idx={i}
+                active={i === activeClip}
+                mode={shuffleMode}
+                label={`C${String(i + 1).padStart(2, "0")}`}
+                durationLabel={preview ? `${preview.duration.toFixed(1)}s` : undefined}
+                thumbnailUrl={preview?.thumbnailUrl}
+                showColorBars={shuffleMode === "color"}
+                matchScore={0.4 + sv(i * 3 + activeClip * 0.7) * 0.55}
+                onClick={() => onActiveClip(i)}
+              />
+            );
+          })}
         </div>
       </div>
 

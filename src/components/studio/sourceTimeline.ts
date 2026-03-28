@@ -1,3 +1,5 @@
+import type { UploadedVideoSource } from "./types";
+
 export interface SourceClipSpan {
   id: number;
   label: string;
@@ -15,19 +17,20 @@ export interface SourceTimelineSegment {
   mergedTail: boolean;
 }
 
-export function buildSourceClipSpans(durations: number[]) {
+export function buildSourceClipSpans(sources: UploadedVideoSource[]) {
   let cursor = 0;
 
-  return durations
-    .filter((duration) => Number.isFinite(duration) && duration > 0)
-    .map((duration, index) => {
+  return sources
+    .filter((source) => Number.isFinite(source.duration) && source.duration > 0)
+    .map((source, index) => {
+      const duration = source.duration;
       const start = cursor;
       const end = start + duration;
       cursor = end;
 
       return {
-        id: index,
-        label: `CLIP_${String(index + 1).padStart(3, "0")}.MP4`,
+        id: source.id ?? index,
+        label: source.name,
         duration,
         start,
         end,

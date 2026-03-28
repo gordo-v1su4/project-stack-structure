@@ -4,6 +4,7 @@ import { startTransition, useMemo, useState } from "react";
 import { lerp, sv } from "../math";
 import { ParamSlider } from "../ParamSlider";
 import { SolidWaveform } from "../SolidWaveform";
+import { UploadControl } from "../UploadControl";
 import type { BeatJoinAnalysis, BeatJoinSection, ShuffleMode } from "../types";
 
 const ENERGY_BIN_COUNT = 32;
@@ -188,12 +189,16 @@ export function BeatJoinTab({
       ) : (
         <div className="border border-[#1e1e1e] rounded-[2px] bg-[#070707] p-4">
           <div className="text-[10px] uppercase tracking-[0.18em] text-[#3a3a3a] mb-3">Audio Track</div>
-          <div className="border border-dashed border-[#2b2b2b] rounded-[2px] bg-[#0a0a0a] px-4 py-8 text-center">
-            <div className="text-[13px] text-[#b0b0b0] mb-2">Beat Join waits for a real song upload.</div>
-            <div className="text-[10px] uppercase tracking-[0.16em] text-[#555]">
-              Upload audio first so the waveform, sections, beats, onsets, and offline cut plan come from the same track.
-            </div>
-          </div>
+          <UploadControl
+            accept="audio/*"
+            title="Beat Join waits for a real song upload."
+            detail="Drag in audio or click to choose a song. We will call Essentia, read beats/onsets/sections, and then draw the waveform from that file."
+            actionLabel={isAnalyzing ? "Processing Audio..." : "Upload Audio"}
+            disabled={isAnalyzing}
+            status={analysisStatus}
+            error={analysisError}
+            onFiles={(files) => handleAudioUpload(files[0] ?? null)}
+          />
         </div>
       )}
 
@@ -204,7 +209,15 @@ export function BeatJoinTab({
           </span>
           <div className="flex items-center gap-2">
             <span className="font-mono text-[10px] text-[#555]">{analysisStatus}</span>
-            <UploadButton disabled={isAnalyzing} onSelect={handleAudioUpload} />
+            <UploadControl
+              accept="audio/*"
+              variant="button"
+              title=""
+              detail=""
+              actionLabel={isAnalyzing ? "Processing..." : "Replace Audio"}
+              disabled={isAnalyzing}
+              onFiles={(files) => handleAudioUpload(files[0] ?? null)}
+            />
             <button
               type="button"
               onClick={() => onEnergyReactive(!energyReactive)}
@@ -317,7 +330,7 @@ export function BeatJoinTab({
           </div>
         )}
 
-        {analysisError ? (
+        {hasAnalysis && analysisError ? (
           <div className="px-3 py-2 border-b border-[#161616] text-[10px] text-[#b96c43]">{analysisError}</div>
         ) : null}
       </div>
@@ -358,35 +371,6 @@ export function BeatJoinTab({
         </div>
       </div>
     </>
-  );
-}
-
-function UploadButton({
-  disabled,
-  onSelect,
-}: {
-  disabled: boolean;
-  onSelect: (file: File | null) => void;
-}) {
-  return (
-    <label
-      className={`text-[10px] uppercase tracking-[0.12em] px-2 py-[2px] border rounded-[2px] cursor-pointer ${
-        disabled ? "border-[#404040] text-[#707070]" : "border-[#1e1e1e] text-[#a0a0a0] hover:border-[#2f2f2f]"
-      }`}
-    >
-      Upload Audio
-      <input
-        type="file"
-        accept="audio/*"
-        className="hidden"
-        disabled={disabled}
-        onChange={(event) => {
-          const file = event.target.files?.[0] ?? null;
-          void onSelect(file);
-          event.target.value = "";
-        }}
-      />
-    </label>
   );
 }
 
@@ -535,7 +519,7 @@ async function extractWaveformPoints(file: File, sampleCount = 900) {
     const channelData = Array.from({ length: channelCount }, (_, index) => decoded.getChannelData(index));
     const blockSize = Math.max(1, Math.floor(decoded.length / sampleCount));
 
-    return Array.from({ length: sampleCount }, (_, blockIndex) => {
+    const peaks = Array.from({ length: sampleCount }, (_, blockIndex) => {
       const start = blockIndex * blockSize;
       const end = Math.min(decoded.length, start + blockSize);
       let peak = 0;
@@ -548,6 +532,9 @@ async function extractWaveformPoints(file: File, sampleCount = 900) {
 
       return clamp(peak, 0, 1);
     });
+    const peakMax = Math.max(...peaks, 0.0001);
+
+    return peaks.map((peak) => clamp(Math.pow(peak / peakMax, 0.72), 0, 1));
   } finally {
     void context.close();
   }

@@ -1,19 +1,25 @@
 "use client";
 
-import { ParamSlider } from "../ParamSlider";
-import { SolidWaveform } from "../SolidWaveform";
-import type { SourceClipSpan, SourceTimelineSegment } from "../sourceTimeline";
-import { WAVE_AUDIO } from "../waveData";
 import { fmt } from "../math";
+import { ParamSlider } from "../ParamSlider";
+import { SourceVideoTimeline } from "../SourceVideoTimeline";
+import type { SourceClipSpan, SourceTimelineSegment } from "../sourceTimeline";
+import { UploadControl } from "../UploadControl";
+import type { UploadedVideoSource } from "../types";
 
 type BeatSplitTabProps = {
   playhead: number;
   bpm: number;
   barsPerSeg: number;
+  videoSources: UploadedVideoSource[];
+  videoStatus: string;
+  videoError: string | null;
+  isPreparingVideos: boolean;
   sourceClips: SourceClipSpan[];
   segments: SourceTimelineSegment[];
   sensitivity: number;
   activeClip: number;
+  onVideoUpload: (files: File[]) => void | Promise<void>;
   onBarsPerSeg: (v: number) => void;
   onSensitivity: (v: number) => void;
   onActiveClip: (i: number) => void;
@@ -23,10 +29,15 @@ export function BeatSplitTab({
   playhead,
   bpm,
   barsPerSeg,
+  videoSources,
+  videoStatus,
+  videoError,
+  isPreparingVideos,
   sourceClips,
   segments,
   sensitivity,
   activeClip,
+  onVideoUpload,
   onBarsPerSeg,
   onSensitivity,
   onActiveClip,
@@ -34,19 +45,50 @@ export function BeatSplitTab({
   const totalDuration = sourceClips[sourceClips.length - 1]?.end ?? 0;
   const barDuration = (60 / Math.max(1, bpm)) * 4;
   const estimatedBars = Math.max(1, Math.round(totalDuration / barDuration));
+  const hasSources = videoSources.length > 0;
 
   return (
     <>
-      <SolidWaveform
-        points={WAVE_AUDIO}
-        playhead={playhead}
-        bpm={bpm}
-        totalBars={8}
-        beatsPerBar={4}
-        accent="#c8900a"
-        label={`A/V SOURCE · ${sourceClips.length} CLIP${sourceClips.length === 1 ? "" : "S"} STITCHED · ${fmt(totalDuration)}`}
-        height={120}
-      />
+      {hasSources ? (
+        <div className="space-y-3">
+          <SourceVideoTimeline
+            sources={videoSources}
+            playhead={playhead}
+            label={`A/V SOURCE · ${sourceClips.length} CLIP${sourceClips.length === 1 ? "" : "S"} STITCHED · ${fmt(totalDuration)}`}
+            height={124}
+          />
+          <div className="border border-[#1a1a1a] rounded-[2px] bg-[#0b0b0b] p-2">
+            <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.16em] text-[#444]">
+              <span>Source Clips</span>
+              <UploadControl
+                accept="video/*"
+                multiple
+                variant="button"
+                title=""
+                detail=""
+                actionLabel={isPreparingVideos ? "Processing..." : "Replace Videos"}
+                disabled={isPreparingVideos}
+                onFiles={onVideoUpload}
+              />
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="border border-[#1e1e1e] rounded-[2px] bg-[#070707] p-4">
+          <div className="text-[10px] uppercase tracking-[0.18em] text-[#3a3a3a] mb-3">Beat Split Source</div>
+          <UploadControl
+            accept="video/*"
+            multiple
+            title="Beat Split needs uploaded video first."
+            detail="Drop one or more video clips here. We will stitch them, extract thumbnails, and then slice the combined source using beat split logic."
+            actionLabel={isPreparingVideos ? "Processing Videos..." : "Upload Video Clips"}
+            disabled={isPreparingVideos}
+            status={videoStatus}
+            error={videoError}
+            onFiles={onVideoUpload}
+          />
+        </div>
+      )}
 
       <div className="border border-[#1a1a1a] rounded-[2px] bg-[#0c0c0c] overflow-hidden">
         <div className="flex items-center gap-4 px-3 py-2 border-b border-[#181818] text-[10px]">
@@ -61,27 +103,33 @@ export function BeatSplitTab({
             SEGS <span className="text-[#666]">{segments.length}</span>
           </span>
         </div>
-        <div className="relative h-12 bg-[#070707] flex">
-          {segments.map((segment, i) => (
-            <div
-              key={i}
-              className={`relative border-r border-[#0d0d0d] cursor-pointer flex-shrink-0 transition-colors ${
-                i === activeClip ? "bg-[#e05c0025]" : i % 2 === 0 ? "bg-[#0f0f0f]" : "bg-[#0b0b0b]"
-              }`}
-              style={{ width: `${(segment.duration / Math.max(totalDuration, 0.001)) * 100}%` }}
-              onClick={() => onActiveClip(i)}
-            >
-              {i === activeClip && <div className="absolute top-0 left-0 right-0 h-[2px] bg-[#e05c00]" />}
-              <span className="absolute top-[4px] left-[4px] text-[8px] font-mono text-[#555]">
-                {formatSourceRefs(segment.sourceClipIds)}
-              </span>
-              <span className="absolute bottom-[3px] right-[3px] text-[7px] font-mono text-[#383838]">
-                {segment.duration.toFixed(1)}s
-              </span>
-            </div>
-          ))}
-          <div className="absolute inset-y-0 w-[1px] bg-[#e05c00]" style={{ left: `${playhead * 100}%` }} />
-        </div>
+        {hasSources ? (
+          <div className="relative h-12 bg-[#070707] flex">
+            {segments.map((segment, i) => (
+              <div
+                key={i}
+                className={`relative border-r border-[#0d0d0d] cursor-pointer flex-shrink-0 transition-colors ${
+                  i === activeClip ? "bg-[#e05c0025]" : i % 2 === 0 ? "bg-[#0f0f0f]" : "bg-[#0b0b0b]"
+                }`}
+                style={{ width: `${(segment.duration / Math.max(totalDuration, 0.001)) * 100}%` }}
+                onClick={() => onActiveClip(i)}
+              >
+                {i === activeClip && <div className="absolute top-0 left-0 right-0 h-[2px] bg-[#e05c00]" />}
+                <span className="absolute top-[4px] left-[4px] text-[8px] font-mono text-[#555]">
+                  {formatSourceRefs(segment.sourceClipIds)}
+                </span>
+                <span className="absolute bottom-[3px] right-[3px] text-[7px] font-mono text-[#383838]">
+                  {segment.duration.toFixed(1)}s
+                </span>
+              </div>
+            ))}
+            <div className="absolute inset-y-0 w-[1px] bg-[#e05c00]" style={{ left: `${playhead * 100}%` }} />
+          </div>
+        ) : (
+          <div className="px-3 py-4 text-[10px] uppercase tracking-[0.14em] text-[#4f4f4f]">
+            Upload video clips to calculate beat segments.
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-3">

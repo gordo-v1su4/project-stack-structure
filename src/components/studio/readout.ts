@@ -18,6 +18,7 @@ export function buildReadout(params: {
   lowEnergyRange: number;
   highEnergyRange: number;
   beatJoinReady: boolean;
+  hasVideoSource?: boolean;
   chaos: number;
   onsetBoost: number;
   rampPreset: RampPreset;
@@ -42,6 +43,7 @@ export function buildReadout(params: {
     lowEnergyRange,
     highEnergyRange,
     beatJoinReady,
+    hasVideoSource = true,
     chaos,
     onsetBoost,
     rampPreset,
@@ -51,6 +53,14 @@ export function buildReadout(params: {
   } = params;
 
   if (tab === "split") {
+    if (!hasVideoSource) {
+      return [
+        ["Source", "Awaiting video"],
+        ["State", "Locked"],
+        ["GPU", `${gpu.toFixed(0)}%`],
+        ["Codec", "H.264"],
+      ];
+    }
     return [
       ["Clip Dur", `${clipDur}s`],
       ["Est Clips", splitSegmentCount],
@@ -59,6 +69,14 @@ export function buildReadout(params: {
     ];
   }
   if (tab === "beatsplit") {
+    if (!hasVideoSource) {
+      return [
+        ["Source", "Awaiting video"],
+        ["State", "Locked"],
+        ["BPM", bpm],
+        ["Bars/Seg", barsPerSeg],
+      ];
+    }
     return [
       ["BPM", bpm],
       ["Bars/Seg", barsPerSeg],
@@ -67,6 +85,14 @@ export function buildReadout(params: {
     ];
   }
   if (tab === "shuffle") {
+    if (!hasVideoSource) {
+      return [
+        ["Source", "Awaiting video"],
+        ["State", "Locked"],
+        ["Mode", shuffleMode],
+        ["Lookahead", lookahead],
+      ];
+    }
     return [
       ["Mode", shuffleMode],
       ["Clips", joinClips.length],
@@ -75,6 +101,14 @@ export function buildReadout(params: {
     ];
   }
   if (tab === "join") {
+    if (!hasVideoSource) {
+      return [
+        ["Source", "Awaiting video"],
+        ["State", "Locked"],
+        ["Format", "MP4"],
+        ["Output", "/output/"],
+      ];
+    }
     const active = joinClips.filter((c) => c.on);
     return [
       ["Active", active.length],
@@ -103,6 +137,12 @@ export function buildReadout(params: {
     ];
   }
   return [
+    ...(hasVideoSource
+      ? []
+      : ([
+          ["Source", "Awaiting video"],
+          ["State", "Locked"],
+        ] as [string, string | number][])),
     ["Preset", rampPreset],
     ["Min Spd", `${minSpeed}×`],
     ["Max Spd", `${maxSpeed}×`],

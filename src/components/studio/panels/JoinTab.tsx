@@ -5,13 +5,14 @@ import { fmt, sv } from "../math";
 import { SolidWaveform } from "../SolidWaveform";
 import { VideoClip } from "../VideoClip";
 import { WAVE_MAIN } from "../waveData";
-import type { JoinClip, ShuffleMode } from "../types";
+import type { JoinClip, SegmentPreview, ShuffleMode } from "../types";
 
 type JoinTabProps = {
   playhead: number;
   bpm: number;
   joinClips: JoinClip[];
   clipOrder: number[];
+  segmentPreviews: SegmentPreview[];
   shuffleMode: ShuffleMode;
   activeClip: number;
   onJoinClips: Dispatch<SetStateAction<JoinClip[]>>;
@@ -23,11 +24,23 @@ export function JoinTab({
   bpm,
   joinClips,
   clipOrder,
+  segmentPreviews,
   shuffleMode,
   activeClip,
   onJoinClips,
   onActiveClip,
 }: JoinTabProps) {
+  if (!joinClips.length) {
+    return (
+      <div className="rounded-[2px] border border-dashed border-[#222] bg-[#090909] px-4 py-10 text-center">
+        <div className="text-[13px] text-[#b0b0b0]">Join is waiting for source clips.</div>
+        <div className="mt-2 text-[10px] uppercase tracking-[0.14em] text-[#555]">
+          Upload video clips and generate split segments first so the join queue has something real to rebuild.
+        </div>
+      </div>
+    );
+  }
+
   const ordered = clipOrder
     .map((id) => joinClips.find((clip) => clip.id === id))
     .filter((clip): clip is JoinClip => Boolean(clip));
@@ -92,7 +105,13 @@ export function JoinTab({
                 onActiveClip(c.id);
               }}
             >
-              <VideoClip idx={c.id} active={c.id === activeClip} mode="simple" />
+              <VideoClip
+                idx={c.id}
+                active={c.id === activeClip}
+                mode="simple"
+                durationLabel={segmentPreviews[c.id] ? `${segmentPreviews[c.id].duration.toFixed(1)}s` : undefined}
+                thumbnailUrl={segmentPreviews[c.id]?.thumbnailUrl}
+              />
               <div className="absolute top-[3px] right-[3px] text-[7px] font-mono text-[#ffffff88] bg-[#00000055] px-1 rounded-[1px]">
                 {String(index + 1).padStart(2, "0")}
               </div>

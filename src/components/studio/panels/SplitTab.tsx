@@ -1,45 +1,106 @@
 "use client";
 
-import { ParamSlider } from "../ParamSlider";
-import { SolidWaveform } from "../SolidWaveform";
-import type { SourceClipSpan, SourceTimelineSegment } from "../sourceTimeline";
-import { WAVE_MAIN } from "../waveData";
 import { fmt } from "../math";
+import { ParamSlider } from "../ParamSlider";
+import { SourceVideoTimeline } from "../SourceVideoTimeline";
+import type { SourceClipSpan, SourceTimelineSegment } from "../sourceTimeline";
+import { UploadControl } from "../UploadControl";
+import type { UploadedVideoSource } from "../types";
 
 type SplitTabProps = {
   playhead: number;
-  bpm: number;
   clipDur: number;
+  videoSources: UploadedVideoSource[];
+  videoStatus: string;
+  videoError: string | null;
+  isPreparingVideos: boolean;
   sourceClips: SourceClipSpan[];
   segments: SourceTimelineSegment[];
   activeClip: number;
+  onVideoUpload: (files: File[]) => void | Promise<void>;
   onClipDur: (v: number) => void;
   onActiveClip: (i: number) => void;
 };
 
 export function SplitTab({
   playhead,
-  bpm,
   clipDur,
+  videoSources,
+  videoStatus,
+  videoError,
+  isPreparingVideos,
   sourceClips,
   segments,
   activeClip,
+  onVideoUpload,
   onClipDur,
   onActiveClip,
 }: SplitTabProps) {
   const totalDuration = sourceClips[sourceClips.length - 1]?.end ?? 0;
+  const hasSources = videoSources.length > 0;
 
   return (
     <>
-      <SolidWaveform
-        points={WAVE_MAIN}
-        playhead={playhead}
-        bpm={bpm}
-        totalBars={8}
-        beatsPerBar={4}
-        label={`SOURCE · ${sourceClips.length} CLIP${sourceClips.length === 1 ? "" : "S"} STITCHED · ${fmt(totalDuration)}`}
-        height={120}
-      />
+      {hasSources ? (
+        <div className="space-y-3">
+          <SourceVideoTimeline
+            sources={videoSources}
+            playhead={playhead}
+            label={`SOURCE · ${sourceClips.length} CLIP${sourceClips.length === 1 ? "" : "S"} STITCHED · ${fmt(totalDuration)}`}
+            height={124}
+          />
+          <div className="border border-[#1a1a1a] rounded-[2px] bg-[#0b0b0b] p-2">
+            <div className="mb-2 flex items-center justify-between text-[10px] uppercase tracking-[0.16em] text-[#444]">
+              <span>Uploaded Sources</span>
+              <UploadControl
+                accept="video/*"
+                multiple
+                variant="button"
+                title=""
+                detail=""
+                actionLabel={isPreparingVideos ? "Processing..." : "Replace Videos"}
+                disabled={isPreparingVideos}
+                onFiles={onVideoUpload}
+              />
+            </div>
+            <div className="grid gap-2 md:grid-cols-3">
+              {videoSources.map((source, index) => (
+                <div key={source.id} className="overflow-hidden rounded-[2px] border border-[#171717] bg-[#090909]">
+                  <div className="relative aspect-[16/9]">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={source.thumbnailUrl} alt={source.name} className="absolute inset-0 h-full w-full object-cover" />
+                    <div className="absolute inset-0 bg-gradient-to-b from-[#00000018] via-transparent to-[#0000009c]" />
+                    <div className="absolute left-[6px] top-[6px] rounded-[2px] bg-[#00000088] px-1 py-[2px] text-[8px] font-mono text-[#d8d8d8]">
+                      S{index + 1}
+                    </div>
+                    <div className="absolute bottom-[6px] right-[6px] rounded-[2px] bg-[#00000088] px-1 py-[2px] text-[8px] font-mono text-[#b8b8b8]">
+                      {fmt(source.duration)}
+                    </div>
+                  </div>
+                  <div className="truncate border-t border-[#141414] px-2 py-[6px] text-[10px] font-mono text-[#8b8b8b]">
+                    {source.name}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="border border-[#1e1e1e] rounded-[2px] bg-[#070707] p-4">
+          <div className="text-[10px] uppercase tracking-[0.18em] text-[#3a3a3a] mb-3">Source Video</div>
+          <UploadControl
+            accept="video/*"
+            multiple
+            title="No source video loaded yet."
+            detail="Drag video clips here or click to choose files. We will stitch them back-to-back, grab thumbnails, and build the split source timeline."
+            actionLabel={isPreparingVideos ? "Processing Videos..." : "Upload Video Clips"}
+            disabled={isPreparingVideos}
+            status={videoStatus}
+            error={videoError}
+            onFiles={onVideoUpload}
+          />
+        </div>
+      )}
 
       <div>
         <div className="flex items-center justify-between mb-1">
@@ -48,25 +109,31 @@ export function SplitTab({
           </span>
           <span className="text-[10px] font-mono text-[#e05c00]">/output/split/</span>
         </div>
-        <div className="relative h-10 bg-[#070707] border border-[#1a1a1a] rounded-[2px] flex overflow-hidden">
-          {segments.map((segment, i) => (
-            <div
-              key={i}
-              className={`relative border-r border-[#0d0d0d] cursor-pointer flex-shrink-0 transition-colors ${
-                i === activeClip ? "bg-[#e05c0030]" : i % 2 === 0 ? "bg-[#111]" : "bg-[#0e0e0e]"
-              }`}
-              style={{ width: `${(segment.duration / Math.max(totalDuration, 0.001)) * 100}%` }}
-              onClick={() => onActiveClip(i)}
-            >
-              {i === activeClip && <div className="absolute top-0 left-0 right-0 h-[2px] bg-[#e05c00]" />}
-              <span className="absolute bottom-[2px] left-[2px] text-[7px] font-mono text-[#333]">{i + 1}</span>
-              <span className="absolute top-[2px] right-[2px] text-[7px] font-mono text-[#444]">
-                {formatSourceRefs(segment.sourceClipIds)}
-              </span>
-            </div>
-          ))}
-          <div className="absolute inset-y-0 w-[1px] bg-[#e05c00]" style={{ left: `${playhead * 100}%` }} />
-        </div>
+        {hasSources ? (
+          <div className="relative h-10 bg-[#070707] border border-[#1a1a1a] rounded-[2px] flex overflow-hidden">
+            {segments.map((segment, i) => (
+              <div
+                key={i}
+                className={`relative border-r border-[#0d0d0d] cursor-pointer flex-shrink-0 transition-colors ${
+                  i === activeClip ? "bg-[#e05c0030]" : i % 2 === 0 ? "bg-[#111]" : "bg-[#0e0e0e]"
+                }`}
+                style={{ width: `${(segment.duration / Math.max(totalDuration, 0.001)) * 100}%` }}
+                onClick={() => onActiveClip(i)}
+              >
+                {i === activeClip && <div className="absolute top-0 left-0 right-0 h-[2px] bg-[#e05c00]" />}
+                <span className="absolute bottom-[2px] left-[2px] text-[7px] font-mono text-[#333]">{i + 1}</span>
+                <span className="absolute top-[2px] right-[2px] text-[7px] font-mono text-[#444]">
+                  {formatSourceRefs(segment.sourceClipIds)}
+                </span>
+              </div>
+            ))}
+            <div className="absolute inset-y-0 w-[1px] bg-[#e05c00]" style={{ left: `${playhead * 100}%` }} />
+          </div>
+        ) : (
+          <div className="rounded-[2px] border border-dashed border-[#1f1f1f] bg-[#080808] px-3 py-4 text-[10px] uppercase tracking-[0.14em] text-[#4f4f4f]">
+            Upload video clips to generate a split timeline.
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-3">

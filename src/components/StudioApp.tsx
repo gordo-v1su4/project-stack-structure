@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { startTransition, useEffect, useMemo, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { NAV } from "./studio/constants";
+import { prepareVideoSources } from "./studio/mediaUpload";
 import { ProcessActionBar } from "./studio/ProcessActionBar";
 import { buildReadout } from "./studio/readout";
 import { BeatJoinTab } from "./studio/panels/BeatJoinTab";
@@ -17,7 +18,16 @@ import { StudioSidebar } from "./studio/StudioSidebar";
 import { StudioStatusBar } from "./studio/StudioStatusBar";
 import { buildShuffleQueue } from "./studio/shuffleQueue";
 import { buildBeatSegments, buildSourceClipSpans, buildStandardSegments } from "./studio/sourceTimeline";
-import type { BeatJoinAnalysis, ColorGradient, JoinClip, RampPreset, ShuffleMode, Tab } from "./studio/types";
+import type {
+  BeatJoinAnalysis,
+  ColorGradient,
+  JoinClip,
+  RampPreset,
+  SegmentPreview,
+  ShuffleMode,
+  Tab,
+  UploadedVideoSource,
+} from "./studio/types";
 
 export default function StudioApp() {
   const [tab, setTab] = useState<Tab>("split");
@@ -32,7 +42,10 @@ export default function StudioApp() {
   const [barsPerSeg, setBarsPerSeg] = useState(2);
   const [bpm] = useState(130);
   const [sensitivity, setSensitivity] = useState(68);
-  const [sourceClipDurations] = useState([96, 104, 100]);
+  const [videoSources, setVideoSources] = useState<UploadedVideoSource[]>([]);
+  const [videoStatus, setVideoStatus] = useState("Upload one or more video clips to begin.");
+  const [videoError, setVideoError] = useState<string | null>(null);
+  const [isPreparingVideos, setIsPreparingVideos] = useState(false);
 
   const [shuffleMode, setShuffleMode] = useState<ShuffleMode>("motion");
   const [minScore, setMinScore] = useState(0.5);
@@ -78,10 +91,10 @@ export default function StudioApp() {
     return () => clearInterval(id);
   }, []);
 
-  const sourceClips = useMemo(() => buildSourceClipSpans(sourceClipDurations), [sourceClipDurations]);
+  const sourceClips = useMemo(() => buildSourceClipSpans(videoSources), [videoSources]);
   const splitSegments = useMemo(() => buildStandardSegments(sourceClips, clipDur), [sourceClips, clipDur]);
   const beatSplitSegments = useMemo(() => buildBeatSegments(sourceClips, bpm, barsPerSeg), [sourceClips, bpm, barsPerSeg]);
-  const beatSplitClipCount = Math.max(1, beatSplitSegments.length);
+  const beatSplitClipCount = beatSplitSegments.length;
   const joinClips = useMemo(
     () =>
       Array.from({ length: beatSplitClipCount }, (_, index) => ({
@@ -92,6 +105,20 @@ export default function StudioApp() {
   );
   const splitActiveClip = Math.min(activeClip, Math.max(0, splitSegments.length - 1));
   const beatActiveClip = Math.min(activeClip, Math.max(0, beatSplitClipCount - 1));
+  const segmentPreviews = useMemo<SegmentPreview[]>(
+    () =>
+      beatSplitSegments.map((segment, index) => {
+        const source = videoSources[segment.sourceClipIds[0] ?? -1];
+        return {
+          clipId: index,
+          label: source ? source.name.replace(/\.[^.]+$/, "") : `SEG_${String(index + 1).padStart(2, "0")}`,
+          duration: segment.duration,
+          thumbnailUrl: source?.thumbnailUrl,
+          sourceClipIds: segment.sourceClipIds,
+        };
+      }),
+    [beatSplitSegments, videoSources]
+  );
 
   const handleJoinClips: Dispatch<SetStateAction<JoinClip[]>> = (value) => {
     setJoinClipStates((previous) => {
@@ -109,6 +136,32 @@ export default function StudioApp() {
       }, {});
     });
   };
+
+  async function handleVideoUpload(files: File[]) {
+    setVideoError(null);
+    setIsPreparingVideos(true);
+    setVideoStatus(`Processing ${files.length} video clip${files.length === 1 ? "" : "s"}...`);
+
+    try {
+      const prepared = await prepareVideoSources(files);
+      if (!prepared.length) {
+        throw new Error("No readable video files were selected.");
+      }
+
+      startTransition(() => {
+        setVideoSources(prepared);
+        setJoinClipStates({});
+        setActiveClip(0);
+        setVideoStatus(`Loaded ${prepared.length} clip${prepared.length === 1 ? "" : "s"} · thumbnails ready.`);
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown video processing error";
+      setVideoError(message);
+      setVideoStatus("Upload one or more video clips to begin.");
+    } finally {
+      setIsPreparingVideos(false);
+    }
+  }
 
   function runProcess() {
     if (isRunning) return;
@@ -146,6 +199,7 @@ export default function StudioApp() {
         lowEnergyRange,
         highEnergyRange,
         beatJoinReady: beatJoinAnalysis !== null,
+        hasVideoSource: videoSources.length > 0,
         chaos,
         onsetBoost,
         rampPreset,
@@ -170,6 +224,7 @@ export default function StudioApp() {
       lowEnergyRange,
       highEnergyRange,
       beatJoinAnalysis,
+      videoSources.length,
       chaos,
       onsetBoost,
       rampPreset,
@@ -201,6 +256,14 @@ export default function StudioApp() {
     setProgress(0);
   }
 
+  const needsVideoSource = tab !== "beatjoin";
+  const isMissingVideoSource = needsVideoSource && videoSources.length === 0;
+  const isMissingAudioSource = tab === "beatjoin" && beatJoinAnalysis === null;
+  const actionDisabled = isMissingVideoSource || isMissingAudioSource;
+  const actionDisabledReason = isMissingVideoSource
+    ? "Upload video clips to continue."
+    : "Upload a song to unlock Beat Join.";
+
   return (
     <div
       className="flex h-screen overflow-hidden bg-[#0a0a0a] text-[#c0c0c0] antialiased select-none"
@@ -216,11 +279,15 @@ export default function StudioApp() {
             {tab === "split" && (
               <SplitTab
                 playhead={playhead}
-                bpm={bpm}
                 clipDur={clipDur}
+                videoSources={videoSources}
+                videoStatus={videoStatus}
+                videoError={videoError}
+                isPreparingVideos={isPreparingVideos}
                 sourceClips={sourceClips}
                 segments={splitSegments}
                 activeClip={splitActiveClip}
+                onVideoUpload={handleVideoUpload}
                 onClipDur={setClipDur}
                 onActiveClip={setActiveClip}
               />
@@ -231,10 +298,15 @@ export default function StudioApp() {
                 playhead={playhead}
                 bpm={bpm}
                 barsPerSeg={barsPerSeg}
+                videoSources={videoSources}
+                videoStatus={videoStatus}
+                videoError={videoError}
+                isPreparingVideos={isPreparingVideos}
                 sourceClips={sourceClips}
                 segments={beatSplitSegments}
                 sensitivity={sensitivity}
                 activeClip={beatActiveClip}
+                onVideoUpload={handleVideoUpload}
                 onBarsPerSeg={setBarsPerSeg}
                 onSensitivity={setSensitivity}
                 onActiveClip={setActiveClip}
@@ -247,6 +319,7 @@ export default function StudioApp() {
                 bpm={bpm}
                 clipCount={joinClips.length}
                 clipOrder={shuffleQueue}
+                segmentPreviews={segmentPreviews}
                 shuffleMode={shuffleMode}
                 minScore={minScore}
                 lookahead={lookahead}
@@ -268,6 +341,7 @@ export default function StudioApp() {
                 bpm={bpm}
                 joinClips={joinClips}
                 clipOrder={shuffleQueue}
+                segmentPreviews={segmentPreviews}
                 shuffleMode={shuffleMode}
                 activeClip={beatActiveClip}
                 onJoinClips={handleJoinClips}
@@ -330,8 +404,8 @@ export default function StudioApp() {
               done={done}
               isRunning={isRunning}
               progress={progress}
-              disabled={tab === "beatjoin" && !beatJoinAnalysis}
-              disabledReason="Upload a song to unlock Beat Join."
+              disabled={actionDisabled}
+              disabledReason={actionDisabledReason}
               onRun={runProcess}
               onResetDone={() => setDone(false)}
             />
