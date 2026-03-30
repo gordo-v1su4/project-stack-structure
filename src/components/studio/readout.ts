@@ -4,15 +4,21 @@ import type { JoinClip, RampPreset, ShuffleMode, Tab } from "./types";
 export function buildReadout(params: {
   tab: Tab;
   clipDur: number;
+  splitSegmentCount: number;
   gpu: number;
   bpm: number;
   barsPerSeg: number;
+  beatSplitSegmentCount: number;
   shuffleMode: ShuffleMode;
   minScore: number;
   lookahead: number;
   joinClips: JoinClip[];
   minDur: number;
   maxDur: number;
+  lowEnergyRange: number;
+  highEnergyRange: number;
+  beatJoinReady: boolean;
+  hasVideoSource?: boolean;
   chaos: number;
   onsetBoost: number;
   rampPreset: RampPreset;
@@ -23,15 +29,21 @@ export function buildReadout(params: {
   const {
     tab,
     clipDur,
+    splitSegmentCount,
     gpu,
     bpm,
     barsPerSeg,
+    beatSplitSegmentCount,
     shuffleMode,
     minScore,
     lookahead,
     joinClips,
     minDur,
     maxDur,
+    lowEnergyRange,
+    highEnergyRange,
+    beatJoinReady,
+    hasVideoSource = true,
     chaos,
     onsetBoost,
     rampPreset,
@@ -41,30 +53,62 @@ export function buildReadout(params: {
   } = params;
 
   if (tab === "split") {
+    if (!hasVideoSource) {
+      return [
+        ["Source", "Awaiting video"],
+        ["State", "Locked"],
+        ["GPU", `${gpu.toFixed(0)}%`],
+        ["Codec", "H.264"],
+      ];
+    }
     return [
       ["Clip Dur", `${clipDur}s`],
-      ["Est Clips", Math.floor(300 / clipDur)],
+      ["Est Clips", splitSegmentCount],
       ["GPU", `${gpu.toFixed(0)}%`],
       ["Codec", "H.264"],
     ];
   }
   if (tab === "beatsplit") {
+    if (!hasVideoSource) {
+      return [
+        ["Source", "Awaiting video"],
+        ["State", "Locked"],
+        ["BPM", bpm],
+        ["Bars/Seg", barsPerSeg],
+      ];
+    }
     return [
       ["BPM", bpm],
       ["Bars/Seg", barsPerSeg],
-      ["Segments", Math.floor(16 / barsPerSeg)],
+      ["Segments", beatSplitSegmentCount],
       ["Confidence", "94%"],
     ];
   }
   if (tab === "shuffle") {
+    if (!hasVideoSource) {
+      return [
+        ["Source", "Awaiting video"],
+        ["State", "Locked"],
+        ["Mode", shuffleMode],
+        ["Lookahead", lookahead],
+      ];
+    }
     return [
       ["Mode", shuffleMode],
-      ["Clips", 12],
+      ["Clips", joinClips.length],
       ["Min Score", minScore.toFixed(2)],
       ["Lookahead", lookahead],
     ];
   }
   if (tab === "join") {
+    if (!hasVideoSource) {
+      return [
+        ["Source", "Awaiting video"],
+        ["State", "Locked"],
+        ["Format", "MP4"],
+        ["Output", "/output/"],
+      ];
+    }
     const active = joinClips.filter((c) => c.on);
     return [
       ["Active", active.length],
@@ -74,14 +118,31 @@ export function buildReadout(params: {
     ];
   }
   if (tab === "beatjoin") {
+    if (!beatJoinReady) {
+      return [
+        ["Source", "Awaiting upload"],
+        ["State", "Locked"],
+        ["Low Eng", lowEnergyRange.toFixed(2)],
+        ["High Eng", highEnergyRange.toFixed(2)],
+      ];
+    }
+
     return [
       ["Min Dur", `${minDur.toFixed(2)}s`],
       ["Max Dur", `${maxDur.toFixed(2)}s`],
-      ["Chaos", chaos.toFixed(2)],
+      ["Low Eng", lowEnergyRange.toFixed(2)],
+      ["High Eng", highEnergyRange.toFixed(2)],
       ["Onset", onsetBoost.toFixed(2)],
+      ["Chaos", chaos.toFixed(2)],
     ];
   }
   return [
+    ...(hasVideoSource
+      ? []
+      : ([
+          ["Source", "Awaiting video"],
+          ["State", "Locked"],
+        ] as [string, string | number][])),
     ["Preset", rampPreset],
     ["Min Spd", `${minSpeed}×`],
     ["Max Spd", `${maxSpeed}×`],

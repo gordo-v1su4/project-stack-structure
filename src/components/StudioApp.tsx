@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { startTransition, useEffect, useMemo, useState } from "react";
+import type { Dispatch, SetStateAction } from "react";
 import { NAV } from "./studio/constants";
+import { prepareVideoSources } from "./studio/mediaUpload";
 import { ProcessActionBar } from "./studio/ProcessActionBar";
 import { buildReadout } from "./studio/readout";
 import { BeatJoinTab } from "./studio/panels/BeatJoinTab";
@@ -14,7 +16,18 @@ import { StudioHeader } from "./studio/StudioHeader";
 import { StudioRightPanel } from "./studio/StudioRightPanel";
 import { StudioSidebar } from "./studio/StudioSidebar";
 import { StudioStatusBar } from "./studio/StudioStatusBar";
-import type { ColorGradient, JoinClip, RampPreset, ShuffleMode, Tab } from "./studio/types";
+import { buildShuffleQueue } from "./studio/shuffleQueue";
+import { buildBeatSegments, buildSourceClipSpans, buildStandardSegments } from "./studio/sourceTimeline";
+import type {
+  BeatJoinAnalysis,
+  ColorGradient,
+  JoinClip,
+  RampPreset,
+  SegmentPreview,
+  ShuffleMode,
+  Tab,
+  UploadedVideoSource,
+} from "./studio/types";
 
 export default function StudioApp() {
   const [tab, setTab] = useState<Tab>("split");
@@ -29,16 +42,18 @@ export default function StudioApp() {
   const [barsPerSeg, setBarsPerSeg] = useState(2);
   const [bpm] = useState(130);
   const [sensitivity, setSensitivity] = useState(68);
+  const [videoSources, setVideoSources] = useState<UploadedVideoSource[]>([]);
+  const [videoStatus, setVideoStatus] = useState("Upload one or more video clips to begin.");
+  const [videoError, setVideoError] = useState<string | null>(null);
+  const [isPreparingVideos, setIsPreparingVideos] = useState(false);
 
-  const [shuffleMode, setShuffleMode] = useState<ShuffleMode>("color");
+  const [shuffleMode, setShuffleMode] = useState<ShuffleMode>("motion");
   const [minScore, setMinScore] = useState(0.5);
   const [lookahead, setLookahead] = useState(3);
   const [keepPct, setKeepPct] = useState(70);
   const [colorGradient, setColorGradient] = useState<ColorGradient>("Sunset");
 
-  const [joinClips, setJoinClips] = useState<JoinClip[]>(() =>
-    Array.from({ length: 12 }, (_, i) => ({ id: i, on: true }))
-  );
+  const [joinClipStates, setJoinClipStates] = useState<Record<number, boolean>>({});
 
   const [minDur, setMinDur] = useState(0.12);
   const [maxDur, setMaxDur] = useState(0.8);
@@ -46,6 +61,9 @@ export default function StudioApp() {
   const [chaos, setChaos] = useState(0.35);
   const [onsetBoost, setOnsetBoost] = useState(0.6);
   const [energyReactive, setEnergyReactive] = useState(true);
+  const [lowEnergyRange, setLowEnergyRange] = useState(0.36);
+  const [highEnergyRange, setHighEnergyRange] = useState(0.68);
+  const [beatJoinAnalysis, setBeatJoinAnalysis] = useState<BeatJoinAnalysis | null>(null);
 
   const [rampPreset, setRampPreset] = useState<RampPreset>("dynamic");
   const [minSpeed, setMinSpeed] = useState(0.5);
@@ -73,6 +91,78 @@ export default function StudioApp() {
     return () => clearInterval(id);
   }, []);
 
+  const sourceClips = useMemo(() => buildSourceClipSpans(videoSources), [videoSources]);
+  const splitSegments = useMemo(() => buildStandardSegments(sourceClips, clipDur), [sourceClips, clipDur]);
+  const beatSplitSegments = useMemo(() => buildBeatSegments(sourceClips, bpm, barsPerSeg), [sourceClips, bpm, barsPerSeg]);
+  const beatSplitClipCount = beatSplitSegments.length;
+  const joinClips = useMemo(
+    () =>
+      Array.from({ length: beatSplitClipCount }, (_, index) => ({
+        id: index,
+        on: joinClipStates[index] ?? true,
+      })),
+    [beatSplitClipCount, joinClipStates]
+  );
+  const splitActiveClip = Math.min(activeClip, Math.max(0, splitSegments.length - 1));
+  const beatActiveClip = Math.min(activeClip, Math.max(0, beatSplitClipCount - 1));
+  const segmentPreviews = useMemo<SegmentPreview[]>(
+    () =>
+      beatSplitSegments.map((segment, index) => {
+        const source = videoSources[segment.sourceClipIds[0] ?? -1];
+        return {
+          clipId: index,
+          label: source ? source.name.replace(/\.[^.]+$/, "") : `SEG_${String(index + 1).padStart(2, "0")}`,
+          duration: segment.duration,
+          thumbnailUrl: source?.thumbnailUrl,
+          sourceClipIds: segment.sourceClipIds,
+        };
+      }),
+    [beatSplitSegments, videoSources]
+  );
+
+  const handleJoinClips: Dispatch<SetStateAction<JoinClip[]>> = (value) => {
+    setJoinClipStates((previous) => {
+      const current = Array.from({ length: beatSplitClipCount }, (_, index) => ({
+        id: index,
+        on: previous[index] ?? true,
+      }));
+      const next = typeof value === "function" ? value(current) : value;
+
+      return next.reduce<Record<number, boolean>>((accumulator, clip) => {
+        if (clip.id >= 0 && clip.id < beatSplitClipCount) {
+          accumulator[clip.id] = clip.on;
+        }
+        return accumulator;
+      }, {});
+    });
+  };
+
+  async function handleVideoUpload(files: File[]) {
+    setVideoError(null);
+    setIsPreparingVideos(true);
+    setVideoStatus(`Processing ${files.length} video clip${files.length === 1 ? "" : "s"}...`);
+
+    try {
+      const prepared = await prepareVideoSources(files);
+      if (!prepared.length) {
+        throw new Error("No readable video files were selected.");
+      }
+
+      startTransition(() => {
+        setVideoSources(prepared);
+        setJoinClipStates({});
+        setActiveClip(0);
+        setVideoStatus(`Loaded ${prepared.length} clip${prepared.length === 1 ? "" : "s"} · thumbnails ready.`);
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown video processing error";
+      setVideoError(message);
+      setVideoStatus("Upload one or more video clips to begin.");
+    } finally {
+      setIsPreparingVideos(false);
+    }
+  }
+
   function runProcess() {
     if (isRunning) return;
     setIsRunning(true);
@@ -95,15 +185,21 @@ export default function StudioApp() {
       buildReadout({
         tab,
         clipDur,
+        splitSegmentCount: splitSegments.length,
         gpu,
         bpm,
         barsPerSeg,
+        beatSplitSegmentCount: beatSplitSegments.length,
         shuffleMode,
         minScore,
         lookahead,
         joinClips,
         minDur,
         maxDur,
+        lowEnergyRange,
+        highEnergyRange,
+        beatJoinReady: beatJoinAnalysis !== null,
+        hasVideoSource: videoSources.length > 0,
         chaos,
         onsetBoost,
         rampPreset,
@@ -114,15 +210,21 @@ export default function StudioApp() {
     [
       tab,
       clipDur,
+      splitSegments.length,
       gpu,
       bpm,
       barsPerSeg,
+      beatSplitSegments.length,
       shuffleMode,
       minScore,
       lookahead,
       joinClips,
       minDur,
       maxDur,
+      lowEnergyRange,
+      highEnergyRange,
+      beatJoinAnalysis,
+      videoSources.length,
       chaos,
       onsetBoost,
       rampPreset,
@@ -134,12 +236,33 @@ export default function StudioApp() {
 
   const tabLabel = NAV.find((n) => n.key === tab)?.label ?? "";
   const tabSub = NAV.find((n) => n.key === tab)?.sub ?? "";
+  const shuffleQueue = useMemo(
+    () =>
+      buildShuffleQueue({
+        clipCount: joinClips.length,
+        shuffleMode,
+        activeClip: beatActiveClip,
+        minScore,
+        lookahead,
+        keepPct,
+        colorGradient,
+      }),
+    [joinClips.length, shuffleMode, beatActiveClip, minScore, lookahead, keepPct, colorGradient]
+  );
 
   function handleSelectTab(t: Tab) {
     setTab(t);
     setDone(false);
     setProgress(0);
   }
+
+  const needsVideoSource = tab !== "beatjoin";
+  const isMissingVideoSource = needsVideoSource && videoSources.length === 0;
+  const isMissingAudioSource = tab === "beatjoin" && beatJoinAnalysis === null;
+  const actionDisabled = isMissingVideoSource || isMissingAudioSource;
+  const actionDisabledReason = isMissingVideoSource
+    ? "Upload video clips to continue."
+    : "Upload a song to unlock Beat Join.";
 
   return (
     <div
@@ -156,9 +279,15 @@ export default function StudioApp() {
             {tab === "split" && (
               <SplitTab
                 playhead={playhead}
-                bpm={bpm}
                 clipDur={clipDur}
-                activeClip={activeClip}
+                videoSources={videoSources}
+                videoStatus={videoStatus}
+                videoError={videoError}
+                isPreparingVideos={isPreparingVideos}
+                sourceClips={sourceClips}
+                segments={splitSegments}
+                activeClip={splitActiveClip}
+                onVideoUpload={handleVideoUpload}
                 onClipDur={setClipDur}
                 onActiveClip={setActiveClip}
               />
@@ -169,8 +298,15 @@ export default function StudioApp() {
                 playhead={playhead}
                 bpm={bpm}
                 barsPerSeg={barsPerSeg}
+                videoSources={videoSources}
+                videoStatus={videoStatus}
+                videoError={videoError}
+                isPreparingVideos={isPreparingVideos}
+                sourceClips={sourceClips}
+                segments={beatSplitSegments}
                 sensitivity={sensitivity}
-                activeClip={activeClip}
+                activeClip={beatActiveClip}
+                onVideoUpload={handleVideoUpload}
                 onBarsPerSeg={setBarsPerSeg}
                 onSensitivity={setSensitivity}
                 onActiveClip={setActiveClip}
@@ -181,12 +317,15 @@ export default function StudioApp() {
               <ShuffleTab
                 playhead={playhead}
                 bpm={bpm}
+                clipCount={joinClips.length}
+                clipOrder={shuffleQueue}
+                segmentPreviews={segmentPreviews}
                 shuffleMode={shuffleMode}
                 minScore={minScore}
                 lookahead={lookahead}
                 keepPct={keepPct}
                 colorGradient={colorGradient}
-                activeClip={activeClip}
+                activeClip={beatActiveClip}
                 onShuffleMode={setShuffleMode}
                 onMinScore={setMinScore}
                 onLookahead={setLookahead}
@@ -201,8 +340,11 @@ export default function StudioApp() {
                 playhead={playhead}
                 bpm={bpm}
                 joinClips={joinClips}
-                activeClip={activeClip}
-                onJoinClips={setJoinClips}
+                clipOrder={shuffleQueue}
+                segmentPreviews={segmentPreviews}
+                shuffleMode={shuffleMode}
+                activeClip={beatActiveClip}
+                onJoinClips={handleJoinClips}
                 onActiveClip={setActiveClip}
               />
             )}
@@ -217,13 +359,21 @@ export default function StudioApp() {
                 chaos={chaos}
                 onsetBoost={onsetBoost}
                 energyReactive={energyReactive}
-                activeClip={activeClip}
+                lowEnergyRange={lowEnergyRange}
+                highEnergyRange={highEnergyRange}
+                analysis={beatJoinAnalysis}
+                clipOrder={shuffleQueue}
+                shuffleMode={shuffleMode}
+                activeClip={beatActiveClip}
                 onMinDur={setMinDur}
                 onMaxDur={setMaxDur}
                 onEnergyResp={setEnergyResp}
                 onChaos={setChaos}
                 onOnsetBoost={setOnsetBoost}
                 onEnergyReactive={setEnergyReactive}
+                onLowEnergyRange={(value) => setLowEnergyRange(Math.min(value, highEnergyRange - 0.05))}
+                onHighEnergyRange={(value) => setHighEnergyRange(Math.max(value, lowEnergyRange + 0.05))}
+                onAnalysisChange={setBeatJoinAnalysis}
                 onActiveClip={setActiveClip}
               />
             )}
@@ -254,6 +404,8 @@ export default function StudioApp() {
               done={done}
               isRunning={isRunning}
               progress={progress}
+              disabled={actionDisabled}
+              disabledReason={actionDisabledReason}
               onRun={runProcess}
               onResetDone={() => setDone(false)}
             />

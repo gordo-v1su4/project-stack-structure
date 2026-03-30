@@ -6,7 +6,7 @@ import { ParamSlider } from "../ParamSlider";
 import { SolidWaveform } from "../SolidWaveform";
 import { VideoClip } from "../VideoClip";
 import { WAVE_MAIN } from "../waveData";
-import type { ColorGradient, ShuffleMode } from "../types";
+import type { ColorGradient, SegmentPreview, ShuffleMode } from "../types";
 
 const GRADIENT_COLORS: Record<ColorGradient, string[]> = {
   Rainbow: ["#e03030", "#e07030", "#d0d030", "#30c030", "#3080e0", "#8030c0"],
@@ -17,6 +17,9 @@ const GRADIENT_COLORS: Record<ColorGradient, string[]> = {
 type ShuffleTabProps = {
   playhead: number;
   bpm: number;
+  clipCount: number;
+  clipOrder: number[];
+  segmentPreviews: SegmentPreview[];
   shuffleMode: ShuffleMode;
   minScore: number;
   lookahead: number;
@@ -34,6 +37,9 @@ type ShuffleTabProps = {
 export function ShuffleTab({
   playhead,
   bpm,
+  clipCount,
+  clipOrder,
+  segmentPreviews,
   shuffleMode,
   minScore,
   lookahead,
@@ -47,6 +53,17 @@ export function ShuffleTab({
   onColorGradient,
   onActiveClip,
 }: ShuffleTabProps) {
+  if (clipCount === 0) {
+    return (
+      <div className="rounded-[2px] border border-dashed border-[#222] bg-[#090909] px-4 py-10 text-center">
+        <div className="text-[13px] text-[#b0b0b0]">Shuffle is waiting for video clips.</div>
+        <div className="mt-2 text-[10px] uppercase tracking-[0.14em] text-[#555]">
+          Upload source video in Standard Split or Beat Split first, then the generated segment queue will appear here.
+        </div>
+      </div>
+    );
+  }
+
   return (
     <>
       <SolidWaveform
@@ -55,7 +72,7 @@ export function ShuffleTab({
         bpm={bpm}
         totalBars={8}
         beatsPerBar={4}
-        label="SOURCE · 12 CLIPS LOADED"
+        label={`SOURCE · ${clipCount} CLIPS LOADED`}
         height={90}
       />
 
@@ -79,7 +96,7 @@ export function ShuffleTab({
       <div>
         <div className="flex items-center justify-between mb-2">
           <span className="text-[10px] uppercase tracking-[0.18em] text-[#404040]">
-            Input Clips — 12 segments
+            Input Clips — {clipCount} segments
             {shuffleMode === "color" && <span className="ml-2 text-[#e05c0088]">· color palette tags</span>}
             {shuffleMode === "motion" && <span className="ml-2 text-[#e05c0088]">· motion direction tagged</span>}
           </span>
@@ -118,18 +135,45 @@ export function ShuffleTab({
           </div>
         )}
 
+        <div className="mb-2 border border-[#1a1a1a] rounded-[2px] bg-[#080808] px-2 py-[6px]">
+          <div className="flex items-center justify-between gap-3 text-[9px] uppercase tracking-[0.16em] text-[#404040]">
+            <span>Selected Queue</span>
+            <span className="font-mono text-[#666]">{shuffleMode}</span>
+          </div>
+          <div className="mt-[6px] flex flex-wrap gap-1">
+            {clipOrder.map((clipId, index) => (
+              <span
+                key={`${clipId}-${index}`}
+                className={`rounded-[2px] border px-[5px] py-[2px] text-[9px] font-mono ${
+                  index === 0
+                    ? "border-[#e05c00] bg-[#e05c0018] text-[#e05c00]"
+                    : "border-[#1d1d1d] bg-[#0d0d0d] text-[#666]"
+                }`}
+              >
+                {String(index + 1).padStart(2, "0")}→C{String(clipId + 1).padStart(2, "0")}
+              </span>
+            ))}
+          </div>
+        </div>
+
         <div className="grid grid-cols-6 gap-2">
-          {Array.from({ length: 12 }, (_, i) => (
-            <VideoClip
-              key={i}
-              idx={i}
-              active={i === activeClip}
-              mode={shuffleMode}
-              showColorBars={shuffleMode === "color"}
-              matchScore={0.4 + sv(i * 3 + activeClip * 0.7) * 0.55}
-              onClick={() => onActiveClip(i)}
-            />
-          ))}
+          {Array.from({ length: clipCount }, (_, i) => {
+            const preview = segmentPreviews[i];
+            return (
+              <VideoClip
+                key={i}
+                idx={i}
+                active={i === activeClip}
+                mode={shuffleMode}
+                label={`C${String(i + 1).padStart(2, "0")}`}
+                durationLabel={preview ? `${preview.duration.toFixed(1)}s` : undefined}
+                thumbnailUrl={preview?.thumbnailUrl}
+                showColorBars={shuffleMode === "color"}
+                matchScore={0.4 + sv(i * 3 + activeClip * 0.7) * 0.55}
+                onClick={() => onActiveClip(i)}
+              />
+            );
+          })}
         </div>
       </div>
 
@@ -182,15 +226,17 @@ export function ShuffleTab({
                 : "Clip Scores"}
           </div>
           <div className="space-y-[4px]">
-            {Array.from({ length: 6 }, (_, i) => {
-              const score = 0.4 + sv(i * 3 + activeClip) * 0.55;
+            {Array.from({ length: Math.min(6, Math.max(0, clipOrder.length - 1)) }, (_, i) => {
+              const fromClip = clipOrder[i] ?? i;
+              const toClip = clipOrder[i + 1] ?? fromClip;
+              const score = 0.4 + sv(fromClip * 3 + toClip * 0.7 + activeClip) * 0.55;
               const good = score > minScore;
-              const startPalette = getClipPalette(i);
-              const endPalette = getClipPalette(i + 1);
+              const startPalette = getClipPalette(fromClip);
+              const endPalette = getClipPalette(toClip);
               return (
                 <div key={i} className="flex items-center gap-2">
                   <span className="w-14 text-[9px] font-mono text-[#383838]">
-                    C{i + 1}→C{i + 2}
+                    C{fromClip + 1}→C{toClip + 1}
                   </span>
                   {shuffleMode === "color" && (
                     <>

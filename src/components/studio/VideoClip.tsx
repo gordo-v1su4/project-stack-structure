@@ -8,6 +8,9 @@ type VideoClipProps = {
   idx: number;
   active?: boolean;
   mode: ShuffleMode;
+  label?: string;
+  durationLabel?: string;
+  thumbnailUrl?: string;
   showColorBars?: boolean;
   matchScore?: number;
   onClick?: () => void;
@@ -17,6 +20,9 @@ export function VideoClip({
   idx,
   active,
   mode,
+  label,
+  durationLabel,
+  thumbnailUrl,
   showColorBars = false,
   matchScore = 0,
   onClick,
@@ -29,6 +35,7 @@ export function VideoClip({
   const bg2 = palette[1];
   const bg3 = palette[2];
   const angle = Math.floor(sv(idx * 7) * 180);
+  const clipLabel = label ?? `C${String(idx + 1).padStart(2, "0")}`;
 
   return (
     <div className="space-y-0">
@@ -43,37 +50,47 @@ export function VideoClip({
       >
         <div className="aspect-[16/9]" />
 
-        <svg className="absolute inset-0 w-full h-full" viewBox="0 0 160 90" preserveAspectRatio="xMidYMid slice">
-          <line
-            x1={0}
-            y1={sv(idx * 3 + 1) * 60 + 15}
-            x2={160}
-            y2={sv(idx * 5 + 2) * 60 + 15}
-            stroke="#00000022"
-            strokeWidth={20}
-          />
-          <ellipse
-            cx={sv(idx * 11) * 100 + 30}
-            cy={sv(idx * 7) * 40 + 25}
-            rx={sv(idx * 13) * 25 + 8}
-            ry={sv(idx * 9) * 20 + 6}
-            fill="#00000033"
-          />
-          <ellipse
-            cx={sv(idx * 17) * 120 + 20}
-            cy={sv(idx * 19) * 30 + 5}
-            rx={sv(idx * 23) * 30 + 5}
-            ry={sv(idx * 29) * 15 + 3}
-            fill="#ffffff0a"
-          />
-        </svg>
+        {thumbnailUrl ? (
+          <>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={thumbnailUrl} alt={clipLabel} className="absolute inset-0 h-full w-full object-cover" />
+            <div className="absolute inset-0 bg-gradient-to-b from-[#0000002a] via-[#00000018] to-[#00000088]" />
+          </>
+        ) : null}
+
+        {!thumbnailUrl ? (
+          <svg className="absolute inset-0 w-full h-full" viewBox="0 0 160 90" preserveAspectRatio="xMidYMid slice">
+            <line
+              x1={0}
+              y1={sv(idx * 3 + 1) * 60 + 15}
+              x2={160}
+              y2={sv(idx * 5 + 2) * 60 + 15}
+              stroke="#00000022"
+              strokeWidth={20}
+            />
+            <ellipse
+              cx={sv(idx * 11) * 100 + 30}
+              cy={sv(idx * 7) * 40 + 25}
+              rx={sv(idx * 13) * 25 + 8}
+              ry={sv(idx * 9) * 20 + 6}
+              fill="#00000033"
+            />
+            <ellipse
+              cx={sv(idx * 17) * 120 + 20}
+              cy={sv(idx * 19) * 30 + 5}
+              rx={sv(idx * 23) * 30 + 5}
+              ry={sv(idx * 29) * 15 + 3}
+              fill="#ffffff0a"
+            />
+          </svg>
+        ) : null}
 
         {active && <div className="absolute top-0 left-0 right-0 h-[2px] bg-[#e05c00]" />}
         <div className="absolute top-[3px] left-[3px] text-[7px] font-mono text-[#ffffff88] bg-[#00000055] px-1 rounded-[1px]">
-          C{String(idx + 1).padStart(2, "0")}
+          {clipLabel}
         </div>
         <div className="absolute bottom-[3px] right-[3px] text-[7px] font-mono text-[#ffffff66] bg-[#00000055] px-1 rounded-[1px]">
-          {dur}s
+          {durationLabel ?? `${dur}s`}
         </div>
 
         {mode === "motion" && (

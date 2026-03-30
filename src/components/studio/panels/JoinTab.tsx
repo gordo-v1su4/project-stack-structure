@@ -5,12 +5,15 @@ import { fmt, sv } from "../math";
 import { SolidWaveform } from "../SolidWaveform";
 import { VideoClip } from "../VideoClip";
 import { WAVE_MAIN } from "../waveData";
-import type { JoinClip } from "../types";
+import type { JoinClip, SegmentPreview, ShuffleMode } from "../types";
 
 type JoinTabProps = {
   playhead: number;
   bpm: number;
   joinClips: JoinClip[];
+  clipOrder: number[];
+  segmentPreviews: SegmentPreview[];
+  shuffleMode: ShuffleMode;
   activeClip: number;
   onJoinClips: Dispatch<SetStateAction<JoinClip[]>>;
   onActiveClip: (i: number) => void;
@@ -20,12 +23,31 @@ export function JoinTab({
   playhead,
   bpm,
   joinClips,
+  clipOrder,
+  segmentPreviews,
+  shuffleMode,
   activeClip,
   onJoinClips,
   onActiveClip,
 }: JoinTabProps) {
-  const active = joinClips.filter((c) => c.on);
-  const totalDur = active.reduce((a, c) => a + sv(c.id + 1) * 8 + 1, 0);
+  if (!joinClips.length) {
+    return (
+      <div className="rounded-[2px] border border-dashed border-[#222] bg-[#090909] px-4 py-10 text-center">
+        <div className="text-[13px] text-[#b0b0b0]">Join is waiting for source clips.</div>
+        <div className="mt-2 text-[10px] uppercase tracking-[0.14em] text-[#555]">
+          Upload video clips and generate split segments first so the join queue has something real to rebuild.
+        </div>
+      </div>
+    );
+  }
+
+  const ordered = clipOrder
+    .map((id) => joinClips.find((clip) => clip.id === id))
+    .filter((clip): clip is JoinClip => Boolean(clip));
+  const inactive = joinClips.filter((clip) => !clipOrder.includes(clip.id));
+  const orderedClips = [...ordered, ...inactive];
+  const active = orderedClips.filter((clip) => clip.on);
+  const totalDur = active.reduce((sum, clip) => sum + sv(clip.id + 1) * 8 + 1, 0);
 
   return (
     <>
@@ -35,7 +57,7 @@ export function JoinTab({
         bpm={bpm}
         totalBars={8}
         beatsPerBar={4}
-        label="OUTPUT TIMELINE — CONCATENATED"
+        label={`OUTPUT TIMELINE — ${shuffleMode.toUpperCase()} JOIN`}
         height={100}
       />
 
@@ -45,11 +67,12 @@ export function JoinTab({
           <span className="font-mono text-[#555]">
             {active.length} clips · <span className="text-[#e05c00]">{fmt(totalDur)}</span>
           </span>
+          <span className="font-mono text-[#444] uppercase">{shuffleMode}</span>
         </div>
         <div className="relative h-12 flex">
           {active.map((c, i) => {
             const w = sv(c.id + 1) * 8 + 1;
-            const total = active.reduce((a, cc) => a + sv(cc.id + 1) * 8 + 1, 0);
+            const total = active.reduce((sum, clip) => sum + sv(clip.id + 1) * 8 + 1, 0);
             return (
               <div
                 key={c.id}
@@ -69,9 +92,11 @@ export function JoinTab({
       </div>
 
       <div>
-        <div className="mb-2 text-[10px] uppercase tracking-[0.18em] text-[#404040]">Clip Queue — click to toggle on/off</div>
+        <div className="mb-2 text-[10px] uppercase tracking-[0.18em] text-[#404040]">
+          Clip Queue — click to toggle on/off
+        </div>
         <div className="grid grid-cols-6 gap-2">
-          {joinClips.map((c) => (
+          {orderedClips.map((c, index) => (
             <div
               key={c.id}
               className="relative"
@@ -80,7 +105,16 @@ export function JoinTab({
                 onActiveClip(c.id);
               }}
             >
-              <VideoClip idx={c.id} active={c.id === activeClip} mode="simple" />
+              <VideoClip
+                idx={c.id}
+                active={c.id === activeClip}
+                mode="simple"
+                durationLabel={segmentPreviews[c.id] ? `${segmentPreviews[c.id].duration.toFixed(1)}s` : undefined}
+                thumbnailUrl={segmentPreviews[c.id]?.thumbnailUrl}
+              />
+              <div className="absolute top-[3px] right-[3px] text-[7px] font-mono text-[#ffffff88] bg-[#00000055] px-1 rounded-[1px]">
+                {String(index + 1).padStart(2, "0")}
+              </div>
               {!c.on && (
                 <div className="absolute inset-0 bg-[#00000099] flex items-center justify-center rounded-[2px]">
                   <span className="text-[9px] font-mono text-[#383838]">SKIP</span>

@@ -7,6 +7,8 @@ type ProcessActionBarProps = {
   done: boolean;
   isRunning: boolean;
   progress: number;
+  disabled?: boolean;
+  disabledReason?: string;
   onRun: () => void;
   onResetDone: () => void;
 };
@@ -33,6 +35,8 @@ export function ProcessActionBar({
   done,
   isRunning,
   progress,
+  disabled = false,
+  disabledReason = "Unavailable",
   onRun,
   onResetDone,
 }: ProcessActionBarProps) {
@@ -62,9 +66,15 @@ export function ProcessActionBar({
         <button
           type="button"
           onClick={onRun}
-          className="w-full py-[10px] bg-[#e05c00] text-[#fff] text-[12px] font-semibold uppercase tracking-[0.22em] rounded-[2px] hover:bg-[#c95200] active:bg-[#b34800] transition-colors"
+          disabled={disabled}
+          title={disabled ? disabledReason : undefined}
+          className={`w-full py-[10px] text-[12px] font-semibold uppercase tracking-[0.22em] rounded-[2px] transition-colors ${
+            disabled
+              ? "bg-[#2a2a2a] text-[#6a6a6a] cursor-not-allowed"
+              : "bg-[#e05c00] text-[#fff] hover:bg-[#c95200] active:bg-[#b34800]"
+          }`}
         >
-          {actionLabel(tab)}
+          {disabled ? disabledReason : actionLabel(tab)}
         </button>
       )}
     </div>
