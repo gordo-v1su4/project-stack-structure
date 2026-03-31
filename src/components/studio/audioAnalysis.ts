@@ -22,18 +22,21 @@ export async function fetchEssentiaAnalysis(file: File) {
 
     const payload = (await response.json()) as unknown;
 
+    const responseObject = isRecord(payload) ? payload : null;
+    const rawPayload = isRecord(responseObject?.raw) ? responseObject.raw : payload;
+
     console.info("[Essentia] Response received", {
       ok: response.ok,
       status: response.status,
       elapsedMs: Math.round(performance.now() - startedAt),
-      duration: getNumericValue((payload as Record<string, unknown> | null)?.duration),
-      bpm: getNumericValue((payload as Record<string, unknown> | null)?.bpm),
-      beats: getArrayLength((payload as Record<string, unknown> | null)?.beats),
-      onsets: getArrayLength((payload as Record<string, unknown> | null)?.onsets),
-      energyPoints: getArrayLength((payload as Record<string, unknown> | null)?.energy),
-      sections: getArrayLength((payload as Record<string, unknown> | null)?.sections),
+      duration: getNumericValue(responseObject?.duration),
+      bpm: getNumericValue(responseObject?.bpm),
+      beats: getArrayLength(responseObject?.beats),
+      onsets: getArrayLength(responseObject?.onsets),
+      energyPoints: getArrayLength(responseObject?.energy),
+      sections: getArrayLength(responseObject?.sections),
     });
-    console.info("[Essentia] Raw payload", payload);
+    console.info("[Essentia] Raw upstream payload", rawPayload);
 
     if (!response.ok) {
       const message =
@@ -231,4 +234,8 @@ function clamp(value: number, min: number, max: number) {
 
 function getArrayLength(value: unknown) {
   return Array.isArray(value) ? value.length : 0;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }

@@ -33,6 +33,8 @@ interface EssentiaFullResponse {
   };
 }
 
+const INCLUDE_RAW_UPSTREAM_PAYLOAD = process.env.NODE_ENV !== "production";
+
 export async function POST(request: Request) {
   try {
     const formData = await request.formData();
@@ -89,6 +91,7 @@ export async function POST(request: Request) {
       energy: payload.energy?.curve ?? [],
       boundaries: payload.structure?.boundaries ?? [],
       sections: payload.structure?.sections ?? [],
+      ...(INCLUDE_RAW_UPSTREAM_PAYLOAD ? { raw: payload } : {}),
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown Essentia proxy error";
