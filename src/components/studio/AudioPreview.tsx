@@ -33,6 +33,8 @@ export function AudioPreview({
   const duration = Math.max(analysis.duration, 0.001);
   const playhead = clamp(audioTime / duration, 0, 1);
   const displayBpm = Math.round(deriveDisplayBpm(analysis.beats, bpmFallback));
+  const progressSteps = 24;
+  const filledSteps = Math.round(playhead * progressSteps);
 
   function syncAudioTime(nextTime: number) {
     const clampedTime = clamp(nextTime, 0, duration);
@@ -97,33 +99,66 @@ export function AudioPreview({
         onSeek={seekToPlayhead}
       />
 
-      <div className="flex items-center justify-between border border-[#1a1a1a] rounded-[2px] bg-[#090909] px-3 py-2">
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => void togglePlayback()}
-            className="border border-[#1f1f1f] rounded-[2px] px-3 py-1 text-[10px] uppercase tracking-[0.14em] text-[#d0d0d0] hover:border-[#343434]"
-          >
-            {isPlaying ? "Pause" : "Play"}
-          </button>
-          <button
-            type="button"
-            onClick={rewindToStart}
-            className="border border-[#1f1f1f] rounded-[2px] px-3 py-1 text-[10px] uppercase tracking-[0.14em] text-[#9a9a9a] hover:border-[#343434]"
-          >
-            Rewind
-          </button>
-          <button
-            type="button"
-            onClick={() => setZoom((current) => (current === 1 ? 2 : 1))}
-            className={`border rounded-[2px] px-3 py-1 text-[10px] uppercase tracking-[0.14em] ${
-              zoom === 2 ? "border-[#e05c00] text-[#e05c00] bg-[#e05c0012]" : "border-[#1f1f1f] text-[#9a9a9a]"
-            }`}
-          >
-            {zoom}x
-          </button>
+      <div className="border border-[#1a1a1a] rounded-[2px] bg-[#090909] px-3 py-2">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void togglePlayback()}
+              className="border border-[#1f1f1f] rounded-[2px] px-3 py-1 text-[10px] uppercase tracking-[0.14em] text-[#d0d0d0] hover:border-[#343434]"
+            >
+              {isPlaying ? "Pause" : "Play"}
+            </button>
+            <button
+              type="button"
+              onClick={rewindToStart}
+              className="border border-[#1f1f1f] rounded-[2px] px-3 py-1 text-[10px] uppercase tracking-[0.14em] text-[#9a9a9a] hover:border-[#343434]"
+            >
+              Rewind
+            </button>
+            <button
+              type="button"
+              onClick={() => setZoom((current) => (current === 1 ? 2 : 1))}
+              className={`border rounded-[2px] px-3 py-1 text-[10px] uppercase tracking-[0.14em] ${
+                zoom === 2 ? "border-[#e05c00] text-[#e05c00] bg-[#e05c0012]" : "border-[#1f1f1f] text-[#9a9a9a]"
+              }`}
+            >
+              {zoom}x
+            </button>
+          </div>
+          <div className="hidden min-w-[260px] flex-1 items-center gap-[5px] md:flex">
+            {Array.from({ length: progressSteps }, (_, index) => {
+              const active = index < filledSteps;
+              return (
+                <div
+                  key={index}
+                  className="h-7 flex-1 rounded-[2px] transition-colors duration-150"
+                  style={{
+                    background: active ? accent : "#343434",
+                    boxShadow: active ? "0 0 0 1px rgba(255,255,255,0.02) inset" : "0 0 0 1px rgba(255,255,255,0.01) inset",
+                    opacity: active ? 1 : 0.8,
+                  }}
+                />
+              );
+            })}
+          </div>
+          <div className="font-mono text-[10px] text-[#505050]">{Math.round(playhead * 100)}%</div>
         </div>
-        {helperText ? <span className="text-[10px] uppercase tracking-[0.14em] text-[#565656]">{helperText}</span> : null}
+        <div className="mt-2 flex items-center justify-between gap-3">
+          <div className="flex flex-1 items-center gap-[5px] md:hidden">
+            {Array.from({ length: 16 }, (_, index) => {
+              const active = index < Math.round(playhead * 16);
+              return (
+                <div
+                  key={`mobile-${index}`}
+                  className="h-3 flex-1 rounded-[2px] transition-colors duration-150"
+                  style={{ background: active ? accent : "#343434", opacity: active ? 1 : 0.8 }}
+                />
+              );
+            })}
+          </div>
+          {helperText ? <span className="text-[10px] uppercase tracking-[0.14em] text-[#565656]">{helperText}</span> : null}
+        </div>
       </div>
 
       <audio
