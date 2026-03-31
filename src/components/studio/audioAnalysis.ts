@@ -33,6 +33,7 @@ export async function fetchEssentiaAnalysis(file: File) {
       energyPoints: getArrayLength((payload as Record<string, unknown> | null)?.energy),
       sections: getArrayLength((payload as Record<string, unknown> | null)?.sections),
     });
+    console.info("[Essentia] Raw payload", payload);
 
     if (!response.ok) {
       const message =
@@ -117,7 +118,7 @@ export function parseEssentiaPayload(params: {
 
   if (!duration || (!energy.length && !beats.length && !onsets.length && !sections.length && !waveform.length)) return null;
 
-  return {
+  const parsedAnalysis = {
     sourceLabel: fileName,
     audioUrl,
     waveform: waveform.length ? waveform : energy,
@@ -127,6 +128,18 @@ export function parseEssentiaPayload(params: {
     sections: sections.length ? sections : DEFAULT_EMPTY_SECTIONS.map((section) => ({ ...section, end: duration })),
     duration,
   } satisfies BeatJoinAnalysis;
+
+  console.info("[Essentia] Parsed analysis", {
+    sourceLabel: parsedAnalysis.sourceLabel,
+    duration: parsedAnalysis.duration,
+    waveformPoints: parsedAnalysis.waveform.length,
+    energyPoints: parsedAnalysis.energy.length,
+    beats: parsedAnalysis.beats,
+    onsets: parsedAnalysis.onsets,
+    sections: parsedAnalysis.sections,
+  });
+
+  return parsedAnalysis;
 }
 
 function normalizeSeries(value: unknown) {
