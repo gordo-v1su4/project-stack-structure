@@ -1,9 +1,9 @@
 "use client";
 
-import { startTransition, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { lerp, sv } from "../math";
+import { AudioPreview } from "../AudioPreview";
 import { ParamSlider } from "../ParamSlider";
-import { SolidWaveform } from "../SolidWaveform";
 import { UploadControl } from "../UploadControl";
 import type { BeatJoinAnalysis, BeatJoinSection, ShuffleMode } from "../types";
 
@@ -56,7 +56,10 @@ type BeatJoinTabProps = {
   onEnergyReactive: (v: boolean) => void;
   onLowEnergyRange: (v: number) => void;
   onHighEnergyRange: (v: number) => void;
-  onAnalysisChange: (analysis: BeatJoinAnalysis | null) => void;
+  analysisStatus: string;
+  analysisError: string | null;
+  isAnalyzing: boolean;
+  onAudioUpload: (files: File[]) => void | Promise<void>;
   onActiveClip: (i: number) => void;
 };
 
@@ -72,6 +75,9 @@ export function BeatJoinTab({
   lowEnergyRange,
   highEnergyRange,
   analysis,
+  analysisStatus,
+  analysisError,
+  isAnalyzing,
   clipOrder,
   shuffleMode,
   activeClip,
@@ -83,19 +89,15 @@ export function BeatJoinTab({
   onEnergyReactive,
   onLowEnergyRange,
   onHighEnergyRange,
-  onAnalysisChange,
+  onAudioUpload,
   onActiveClip,
 }: BeatJoinTabProps) {
-  const [analysisStatus, setAnalysisStatus] = useState(
-    analysis ? `Ready · ${analysis.sourceLabel}` : "Upload a song to unlock Beat Join."
-  );
-  const [analysisError, setAnalysisError] = useState<string | null>(null);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [previewPlayhead, setPreviewPlayhead] = useState(0);
 
   const hasAnalysis = analysis !== null;
   const duration = analysis?.duration ?? 0;
-  const waveformPoints = analysis?.waveform ?? [];
   const sections = analysis?.sections.length ? analysis.sections : DEFAULT_EMPTY_SECTIONS;
+  const displayPlayhead = hasAnalysis ? previewPlayhead : playhead;
   const beatPositions = useMemo(
     () =>
       duration > 0
@@ -140,51 +142,16 @@ export function BeatJoinTab({
     ]
   );
 
-  async function handleAudioUpload(file: File | null) {
-    if (!file) return;
-
-    setAnalysisError(null);
-    setAnalysisStatus(`Analyzing ${file.name}...`);
-    setIsAnalyzing(true);
-
-    try {
-      const [waveform, response] = await Promise.all([
-        extractWaveformPoints(file),
-        fetchEssentiaAnalysis(file),
-      ]);
-
-      const parsed = parseEssentiaPayload(response, file.name, waveform);
-
-      if (!parsed) {
-        throw new Error("The upload finished, but no usable beats/onsets/sections came back.");
-      }
-
-      startTransition(() => {
-        onAnalysisChange(parsed);
-        setAnalysisStatus(`Ready · ${parsed.sourceLabel}`);
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown analysis error";
-      setAnalysisError(message);
-      setAnalysisStatus("Upload a song to unlock Beat Join.");
-      onAnalysisChange(null);
-    } finally {
-      setIsAnalyzing(false);
-    }
-  }
-
   return (
     <>
       {hasAnalysis ? (
-        <SolidWaveform
-          points={waveformPoints}
-          playhead={playhead}
-          bpm={Math.round(deriveDisplayBpm(analysis?.beats ?? [], bpm))}
-          totalBars={8}
-          beatsPerBar={4}
-          accent="#c8900a"
-          label={`AUDIO TRACK · ${analysis?.sourceLabel ?? "TRACK"} — MASTER TIMELINE`}
-          height={110}
+        <AudioPreview
+          analysis={analysis}
+          bpmFallback={bpm}
+          title={analysis.sourceLabel}
+          subtitle="Audio Track · Master Timeline"
+          helperText="Click the waveform to seek. Toggle 2x to zoom into the current playhead."
+          onPlayheadChange={(nextPlayhead) => setPreviewPlayhead(nextPlayhead)}
         />
       ) : (
         <div className="border border-[#1e1e1e] rounded-[2px] bg-[#070707] p-4">
@@ -197,7 +164,7 @@ export function BeatJoinTab({
             disabled={isAnalyzing}
             status={analysisStatus}
             error={analysisError}
-            onFiles={(files) => handleAudioUpload(files[0] ?? null)}
+            onFiles={onAudioUpload}
           />
         </div>
       )}
@@ -216,7 +183,7 @@ export function BeatJoinTab({
               detail=""
               actionLabel={isAnalyzing ? "Processing..." : "Replace Audio"}
               disabled={isAnalyzing}
-              onFiles={(files) => handleAudioUpload(files[0] ?? null)}
+              onFiles={onAudioUpload}
             />
             <button
               type="button"
@@ -318,7 +285,7 @@ export function BeatJoinTab({
               })}
 
               <MarkerGrid beatPositions={beatPositions} />
-              <div className="absolute inset-y-0 w-[1px] bg-[#e05c00]" style={{ left: `${playhead * 100}%` }} />
+              <div className="absolute inset-y-0 w-[1px] bg-[#e05c00]" style={{ left: `${displayPlayhead * 100}%` }} />
             </div>
           </div>
         ) : (
@@ -487,135 +454,6 @@ function buildArrangementSegments(params: {
   });
 }
 
-async function fetchEssentiaAnalysis(file: File) {
-  const formData = new FormData();
-  formData.append("file", file);
-
-  const response = await fetch("/api/essentia/full", {
-    method: "POST",
-    body: formData,
-  });
-
-  const payload = (await response.json()) as unknown;
-
-  if (!response.ok) {
-    const message =
-      payload && typeof payload === "object" && "error" in payload && typeof payload.error === "string"
-        ? payload.error
-        : `Analysis failed with ${response.status}`;
-    throw new Error(message);
-  }
-
-  return payload;
-}
-
-async function extractWaveformPoints(file: File, sampleCount = 900) {
-  const buffer = await file.arrayBuffer();
-  const context = new AudioContext();
-
-  try {
-    const decoded = await context.decodeAudioData(buffer.slice(0));
-    const channelCount = decoded.numberOfChannels || 1;
-    const channelData = Array.from({ length: channelCount }, (_, index) => decoded.getChannelData(index));
-    const blockSize = Math.max(1, Math.floor(decoded.length / sampleCount));
-
-    const peaks = Array.from({ length: sampleCount }, (_, blockIndex) => {
-      const start = blockIndex * blockSize;
-      const end = Math.min(decoded.length, start + blockSize);
-      let peak = 0;
-
-      for (let frame = start; frame < end; frame += 1) {
-        let mixed = 0;
-        for (const channel of channelData) mixed += Math.abs(channel[frame] ?? 0);
-        peak = Math.max(peak, mixed / channelCount);
-      }
-
-      return clamp(peak, 0, 1);
-    });
-    const peakMax = Math.max(...peaks, 0.0001);
-
-    return peaks.map((peak) => clamp(Math.pow(peak / peakMax, 0.72), 0, 1));
-  } finally {
-    void context.close();
-  }
-}
-
-function parseEssentiaPayload(payload: unknown, fileName: string, waveform: number[]): BeatJoinAnalysis | null {
-  if (!payload || typeof payload !== "object") return null;
-
-  const source = payload as Record<string, unknown>;
-  const energy = normalizeSeries(findValue(source, [["energy"], ["energy", "curve"], ["analysis", "energy"], ["analysis", "energy", "curve"]]));
-  const beats = normalizeTimes(findValue(source, [["beats"], ["analysis", "beats"]]));
-  const onsets = normalizeTimes(findValue(source, [["onsets"], ["analysis", "onsets"]]));
-  const rawSections = findValue(source, [["sections"], ["structure", "sections"], ["analysis", "sections"], ["analysis", "structure", "sections"]]);
-  const duration =
-    getNumericValue(source.duration) ??
-    getNumericValue(findValue(source, [["analysis", "duration"]])) ??
-    lastValue(onsets) ??
-    lastValue(beats) ??
-    getLastSectionEnd(rawSections);
-  const sections = normalizeSections(rawSections, duration);
-
-  if (!duration || (!energy.length && !beats.length && !onsets.length && !sections.length)) return null;
-
-  return {
-    sourceLabel: fileName,
-    waveform: waveform.length ? waveform : energy,
-    energy,
-    beats,
-    onsets,
-    sections: sections.length ? sections : DEFAULT_EMPTY_SECTIONS.map((section) => ({ ...section, end: duration })),
-    duration,
-  };
-}
-
-function normalizeSeries(value: unknown) {
-  if (!Array.isArray(value)) return [];
-
-  const numbers = value
-    .map((entry) => (typeof entry === "number" ? entry : Number(entry)))
-    .filter((entry) => Number.isFinite(entry));
-
-  if (!numbers.length) return [];
-
-  const maxValue = Math.max(...numbers);
-  const scale = maxValue > 1 ? maxValue : 1;
-  return numbers.map((entry) => clamp(entry / scale, 0, 1));
-}
-
-function normalizeTimes(value: unknown) {
-  if (!Array.isArray(value)) return [];
-
-  return value
-    .map((entry) => (typeof entry === "number" ? entry : Number(entry)))
-    .filter((entry) => Number.isFinite(entry) && entry >= 0)
-    .sort((left, right) => left - right);
-}
-
-function normalizeSections(value: unknown, duration: number): BeatJoinSection[] {
-  const items = Array.isArray(value) ? value : [];
-  if (!items.length || duration <= 0) return [];
-
-  const sections: BeatJoinSection[] = [];
-
-  for (const item of items) {
-    if (!item || typeof item !== "object") continue;
-    const section = item as Record<string, unknown>;
-    const start = getNumericValue(section.start);
-    const end = getNumericValue(section.end);
-    if (start === null || end === null || end <= start) continue;
-
-    sections.push({
-      label: String(section.label ?? section.name ?? "Section"),
-      start: clamp(start, 0, duration),
-      end: clamp(end, 0, duration),
-      energy: getNumericValue(section.energy) ?? undefined,
-    });
-  }
-
-  return sections.sort((left, right) => left.start - right.start);
-}
-
 function createCandidate(
   source: CutCandidate["source"],
   time: number,
@@ -717,12 +555,6 @@ function medianInterval(values: number[]) {
   return sorted[Math.floor(sorted.length / 2)] ?? null;
 }
 
-function deriveDisplayBpm(beats: number[], fallback: number) {
-  const interval = medianInterval(beats);
-  if (!interval) return fallback;
-  return 60 / interval;
-}
-
 function classifyEnergyTone(
   energy: number,
   lowEnergyRange: number,
@@ -748,42 +580,6 @@ function abbreviateSectionLabel(label: string) {
   if (normalized.startsWith("outro")) return "O";
   if (normalized.startsWith("drop")) return "Dr";
   return label.slice(0, 3);
-}
-
-function findValue(source: Record<string, unknown>, paths: string[][]) {
-  for (const path of paths) {
-    let current: unknown = source;
-    for (const key of path) {
-      if (!current || typeof current !== "object") {
-        current = undefined;
-        break;
-      }
-      current = (current as Record<string, unknown>)[key];
-    }
-    if (current !== undefined) return current;
-  }
-  return undefined;
-}
-
-function getNumericValue(value: unknown) {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string" && value.trim()) {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed)) return parsed;
-  }
-  return null;
-}
-
-function getLastSectionEnd(value: unknown) {
-  if (!Array.isArray(value) || !value.length) return 0;
-  const ends = value
-    .map((entry) => (entry && typeof entry === "object" ? getNumericValue((entry as Record<string, unknown>).end) : null))
-    .filter((entry): entry is number => entry !== null);
-  return ends.length ? Math.max(...ends) : 0;
-}
-
-function lastValue(values: number[]) {
-  return values.length ? values[values.length - 1] ?? 0 : 0;
 }
 
 function clamp(value: number, min: number, max: number) {

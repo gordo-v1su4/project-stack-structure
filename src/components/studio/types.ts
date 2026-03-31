@@ -33,6 +33,7 @@ export interface BeatJoinSection {
 
 export interface BeatJoinAnalysis {
   sourceLabel: string;
+  audioUrl: string;
   waveform: number[];
   energy: number[];
   beats: number[];

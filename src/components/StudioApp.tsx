@@ -2,6 +2,7 @@
 
 import { startTransition, useEffect, useMemo, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
+import { extractWaveformData, fetchEssentiaAnalysis, parseEssentiaPayload } from "./studio/audioAnalysis";
 import { NAV } from "./studio/constants";
 import { prepareVideoSources } from "./studio/mediaUpload";
 import { ProcessActionBar } from "./studio/ProcessActionBar";
@@ -17,7 +18,7 @@ import { StudioRightPanel } from "./studio/StudioRightPanel";
 import { StudioSidebar } from "./studio/StudioSidebar";
 import { StudioStatusBar } from "./studio/StudioStatusBar";
 import { buildShuffleQueue } from "./studio/shuffleQueue";
-import { buildBeatSegments, buildSourceClipSpans, buildStandardSegments } from "./studio/sourceTimeline";
+import { buildAudioDrivenSegments, buildBeatSegments, buildSourceClipSpans, buildStandardSegments } from "./studio/sourceTimeline";
 import type {
   BeatJoinAnalysis,
   ColorGradient,
@@ -42,10 +43,14 @@ export default function StudioApp() {
   const [barsPerSeg, setBarsPerSeg] = useState(2);
   const [bpm] = useState(130);
   const [sensitivity, setSensitivity] = useState(68);
+  const [beatSplitMode, setBeatSplitMode] = useState<"beats" | "onsets">("beats");
   const [videoSources, setVideoSources] = useState<UploadedVideoSource[]>([]);
   const [videoStatus, setVideoStatus] = useState("Upload one or more video clips to begin.");
   const [videoError, setVideoError] = useState<string | null>(null);
   const [isPreparingVideos, setIsPreparingVideos] = useState(false);
+  const [audioStatus, setAudioStatus] = useState("Upload a song to unlock beat sync.");
+  const [audioError, setAudioError] = useState<string | null>(null);
+  const [isPreparingAudio, setIsPreparingAudio] = useState(false);
 
   const [shuffleMode, setShuffleMode] = useState<ShuffleMode>("motion");
   const [minScore, setMinScore] = useState(0.5);
@@ -83,6 +88,14 @@ export default function StudioApp() {
   }, []);
 
   useEffect(() => {
+    return () => {
+      if (beatJoinAnalysis?.audioUrl) {
+        URL.revokeObjectURL(beatJoinAnalysis.audioUrl);
+      }
+    };
+  }, [beatJoinAnalysis]);
+
+  useEffect(() => {
     const id = setInterval(() => {
       setGpu((g) => Math.max(10, Math.min(48, g + (Math.random() - 0.5) * 3)));
       setCpu((c) => Math.max(5, Math.min(28, c + (Math.random() - 0.5) * 2)));
@@ -93,7 +106,19 @@ export default function StudioApp() {
 
   const sourceClips = useMemo(() => buildSourceClipSpans(videoSources), [videoSources]);
   const splitSegments = useMemo(() => buildStandardSegments(sourceClips, clipDur), [sourceClips, clipDur]);
-  const beatSplitSegments = useMemo(() => buildBeatSegments(sourceClips, bpm, barsPerSeg), [sourceClips, bpm, barsPerSeg]);
+  const beatSplitSegments = useMemo(() => {
+    if (beatJoinAnalysis) {
+      return buildAudioDrivenSegments({
+        sourceClips,
+        analysis: beatJoinAnalysis,
+        mode: beatSplitMode,
+        targetEvents: barsPerSeg,
+        density: sensitivity / 100,
+      });
+    }
+
+    return buildBeatSegments(sourceClips, bpm, barsPerSeg);
+  }, [sourceClips, beatJoinAnalysis, beatSplitMode, barsPerSeg, sensitivity, bpm]);
   const beatSplitClipCount = beatSplitSegments.length;
   const joinClips = useMemo(
     () =>
@@ -160,6 +185,55 @@ export default function StudioApp() {
       setVideoStatus("Upload one or more video clips to begin.");
     } finally {
       setIsPreparingVideos(false);
+    }
+  }
+
+  async function handleAudioUpload(files: File[]) {
+    const file = files[0];
+    if (!file) return;
+
+    const previousAudioUrl = beatJoinAnalysis?.audioUrl;
+    const nextAudioUrl = URL.createObjectURL(file);
+
+    setAudioError(null);
+    setIsPreparingAudio(true);
+    setAudioStatus(`Analyzing ${file.name}...`);
+
+    try {
+      const [{ waveform, duration }, response] = await Promise.all([
+        extractWaveformData(file),
+        fetchEssentiaAnalysis(file),
+      ]);
+      const parsed = parseEssentiaPayload({
+        payload: response,
+        fileName: file.name,
+        waveform,
+        waveformDuration: duration,
+        audioUrl: nextAudioUrl,
+      });
+
+      if (!parsed) {
+        throw new Error("The upload finished, but no usable beats/onsets/sections came back.");
+      }
+
+      startTransition(() => {
+        setBeatJoinAnalysis(parsed);
+        setAudioStatus(`Ready · ${parsed.sourceLabel}`);
+      });
+
+      if (previousAudioUrl) {
+        URL.revokeObjectURL(previousAudioUrl);
+      }
+    } catch (error) {
+      URL.revokeObjectURL(nextAudioUrl);
+      const message = error instanceof Error ? error.message : "Unknown analysis error";
+      setAudioError(message);
+      setAudioStatus(beatJoinAnalysis ? `Ready · ${beatJoinAnalysis.sourceLabel}` : "Upload a song to unlock beat sync.");
+      if (!beatJoinAnalysis) {
+        setBeatJoinAnalysis(null);
+      }
+    } finally {
+      setIsPreparingAudio(false);
     }
   }
 
@@ -298,6 +372,11 @@ export default function StudioApp() {
                 playhead={playhead}
                 bpm={bpm}
                 barsPerSeg={barsPerSeg}
+                splitMode={beatSplitMode}
+                analysis={beatJoinAnalysis}
+                audioStatus={audioStatus}
+                audioError={audioError}
+                isPreparingAudio={isPreparingAudio}
                 videoSources={videoSources}
                 videoStatus={videoStatus}
                 videoError={videoError}
@@ -306,9 +385,11 @@ export default function StudioApp() {
                 segments={beatSplitSegments}
                 sensitivity={sensitivity}
                 activeClip={beatActiveClip}
+                onAudioUpload={handleAudioUpload}
                 onVideoUpload={handleVideoUpload}
                 onBarsPerSeg={setBarsPerSeg}
                 onSensitivity={setSensitivity}
+                onSplitMode={setBeatSplitMode}
                 onActiveClip={setActiveClip}
               />
             )}
@@ -362,6 +443,9 @@ export default function StudioApp() {
                 lowEnergyRange={lowEnergyRange}
                 highEnergyRange={highEnergyRange}
                 analysis={beatJoinAnalysis}
+                analysisStatus={audioStatus}
+                analysisError={audioError}
+                isAnalyzing={isPreparingAudio}
                 clipOrder={shuffleQueue}
                 shuffleMode={shuffleMode}
                 activeClip={beatActiveClip}
@@ -373,7 +457,7 @@ export default function StudioApp() {
                 onEnergyReactive={setEnergyReactive}
                 onLowEnergyRange={(value) => setLowEnergyRange(Math.min(value, highEnergyRange - 0.05))}
                 onHighEnergyRange={(value) => setHighEnergyRange(Math.max(value, lowEnergyRange + 0.05))}
-                onAnalysisChange={setBeatJoinAnalysis}
+                onAudioUpload={handleAudioUpload}
                 onActiveClip={setActiveClip}
               />
             )}

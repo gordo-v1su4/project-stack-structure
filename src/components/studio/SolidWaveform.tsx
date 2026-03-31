@@ -9,10 +9,14 @@ type SolidWaveformProps = {
   bpm?: number;
   beatsPerBar?: number;
   totalBars?: number;
+  beatTimes?: number[];
+  durationSeconds?: number;
   accent?: string;
   height?: number;
   label?: string;
   showRuler?: boolean;
+  zoom?: 1 | 2;
+  onSeek?: (nextPlayhead: number) => void;
 };
 
 export function SolidWaveform({
@@ -21,10 +25,14 @@ export function SolidWaveform({
   bpm = 130,
   beatsPerBar = 4,
   totalBars = 8,
+  beatTimes,
+  durationSeconds,
   accent = "#e05c00",
   height = 100,
   label = "SOURCE",
   showRuler = true,
+  zoom = 1,
+  onSeek,
 }: SolidWaveformProps) {
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -32,9 +40,29 @@ export function SolidWaveform({
   const rulerH = showRuler ? 22 : 0;
   const waveH = height - rulerH;
   const canvasWidth = Math.max(1, width);
-  const ph = playhead * canvasWidth;
-  const totalBeats = totalBars * beatsPerBar;
-
+  const derivedBeatTimes = beatTimes?.length
+    ? beatTimes.filter((time) => Number.isFinite(time) && time >= 0 && time <= Math.max(durationSeconds ?? 0, 0.001))
+    : [];
+  const totalBeats = derivedBeatTimes.length || totalBars * beatsPerBar;
+  const resolvedDuration = durationSeconds && durationSeconds > 0
+    ? durationSeconds
+    : totalBars * beatsPerBar * (60 / Math.max(1, bpm));
+  const resolvedZoom = zoom === 2 ? 2 : 1;
+  const resolvedBarCount = derivedBeatTimes.length
+    ? Math.max(1, Math.ceil(derivedBeatTimes.length / beatsPerBar))
+    : totalBars;
+  const visibleDuration = resolvedDuration / resolvedZoom;
+  const playheadTime = playhead * resolvedDuration;
+  const windowStart = resolvedZoom === 1
+    ? 0
+    : clamp(
+        playheadTime - visibleDuration / 2,
+        0,
+        Math.max(0, resolvedDuration - visibleDuration)
+      );
+  const windowEnd = Math.min(resolvedDuration, windowStart + visibleDuration);
+  const ph = projectTimeToX(playheadTime, windowStart, windowEnd, canvasWidth);
+  const labelStep = resolvedBarCount > 96 ? 8 : resolvedBarCount > 48 ? 4 : resolvedBarCount > 24 ? 2 : 1;
   useEffect(() => {
     const node = wrapperRef.current;
     if (!node) return;
@@ -89,8 +117,10 @@ export function SolidWaveform({
     const innerHeight = Math.max(centerY - 3, 1);
 
     for (let x = 0; x < canvasWidth; x += 1) {
-      const startIndex = Math.floor((x / canvasWidth) * points.length);
-      const endIndex = Math.max(startIndex + 1, Math.floor(((x + 1) / canvasWidth) * points.length));
+      const sampleStart = windowStart + (x / canvasWidth) * visibleDuration;
+      const sampleEnd = windowStart + ((x + 1) / canvasWidth) * visibleDuration;
+      const startIndex = Math.floor((sampleStart / resolvedDuration) * points.length);
+      const endIndex = Math.max(startIndex + 1, Math.floor((sampleEnd / resolvedDuration) * points.length));
       let min = 1;
       let max = -1;
 
@@ -112,13 +142,28 @@ export function SolidWaveform({
       ctx.fillStyle = isAhead ? accentHighlight : trailHighlight;
       ctx.fillRect(x, Math.max(1, center - 0.75), 1, Math.max(1, barHeight * 0.14));
     }
-  }, [waveH, ph, accent, points, canvasWidth]);
+  }, [waveH, ph, accent, points, canvasWidth, resolvedDuration, visibleDuration, windowStart]);
+
+  function handleSeek(clientX: number) {
+    if (!onSeek || !wrapperRef.current) return;
+    const rect = wrapperRef.current.getBoundingClientRect();
+    const ratio = clamp((clientX - rect.left) / Math.max(rect.width, 1), 0, 1);
+    const nextTime = windowStart + ratio * visibleDuration;
+    onSeek(clamp(nextTime / Math.max(resolvedDuration, 0.001), 0, 1));
+  }
 
   return (
-    <div ref={wrapperRef} className="relative border border-[#1e1e1e] rounded-[2px] bg-[#070707] overflow-hidden" style={{ height }}>
-      <div className="absolute top-[3px] left-[8px] text-[9px] uppercase tracking-[0.18em] text-[#3a3a3a] z-10 pointer-events-none">
-        {label}
-      </div>
+    <div
+      ref={wrapperRef}
+      className={`relative border border-[#1e1e1e] rounded-[2px] bg-[#070707] overflow-hidden ${onSeek ? "cursor-pointer" : ""}`}
+      style={{ height }}
+      onPointerDown={(event) => handleSeek(event.clientX)}
+    >
+      {label ? (
+        <div className="absolute top-[3px] left-[8px] text-[9px] uppercase tracking-[0.18em] text-[#3a3a3a] z-10 pointer-events-none">
+          {label}
+        </div>
+      ) : null}
 
       <canvas ref={canvasRef} className="absolute inset-x-0 w-full" style={{ top: rulerH, height: waveH }} />
 
@@ -129,7 +174,9 @@ export function SolidWaveform({
         preserveAspectRatio="none"
       >
         {Array.from({ length: totalBeats + 1 }, (_, i) => {
-          const x = (i / totalBeats) * canvasWidth;
+          const time = derivedBeatTimes.length ? (i === totalBeats ? resolvedDuration : (derivedBeatTimes[i] ?? 0)) : (i / totalBeats) * resolvedDuration;
+          if (time < windowStart || time > windowEnd) return null;
+          const x = projectTimeToX(time, windowStart, windowEnd, canvasWidth);
           const isBar = i % beatsPerBar === 0;
           return (
             <line
@@ -155,7 +202,9 @@ export function SolidWaveform({
         >
           <svg className="w-full h-full" viewBox={`0 0 ${canvasWidth} ${rulerH * 2}`} preserveAspectRatio="none">
             {Array.from({ length: totalBeats }, (_, i) => {
-              const x = (i / totalBeats) * canvasWidth;
+              const time = derivedBeatTimes.length ? (derivedBeatTimes[i] ?? 0) : (i / totalBeats) * resolvedDuration;
+              if (time < windowStart || time > windowEnd) return null;
+              const x = projectTimeToX(time, windowStart, windowEnd, canvasWidth);
               const bar = Math.floor(i / beatsPerBar) + 1;
               const beat = (i % beatsPerBar) + 1;
               const isBarStart = beat === 1;
@@ -169,7 +218,7 @@ export function SolidWaveform({
                     stroke={isBarStart ? "#2a2a2a" : "#181818"}
                     strokeWidth={isBarStart ? 1.2 : 0.6}
                   />
-                  {isBarStart && (
+                  {isBarStart && bar % labelStep === 1 && (
                     <text
                       x={x + 4}
                       y={rulerH * 1.4}
@@ -181,7 +230,7 @@ export function SolidWaveform({
                       {bar}
                     </text>
                   )}
-                  {!isBarStart && (
+                  {!isBarStart && resolvedZoom === 2 && (
                     <text x={x + 3} y={rulerH * 1.5} fontSize={8} fill="#282828" fontFamily="monospace">
                       {bar}-{beat}
                     </text>
@@ -199,12 +248,19 @@ export function SolidWaveform({
           BPM <span className="text-[#4a4a4a]">{bpm}</span>
         </span>
         <span>
-          BARS <span className="text-[#4a4a4a]">{totalBars}</span>
+          BARS <span className="text-[#4a4a4a]">{resolvedBarCount}</span>
         </span>
-        <span className="text-[#4a4a4a]">{fmt(playhead * (totalBars * beatsPerBar * (60 / bpm)))}</span>
+        <span className="text-[#4a4a4a]">
+          {fmt(playhead * resolvedDuration)} / {fmt(resolvedDuration)}
+        </span>
       </div>
     </div>
   );
+}
+
+function projectTimeToX(time: number, windowStart: number, windowEnd: number, width: number) {
+  const windowDuration = Math.max(windowEnd - windowStart, 0.001);
+  return ((time - windowStart) / windowDuration) * width;
 }
 
 function hexToRgba(hex: string, alpha: number) {
@@ -222,4 +278,8 @@ function hexToRgba(hex: string, alpha: number) {
 
 function clampPoint(value: number) {
   return Math.max(0, Math.min(1, Math.abs(value)));
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
 }
