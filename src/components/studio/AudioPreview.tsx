@@ -1,13 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { fmt } from "./math";
-import { AUDIO_METER_EVENT } from "./RealtimeMeters";
 import { SolidWaveform } from "./SolidWaveform";
 import type { BeatJoinAnalysis } from "./types";
-
-let sharedAudioContext: AudioContext | null = null;
-const mediaSourceCache = new WeakMap<HTMLMediaElement, MediaElementAudioSourceNode>();
 
 type AudioPreviewProps = {
   analysis: BeatJoinAnalysis;
@@ -31,85 +27,12 @@ export function AudioPreview({
   onPlayheadChange,
 }: AudioPreviewProps) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
-  const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null);
-  const meterFrameRef = useRef<number | null>(null);
-  const frequencyDataRef = useRef<Uint8Array<ArrayBuffer> | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [audioTime, setAudioTime] = useState(0);
   const [zoom, setZoom] = useState<1 | 2>(1);
   const duration = Math.max(analysis.duration, 0.001);
   const playhead = clamp(audioTime / duration, 0, 1);
   const displayBpm = Math.round(deriveDisplayBpm(analysis.beats, bpmFallback));
-
-  useEffect(() => {
-    const audioElement = audioRef.current;
-    if (!audioElement) return;
-
-    const audioContext = sharedAudioContext ?? new AudioContext();
-    sharedAudioContext = audioContext;
-
-    const analyser = audioContext.createAnalyser();
-    analyser.fftSize = 256;
-    analyser.smoothingTimeConstant = 0.78;
-
-    const sourceNode = mediaSourceCache.get(audioElement) ?? audioContext.createMediaElementSource(audioElement);
-    mediaSourceCache.set(audioElement, sourceNode);
-    sourceNode.connect(analyser);
-    analyser.connect(audioContext.destination);
-
-    audioContextRef.current = audioContext;
-    analyserRef.current = analyser;
-    sourceNodeRef.current = sourceNode;
-    frequencyDataRef.current = new Uint8Array(new ArrayBuffer(analyser.frequencyBinCount));
-
-    return () => {
-      if (meterFrameRef.current !== null) {
-        window.cancelAnimationFrame(meterFrameRef.current);
-      }
-      dispatchMeterBins(Array.from({ length: 10 }, () => 0));
-      sourceNode.disconnect(analyser);
-      analyser.disconnect();
-      audioContextRef.current = null;
-      analyserRef.current = null;
-      sourceNodeRef.current = null;
-      frequencyDataRef.current = null;
-    };
-  }, [analysis.audioUrl]);
-
-  useEffect(() => {
-    if (!isPlaying) {
-      if (meterFrameRef.current !== null) {
-        window.cancelAnimationFrame(meterFrameRef.current);
-        meterFrameRef.current = null;
-      }
-      dispatchMeterBins(Array.from({ length: 10 }, () => 0));
-      return;
-    }
-
-    const analyser = analyserRef.current;
-    const audioContext = audioContextRef.current;
-    const frequencyData = frequencyDataRef.current;
-    if (!analyser || !audioContext || !frequencyData) return;
-
-    void audioContext.resume();
-
-    const drawMeters = () => {
-      analyser.getByteFrequencyData(frequencyData);
-      dispatchMeterBins(compressFrequencyBins(frequencyData, 10));
-      meterFrameRef.current = window.requestAnimationFrame(drawMeters);
-    };
-
-    meterFrameRef.current = window.requestAnimationFrame(drawMeters);
-
-    return () => {
-      if (meterFrameRef.current !== null) {
-        window.cancelAnimationFrame(meterFrameRef.current);
-        meterFrameRef.current = null;
-      }
-    };
-  }, [isPlaying]);
 
   function syncAudioTime(nextTime: number) {
     const clampedTime = clamp(nextTime, 0, duration);
@@ -165,29 +88,23 @@ export function AudioPreview({
         </div>
       </div>
 
-      <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_232px] xl:items-start">
-        <SolidWaveform
-          points={analysis.waveform}
-          playhead={playhead}
-          bpm={displayBpm}
-          beatTimes={analysis.beats}
-          durationSeconds={duration}
-          beatsPerBar={4}
-          accent={accent}
-          height={height}
-          label=""
-          zoom={zoom}
-          onSeek={seekToPlayhead}
-        />
+      <SolidWaveform
+        points={analysis.waveform}
+        playhead={playhead}
+        bpm={displayBpm}
+        beatTimes={analysis.beats}
+        durationSeconds={duration}
+        beatsPerBar={4}
+        accent={accent}
+        height={height}
+        label=""
+        zoom={zoom}
+        onSeek={seekToPlayhead}
+      />
 
-        <div className="border border-[#1b1b1b] rounded-[3px] bg-[#070707] px-3 py-3">
-          <div className="flex items-center justify-between gap-3">
-            <div className="text-[9px] uppercase tracking-[0.22em] text-[#4e4e4e]">Transport</div>
-            <div className="font-mono text-[10px] text-[#868686]">
-              {fmt(audioTime)} / {fmt(duration)}
-            </div>
-          </div>
-          <div className="mt-3 flex items-center gap-2">
+      <div className="border border-[#1b1b1b] rounded-[3px] bg-[#070707] px-3 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => void togglePlayback()}
@@ -214,20 +131,23 @@ export function AudioPreview({
               {zoom}x
             </button>
           </div>
-          <div className="mt-3 grid grid-cols-3 gap-2">
-            {[
-              ["Beats", String(analysis.beats.length)],
-              ["Onsets", String(analysis.onsets.length)],
-              ["Sections", String(analysis.sections.length)],
-            ].map(([label, value]) => (
-              <div key={label} className="border border-[#171717] rounded-[2px] bg-[#0b0b0b] px-2 py-2">
-                <div className="text-[8px] uppercase tracking-[0.18em] text-[#494949]">{label}</div>
-                <div className="mt-1 font-mono text-[12px] text-[#bfbfbf]">{value}</div>
-              </div>
-            ))}
+          <div className="font-mono text-[10px] text-[#868686]">
+            {fmt(audioTime)} / {fmt(duration)}
           </div>
-          {helperText ? <div className="mt-3 text-[10px] uppercase tracking-[0.14em] text-[#5a5a5a]">{helperText}</div> : null}
         </div>
+        <div className="mt-3 flex flex-wrap items-stretch gap-2">
+          {[
+            ["Beats", String(analysis.beats.length)],
+            ["Onsets", String(analysis.onsets.length)],
+            ["Sections", String(analysis.sections.length)],
+          ].map(([label, value]) => (
+            <div key={label} className="min-w-[72px] border border-[#171717] rounded-[2px] bg-[#0b0b0b] px-2 py-2">
+              <div className="text-[8px] uppercase tracking-[0.18em] text-[#494949]">{label}</div>
+              <div className="mt-1 font-mono text-[12px] text-[#bfbfbf]">{value}</div>
+            </div>
+          ))}
+        </div>
+        {helperText ? <div className="mt-3 text-[10px] uppercase tracking-[0.14em] text-[#5a5a5a]">{helperText}</div> : null}
       </div>
 
       <audio
@@ -265,20 +185,4 @@ function deriveDisplayBpm(beats: number[], fallback: number) {
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
-}
-
-function compressFrequencyBins(data: Uint8Array, outputBins: number) {
-  return Array.from({ length: outputBins }, (_, binIndex) => {
-    const start = Math.floor((binIndex / outputBins) * data.length);
-    const end = Math.max(start + 1, Math.floor(((binIndex + 1) / outputBins) * data.length));
-    let total = 0;
-    for (let index = start; index < end; index += 1) {
-      total += data[index] ?? 0;
-    }
-    return clamp(total / Math.max(1, end - start) / 255, 0, 1);
-  });
-}
-
-function dispatchMeterBins(bins: number[]) {
-  window.dispatchEvent(new CustomEvent(AUDIO_METER_EVENT, { detail: { bins } }));
 }
