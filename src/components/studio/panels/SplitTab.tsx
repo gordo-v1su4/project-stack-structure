@@ -95,6 +95,7 @@ export function SplitTab({
             detail="Drag video clips here or click to choose files. We will stitch them back-to-back, grab thumbnails, and build the split source timeline."
             actionLabel={isPreparingVideos ? "Processing Videos..." : "Upload Video Clips"}
             disabled={isPreparingVideos}
+            isProcessing={isPreparingVideos}
             status={videoStatus}
             error={videoError}
             onFiles={onVideoUpload}

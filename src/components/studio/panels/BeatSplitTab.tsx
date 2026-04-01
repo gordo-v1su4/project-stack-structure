@@ -123,6 +123,7 @@ export function BeatSplitTab({
             detail="Drop one or more video clips here. We will stitch them, extract thumbnails, and then slice the combined source using beat split logic."
             actionLabel={isPreparingVideos ? "Processing Videos..." : "Upload Video Clips"}
             disabled={isPreparingVideos}
+            isProcessing={isPreparingVideos}
             status={videoStatus}
             error={videoError}
             onFiles={onVideoUpload}
@@ -176,6 +177,7 @@ export function BeatSplitTab({
             detail="Upload the same audio track here or in Beat Join. Beat mode and onset mode both use that analysis to decide where the cuts land."
             actionLabel={isPreparingAudio ? "Processing Audio..." : "Upload Audio for Sync"}
             disabled={isPreparingAudio}
+            isProcessing={isPreparingAudio}
             status={audioStatus}
             error={audioError}
             onFiles={onAudioUpload}

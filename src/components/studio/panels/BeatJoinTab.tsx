@@ -162,6 +162,7 @@ export function BeatJoinTab({
             detail="Drag in audio or click to choose a song. We will call Essentia, read beats/onsets/sections, and then draw the waveform from that file."
             actionLabel={isAnalyzing ? "Processing Audio..." : "Upload Audio"}
             disabled={isAnalyzing}
+            isProcessing={isAnalyzing}
             status={analysisStatus}
             error={analysisError}
             onFiles={onAudioUpload}

@@ -9,6 +9,7 @@ type UploadControlProps = {
   actionLabel: string;
   multiple?: boolean;
   disabled?: boolean;
+  isProcessing?: boolean;
   status?: string;
   error?: string | null;
   variant?: "surface" | "button";
@@ -22,6 +23,7 @@ export function UploadControl({
   actionLabel,
   multiple = false,
   disabled = false,
+  isProcessing = false,
   status,
   error,
   variant = "surface",
@@ -84,8 +86,19 @@ export function UploadControl({
     >
       <div className="text-[13px] text-[#b0b0b0] mb-2">{title}</div>
       <div className="text-[10px] uppercase tracking-[0.16em] text-[#555]">{detail}</div>
-      <div className="mt-4 inline-flex items-center justify-center rounded-[2px] border border-[#1f1f1f] bg-[#101010] px-3 py-[6px] text-[10px] uppercase tracking-[0.14em] text-[#c7c7c7]">
-        {actionLabel}
+      <div className="mt-4 inline-flex min-w-[184px] flex-col items-center justify-center rounded-[2px] border border-[#1f1f1f] bg-[#101010] px-3 py-[6px]">
+        <div className="text-[10px] uppercase tracking-[0.14em] text-[#c7c7c7]">{actionLabel}</div>
+        {isProcessing ? (
+          <div className="mt-3 flex w-full items-end gap-[4px] px-[2px]">
+            {Array.from({ length: 14 }, (_, index) => (
+              <div
+                key={index}
+                className="upload-segment h-4 flex-1 rounded-[2px] bg-[#353535]"
+                style={{ animationDelay: `${index * 90}ms` }}
+              />
+            ))}
+          </div>
+        ) : null}
       </div>
       {status ? <div className="mt-3 text-[10px] font-mono text-[#727272]">{status}</div> : null}
       {error ? <div className="mt-2 text-[10px] text-[#b96c43]">{error}</div> : null}
@@ -101,6 +114,26 @@ export function UploadControl({
           event.target.value = "";
         }}
       />
+      {isProcessing ? (
+        <style jsx>{`
+          @keyframes upload-segment-sweep {
+            0%, 100% {
+              background: #353535;
+              opacity: 0.55;
+              transform: translateY(0);
+            }
+            40% {
+              background: #e05c00;
+              opacity: 1;
+              transform: translateY(-1px);
+            }
+          }
+
+          .upload-segment {
+            animation: upload-segment-sweep 1.4s linear infinite;
+          }
+        `}</style>
+      ) : null}
     </label>
   );
 }
