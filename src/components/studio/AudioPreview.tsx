@@ -6,6 +6,9 @@ import { AUDIO_METER_EVENT } from "./RealtimeMeters";
 import { SolidWaveform } from "./SolidWaveform";
 import type { BeatJoinAnalysis } from "./types";
 
+let sharedAudioContext: AudioContext | null = null;
+const mediaSourceCache = new WeakMap<HTMLMediaElement, MediaElementAudioSourceNode>();
+
 type AudioPreviewProps = {
   analysis: BeatJoinAnalysis;
   bpmFallback: number;
@@ -23,8 +26,8 @@ export function AudioPreview({
   title,
   subtitle,
   helperText,
-  accent = "#c8900a",
-  height = 110,
+  accent = "#d4ae1d",
+  height = 118,
   onPlayheadChange,
 }: AudioPreviewProps) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -44,12 +47,15 @@ export function AudioPreview({
     const audioElement = audioRef.current;
     if (!audioElement) return;
 
-    const audioContext = new AudioContext();
+    const audioContext = sharedAudioContext ?? new AudioContext();
+    sharedAudioContext = audioContext;
+
     const analyser = audioContext.createAnalyser();
     analyser.fftSize = 256;
     analyser.smoothingTimeConstant = 0.78;
 
-    const sourceNode = audioContext.createMediaElementSource(audioElement);
+    const sourceNode = mediaSourceCache.get(audioElement) ?? audioContext.createMediaElementSource(audioElement);
+    mediaSourceCache.set(audioElement, sourceNode);
     sourceNode.connect(analyser);
     analyser.connect(audioContext.destination);
 
@@ -63,9 +69,8 @@ export function AudioPreview({
         window.cancelAnimationFrame(meterFrameRef.current);
       }
       dispatchMeterBins(Array.from({ length: 10 }, () => 0));
-      sourceNode.disconnect();
+      sourceNode.disconnect(analyser);
       analyser.disconnect();
-      void audioContext.close();
       audioContextRef.current = null;
       analyserRef.current = null;
       sourceNodeRef.current = null;
@@ -144,45 +149,56 @@ export function AudioPreview({
   }
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between px-1">
+    <div className="space-y-2 border border-[#181818] rounded-[3px] bg-[linear-gradient(180deg,#0e0e0e_0%,#090909_100%)] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+      <div className="flex items-end justify-between gap-4">
         <div className="min-w-0">
-          <div className="truncate text-[10px] uppercase tracking-[0.18em] text-[#585858]">{title}</div>
-          {subtitle ? <div className="text-[9px] uppercase tracking-[0.14em] text-[#3f3f3f]">{subtitle}</div> : null}
+          <div className="truncate text-[11px] uppercase tracking-[0.24em] text-[#d7d7d7]">{title}</div>
+          {subtitle ? <div className="mt-1 text-[9px] uppercase tracking-[0.22em] text-[#626262]">{subtitle}</div> : null}
         </div>
-        <div className="font-mono text-[10px] text-[#505050]">
-          {fmt(audioTime)} / {fmt(duration)}
+        <div className="flex items-center gap-4 font-mono text-[10px] text-[#767676]">
+          <span>
+            BPM <span className="text-[#d4ae1d]">{displayBpm}</span>
+          </span>
+          <span>
+            LEN <span className="text-[#d0d0d0]">{fmt(duration)}</span>
+          </span>
         </div>
       </div>
 
-      <SolidWaveform
-        points={analysis.waveform}
-        playhead={playhead}
-        bpm={displayBpm}
-        beatTimes={analysis.beats}
-        durationSeconds={duration}
-        beatsPerBar={4}
-        accent={accent}
-        height={height}
-        label=""
-        zoom={zoom}
-        onSeek={seekToPlayhead}
-      />
+      <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_232px] xl:items-start">
+        <SolidWaveform
+          points={analysis.waveform}
+          playhead={playhead}
+          bpm={displayBpm}
+          beatTimes={analysis.beats}
+          durationSeconds={duration}
+          beatsPerBar={4}
+          accent={accent}
+          height={height}
+          label=""
+          zoom={zoom}
+          onSeek={seekToPlayhead}
+        />
 
-      <div className="border border-[#1a1a1a] rounded-[2px] bg-[#090909] px-3 py-2">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
+        <div className="border border-[#1b1b1b] rounded-[3px] bg-[#070707] px-3 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-[9px] uppercase tracking-[0.22em] text-[#4e4e4e]">Transport</div>
+            <div className="font-mono text-[10px] text-[#868686]">
+              {fmt(audioTime)} / {fmt(duration)}
+            </div>
+          </div>
+          <div className="mt-3 flex items-center gap-2">
             <button
               type="button"
               onClick={() => void togglePlayback()}
-              className="border border-[#1f1f1f] rounded-[2px] px-3 py-1 text-[10px] uppercase tracking-[0.14em] text-[#d0d0d0] hover:border-[#343434]"
+              className="border border-[#2a2306] rounded-[2px] bg-[#171308] px-3 py-1 text-[10px] uppercase tracking-[0.16em] text-[#dfcb76] hover:border-[#58460d]"
             >
               {isPlaying ? "Pause" : "Play"}
             </button>
             <button
               type="button"
               onClick={rewindToStart}
-              className="border border-[#1f1f1f] rounded-[2px] px-3 py-1 text-[10px] uppercase tracking-[0.14em] text-[#9a9a9a] hover:border-[#343434]"
+              className="border border-[#232323] rounded-[2px] px-3 py-1 text-[10px] uppercase tracking-[0.16em] text-[#9a9a9a] hover:border-[#3a3a3a]"
             >
               Rewind
             </button>
@@ -190,16 +206,27 @@ export function AudioPreview({
               type="button"
               onClick={() => setZoom((current) => (current === 1 ? 2 : 1))}
               className={`border rounded-[2px] px-3 py-1 text-[10px] uppercase tracking-[0.14em] ${
-                zoom === 2 ? "border-[#e05c00] text-[#e05c00] bg-[#e05c0012]" : "border-[#1f1f1f] text-[#9a9a9a]"
+                zoom === 2
+                  ? "border-[#d4ae1d] text-[#d4ae1d] bg-[#d4ae1d14]"
+                  : "border-[#232323] text-[#9a9a9a] hover:border-[#3a3a3a]"
               }`}
             >
               {zoom}x
             </button>
           </div>
-          <div className="font-mono text-[10px] text-[#505050]">{fmt(audioTime)} / {fmt(duration)}</div>
-        </div>
-        <div className="mt-2 flex items-center justify-between gap-3">
-          {helperText ? <span className="text-[10px] uppercase tracking-[0.14em] text-[#565656]">{helperText}</span> : null}
+          <div className="mt-3 grid grid-cols-3 gap-2">
+            {[
+              ["Beats", String(analysis.beats.length)],
+              ["Onsets", String(analysis.onsets.length)],
+              ["Sections", String(analysis.sections.length)],
+            ].map(([label, value]) => (
+              <div key={label} className="border border-[#171717] rounded-[2px] bg-[#0b0b0b] px-2 py-2">
+                <div className="text-[8px] uppercase tracking-[0.18em] text-[#494949]">{label}</div>
+                <div className="mt-1 font-mono text-[12px] text-[#bfbfbf]">{value}</div>
+              </div>
+            ))}
+          </div>
+          {helperText ? <div className="mt-3 text-[10px] uppercase tracking-[0.14em] text-[#5a5a5a]">{helperText}</div> : null}
         </div>
       </div>
 

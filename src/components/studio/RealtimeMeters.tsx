@@ -32,7 +32,10 @@ export function RealtimeMeters() {
       const width = canvasElement.clientWidth || 184;
       const height = canvasElement.clientHeight || 104;
       ctx.clearRect(0, 0, width, height);
-      ctx.fillStyle = "#090909";
+      const background = ctx.createLinearGradient(0, 0, width, height);
+      background.addColorStop(0, "#09090c");
+      background.addColorStop(1, "#08080a");
+      ctx.fillStyle = background;
       ctx.fillRect(0, 0, width, height);
 
       const inset = 10;
@@ -53,13 +56,7 @@ export function RealtimeMeters() {
         for (let segmentIndex = 0; segmentIndex < segmentCount; segmentIndex += 1) {
           const y = height - inset - (segmentIndex + 1) * segmentHeight - segmentIndex * segmentGap;
           const isActive = segmentIndex < activeSegments;
-          ctx.fillStyle = isActive
-            ? segmentIndex >= 7
-              ? "#7dff9c"
-              : segmentIndex >= 4
-                ? "#41f07b"
-                : "#d8fbe1"
-            : "#262626";
+          ctx.fillStyle = isActive ? getMeterColor(segmentIndex, segmentCount) : "rgba(41, 41, 45, 0.82)";
           ctx.fillRect(x, y, usableWidth, segmentHeight);
         }
       }
@@ -93,10 +90,10 @@ export function RealtimeMeters() {
   return (
     <div className="border-b border-[#181818] p-3">
       <div className="mb-2 flex items-center justify-between">
-        <div className="text-[9px] uppercase tracking-[0.22em] text-[#343434]">Live Meters</div>
-        <div className="font-mono text-[9px] text-[#3f3f3f]">31 62 125 250 500 1k 2k 4k 8k 16k</div>
+        <div className="text-[9px] uppercase tracking-[0.22em] text-[#ff5e52]">Live Meters</div>
+        <div className="font-mono text-[9px] text-[#615866]">31 62 125 250 500 1k 2k 4k 8k 16k</div>
       </div>
-      <div className="border border-[#181818] bg-[#080808] rounded-[2px] px-2 py-2">
+      <div className="border border-[#1b1b22] bg-[linear-gradient(180deg,#0b0b10_0%,#08080d_100%)] rounded-[3px] px-2 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
         <canvas ref={canvasRef} className="block h-[104px] w-full" />
       </div>
     </div>
@@ -104,3 +101,11 @@ export function RealtimeMeters() {
 }
 
 export const AUDIO_METER_EVENT = METER_EVENT_NAME;
+
+function getMeterColor(segmentIndex: number, segmentCount: number) {
+  const ratio = segmentCount <= 1 ? 0 : segmentIndex / (segmentCount - 1);
+  if (ratio < 0.33) return "#e6fdff";
+  if (ratio < 0.66) return "#6ce9ff";
+  if (ratio < 0.88) return "#2b78ff";
+  return "#6e3dff";
+}

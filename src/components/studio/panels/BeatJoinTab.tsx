@@ -1,8 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { lerp, sv } from "../math";
-import { AudioPreview } from "../AudioPreview";
 import { ParamSlider } from "../ParamSlider";
 import { UploadControl } from "../UploadControl";
 import type { BeatJoinAnalysis, BeatJoinSection, ShuffleMode } from "../types";
@@ -35,7 +34,6 @@ interface CutCandidate {
 
 type BeatJoinTabProps = {
   playhead: number;
-  bpm: number;
   minDur: number;
   maxDur: number;
   energyResp: number;
@@ -45,6 +43,7 @@ type BeatJoinTabProps = {
   lowEnergyRange: number;
   highEnergyRange: number;
   analysis: BeatJoinAnalysis | null;
+  audioPlayhead: number;
   clipOrder: number[];
   shuffleMode: ShuffleMode;
   activeClip: number;
@@ -65,7 +64,6 @@ type BeatJoinTabProps = {
 
 export function BeatJoinTab({
   playhead,
-  bpm,
   minDur,
   maxDur,
   energyResp,
@@ -75,6 +73,7 @@ export function BeatJoinTab({
   lowEnergyRange,
   highEnergyRange,
   analysis,
+  audioPlayhead,
   analysisStatus,
   analysisError,
   isAnalyzing,
@@ -92,12 +91,10 @@ export function BeatJoinTab({
   onAudioUpload,
   onActiveClip,
 }: BeatJoinTabProps) {
-  const [previewPlayhead, setPreviewPlayhead] = useState(0);
-
   const hasAnalysis = analysis !== null;
   const duration = analysis?.duration ?? 0;
   const sections = analysis?.sections.length ? analysis.sections : DEFAULT_EMPTY_SECTIONS;
-  const displayPlayhead = hasAnalysis ? previewPlayhead : playhead;
+  const displayPlayhead = hasAnalysis ? audioPlayhead : playhead;
   const beatPositions = useMemo(
     () =>
       duration > 0
@@ -144,16 +141,7 @@ export function BeatJoinTab({
 
   return (
     <>
-      {hasAnalysis ? (
-        <AudioPreview
-          analysis={analysis}
-          bpmFallback={bpm}
-          title={analysis.sourceLabel}
-          subtitle="Audio Track · Master Timeline"
-          helperText="Click the waveform to seek. Toggle 2x to zoom into the current playhead."
-          onPlayheadChange={(nextPlayhead) => setPreviewPlayhead(nextPlayhead)}
-        />
-      ) : (
+      {!hasAnalysis ? (
         <div className="border border-[#1e1e1e] rounded-[2px] bg-[#070707] p-4">
           <div className="text-[10px] uppercase tracking-[0.18em] text-[#3a3a3a] mb-3">Audio Track</div>
           <UploadControl
@@ -168,7 +156,7 @@ export function BeatJoinTab({
             onFiles={onAudioUpload}
           />
         </div>
-      )}
+      ) : null}
 
       <div className="border border-[#1a1a1a] rounded-[2px] bg-[#080808] overflow-hidden">
         <div className="flex items-center justify-between px-3 py-2 border-b border-[#181818]">

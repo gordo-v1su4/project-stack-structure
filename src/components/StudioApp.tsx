@@ -2,6 +2,7 @@
 
 import { startTransition, useEffect, useMemo, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
+import { AudioPreview } from "./studio/AudioPreview";
 import { extractWaveformData, fetchEssentiaAnalysis, parseEssentiaPayload } from "./studio/audioAnalysis";
 import { NAV } from "./studio/constants";
 import { prepareVideoSources } from "./studio/mediaUpload";
@@ -33,6 +34,7 @@ import type {
 export default function StudioApp() {
   const [tab, setTab] = useState<Tab>("split");
   const [playhead, setPlayhead] = useState(0.08);
+  const [audioPreviewPlayhead, setAudioPreviewPlayhead] = useState(0);
   const [activeClip, setActiveClip] = useState(2);
 
   const [gpu, setGpu] = useState(24);
@@ -310,6 +312,22 @@ export default function StudioApp() {
 
   const tabLabel = NAV.find((n) => n.key === tab)?.label ?? "";
   const tabSub = NAV.find((n) => n.key === tab)?.sub ?? "";
+  const audioPreviewSubtitle = useMemo(() => {
+    switch (tab) {
+      case "beatsplit":
+        return `Master Audio Track · ${beatSplitMode === "beats" ? "Beat Split" : "Onset Split"}`;
+      case "beatjoin":
+        return "Master Audio Track · Beat Join";
+      case "shuffle":
+        return `Master Audio Track · Shuffle ${shuffleMode}`;
+      case "join":
+        return "Master Audio Track · Standard Join";
+      case "ramp":
+        return "Master Audio Track · Speed Ramp";
+      default:
+        return "Master Audio Track · Studio Timeline";
+    }
+  }, [beatSplitMode, shuffleMode, tab]);
   const shuffleQueue = useMemo(
     () =>
       buildShuffleQueue({
@@ -350,6 +368,17 @@ export default function StudioApp() {
 
         <div className="flex flex-1 overflow-hidden">
           <main className="flex-1 overflow-y-auto p-4 space-y-3">
+            {beatJoinAnalysis ? (
+              <AudioPreview
+                analysis={beatJoinAnalysis}
+                bpmFallback={bpm}
+                title={beatJoinAnalysis.sourceLabel}
+                subtitle={audioPreviewSubtitle}
+                helperText="Master song lane persists across the studio. Click to seek, play from here, and use 2x zoom for tighter timing."
+                onPlayheadChange={(nextPlayhead) => setAudioPreviewPlayhead(nextPlayhead)}
+              />
+            ) : null}
+
             {tab === "split" && (
               <SplitTab
                 playhead={playhead}
@@ -433,7 +462,6 @@ export default function StudioApp() {
             {tab === "beatjoin" && (
               <BeatJoinTab
                 playhead={playhead}
-                bpm={bpm}
                 minDur={minDur}
                 maxDur={maxDur}
                 energyResp={energyResp}
@@ -443,6 +471,7 @@ export default function StudioApp() {
                 lowEnergyRange={lowEnergyRange}
                 highEnergyRange={highEnergyRange}
                 analysis={beatJoinAnalysis}
+                audioPlayhead={audioPreviewPlayhead}
                 analysisStatus={audioStatus}
                 analysisError={audioError}
                 isAnalyzing={isPreparingAudio}

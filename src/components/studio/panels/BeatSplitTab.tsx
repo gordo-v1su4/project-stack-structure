@@ -1,7 +1,6 @@
 "use client";
 
 import { fmt } from "../math";
-import { AudioPreview } from "../AudioPreview";
 import { ParamSlider } from "../ParamSlider";
 import { SourceVideoTimeline } from "../SourceVideoTimeline";
 import type { SourceClipSpan, SourceTimelineSegment } from "../sourceTimeline";
@@ -132,41 +131,31 @@ export function BeatSplitTab({
       )}
 
       {hasAnalysis ? (
-        <div className="space-y-2">
-          <AudioPreview
-            analysis={analysis}
-            bpmFallback={bpm}
-            title={analysis.sourceLabel}
-            subtitle={`Audio Sync · ${splitMode === "beats" ? "Beat Mode" : "Onset Mode"}`}
-            helperText="Preview the song here, click to seek, and use 2x zoom for a closer split read."
-            height={92}
-          />
-          <div className="border border-[#1a1a1a] rounded-[2px] bg-[#090909] p-2">
-            <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.16em] text-[#444]">
-              <span>Split Marker Preview</span>
-              <span className="font-mono text-[#666]">
-                {markerPreview.activeCount}/{markerPreview.markers.length} kept
-              </span>
-            </div>
-            <div className="relative mt-2 h-10 border border-[#121212] bg-[#060606] overflow-hidden">
-              {markerPreview.markers.map((marker, index) => (
-                <div
-                  key={`${marker.time}-${index}`}
-                  className="absolute bottom-0 w-[1px]"
-                  style={{
-                    left: `${marker.position * 100}%`,
-                    height: `${Math.max(20, marker.strength * 100)}%`,
-                    background: marker.active ? "#ef7600" : "#3b3b3b",
-                    opacity: marker.active ? 1 : 0.55,
-                  }}
-                />
-              ))}
-            </div>
-            <div className="mt-2 text-[10px] uppercase tracking-[0.12em] text-[#555]">
-              {splitMode === "beats"
-                ? "Variation shifts which beat groups land as segment boundaries."
-                : "Density keeps the strongest onsets and fades weaker candidates first."}
-            </div>
+        <div className="border border-[#1a1a1a] rounded-[2px] bg-[#090909] p-2">
+          <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.16em] text-[#444]">
+            <span>Split Marker Preview</span>
+            <span className="font-mono text-[#666]">
+              {markerPreview.activeCount}/{markerPreview.markers.length} kept
+            </span>
+          </div>
+          <div className="relative mt-2 h-10 border border-[#121212] bg-[#060606] overflow-hidden">
+            {markerPreview.markers.map((marker, index) => (
+              <div
+                key={`${marker.time}-${index}`}
+                className="absolute bottom-0 w-[1px]"
+                style={{
+                  left: `${marker.position * 100}%`,
+                  height: `${Math.max(20, marker.strength * 100)}%`,
+                  background: marker.active ? "#ef7600" : "#3b3b3b",
+                  opacity: marker.active ? 1 : 0.55,
+                }}
+              />
+            ))}
+          </div>
+          <div className="mt-2 text-[10px] uppercase tracking-[0.12em] text-[#555]">
+            {splitMode === "beats"
+              ? "Variation shifts which beat groups land as segment boundaries."
+              : "Density keeps the strongest onsets and fades weaker candidates first."}
           </div>
         </div>
       ) : (

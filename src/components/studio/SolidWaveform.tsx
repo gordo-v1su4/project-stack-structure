@@ -27,7 +27,7 @@ export function SolidWaveform({
   totalBars = 8,
   beatTimes,
   durationSeconds,
-  accent = "#e05c00",
+  accent = "#d4ae1d",
   height = 100,
   label = "SOURCE",
   showRuler = true,
@@ -94,9 +94,9 @@ export function SolidWaveform({
     ctx.clearRect(0, 0, canvasWidth, waveH);
 
     const bg = ctx.createLinearGradient(0, 0, 0, waveH);
-    bg.addColorStop(0, "rgba(14, 14, 14, 0.96)");
-    bg.addColorStop(0.5, "rgba(8, 8, 8, 0.92)");
-    bg.addColorStop(1, "rgba(14, 14, 14, 0.96)");
+    bg.addColorStop(0, "rgba(18, 18, 18, 0.98)");
+    bg.addColorStop(0.5, "rgba(10, 10, 10, 0.94)");
+    bg.addColorStop(1, "rgba(16, 16, 16, 0.98)");
     ctx.fillStyle = bg;
     ctx.fillRect(0, 0, canvasWidth, waveH);
 
@@ -112,8 +112,8 @@ export function SolidWaveform({
 
     const accentFill = hexToRgba(accent, 0.72);
     const accentHighlight = hexToRgba(accent, 0.95);
-    const trailFill = "rgba(42, 42, 42, 0.7)";
-    const trailHighlight = "rgba(96, 96, 96, 0.36)";
+    const trailFill = "rgba(46, 46, 46, 0.72)";
+    const trailHighlight = "rgba(110, 110, 110, 0.4)";
     const innerHeight = Math.max(centerY - 3, 1);
 
     for (let x = 0; x < canvasWidth; x += 1) {
