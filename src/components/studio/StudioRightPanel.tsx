@@ -1,6 +1,7 @@
 "use client";
 
 import { LOG } from "./constants";
+import { RealtimeMeters } from "./RealtimeMeters";
 import type { ShuffleMode, Tab } from "./types";
 
 type StudioRightPanelProps = {
@@ -41,6 +42,8 @@ export function StudioRightPanel({ readout, tab, shuffleMode }: StudioRightPanel
           ))}
         </div>
       </div>
+
+      <RealtimeMeters />
 
       <div className="border-b border-[#181818] p-3 flex-1">
         <div className="mb-2 text-[9px] uppercase tracking-[0.22em] text-[#343434]">Terminal</div>
