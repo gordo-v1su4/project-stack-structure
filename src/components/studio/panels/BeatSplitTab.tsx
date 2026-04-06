@@ -3,6 +3,7 @@
 import { fmt } from "../math";
 import { ParamSlider } from "../ParamSlider";
 import { SourceVideoTimeline } from "../SourceVideoTimeline";
+import { SourceVideoLibrary } from "../SourceVideoLibrary";
 import type { SourceClipSpan, SourceTimelineSegment } from "../sourceTimeline";
 import { UploadControl } from "../UploadControl";
 import type { BeatJoinAnalysis, UploadedVideoSource } from "../types";
@@ -26,6 +27,7 @@ type BeatSplitTabProps = {
   activeClip: number;
   onAudioUpload: (files: File[]) => void | Promise<void>;
   onVideoUpload: (files: File[]) => void | Promise<void>;
+  onAppendVideos: (files: File[]) => void | Promise<void>;
   onBarsPerSeg: (v: number) => void;
   onSensitivity: (v: number) => void;
   onSplitMode: (v: "beats" | "onsets") => void;
@@ -51,6 +53,7 @@ export function BeatSplitTab({
   activeClip,
   onAudioUpload,
   onVideoUpload,
+  onAppendVideos,
   onBarsPerSeg,
   onSensitivity,
   onSplitMode,
@@ -81,21 +84,6 @@ export function BeatSplitTab({
           <div className="grid gap-3 md:grid-cols-2">
             <div className="border border-[#1a1a1a] rounded-[2px] bg-[#0b0b0b] p-2">
               <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.16em] text-[#444]">
-                <span>Source Clips</span>
-                <UploadControl
-                  accept="video/*"
-                  multiple
-                  variant="button"
-                  title=""
-                  detail=""
-                  actionLabel={isPreparingVideos ? "Processing..." : "Replace Videos"}
-                  disabled={isPreparingVideos}
-                  onFiles={onVideoUpload}
-                />
-              </div>
-            </div>
-            <div className="border border-[#1a1a1a] rounded-[2px] bg-[#0b0b0b] p-2">
-              <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.16em] text-[#444]">
                 <span>Beat Sync Audio</span>
                 <UploadControl
                   accept="audio/*"
@@ -111,6 +99,12 @@ export function BeatSplitTab({
               {audioError ? <div className="mt-1 text-[10px] text-[#b96c43]">{audioError}</div> : null}
             </div>
           </div>
+          <SourceVideoLibrary
+            sources={videoSources}
+            isPreparingVideos={isPreparingVideos}
+            onAppendVideos={onAppendVideos}
+            onReplaceVideos={onVideoUpload}
+          />
         </div>
       ) : (
         <div className="border border-[#1e1e1e] rounded-[2px] bg-[#070707] p-4">

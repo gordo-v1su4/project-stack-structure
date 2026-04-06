@@ -1,11 +1,11 @@
 "use client";
 
-import { startTransition, useEffect, useMemo, useState } from "react";
+import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { AudioPreview } from "./studio/AudioPreview";
 import { extractWaveformData, fetchEssentiaAnalysis, parseEssentiaPayload } from "./studio/audioAnalysis";
 import { NAV } from "./studio/constants";
-import { prepareVideoSources } from "./studio/mediaUpload";
+import { prepareVideoSources, revokePreparedVideoSources } from "./studio/mediaUpload";
 import { ProcessActionBar } from "./studio/ProcessActionBar";
 import { buildReadout } from "./studio/readout";
 import { BeatJoinTab } from "./studio/panels/BeatJoinTab";
@@ -19,6 +19,27 @@ import { StudioRightPanel } from "./studio/StudioRightPanel";
 import { StudioSidebar } from "./studio/StudioSidebar";
 import { StudioStatusBar } from "./studio/StudioStatusBar";
 import { buildShuffleQueue } from "./studio/shuffleQueue";
+import { rankManifestCandidates } from "./studio/manifestRanking";
+import { buildMusicCutEvents, buildSegmentManifest } from "./studio/segmentManifest";
+import {
+  createSectionRecomputeState,
+  failSectionRecompute,
+  markSectionReady,
+  markSectionRecomputeRunning,
+  startSectionRecompute,
+  swapReadySection,
+  updateSectionRecomputeProgress,
+} from "./studio/sectionRecompute";
+import {
+  buildPreviewAssetUrl,
+  deriveActionDisabledState,
+  deriveCompletedLabel,
+  deriveEffectiveClipOrder,
+  deriveManifestRankingMode,
+  derivePreviewStatusLabel,
+  derivePreviewWindow,
+  normalizeColorScore,
+} from "./studio/studioUiState";
 import { buildAudioDrivenSegments, buildBeatSegments, buildSourceClipSpans, buildStandardSegments } from "./studio/sourceTimeline";
 import type {
   BeatJoinAnalysis,
@@ -32,6 +53,7 @@ import type {
 } from "./studio/types";
 
 export default function StudioApp() {
+  const videoSourcesRef = useRef<UploadedVideoSource[]>([]);
   const [tab, setTab] = useState<Tab>("split");
   const [playhead, setPlayhead] = useState(0.08);
   const [audioPreviewPlayhead, setAudioPreviewPlayhead] = useState(0);
@@ -83,6 +105,7 @@ export default function StudioApp() {
   const [progress, setProgress] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
   const [done, setDone] = useState(false);
+  const [previewState, setPreviewState] = useState(createSectionRecomputeState);
 
   useEffect(() => {
     const id = setInterval(() => setPlayhead((p) => (p >= 0.97 ? 0.02 : p + 0.003)), 80);
@@ -96,6 +119,16 @@ export default function StudioApp() {
       }
     };
   }, [beatJoinAnalysis]);
+
+  useEffect(() => {
+    videoSourcesRef.current = videoSources;
+  }, [videoSources]);
+
+  useEffect(() => {
+    return () => {
+      revokePreparedVideoSources(videoSourcesRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -164,10 +197,12 @@ export default function StudioApp() {
     });
   };
 
-  async function handleVideoUpload(files: File[]) {
+  async function ingestVideoFiles(files: File[], mode: "replace" | "append") {
     setVideoError(null);
     setIsPreparingVideos(true);
-    setVideoStatus(`Processing ${files.length} video clip${files.length === 1 ? "" : "s"}...`);
+    setVideoStatus(
+      `${mode === "append" ? "Adding" : "Processing"} ${files.length} video clip${files.length === 1 ? "" : "s"}...`,
+    );
 
     try {
       const prepared = await prepareVideoSources(files);
@@ -176,10 +211,28 @@ export default function StudioApp() {
       }
 
       startTransition(() => {
-        setVideoSources(prepared);
-        setJoinClipStates({});
-        setActiveClip(0);
-        setVideoStatus(`Loaded ${prepared.length} clip${prepared.length === 1 ? "" : "s"} · thumbnails ready.`);
+        setVideoSources((currentSources) => {
+          const nextSources =
+            mode === "append"
+              ? [...currentSources, ...prepared].map((source, index) => ({ ...source, id: index }))
+              : prepared.map((source, index) => ({ ...source, id: index }));
+
+          if (mode === "replace") {
+            revokePreparedVideoSources(currentSources);
+            setJoinClipStates({});
+            setActiveClip(0);
+          } else {
+            setActiveClip((currentActiveClip) => currentActiveClip);
+          }
+
+          setVideoStatus(
+            `${mode === "append" ? "Added" : "Loaded"} ${prepared.length} clip${prepared.length === 1 ? "" : "s"} · ${
+              nextSources.length
+            } total ready.`,
+          );
+
+          return nextSources;
+        });
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown video processing error";
@@ -188,6 +241,14 @@ export default function StudioApp() {
     } finally {
       setIsPreparingVideos(false);
     }
+  }
+
+  async function handleVideoUpload(files: File[]) {
+    await ingestVideoFiles(files, "replace");
+  }
+
+  async function handleAppendVideos(files: File[]) {
+    await ingestVideoFiles(files, "append");
   }
 
   async function handleAudioUpload(files: File[]) {
@@ -239,21 +300,68 @@ export default function StudioApp() {
     }
   }
 
-  function runProcess() {
-    if (isRunning) return;
+  async function runProcess() {
+    if (isRunning || previewState.activeRequestKey) return;
+
+    const requestKey = `preview-${Date.now()}`;
+    const { startTime, endTime } = derivePreviewWindow({
+      tab,
+      splitSegments,
+      beatSplitSegments,
+      splitActiveClip,
+      beatActiveClip,
+      rampDur,
+    });
+
     setIsRunning(true);
     setDone(false);
-    setProgress(0);
-    let p = 0;
-    const id = setInterval(() => {
-      p += Math.random() * 7 + 2;
-      setProgress(Math.min(p, 100));
-      if (p >= 100) {
-        clearInterval(id);
-        setIsRunning(false);
-        setDone(true);
+    setProgress(5);
+    setPreviewState((current) =>
+      startSectionRecompute(current, {
+        requestKey,
+        sectionId: `${tab}:${tab === "split" ? splitActiveClip : beatActiveClip}`,
+        continuityMode: shuffleMode,
+        paramsHash: JSON.stringify({ tab, splitActiveClip, beatActiveClip, shuffleMode, startTime, endTime }),
+        startedAt: new Date().toISOString(),
+        progress: 5,
+      }),
+    );
+    setPreviewState((current) => markSectionRecomputeRunning(current, requestKey));
+
+    try {
+      const response = await fetch("/api/preview/section", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ requestKey, startTime, endTime }),
+      });
+      const payload = (await response.json()) as {
+        success?: boolean;
+        error?: string;
+        asset?: {
+          requestKey: string;
+          assetKey: string;
+          duration: number;
+          generatedAt: string;
+        };
+      };
+
+      if (!response.ok || !payload.success || !payload.asset) {
+        throw new Error(payload.error ?? "Preview generation failed.");
       }
-    }, 160);
+
+      setProgress(90);
+      setPreviewState((current) => updateSectionRecomputeProgress(current, { requestKey, progress: 90 }));
+      setPreviewState((current) => markSectionReady(current, payload.asset!));
+      setPreviewState((current) => swapReadySection(current, requestKey));
+      setProgress(100);
+      setDone(true);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown preview generation error";
+      setPreviewState((current) => failSectionRecompute(current, { requestKey, message }));
+      setVideoError(message);
+    } finally {
+      setIsRunning(false);
+    }
   }
 
   const readout = useMemo(
@@ -341,20 +449,82 @@ export default function StudioApp() {
       }),
     [joinClips.length, shuffleMode, beatActiveClip, minScore, lookahead, keepPct, colorGradient]
   );
+  const manifestSegments = useMemo(() => {
+    const totalDuration = sourceClips[sourceClips.length - 1]?.end ?? 0;
+    if (!beatJoinAnalysis || totalDuration <= 0) return [];
+
+    const cutEvents = buildMusicCutEvents({
+      analysis: beatJoinAnalysis,
+      mode: beatSplitMode,
+      includeSectionBoundaries: true,
+    });
+
+    return buildSegmentManifest({
+      sourceClips,
+      cutEvents,
+      totalDuration: Math.min(totalDuration, beatJoinAnalysis.duration),
+    });
+  }, [sourceClips, beatJoinAnalysis, beatSplitMode]);
+
+  const manifestRankingPreview = useMemo(() => {
+    if (!manifestSegments.length) return { ids: [] as string[], order: [] as number[] };
+
+    const anchorSegment = manifestSegments[Math.min(beatActiveClip, Math.max(0, manifestSegments.length - 1))];
+    if (!anchorSegment) return { ids: [] as string[], order: [] as number[] };
+    const targetDuration = anchorSegment.duration;
+    const previousDescriptor = anchorSegment.motionDescriptor;
+
+    const ranked = rankManifestCandidates({
+      mode: deriveManifestRankingMode(shuffleMode),
+      previousDescriptor,
+      randomSeed: `${tab}:${beatActiveClip}:${shuffleMode}`,
+      candidates: manifestSegments.map((segment) => ({
+        id: `SEG_${String(segment.id + 1).padStart(2, "0")}`,
+        segment,
+        musicalScore: Math.max(0, 1 - Math.abs(segment.duration - targetDuration) / Math.max(targetDuration, 0.001)),
+        targetDuration,
+        colorContinuityScore: normalizeColorScore({ sourceClipId: segment.sourceClipIds[0] ?? 0, gradient: colorGradient, clipCount: sourceClips.length }),
+      })),
+    });
+
+    return {
+      ids: ranked.slice(0, 3).map((candidate) => candidate.id),
+      order: ranked.map((candidate) => candidate.segmentId),
+    };
+  }, [manifestSegments, beatActiveClip, shuffleMode, tab, colorGradient, sourceClips.length]);
+
+  const effectiveClipOrder = deriveEffectiveClipOrder({
+    manifestSegmentCount: manifestSegments.length,
+    segmentPreviewCount: segmentPreviews.length,
+    rankedOrder: manifestRankingPreview.order,
+    fallbackOrder: shuffleQueue,
+  });
+  const previewAssetUrl = buildPreviewAssetUrl(previewState.currentAssetKey);
+
+  function resetPreparedPreview() {
+    setDone(false);
+    setProgress(0);
+    setPreviewState(createSectionRecomputeState());
+  }
 
   function handleSelectTab(t: Tab) {
     setTab(t);
-    setDone(false);
-    setProgress(0);
+    resetPreparedPreview();
   }
 
   const needsVideoSource = tab !== "beatjoin";
-  const isMissingVideoSource = needsVideoSource && videoSources.length === 0;
-  const isMissingAudioSource = tab === "beatjoin" && beatJoinAnalysis === null;
-  const actionDisabled = isMissingVideoSource || isMissingAudioSource;
-  const actionDisabledReason = isMissingVideoSource
-    ? "Upload video clips to continue."
-    : "Upload a song to unlock Beat Join.";
+  const actionState = deriveActionDisabledState({
+    needsVideoSource,
+    videoSourceCount: videoSources.length,
+    requiresAudioSource: tab === "beatjoin",
+    hasAudioSource: beatJoinAnalysis !== null,
+    activeRequestKey: previewState.activeRequestKey,
+  });
+  const actionDisabled = actionState.disabled;
+  const actionDisabledReason = actionState.reason ?? "Unavailable";
+
+  const previewStatusLabel = derivePreviewStatusLabel(previewState);
+  const completedLabel = deriveCompletedLabel(previewState.currentAssetKey);
 
   return (
     <div
@@ -391,6 +561,7 @@ export default function StudioApp() {
                 segments={splitSegments}
                 activeClip={splitActiveClip}
                 onVideoUpload={handleVideoUpload}
+                onAppendVideos={handleAppendVideos}
                 onClipDur={setClipDur}
                 onActiveClip={setActiveClip}
               />
@@ -416,6 +587,7 @@ export default function StudioApp() {
                 activeClip={beatActiveClip}
                 onAudioUpload={handleAudioUpload}
                 onVideoUpload={handleVideoUpload}
+                onAppendVideos={handleAppendVideos}
                 onBarsPerSeg={setBarsPerSeg}
                 onSensitivity={setSensitivity}
                 onSplitMode={setBeatSplitMode}
@@ -428,7 +600,7 @@ export default function StudioApp() {
                 playhead={playhead}
                 bpm={bpm}
                 clipCount={joinClips.length}
-                clipOrder={shuffleQueue}
+                clipOrder={effectiveClipOrder}
                 segmentPreviews={segmentPreviews}
                 shuffleMode={shuffleMode}
                 minScore={minScore}
@@ -450,7 +622,7 @@ export default function StudioApp() {
                 playhead={playhead}
                 bpm={bpm}
                 joinClips={joinClips}
-                clipOrder={shuffleQueue}
+                clipOrder={effectiveClipOrder}
                 segmentPreviews={segmentPreviews}
                 shuffleMode={shuffleMode}
                 activeClip={beatActiveClip}
@@ -519,15 +691,31 @@ export default function StudioApp() {
               progress={progress}
               disabled={actionDisabled}
               disabledReason={actionDisabledReason}
-              onRun={runProcess}
-              onResetDone={() => setDone(false)}
+              processingLabel={`Preparing Preview · ${previewState.stage}`}
+              completedLabel={completedLabel}
+              onRun={() => void runProcess()}
+              onResetDone={resetPreparedPreview}
             />
           </main>
 
-          <StudioRightPanel readout={readout} tab={tab} shuffleMode={shuffleMode} />
+          <StudioRightPanel
+            readout={readout}
+            tab={tab}
+            shuffleMode={shuffleMode}
+            manifestSegmentCount={manifestSegments.length}
+            rankedSegmentIds={manifestRankingPreview.ids}
+            previewAssetKey={previewState.currentAssetKey}
+            previewAssetUrl={previewAssetUrl}
+          />
         </div>
 
-        <StudioStatusBar gpu={gpu} />
+        <StudioStatusBar
+          gpu={gpu}
+          previewStage={previewState.stage}
+          activeRequestKey={previewState.activeRequestKey}
+          assetKey={previewState.currentAssetKey}
+          statusLabel={previewStatusLabel}
+        />
       </div>
     </div>
   );

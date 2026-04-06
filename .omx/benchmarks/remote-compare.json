@@ -1,0 +1,60 @@
+{
+  "local": {
+    "requestKey": "benchmark-1775459124851",
+    "inputPath": "/Users/robertspaniolo/Documents/Github/project-stack-structure/.local-fixtures/media/A_mermaid_discovery_202601202346_ttgv4.mp4",
+    "outputPath": "/var/folders/9b/9kknzgm501n2695fv1_vj1hm0000gn/T/project-stack-structure-previews/benchmark-1775459124851.mp4",
+    "fixtureRootDir": "/Users/robertspaniolo/Documents/Github/project-stack-structure/.local-fixtures/media",
+    "hardwareLane": "local-macos",
+    "success": true,
+    "errorCode": null,
+    "errorMessage": null,
+    "probeStartedAt": "2026-04-06T07:05:24.851Z",
+    "probeCompletedAt": "2026-04-06T07:05:24.964Z",
+    "previewStartedAt": "2026-04-06T07:05:24.964Z",
+    "previewCompletedAt": "2026-04-06T07:05:25.130Z",
+    "probeDurationMs": 112.98,
+    "previewDurationMs": 165.71,
+    "readyToPlayDurationMs": 165.71,
+    "outputDuration": 1,
+    "sectionWindow": {
+      "startTime": 0,
+      "endTime": 1
+    },
+    "notes": [
+      "platform=darwin",
+      "hostname=M3.local"
+    ]
+  },
+  "remote": {
+    "requestKey": "benchmark-1775461598062",
+    "inputPath": "C:/Users/Gordo/Documents/Github/project-stack-structure/.local-fixtures/media/A_mermaid_discovery_202601202346_ttgv4.mp4",
+    "outputPath": "C:\\Users\\Gordo\\AppData\\Local\\Temp\\project-stack-structure-previews\\benchmark-1775461598062.mp4",
+    "fixtureRootDir": "C:\\Users\\Gordo\\.local-fixtures\\media",
+    "hardwareLane": "local-windows",
+    "success": true,
+    "errorCode": null,
+    "errorMessage": null,
+    "probeStartedAt": "2026-04-06T07:46:38.064Z",
+    "probeCompletedAt": "2026-04-06T07:46:38.064Z",
+    "previewStartedAt": "2026-04-06T07:46:38.064Z",
+    "previewCompletedAt": "2026-04-06T07:46:38.238Z",
+    "probeDurationMs": 0.05,
+    "previewDurationMs": 173.53,
+    "readyToPlayDurationMs": 173.53,
+    "outputDuration": 1,
+    "sectionWindow": {
+      "startTime": 0,
+      "endTime": 1
+    },
+    "notes": [
+      "platform=win32",
+      "hostname=DESKTOP-Q20UUVD"
+    ]
+  },
+  "deltas": {
+    "probeMs": 112.93,
+    "previewGenerationMs": -7.82,
+    "readyToPlayMs": -7.82
+  },
+  "fasterLane": "local"
+}

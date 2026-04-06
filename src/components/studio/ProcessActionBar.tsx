@@ -9,6 +9,8 @@ type ProcessActionBarProps = {
   progress: number;
   disabled?: boolean;
   disabledReason?: string;
+  processingLabel?: string;
+  completedLabel?: string;
   onRun: () => void;
   onResetDone: () => void;
 };
@@ -37,6 +39,8 @@ export function ProcessActionBar({
   progress,
   disabled = false,
   disabledReason = "Unavailable",
+  processingLabel = "Processing…",
+  completedLabel = "Complete — /output/processed/",
   onRun,
   onResetDone,
 }: ProcessActionBarProps) {
@@ -46,7 +50,7 @@ export function ProcessActionBar({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="h-2 w-2 rounded-full bg-[#3a8a3a]" />
-            <span className="text-[12px] text-[#3a8a3a]">Complete — /output/processed/</span>
+            <span className="text-[12px] text-[#3a8a3a]">{completedLabel}</span>
           </div>
           <button type="button" onClick={onResetDone} className="text-[10px] text-[#404040] hover:text-[#888]">
             RESET
@@ -55,7 +59,7 @@ export function ProcessActionBar({
       ) : isRunning ? (
         <div>
           <div className="flex justify-between text-[11px] mb-2">
-            <span className="text-[#484848] uppercase tracking-[0.14em]">Processing…</span>
+            <span className="text-[#484848] uppercase tracking-[0.14em]">{processingLabel}</span>
             <span className="font-mono text-[#e05c00]">{Math.floor(progress)}%</span>
           </div>
           <div className="h-[3px] bg-[#1a1a1a] rounded-full">

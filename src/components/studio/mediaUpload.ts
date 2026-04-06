@@ -17,12 +17,20 @@ export async function prepareVideoSources(files: File[]) {
           duration,
           size: file.size,
           thumbnailUrl,
+          videoUrl: objectUrl,
         } satisfies UploadedVideoSource;
-      } finally {
+      } catch (error) {
         URL.revokeObjectURL(objectUrl);
+        throw error;
       }
     })
   );
+}
+
+export function revokePreparedVideoSources(sources: UploadedVideoSource[]) {
+  for (const source of sources) {
+    URL.revokeObjectURL(source.videoUrl);
+  }
 }
 
 function readVideoDuration(url: string) {

@@ -1,15 +1,30 @@
 "use client";
 
 import { LOG } from "./constants";
+import { getPreviewAssetFileName } from "./studioUiState";
 import type { ShuffleMode, Tab } from "./types";
 
 type StudioRightPanelProps = {
   readout: [string, string | number][];
   tab: Tab;
   shuffleMode: ShuffleMode;
+  manifestSegmentCount?: number;
+  rankedSegmentIds?: string[];
+  previewAssetKey?: string | null;
+  previewAssetUrl?: string | null;
 };
 
-export function StudioRightPanel({ readout, tab, shuffleMode }: StudioRightPanelProps) {
+export function StudioRightPanel({
+  readout,
+  tab,
+  shuffleMode,
+  manifestSegmentCount = 0,
+  rankedSegmentIds = [],
+  previewAssetKey = null,
+  previewAssetUrl = null,
+}: StudioRightPanelProps) {
+  const previewAssetFileName = getPreviewAssetFileName(previewAssetKey);
+
   return (
     <aside className="w-52 shrink-0 border-l border-[#181818] bg-[#0c0c0c] flex flex-col overflow-y-auto">
       <div className="border-b border-[#181818] p-3">
@@ -41,6 +56,56 @@ export function StudioRightPanel({ readout, tab, shuffleMode }: StudioRightPanel
           ))}
         </div>
       </div>
+
+      <div className="border-b border-[#181818] p-3">
+        <div className="mb-2 text-[9px] uppercase tracking-[0.22em] text-[#343434]">Ranking Preview</div>
+        <div className="space-y-[5px] text-[10px]">
+          <div className="flex justify-between items-center">
+            <span className="text-[#434343]">Manifest Segments</span>
+            <span className="font-mono text-[#e05c00]">{manifestSegmentCount}</span>
+          </div>
+          <div>
+            <div className="mb-1 text-[#434343]">Top Ranked</div>
+            <div className="flex flex-wrap gap-1">
+              {rankedSegmentIds.length ? (
+                rankedSegmentIds.map((id) => (
+                  <span key={id} className="border border-[#181818] bg-[#090909] px-2 py-1 font-mono text-[10px] text-[#777]">
+                    {id}
+                  </span>
+                ))
+              ) : (
+                <span className="text-[#383838]">Awaiting analyzed segments</span>
+              )}
+            </div>
+          </div>
+          {previewAssetFileName ? (
+            <div className="font-mono text-[9px] text-[#4d4d4d] break-all">{previewAssetFileName}</div>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="border-b border-[#181818] p-3">
+        <div className="mb-2 text-[9px] uppercase tracking-[0.22em] text-[#343434]">Prepared Preview</div>
+        {previewAssetUrl ? (
+          <div className="space-y-2">
+            <video
+              key={previewAssetUrl}
+              controls
+              preload="metadata"
+              src={previewAssetUrl}
+              className="aspect-video w-full rounded-[2px] border border-[#181818] bg-[#050505]"
+            />
+            <div className="font-mono text-[9px] text-[#4d4d4d]">
+              {previewAssetFileName ?? "Preview ready"}
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-[2px] border border-dashed border-[#181818] bg-[#090909] px-2 py-4 text-[10px] text-[#383838]">
+            Run a preview pass to prepare a playable section asset.
+          </div>
+        )}
+      </div>
+
       <div className="border-b border-[#181818] p-3 flex-1">
         <div className="mb-2 text-[9px] uppercase tracking-[0.22em] text-[#343434]">Terminal</div>
         <div className="space-y-[4px]">

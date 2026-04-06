@@ -1,0 +1,45 @@
+{
+  "active": true,
+  "iteration": 13,
+  "max_iterations": 20,
+  "current_phase": "executing",
+  "current_lane": "new-cut-reassembly-driven-by-ranked-order",
+  "parallel_lanes": [
+    "descriptor-contract",
+    "test-design",
+    "motion-extraction-feasibility"
+  ],
+  "context_snapshot_path": ".omx/context/roadmap-spec-workflow-docs-20260405T010154Z.md",
+  "source_prd": ".omx/plans/prd-roadmap-spec-workflow-docs.md",
+  "owner_omx_session_id": "omx-1775350656829-2paot0",
+  "started_at": "2026-04-06T06:29:48.416Z",
+  "last_turn_at": "2026-04-06T08:08:51.664Z",
+  "source_test_spec": ".omx/plans/test-spec-roadmap-spec-workflow-docs.md",
+  "verification": {
+    "check": "pass (58 tests)",
+    "build": "pass",
+    "probe_media": "pass",
+    "preview_section": "pass",
+    "bench_latency": "pass",
+    "bench_compare": "pass",
+    "architect": "approve"
+  },
+  "completed_slices": [
+    "planning-and-docs",
+    "test-and-fixture-foundation",
+    "media-probe-and-manifest",
+    "motion-descriptor-contract",
+    "descriptor-ranking",
+    "fit-policy",
+    "section-recompute-orchestration",
+    "preview-generation-path-initial",
+    "local-benchmark-and-checkpoint",
+    "remote-benchmark-comparison",
+    "thin-ui-runtime-integration",
+    "music-window-safe-preview"
+  ],
+  "partial_preview_generation": true,
+  "max_iterations_auto_expand_count": 8,
+  "max_iterations_auto_expanded_at": "2026-04-06T08:07:17.743Z",
+  "blocked_remote_compare": true
+}

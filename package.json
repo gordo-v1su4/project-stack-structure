@@ -7,7 +7,15 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "bun test",
+    "test:watch": "bun test --watch",
+    "typecheck": "tsc --noEmit --project tsconfig.typecheck.json",
+    "check": "bun run lint && bun run typecheck && bun test",
+    "probe:media": "bun run scripts/probe-media.ts",
+    "preview:section": "bun run scripts/preview-section.ts",
+    "bench:latency": "bun run scripts/bench-latency.ts",
+    "bench:compare": "bun run scripts/bench-compare.ts"
   },
   "dependencies": {
     "next": "16.2.1",

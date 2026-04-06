@@ -1,36 +1,75 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Project Stack Structure
 
-## Getting Started
+Smart auto music-video editor foundation built on a Next.js studio prototype.
 
-First, run the development server:
+## Current product direction
+The app is being shaped around a few non-negotiable rules:
+- **musical alignment first**
+- **motion continuity as the default visual mode**
+- **accurate segment analysis over shallow quick-scan tagging**
+- **explicit recompute states over laggy pseudo-live playback**
+
+## Current codebase anchors
+- `src/components/StudioApp.tsx` — main studio UI
+- `src/components/studio/audioAnalysis.ts` — hosted audio analysis + waveform normalization
+- `src/components/studio/mediaUpload.ts` — current browser-side video metadata/thumbnail preparation
+- `src/app/api/essentia/full/route.ts` — hosted audio-analysis proxy
+
+## Getting started
+Run the local development server:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+bun run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Other available scripts today:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+bun run build
+bun run start
+bun run lint
+bun run test
+bun run check
+bun run probe:media
+bun run preview:section
+bun run bench:latency
+bun run bench:compare -- <local-json> <remote-json>
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Test fixtures
+Local, non-committed media fixtures live in:
 
-## Learn More
+```text
+.local-fixtures/media/
+```
 
-To learn more about Next.js, take a look at the following resources:
+The test suite and media probe script will use that directory by default. To point them somewhere else:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+TEST_MEDIA_DIR=/absolute/path/to/media bun run test
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+For more detail, see `tests/README.md`.
 
-## Deploy on Vercel
+## Canonical planning and architecture docs
+- [Roadmap](docs/roadmap.md)
+- [Media pipeline architecture](docs/architecture/media-pipeline.md)
+- [Spec workflow protocol](docs/protocols/spec-workflow.md)
+- [Latency and correctness budget](docs/protocols/latency-budget.md)
+- [Implementation checklist](docs/checklists/implementation-checklist.md)
+- [Local latency checkpoint](docs/benchmarks/local-latency.md)
+- [Remote latency status](docs/benchmarks/remote-latency-status.md)
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Planning artifacts
+- Deep interview spec: `.omx/specs/deep-interview-roadmap-spec-workflow-docs.md`
+- PRD: `.omx/plans/prd-roadmap-spec-workflow-docs.md`
+- Test spec: `.omx/plans/test-spec-roadmap-spec-workflow-docs.md`
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Near-term roadmap
+1. Lock canonical ingest contracts
+2. Define deterministic section preview behavior
+3. Build ranking and fit rules around music-first joins
+4. Measure whether web-first remains viable before any desktop pivot
+
+## Notes
+This repo intentionally emphasizes documentation and planning right now. The approved architecture stays **web-first** for now, while preserving a **Tauri + sidecar** contingency if browser scheduling and media constraints cannot maintain musically correct preview playback.

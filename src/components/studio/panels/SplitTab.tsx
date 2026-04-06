@@ -4,6 +4,7 @@ import { fmt } from "../math";
 import { ParamSlider } from "../ParamSlider";
 import { SourceVideoTimeline } from "../SourceVideoTimeline";
 import type { SourceClipSpan, SourceTimelineSegment } from "../sourceTimeline";
+import { SourceVideoLibrary } from "../SourceVideoLibrary";
 import { UploadControl } from "../UploadControl";
 import type { UploadedVideoSource } from "../types";
 
@@ -18,6 +19,7 @@ type SplitTabProps = {
   segments: SourceTimelineSegment[];
   activeClip: number;
   onVideoUpload: (files: File[]) => void | Promise<void>;
+  onAppendVideos: (files: File[]) => void | Promise<void>;
   onClipDur: (v: number) => void;
   onActiveClip: (i: number) => void;
 };
@@ -33,6 +35,7 @@ export function SplitTab({
   segments,
   activeClip,
   onVideoUpload,
+  onAppendVideos,
   onClipDur,
   onActiveClip,
 }: SplitTabProps) {
@@ -49,41 +52,12 @@ export function SplitTab({
             label={`SOURCE · ${sourceClips.length} CLIP${sourceClips.length === 1 ? "" : "S"} STITCHED · ${fmt(totalDuration)}`}
             height={124}
           />
-          <div className="border border-[#1a1a1a] rounded-[2px] bg-[#0b0b0b] p-2">
-            <div className="mb-2 flex items-center justify-between text-[10px] uppercase tracking-[0.16em] text-[#444]">
-              <span>Uploaded Sources</span>
-              <UploadControl
-                accept="video/*"
-                multiple
-                variant="button"
-                title=""
-                detail=""
-                actionLabel={isPreparingVideos ? "Processing..." : "Replace Videos"}
-                disabled={isPreparingVideos}
-                onFiles={onVideoUpload}
-              />
-            </div>
-            <div className="grid gap-2 md:grid-cols-3">
-              {videoSources.map((source, index) => (
-                <div key={source.id} className="overflow-hidden rounded-[2px] border border-[#171717] bg-[#090909]">
-                  <div className="relative aspect-[16/9]">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={source.thumbnailUrl} alt={source.name} className="absolute inset-0 h-full w-full object-cover" />
-                    <div className="absolute inset-0 bg-gradient-to-b from-[#00000018] via-transparent to-[#0000009c]" />
-                    <div className="absolute left-[6px] top-[6px] rounded-[2px] bg-[#00000088] px-1 py-[2px] text-[8px] font-mono text-[#d8d8d8]">
-                      S{index + 1}
-                    </div>
-                    <div className="absolute bottom-[6px] right-[6px] rounded-[2px] bg-[#00000088] px-1 py-[2px] text-[8px] font-mono text-[#b8b8b8]">
-                      {fmt(source.duration)}
-                    </div>
-                  </div>
-                  <div className="truncate border-t border-[#141414] px-2 py-[6px] text-[10px] font-mono text-[#8b8b8b]">
-                    {source.name}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+          <SourceVideoLibrary
+            sources={videoSources}
+            isPreparingVideos={isPreparingVideos}
+            onAppendVideos={onAppendVideos}
+            onReplaceVideos={onVideoUpload}
+          />
         </div>
       ) : (
         <div className="border border-[#1e1e1e] rounded-[2px] bg-[#070707] p-4">

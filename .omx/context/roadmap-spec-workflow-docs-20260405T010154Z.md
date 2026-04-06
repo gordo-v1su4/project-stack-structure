@@ -1,0 +1,32 @@
+# Context Snapshot
+
+- Task statement: Use the deep-interview workflow to plan a roadmap, solidify a specification workflow, and identify the most correct scripts and protocols to use in this app.
+- Desired outcome: Documentation-only artifacts that clarify roadmap, spec process, script conventions, and operating protocols for this existing app.
+- Stated solution: Run a Socratic planning/interview process; do not write application code.
+- Probable intent hypothesis: The user wants a reliable product/process foundation before implementation continues, so future work can follow a clear roadmap and an explicit documentation/spec workflow.
+- Known facts/evidence:
+  - This is a brownfield Next.js app using Next 16.2.1, React 19.2.4, TypeScript, Tailwind 4, and ESLint.
+  - package.json scripts are minimal: dev, build, start, lint.
+  - The main UI is `src/components/StudioApp.tsx`, a client-side studio-style editor.
+  - The app supports video uploads, audio uploads, beat/onset analysis, segment generation, shuffle/join/split/ramp flows, and a simulated processing flow.
+  - The app includes a Node runtime API route at `src/app/api/essentia/full/route.ts` that proxies audio analysis to an upstream Essentia service using API-key-based auth and local env fallback loading.
+  - README is still default create-next-app boilerplate, so project/process docs are not yet established.
+- Constraints:
+  - Documentation only; no code changes to product behavior.
+  - Need a roadmap and spec workflow that fit the current codebase, scripts, and operational realities.
+  - Must clarify which scripts/protocols are authoritative versus aspirational.
+- Unknowns/open questions:
+  - Product intent and target users.
+  - Whether this is a prototype, internal tool, or planned production app.
+  - Which documentation artifacts the user wants standardized.
+  - Preferred rigor and ownership model for roadmap/spec maintenance.
+  - Which scripts/protocols are considered missing or problematic today.
+- Decision-boundary unknowns:
+  - What OMX/agents may decide without confirmation in documentation planning.
+  - Whether script recommendations may include adding future scripts to a proposed roadmap/spec, even though no code will be written now.
+- Likely codebase touchpoints:
+  - `package.json`
+  - `README.md`
+  - `src/components/StudioApp.tsx`
+  - `src/app/api/essentia/full/route.ts`
+  - future `.omx/specs/` and planning docs

@@ -1,0 +1,26 @@
+{
+  "requestKey": "benchmark-1775461388382",
+  "inputPath": "C:\\Users\\Gordo\\bench-stack\\.local-fixtures\\media\\A_mermaid_discovery_202601202346_ttgv4.mp4",
+  "outputPath": "C:\\Users\\Gordo\\AppData\\Local\\Temp\\project-stack-structure-previews\\benchmark-1775461388382.mp4",
+  "fixtureRootDir": "C:\\Users\\Gordo\\bench-stack\\.local-fixtures\\media",
+  "hardwareLane": "local-windows",
+  "success": true,
+  "errorCode": null,
+  "errorMessage": null,
+  "probeStartedAt": "2026-04-06T07:43:08.384Z",
+  "probeCompletedAt": "2026-04-06T07:43:08.409Z",
+  "previewStartedAt": "2026-04-06T07:43:08.409Z",
+  "previewCompletedAt": "2026-04-06T07:43:08.771Z",
+  "probeDurationMs": 24.52,
+  "previewDurationMs": 361.56,
+  "readyToPlayDurationMs": 361.56,
+  "outputDuration": 1,
+  "sectionWindow": {
+    "startTime": 0,
+    "endTime": 1
+  },
+  "notes": [
+    "platform=win32",
+    "hostname=DESKTOP-Q20UUVD"
+  ]
+}
