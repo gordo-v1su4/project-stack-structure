@@ -16,13 +16,7 @@ The app is being shaped around a few non-negotiable rules:
 - `src/app/api/essentia/full/route.ts` — hosted audio-analysis proxy
 
 ## Getting started
-Run the local development server:
-
-```bash
-bun run dev
-```
-
-Other available scripts today:
+Run the local development:
 
 ```bash
 bun run build
