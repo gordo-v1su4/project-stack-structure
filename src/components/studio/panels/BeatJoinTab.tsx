@@ -3,7 +3,6 @@
 import { useMemo } from "react";
 import { lerp, sv } from "../math";
 import { ParamSlider } from "../ParamSlider";
-import { UploadControl } from "../UploadControl";
 import type { BeatJoinAnalysis, BeatJoinSection, ShuffleMode } from "../types";
 
 const ENERGY_BIN_COUNT = 32;
@@ -46,6 +45,7 @@ type BeatJoinTabProps = {
   audioPlayhead: number;
   clipOrder: number[];
   shuffleMode: ShuffleMode;
+  isUsingCommittedSplit?: boolean;
   activeClip: number;
   onMinDur: (v: number) => void;
   onMaxDur: (v: number) => void;
@@ -58,7 +58,6 @@ type BeatJoinTabProps = {
   analysisStatus: string;
   analysisError: string | null;
   isAnalyzing: boolean;
-  onAudioUpload: (files: File[]) => void | Promise<void>;
   onActiveClip: (i: number) => void;
 };
 
@@ -79,6 +78,7 @@ export function BeatJoinTab({
   isAnalyzing,
   clipOrder,
   shuffleMode,
+  isUsingCommittedSplit = false,
   activeClip,
   onMinDur,
   onMaxDur,
@@ -88,7 +88,6 @@ export function BeatJoinTab({
   onEnergyReactive,
   onLowEnergyRange,
   onHighEnergyRange,
-  onAudioUpload,
   onActiveClip,
 }: BeatJoinTabProps) {
   const hasAnalysis = analysis !== null;
@@ -141,20 +140,21 @@ export function BeatJoinTab({
 
   return (
     <>
+      {!isUsingCommittedSplit ? (
+        <div className="rounded-[2px] border border-[#3a220c] bg-[#120b06] px-3 py-2 text-[10px] uppercase tracking-[0.14em] text-[#d5a56a]">
+          Commit Beat Split first so Beat Join reacts to the same working segment set as Shuffle and Join.
+        </div>
+      ) : null}
+
       {!hasAnalysis ? (
         <div className="border border-[#1e1e1e] rounded-[2px] bg-[#070707] p-4">
-          <div className="text-[10px] uppercase tracking-[0.18em] text-[#3a3a3a] mb-3">Audio Track</div>
-          <UploadControl
-            accept="audio/*"
-            title="Beat Join waits for a real song upload."
-            detail="Drag in audio or click to choose a song. We will call Essentia, read beats/onsets/sections, and then draw the waveform from that file."
-            actionLabel={isAnalyzing ? "Processing Audio..." : "Upload Audio"}
-            disabled={isAnalyzing}
-            isProcessing={isAnalyzing}
-            status={analysisStatus}
-            error={analysisError}
-            onFiles={onAudioUpload}
-          />
+          <div className="text-[10px] uppercase tracking-[0.18em] text-[#3a3a3a] mb-3">Beat Join Analysis</div>
+          <div className="text-[13px] text-[#b0b0b0] mb-2">Upload the master song in the shared lane above.</div>
+          <div className="text-[10px] uppercase tracking-[0.16em] text-[#555]">
+            Beat Join unlocks its markers, section map, and reactive arrangement once Essentia finishes.
+          </div>
+          {isAnalyzing ? <div className="mt-3 text-[10px] font-mono text-[#727272]">{analysisStatus}</div> : null}
+          {analysisError ? <div className="mt-2 text-[10px] text-[#b96c43]">{analysisError}</div> : null}
         </div>
       ) : null}
 
@@ -165,15 +165,6 @@ export function BeatJoinTab({
           </span>
           <div className="flex items-center gap-2">
             <span className="font-mono text-[10px] text-[#555]">{analysisStatus}</span>
-            <UploadControl
-              accept="audio/*"
-              variant="button"
-              title=""
-              detail=""
-              actionLabel={isAnalyzing ? "Processing..." : "Replace Audio"}
-              disabled={isAnalyzing}
-              onFiles={onAudioUpload}
-            />
             <button
               type="button"
               onClick={() => onEnergyReactive(!energyReactive)}

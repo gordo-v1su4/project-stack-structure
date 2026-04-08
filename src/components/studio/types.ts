@@ -66,6 +66,8 @@ export interface SegmentPreview {
   duration: number;
   thumbnailUrl?: string;
   sourceClipIds: number[];
+  sourceRefLabel?: string;
+  timeLabel?: string;
   motionDescriptor?: MotionDescriptor | null;
 }
 

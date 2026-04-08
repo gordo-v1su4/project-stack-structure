@@ -1,7 +1,7 @@
 "use client";
 
 import type { Dispatch, SetStateAction } from "react";
-import { fmt, sv } from "../math";
+import { fmt } from "../math";
 import { SolidWaveform } from "../SolidWaveform";
 import { VideoClip } from "../VideoClip";
 import { WAVE_MAIN } from "../waveData";
@@ -14,6 +14,7 @@ type JoinTabProps = {
   clipOrder: number[];
   segmentPreviews: SegmentPreview[];
   shuffleMode: ShuffleMode;
+  isUsingCommittedSplit?: boolean;
   activeClip: number;
   onJoinClips: Dispatch<SetStateAction<JoinClip[]>>;
   onActiveClip: (i: number) => void;
@@ -26,6 +27,7 @@ export function JoinTab({
   clipOrder,
   segmentPreviews,
   shuffleMode,
+  isUsingCommittedSplit = false,
   activeClip,
   onJoinClips,
   onActiveClip,
@@ -47,10 +49,16 @@ export function JoinTab({
   const inactive = joinClips.filter((clip) => !clipOrder.includes(clip.id));
   const orderedClips = [...ordered, ...inactive];
   const active = orderedClips.filter((clip) => clip.on);
-  const totalDur = active.reduce((sum, clip) => sum + sv(clip.id + 1) * 8 + 1, 0);
+  const totalDur = active.reduce((sum, clip) => sum + (segmentPreviews[clip.id]?.duration ?? 0), 0);
 
   return (
     <>
+      {!isUsingCommittedSplit ? (
+        <div className="rounded-[2px] border border-[#3a220c] bg-[#120b06] px-3 py-2 text-[10px] uppercase tracking-[0.14em] text-[#d5a56a]">
+          Commit Beat Split first so Join uses the same working segment set as Shuffle.
+        </div>
+      ) : null}
+
       <SolidWaveform
         points={WAVE_MAIN}
         playhead={playhead}
@@ -71,19 +79,22 @@ export function JoinTab({
         </div>
         <div className="relative h-12 flex">
           {active.map((c, i) => {
-            const w = sv(c.id + 1) * 8 + 1;
-            const total = active.reduce((sum, clip) => sum + sv(clip.id + 1) * 8 + 1, 0);
+            const w = segmentPreviews[c.id]?.duration ?? 0;
+            const total = active.reduce((sum, clip) => sum + (segmentPreviews[clip.id]?.duration ?? 0), 0);
             return (
               <div
                 key={c.id}
                 className={`relative border-r border-[#0a0a0a] cursor-pointer ${
                   c.id === activeClip ? "bg-[#e05c0020]" : i % 2 === 0 ? "bg-[#0e0e0e]" : "bg-[#0b0b0b]"
                 }`}
-                style={{ width: `${(w / total) * 100}%` }}
+                style={{ width: `${(w / Math.max(total, 0.001)) * 100}%` }}
                 onClick={() => onActiveClip(c.id)}
               >
                 {c.id === activeClip && <div className="absolute top-0 left-0 right-0 h-[2px] bg-[#e05c00]" />}
-                <span className="absolute left-[2px] top-[3px] text-[7px] font-mono text-[#444]">C{c.id + 1}</span>
+                <span className="absolute left-[2px] top-[3px] text-[7px] font-mono text-[#444]">S{c.id + 1}</span>
+                <span className="absolute right-[2px] bottom-[2px] text-[7px] font-mono text-[#3f3f3f]">
+                  {(segmentPreviews[c.id]?.duration ?? 0).toFixed(1)}s
+                </span>
               </div>
             );
           })}
@@ -109,6 +120,7 @@ export function JoinTab({
                 idx={c.id}
                 active={c.id === activeClip}
                 mode="simple"
+                label={`S${String(c.id + 1).padStart(2, "0")}`}
                 durationLabel={segmentPreviews[c.id] ? `${segmentPreviews[c.id].duration.toFixed(1)}s` : undefined}
                 thumbnailUrl={segmentPreviews[c.id]?.thumbnailUrl}
               />

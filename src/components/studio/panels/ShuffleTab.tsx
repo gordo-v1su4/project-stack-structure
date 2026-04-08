@@ -3,9 +3,7 @@
 import { sv } from "../math";
 import { getClipPalette } from "../palette";
 import { ParamSlider } from "../ParamSlider";
-import { SolidWaveform } from "../SolidWaveform";
 import { VideoClip } from "../VideoClip";
-import { WAVE_MAIN } from "../waveData";
 import type { ColorGradient, SegmentPreview, ShuffleMode } from "../types";
 
 const GRADIENT_COLORS: Record<ColorGradient, string[]> = {
@@ -21,6 +19,7 @@ type ShuffleTabProps = {
   clipOrder: number[];
   segmentPreviews: SegmentPreview[];
   shuffleMode: ShuffleMode;
+  isUsingCommittedSplit?: boolean;
   minScore: number;
   lookahead: number;
   keepPct: number;
@@ -36,11 +35,11 @@ type ShuffleTabProps = {
 
 export function ShuffleTab({
   playhead,
-  bpm,
   clipCount,
   clipOrder,
   segmentPreviews,
   shuffleMode,
+  isUsingCommittedSplit = false,
   minScore,
   lookahead,
   keepPct,
@@ -66,15 +65,41 @@ export function ShuffleTab({
 
   return (
     <>
-      <SolidWaveform
-        points={WAVE_MAIN}
-        playhead={playhead}
-        bpm={bpm}
-        totalBars={8}
-        beatsPerBar={4}
-        label={`SOURCE · ${clipCount} CLIPS LOADED`}
-        height={90}
-      />
+      {!isUsingCommittedSplit ? (
+        <div className="rounded-[2px] border border-[#3a220c] bg-[#120b06] px-3 py-2 text-[10px] uppercase tracking-[0.14em] text-[#d5a56a]">
+          Commit Beat Split first so Shuffle reorders a stable working segment set.
+        </div>
+      ) : null}
+
+      <div className="border border-[#1a1a1a] rounded-[2px] bg-[#080808] overflow-hidden">
+        <div className="flex items-center justify-between px-3 py-2 border-b border-[#181818]">
+          <span className="text-[10px] uppercase tracking-[0.18em] text-[#404040]">Arrangement Preview</span>
+          <span className="font-mono text-[10px] text-[#666]">{clipCount} {isUsingCommittedSplit ? "committed" : "preview"} segments</span>
+        </div>
+        <div className="relative h-16 flex bg-[#070707]">
+          {clipOrder.map((clipId, index) => {
+            const preview = segmentPreviews[clipId];
+            const segmentDuration = preview?.duration ?? 1;
+            const totalDuration = clipOrder.reduce((sum, id) => sum + (segmentPreviews[id]?.duration ?? 1), 0);
+            return (
+              <div
+                key={`${clipId}-${index}`}
+                className={`relative border-r border-[#0d0d0d] ${clipId === activeClip ? "bg-[#e05c001f]" : index % 2 === 0 ? "bg-[#0f0f0f]" : "bg-[#0b0b0b]"}`}
+                style={{ width: `${(segmentDuration / Math.max(totalDuration, 0.001)) * 100}%` }}
+              >
+                {clipId === activeClip ? <div className="absolute top-0 left-0 right-0 h-[2px] bg-[#e05c00]" /> : null}
+                <span className="absolute left-[4px] top-[4px] text-[8px] font-mono text-[#666]">
+                  {`S${String(clipId + 1).padStart(2, "0")}`}
+                </span>
+                <span className="absolute right-[4px] bottom-[4px] text-[8px] font-mono text-[#444]">
+                  {segmentDuration.toFixed(1)}s
+                </span>
+              </div>
+            );
+          })}
+          <div className="absolute inset-y-0 w-[1px] bg-[#e05c00]" style={{ left: `${playhead * 100}%` }} />
+        </div>
+      </div>
 
       <div className="grid grid-cols-4 gap-2">
         {(["simple", "size", "color", "motion"] as ShuffleMode[]).map((m) => (
@@ -138,7 +163,7 @@ export function ShuffleTab({
         <div className="mb-2 border border-[#1a1a1a] rounded-[2px] bg-[#080808] px-2 py-[6px]">
           <div className="flex items-center justify-between gap-3 text-[9px] uppercase tracking-[0.16em] text-[#404040]">
             <span>Selected Queue</span>
-            <span className="font-mono text-[#666]">{shuffleMode}</span>
+            <span className="font-mono text-[#666]">{isUsingCommittedSplit ? "committed" : "preview"} · {shuffleMode}</span>
           </div>
           <div className="mt-[6px] flex flex-wrap gap-1">
             {clipOrder.map((clipId, index) => (
@@ -149,8 +174,9 @@ export function ShuffleTab({
                     ? "border-[#e05c00] bg-[#e05c0018] text-[#e05c00]"
                     : "border-[#1d1d1d] bg-[#0d0d0d] text-[#666]"
                 }`}
+                title={segmentPreviews[clipId]?.timeLabel}
               >
-                {String(index + 1).padStart(2, "0")}→C{String(clipId + 1).padStart(2, "0")}
+                {String(index + 1).padStart(2, "0")}→S{String(clipId + 1).padStart(2, "0")}
               </span>
             ))}
           </div>
@@ -165,7 +191,7 @@ export function ShuffleTab({
                 idx={i}
                 active={i === activeClip}
                 mode={shuffleMode}
-                label={`C${String(i + 1).padStart(2, "0")}`}
+                label={`S${String(i + 1).padStart(2, "0")}`}
                 durationLabel={preview ? `${preview.duration.toFixed(1)}s` : undefined}
                 thumbnailUrl={preview?.thumbnailUrl}
                 showColorBars={shuffleMode === "color"}

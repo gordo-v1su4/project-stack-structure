@@ -110,38 +110,53 @@ export function SolidWaveform({
 
     if (!points.length) return;
 
-    const accentFill = hexToRgba(accent, 0.72);
-    const accentHighlight = hexToRgba(accent, 0.95);
-    const trailFill = "rgba(46, 46, 46, 0.72)";
-    const trailHighlight = "rgba(110, 110, 110, 0.4)";
-    const innerHeight = Math.max(centerY - 3, 1);
-
-    for (let x = 0; x < canvasWidth; x += 1) {
+    const innerHeight = Math.max(centerY - 4, 1);
+    const amplitudes = Array.from({ length: canvasWidth }, (_, x) => {
       const sampleStart = windowStart + (x / canvasWidth) * visibleDuration;
       const sampleEnd = windowStart + ((x + 1) / canvasWidth) * visibleDuration;
       const startIndex = Math.floor((sampleStart / resolvedDuration) * points.length);
       const endIndex = Math.max(startIndex + 1, Math.floor((sampleEnd / resolvedDuration) * points.length));
-      let min = 1;
-      let max = -1;
+      let peak = 0;
 
       for (let index = startIndex; index < endIndex; index += 1) {
-        const value = clampPoint(points[index] ?? 0);
-        min = Math.min(min, -value);
-        max = Math.max(max, value);
+        peak = Math.max(peak, clampPoint(points[index] ?? 0));
       }
 
-      const top = Math.max(1, centerY - max * innerHeight);
-      const bottom = Math.min(waveH - 1, centerY - min * innerHeight);
-      const barHeight = Math.max(1, bottom - top);
-      const isAhead = x <= ph;
+      return peak;
+    });
 
-      ctx.fillStyle = isAhead ? accentFill : trailFill;
-      ctx.fillRect(x, top, 1, barHeight);
-
-      const center = centerY - ((max + min) * 0.5) * innerHeight;
-      ctx.fillStyle = isAhead ? accentHighlight : trailHighlight;
-      ctx.fillRect(x, Math.max(1, center - 0.75), 1, Math.max(1, barHeight * 0.14));
+    const waveformPath = new Path2D();
+    waveformPath.moveTo(0, centerY);
+    for (let x = 0; x < amplitudes.length; x += 1) {
+      waveformPath.lineTo(x, centerY - amplitudes[x] * innerHeight);
     }
+    for (let x = amplitudes.length - 1; x >= 0; x -= 1) {
+      waveformPath.lineTo(x, centerY + amplitudes[x] * innerHeight);
+    }
+    waveformPath.closePath();
+
+    const inactiveGradient = ctx.createLinearGradient(0, 0, canvasWidth, 0);
+    inactiveGradient.addColorStop(0, "rgba(101, 87, 160, 0.34)");
+    inactiveGradient.addColorStop(0.48, "rgba(192, 106, 146, 0.52)");
+    inactiveGradient.addColorStop(1, "rgba(87, 133, 196, 0.34)");
+    ctx.fillStyle = inactiveGradient;
+    ctx.fill(waveformPath);
+
+    const playedGradient = ctx.createLinearGradient(0, 0, canvasWidth, 0);
+    playedGradient.addColorStop(0, "rgba(122, 101, 232, 0.72)");
+    playedGradient.addColorStop(0.48, "rgba(248, 112, 150, 0.86)");
+    playedGradient.addColorStop(1, "rgba(106, 174, 255, 0.72)");
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, Math.max(ph, 0), waveH);
+    ctx.clip();
+    ctx.fillStyle = playedGradient;
+    ctx.fill(waveformPath);
+    ctx.restore();
+
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.12)";
+    ctx.lineWidth = 1;
+    ctx.stroke(waveformPath);
   }, [waveH, ph, accent, points, canvasWidth, resolvedDuration, visibleDuration, windowStart]);
 
   function handleSeek(clientX: number) {
@@ -173,23 +188,25 @@ export function SolidWaveform({
         viewBox={`0 0 ${canvasWidth} ${waveH}`}
         preserveAspectRatio="none"
       >
-        {Array.from({ length: totalBeats + 1 }, (_, i) => {
-          const time = derivedBeatTimes.length ? (i === totalBeats ? resolvedDuration : (derivedBeatTimes[i] ?? 0)) : (i / totalBeats) * resolvedDuration;
-          if (time < windowStart || time > windowEnd) return null;
-          const x = projectTimeToX(time, windowStart, windowEnd, canvasWidth);
-          const isBar = i % beatsPerBar === 0;
-          return (
-            <line
-              key={i}
-              x1={x}
-              y1={0}
-              x2={x}
-              y2={waveH}
-              stroke={isBar ? "#252525" : "#141414"}
-              strokeWidth={isBar ? 1.2 : 0.6}
-            />
-          );
-        })}
+        {showRuler
+          ? Array.from({ length: totalBeats + 1 }, (_, i) => {
+              const time = derivedBeatTimes.length ? (i === totalBeats ? resolvedDuration : (derivedBeatTimes[i] ?? 0)) : (i / totalBeats) * resolvedDuration;
+              if (time < windowStart || time > windowEnd) return null;
+              const x = projectTimeToX(time, windowStart, windowEnd, canvasWidth);
+              const isBar = i % beatsPerBar === 0;
+              return (
+                <line
+                  key={i}
+                  x1={x}
+                  y1={0}
+                  x2={x}
+                  y2={waveH}
+                  stroke={isBar ? "#252525" : "#141414"}
+                  strokeWidth={isBar ? 1.2 : 0.6}
+                />
+              );
+            })
+          : null}
 
         <line x1={ph} y1={0} x2={ph} y2={waveH} stroke={accent} strokeWidth={1.5} />
         <polygon points={`${ph - 5},0 ${ph + 5},0 ${ph},10`} fill={accent} />
@@ -261,19 +278,6 @@ export function SolidWaveform({
 function projectTimeToX(time: number, windowStart: number, windowEnd: number, width: number) {
   const windowDuration = Math.max(windowEnd - windowStart, 0.001);
   return ((time - windowStart) / windowDuration) * width;
-}
-
-function hexToRgba(hex: string, alpha: number) {
-  const normalized = hex.replace("#", "");
-  const value = normalized.length === 3
-    ? normalized.split("").map((part) => `${part}${part}`).join("")
-    : normalized;
-
-  const int = Number.parseInt(value, 16);
-  const r = (int >> 16) & 255;
-  const g = (int >> 8) & 255;
-  const b = int & 255;
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
 function clampPoint(value: number) {

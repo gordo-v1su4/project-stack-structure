@@ -20,7 +20,7 @@ function actionLabel(tab: Tab): string {
     case "split":
       return "Initialize Segments";
     case "beatsplit":
-      return "Detect & Split Beats";
+      return "Commit Beat Split";
     case "shuffle":
       return "Execute Shuffle";
     case "join":

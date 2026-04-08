@@ -21,7 +21,6 @@ export function AudioPreview({
   bpmFallback,
   title,
   subtitle,
-  helperText,
   accent = "#d4ae1d",
   height = 118,
   onPlayheadChange,
@@ -30,6 +29,7 @@ export function AudioPreview({
   const [isPlaying, setIsPlaying] = useState(false);
   const [audioTime, setAudioTime] = useState(0);
   const [zoom, setZoom] = useState<1 | 2>(1);
+  const [showGrid, setShowGrid] = useState(true);
   const duration = Math.max(analysis.duration, 0.001);
   const playhead = clamp(audioTime / duration, 0, 1);
   const displayBpm = Math.round(deriveDisplayBpm(analysis.beats, bpmFallback));
@@ -73,10 +73,14 @@ export function AudioPreview({
 
   return (
     <div className="space-y-2 border border-[#181818] rounded-[3px] bg-[linear-gradient(180deg,#0e0e0e_0%,#090909_100%)] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
-      <div className="flex items-end justify-between gap-4">
-        <div className="min-w-0">
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex min-w-0 items-center gap-3">
           <div className="truncate text-[11px] uppercase tracking-[0.24em] text-[#d7d7d7]">{title}</div>
-          {subtitle ? <div className="mt-1 text-[9px] uppercase tracking-[0.22em] text-[#626262]">{subtitle}</div> : null}
+          {subtitle ? (
+            <div className="truncate text-[8px] uppercase tracking-[0.18em] text-[#565656]">
+              {subtitle}
+            </div>
+          ) : null}
         </div>
         <div className="flex items-center gap-4 font-mono text-[10px] text-[#767676]">
           <span>
@@ -84,6 +88,15 @@ export function AudioPreview({
           </span>
           <span>
             LEN <span className="text-[#d0d0d0]">{fmt(duration)}</span>
+          </span>
+          <span>
+            B <span className="text-[#bfbfbf]">{analysis.beats.length}</span>
+          </span>
+          <span>
+            O <span className="text-[#bfbfbf]">{analysis.onsets.length}</span>
+          </span>
+          <span>
+            S <span className="text-[#bfbfbf]">{analysis.sections.length}</span>
           </span>
         </div>
       </div>
@@ -98,6 +111,7 @@ export function AudioPreview({
         accent={accent}
         height={height}
         label=""
+        showRuler={showGrid}
         zoom={zoom}
         onSeek={seekToPlayhead}
       />
@@ -130,24 +144,22 @@ export function AudioPreview({
             >
               {zoom}x
             </button>
+            <button
+              type="button"
+              onClick={() => setShowGrid((current) => !current)}
+              className={`border rounded-[2px] px-3 py-1 text-[10px] uppercase tracking-[0.14em] ${
+                showGrid
+                  ? "border-[#3a3a3a] text-[#c0c0c0] hover:border-[#575757]"
+                  : "border-[#232323] text-[#8a8a8a] hover:border-[#3a3a3a]"
+              }`}
+            >
+              {showGrid ? "Hide Grid" : "Show Grid"}
+            </button>
           </div>
           <div className="font-mono text-[10px] text-[#868686]">
             {fmt(audioTime)} / {fmt(duration)}
           </div>
         </div>
-        <div className="mt-3 flex flex-wrap items-stretch gap-2">
-          {[
-            ["Beats", String(analysis.beats.length)],
-            ["Onsets", String(analysis.onsets.length)],
-            ["Sections", String(analysis.sections.length)],
-          ].map(([label, value]) => (
-            <div key={label} className="min-w-[72px] border border-[#171717] rounded-[2px] bg-[#0b0b0b] px-2 py-2">
-              <div className="text-[8px] uppercase tracking-[0.18em] text-[#494949]">{label}</div>
-              <div className="mt-1 font-mono text-[12px] text-[#bfbfbf]">{value}</div>
-            </div>
-          ))}
-        </div>
-        {helperText ? <div className="mt-3 text-[10px] uppercase tracking-[0.14em] text-[#5a5a5a]">{helperText}</div> : null}
       </div>
 
       <audio

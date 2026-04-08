@@ -20,6 +20,7 @@ type SplitTabProps = {
   activeClip: number;
   onVideoUpload: (files: File[]) => void | Promise<void>;
   onAppendVideos: (files: File[]) => void | Promise<void>;
+  onRemoveVideo: (sourceId: number) => void;
   onClipDur: (v: number) => void;
   onActiveClip: (i: number) => void;
 };
@@ -36,6 +37,7 @@ export function SplitTab({
   activeClip,
   onVideoUpload,
   onAppendVideos,
+  onRemoveVideo,
   onClipDur,
   onActiveClip,
 }: SplitTabProps) {
@@ -57,6 +59,7 @@ export function SplitTab({
             isPreparingVideos={isPreparingVideos}
             onAppendVideos={onAppendVideos}
             onReplaceVideos={onVideoUpload}
+            onRemoveVideo={onRemoveVideo}
           />
         </div>
       ) : (

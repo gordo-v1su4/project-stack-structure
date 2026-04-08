@@ -16,7 +16,6 @@ type BeatSplitTabProps = {
   analysis: BeatJoinAnalysis | null;
   audioStatus: string;
   audioError: string | null;
-  isPreparingAudio: boolean;
   videoSources: UploadedVideoSource[];
   videoStatus: string;
   videoError: string | null;
@@ -25,9 +24,11 @@ type BeatSplitTabProps = {
   segments: SourceTimelineSegment[];
   sensitivity: number;
   activeClip: number;
-  onAudioUpload: (files: File[]) => void | Promise<void>;
+  committedSegmentCount?: number;
+  isCommittedCurrent?: boolean;
   onVideoUpload: (files: File[]) => void | Promise<void>;
   onAppendVideos: (files: File[]) => void | Promise<void>;
+  onRemoveVideo: (sourceId: number) => void;
   onBarsPerSeg: (v: number) => void;
   onSensitivity: (v: number) => void;
   onSplitMode: (v: "beats" | "onsets") => void;
@@ -42,7 +43,6 @@ export function BeatSplitTab({
   analysis,
   audioStatus,
   audioError,
-  isPreparingAudio,
   videoSources,
   videoStatus,
   videoError,
@@ -51,9 +51,11 @@ export function BeatSplitTab({
   segments,
   sensitivity,
   activeClip,
-  onAudioUpload,
+  committedSegmentCount = 0,
+  isCommittedCurrent = false,
   onVideoUpload,
   onAppendVideos,
+  onRemoveVideo,
   onBarsPerSeg,
   onSensitivity,
   onSplitMode,
@@ -81,29 +83,12 @@ export function BeatSplitTab({
             label={`A/V SOURCE · ${sourceClips.length} CLIP${sourceClips.length === 1 ? "" : "S"} STITCHED · ${fmt(totalDuration)}`}
             height={124}
           />
-          <div className="grid gap-3 md:grid-cols-2">
-            <div className="border border-[#1a1a1a] rounded-[2px] bg-[#0b0b0b] p-2">
-              <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.16em] text-[#444]">
-                <span>Beat Sync Audio</span>
-                <UploadControl
-                  accept="audio/*"
-                  variant="button"
-                  title=""
-                  detail=""
-                  actionLabel={isPreparingAudio ? "Processing..." : hasAnalysis ? "Replace Audio" : "Upload Audio"}
-                  disabled={isPreparingAudio}
-                  onFiles={onAudioUpload}
-                />
-              </div>
-              <div className="mt-2 text-[10px] font-mono text-[#6c6c6c]">{audioStatus}</div>
-              {audioError ? <div className="mt-1 text-[10px] text-[#b96c43]">{audioError}</div> : null}
-            </div>
-          </div>
           <SourceVideoLibrary
             sources={videoSources}
             isPreparingVideos={isPreparingVideos}
             onAppendVideos={onAppendVideos}
             onReplaceVideos={onVideoUpload}
+            onRemoveVideo={onRemoveVideo}
           />
         </div>
       ) : (
@@ -154,17 +139,12 @@ export function BeatSplitTab({
         </div>
       ) : (
         <div className="border border-[#1a1a1a] rounded-[2px] bg-[#0b0b0b] p-4">
-          <UploadControl
-            accept="audio/*"
-            title="Beat Split needs the song too."
-            detail="Upload the same audio track here or in Beat Join. Beat mode and onset mode both use that analysis to decide where the cuts land."
-            actionLabel={isPreparingAudio ? "Processing Audio..." : "Upload Audio for Sync"}
-            disabled={isPreparingAudio}
-            isProcessing={isPreparingAudio}
-            status={audioStatus}
-            error={audioError}
-            onFiles={onAudioUpload}
-          />
+          <div className="text-[13px] text-[#b0b0b0] mb-2">Upload the master song in the shared lane above.</div>
+          <div className="text-[10px] uppercase tracking-[0.16em] text-[#555]">
+            Beat Split reuses that analysis to place beat and onset boundaries here.
+          </div>
+          <div className="mt-3 text-[10px] font-mono text-[#727272]">{audioStatus}</div>
+          {audioError ? <div className="mt-2 text-[10px] text-[#b96c43]">{audioError}</div> : null}
         </div>
       )}
 
@@ -214,6 +194,65 @@ export function BeatSplitTab({
         ) : (
           <div className="px-3 py-4 text-[10px] uppercase tracking-[0.14em] text-[#4f4f4f]">
             Upload video clips to calculate beat segments.
+          </div>
+        )}
+      </div>
+
+      <div className="border border-[#1a1a1a] rounded-[2px] bg-[#0c0c0c] p-3">
+        <div className="mb-2 flex items-center justify-between">
+          <span className="text-[10px] uppercase tracking-[0.18em] text-[#404040]">Split Result</span>
+          <span className="font-mono text-[10px] text-[#666]">{segments.length} preview · {committedSegmentCount} committed</span>
+        </div>
+        <div
+          className={`mb-3 rounded-[2px] border px-3 py-2 text-[10px] uppercase tracking-[0.14em] ${
+            isCommittedCurrent
+              ? "border-[#2a2a2a] bg-[#0d0d0d] text-[#8d8d8d]"
+              : "border-[#3a220c] bg-[#120b06] text-[#d5a56a]"
+          }`}
+        >
+          {isCommittedCurrent
+            ? "Current split preview is committed and driving the next editing stages."
+            : "Current split preview is not committed yet. Commit Beat Split to drive Shuffle, Join, and Beat Join."}
+        </div>
+        {segments.length ? (
+          <div className="grid gap-2 md:grid-cols-3 xl:grid-cols-4">
+            {segments.map((segment) => {
+              const primarySourceId = segment.sourceClipIds[0] ?? 0;
+              const primarySource = videoSources.find((source) => source.id === primarySourceId);
+              return (
+                <button
+                  key={segment.id}
+                  type="button"
+                  onClick={() => onActiveClip(segment.id)}
+                  title={`${formatSourceRefs(segment.sourceClipIds)} · ${segment.start.toFixed(2)}s → ${segment.end.toFixed(2)}s`}
+                  className={`overflow-hidden rounded-[2px] border text-left transition-colors ${
+                    segment.id === activeClip ? "border-[#e05c00] bg-[#120a06]" : "border-[#171717] bg-[#090909] hover:border-[#2a2a2a]"
+                  }`}
+                >
+                  <div className="relative aspect-[16/9] bg-[#040404]">
+                    {primarySource?.thumbnailUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={primarySource.thumbnailUrl} alt={primarySource.name} className="absolute inset-0 h-full w-full object-cover opacity-90" />
+                    ) : null}
+                    <div className="absolute inset-0 bg-gradient-to-b from-[#0000002a] via-transparent to-[#000000b0]" />
+                    <div className="absolute left-[6px] top-[6px] rounded-[2px] bg-[#00000088] px-1 py-[2px] text-[8px] font-mono text-[#d8d8d8]">
+                      {`SEG ${String(segment.id + 1).padStart(2, "0")}`}
+                    </div>
+                    <div className="absolute bottom-[6px] right-[6px] rounded-[2px] bg-[#00000088] px-1 py-[2px] text-[8px] font-mono text-[#e0e0e0]">
+                      {segment.duration.toFixed(1)}s
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between gap-2 border-t border-[#141414] px-2 py-[6px] text-[9px] font-mono">
+                    <span className="text-[#b0b0b0]">{formatSourceRefs(segment.sourceClipIds)}</span>
+                    <span className="text-[#6c6c6c]">{`${segment.start.toFixed(1)}–${segment.end.toFixed(1)}`}</span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="rounded-[2px] border border-dashed border-[#1f1f1f] bg-[#080808] px-3 py-4 text-[10px] uppercase tracking-[0.14em] text-[#4f4f4f]">
+            Load a song and source clips to see generated split segments here.
           </div>
         )}
       </div>
