@@ -37,7 +37,7 @@ export function SolidWaveform({
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [width, setWidth] = useState(0);
-  const rulerH = showRuler ? 22 : 0;
+  const rulerH = 22;
   const waveH = height - rulerH;
   const canvasWidth = Math.max(1, width);
   const derivedBeatTimes = beatTimes?.length
@@ -136,16 +136,16 @@ export function SolidWaveform({
     waveformPath.closePath();
 
     const inactiveGradient = ctx.createLinearGradient(0, 0, canvasWidth, 0);
-    inactiveGradient.addColorStop(0, "rgba(101, 87, 160, 0.34)");
-    inactiveGradient.addColorStop(0.48, "rgba(192, 106, 146, 0.52)");
-    inactiveGradient.addColorStop(1, "rgba(87, 133, 196, 0.34)");
+    inactiveGradient.addColorStop(0, "rgba(176, 120, 38, 0.32)");
+    inactiveGradient.addColorStop(0.5, "rgba(226, 156, 72, 0.46)");
+    inactiveGradient.addColorStop(1, "rgba(243, 198, 92, 0.34)");
     ctx.fillStyle = inactiveGradient;
     ctx.fill(waveformPath);
 
     const playedGradient = ctx.createLinearGradient(0, 0, canvasWidth, 0);
-    playedGradient.addColorStop(0, "rgba(122, 101, 232, 0.72)");
-    playedGradient.addColorStop(0.48, "rgba(248, 112, 150, 0.86)");
-    playedGradient.addColorStop(1, "rgba(106, 174, 255, 0.72)");
+    playedGradient.addColorStop(0, "rgba(206, 118, 24, 0.84)");
+    playedGradient.addColorStop(0.5, "rgba(231, 154, 46, 0.92)");
+    playedGradient.addColorStop(1, "rgba(247, 204, 84, 0.88)");
     ctx.save();
     ctx.beginPath();
     ctx.rect(0, 0, Math.max(ph, 0), waveH);
@@ -212,21 +212,21 @@ export function SolidWaveform({
         <polygon points={`${ph - 5},0 ${ph + 5},0 ${ph},10`} fill={accent} />
       </svg>
 
-      {showRuler && (
-        <div
-          className="absolute top-0 left-0 right-0 border-b border-[#1a1a1a] bg-[#0a0a0a]"
-          style={{ height: rulerH }}
-        >
-          <svg className="w-full h-full" viewBox={`0 0 ${canvasWidth} ${rulerH * 2}`} preserveAspectRatio="none">
-            {Array.from({ length: totalBeats }, (_, i) => {
-              const time = derivedBeatTimes.length ? (derivedBeatTimes[i] ?? 0) : (i / totalBeats) * resolvedDuration;
-              if (time < windowStart || time > windowEnd) return null;
-              const x = projectTimeToX(time, windowStart, windowEnd, canvasWidth);
-              const bar = Math.floor(i / beatsPerBar) + 1;
-              const beat = (i % beatsPerBar) + 1;
-              const isBarStart = beat === 1;
-              return (
-                <g key={i}>
+      <div
+        className="absolute top-0 left-0 right-0 border-b border-[#1a1a1a] bg-[#0a0a0a]"
+        style={{ height: rulerH }}
+      >
+        <svg className="w-full h-full" viewBox={`0 0 ${canvasWidth} ${rulerH * 2}`} preserveAspectRatio="none">
+          {Array.from({ length: totalBeats }, (_, i) => {
+            const time = derivedBeatTimes.length ? (derivedBeatTimes[i] ?? 0) : (i / totalBeats) * resolvedDuration;
+            if (time < windowStart || time > windowEnd) return null;
+            const x = projectTimeToX(time, windowStart, windowEnd, canvasWidth);
+            const bar = Math.floor(i / beatsPerBar) + 1;
+            const beat = (i % beatsPerBar) + 1;
+            const isBarStart = beat === 1;
+            return (
+              <g key={i}>
+                {showRuler ? (
                   <line
                     x1={x}
                     y1={0}
@@ -235,30 +235,30 @@ export function SolidWaveform({
                     stroke={isBarStart ? "#2a2a2a" : "#181818"}
                     strokeWidth={isBarStart ? 1.2 : 0.6}
                   />
-                  {isBarStart && bar % labelStep === 1 && (
-                    <text
-                      x={x + 4}
-                      y={rulerH * 1.4}
-                      fontSize={10}
-                      fill="#404040"
-                      fontFamily="monospace"
-                      fontWeight="600"
-                    >
-                      {bar}
-                    </text>
-                  )}
-                  {!isBarStart && resolvedZoom === 2 && (
-                    <text x={x + 3} y={rulerH * 1.5} fontSize={8} fill="#282828" fontFamily="monospace">
-                      {bar}-{beat}
-                    </text>
-                  )}
-                </g>
-              );
-            })}
-            <rect x={ph - 1} y={0} width={2} height={rulerH * 2} fill={accent} opacity="0.7" />
-          </svg>
-        </div>
-      )}
+                ) : null}
+                {isBarStart && bar % labelStep === 1 && (
+                  <text
+                    x={x + 4}
+                    y={rulerH * 1.4}
+                    fontSize={10}
+                    fill="#404040"
+                    fontFamily="monospace"
+                    fontWeight="600"
+                  >
+                    {bar}
+                  </text>
+                )}
+                {!isBarStart && resolvedZoom === 2 && showRuler ? (
+                  <text x={x + 3} y={rulerH * 1.5} fontSize={8} fill="#282828" fontFamily="monospace">
+                    {bar}-{beat}
+                  </text>
+                ) : null}
+              </g>
+            );
+          })}
+          <rect x={ph - 1} y={0} width={2} height={rulerH * 2} fill={accent} opacity="0.7" />
+        </svg>
+      </div>
 
       <div className="absolute bottom-[3px] right-[8px] flex gap-4 text-[9px] font-mono text-[#333] z-10 pointer-events-none">
         <span>

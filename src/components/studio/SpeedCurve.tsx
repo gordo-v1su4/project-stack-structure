@@ -8,9 +8,17 @@ type SpeedCurveProps = {
   minSpeed: number;
   maxSpeed: number;
   preset: RampPreset;
+  initialNodes?: { x: number; y: number; kind?: string; label?: string }[];
 };
 
-export function SpeedCurve({ minSpeed, maxSpeed, preset }: SpeedCurveProps) {
+type SpeedCurveNode = {
+  x: number;
+  y: number;
+  kind?: string;
+  label?: string;
+};
+
+export function SpeedCurve({ minSpeed, maxSpeed, preset, initialNodes }: SpeedCurveProps) {
   const W = 800;
   const H = 200;
   const PAD = { t: 16, b: 28, l: 40, r: 12 };
@@ -27,8 +35,10 @@ export function SpeedCurve({ minSpeed, maxSpeed, preset }: SpeedCurveProps) {
     return shapes[preset];
   }, [preset]);
 
-  const [nodes, setNodes] = useState(() =>
-    basePoints.map((v, i) => ({ x: i / (basePoints.length - 1), y: v }))
+  const [nodes, setNodes] = useState<SpeedCurveNode[]>(() =>
+    initialNodes?.length
+      ? initialNodes.map((node) => ({ x: node.x, y: node.y, kind: node.kind, label: node.label }))
+      : basePoints.map((v, i) => ({ x: i / (basePoints.length - 1), y: v }))
   );
 
   const svgRef = useRef<SVGSVGElement>(null);
@@ -162,6 +172,18 @@ export function SpeedCurve({ minSpeed, maxSpeed, preset }: SpeedCurveProps) {
                 dragging.current = i;
               }}
             />
+            {n.kind ? (
+              <text
+                x={sx}
+                y={sy - 10}
+                textAnchor="middle"
+                fontSize={8}
+                fill="#666"
+                fontFamily="monospace"
+              >
+                {n.label ?? n.kind}
+              </text>
+            ) : null}
           </g>
         );
       })}

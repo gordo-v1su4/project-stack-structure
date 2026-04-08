@@ -56,7 +56,7 @@ import type {
 export default function StudioApp() {
   const videoSourcesRef = useRef<UploadedVideoSource[]>([]);
   const [tab, setTab] = useState<Tab>("split");
-  const [playhead, setPlayhead] = useState(0.08);
+  const [playhead] = useState(0.08);
   const [audioPreviewPlayhead, setAudioPreviewPlayhead] = useState(0);
   const [activeClip, setActiveClip] = useState(2);
 
@@ -113,11 +113,6 @@ export default function StudioApp() {
     signature: string;
     committedAt: string;
   } | null>(null);
-
-  useEffect(() => {
-    const id = setInterval(() => setPlayhead((p) => (p >= 0.97 ? 0.02 : p + 0.003)), 80);
-    return () => clearInterval(id);
-  }, []);
 
   useEffect(() => {
     return () => {
@@ -825,6 +820,9 @@ export default function StudioApp() {
               <RampTab
                 playhead={playhead}
                 bpm={bpm}
+                analysis={beatJoinAnalysis}
+                segmentPreviews={segmentPreviews}
+                isUsingCommittedSplit={Boolean(committedBeatSplit)}
                 rampPreset={rampPreset}
                 minSpeed={minSpeed}
                 maxSpeed={maxSpeed}

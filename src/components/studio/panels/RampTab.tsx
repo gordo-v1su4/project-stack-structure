@@ -1,14 +1,15 @@
 "use client";
 
 import { ParamSlider } from "../ParamSlider";
-import { SolidWaveform } from "../SolidWaveform";
 import { SpeedCurve } from "../SpeedCurve";
-import { WAVE_MAIN } from "../waveData";
-import type { RampPreset } from "../types";
+import type { BeatJoinAnalysis, RampPreset, SegmentPreview } from "../types";
 
 type RampTabProps = {
   playhead: number;
   bpm: number;
+  analysis: BeatJoinAnalysis | null;
+  segmentPreviews: SegmentPreview[];
+  isUsingCommittedSplit?: boolean;
   rampPreset: RampPreset;
   minSpeed: number;
   maxSpeed: number;
@@ -34,7 +35,9 @@ const RAMP_META: Record<RampPreset, [string, string]> = {
 
 export function RampTab({
   playhead,
-  bpm,
+  analysis,
+  segmentPreviews,
+  isUsingCommittedSplit = false,
   rampPreset,
   minSpeed,
   maxSpeed,
@@ -50,25 +53,59 @@ export function RampTab({
   onBuildBoost,
   onDropSlowdown,
 }: RampTabProps) {
+  const arrangementDuration = segmentPreviews.reduce((sum, preview) => sum + preview.duration, 0);
+  const rampNodes = buildRampNodes({
+    segmentPreviews,
+    analysis,
+    preset: rampPreset,
+    minSpeed,
+    maxSpeed,
+    buildBoost,
+    dropSlowdown,
+  });
+
   return (
     <>
-      <SolidWaveform
-        points={WAVE_MAIN}
-        playhead={playhead}
-        bpm={bpm}
-        totalBars={8}
-        beatsPerBar={4}
-        label="SOURCE VIDEO · CLIP_001.MP4"
-        height={100}
-      />
+      {!isUsingCommittedSplit ? (
+        <div className="rounded-[2px] border border-[#3a220c] bg-[#120b06] px-3 py-2 text-[10px] uppercase tracking-[0.14em] text-[#d5a56a]">
+          Commit Beat Split first so Speed Ramp derives anchors from the finalized arrangement.
+        </div>
+      ) : null}
+
+      <div className="border border-[#1a1a1a] rounded-[2px] bg-[#080808] overflow-hidden">
+        <div className="flex items-center justify-between px-3 py-2 border-b border-[#181818]">
+          <span className="text-[10px] uppercase tracking-[0.18em] text-[#404040]">Ramp Source Layout</span>
+          <span className="font-mono text-[10px] text-[#666]">{segmentPreviews.length} committed segments</span>
+        </div>
+        <div className="relative h-16 flex bg-[#070707]">
+          {segmentPreviews.map((preview, index) => {
+            const total = Math.max(arrangementDuration, 0.001);
+            return (
+              <div
+                key={preview.clipId}
+                className={`relative border-r border-[#0d0d0d] ${index % 2 === 0 ? "bg-[#0f0f0f]" : "bg-[#0b0b0b]"}`}
+                style={{ width: `${(preview.duration / total) * 100}%` }}
+              >
+                <span className="absolute left-[4px] top-[4px] text-[8px] font-mono text-[#666]">
+                  {preview.label}
+                </span>
+                <span className="absolute right-[4px] bottom-[4px] text-[8px] font-mono text-[#444]">
+                  {preview.duration.toFixed(1)}s
+                </span>
+              </div>
+            );
+          })}
+          <div className="absolute inset-y-0 w-[1px] bg-[#e05c00]" style={{ left: `${playhead * 100}%` }} />
+        </div>
+      </div>
 
       <div className="border border-[#1a1a1a] rounded-[2px] bg-[#0c0c0c]">
         <div className="flex items-center justify-between px-3 py-2 border-b border-[#181818]">
-          <span className="text-[10px] uppercase tracking-[0.2em] text-[#404040]">Speed Envelope — drag nodes</span>
+          <span className="text-[10px] uppercase tracking-[0.2em] text-[#404040]">Speed Envelope — drag anchors</span>
           <span className="text-[10px] font-mono text-[#e05c00] uppercase">{rampPreset}</span>
         </div>
         <div className="p-2">
-          <SpeedCurve key={rampPreset} minSpeed={minSpeed} maxSpeed={maxSpeed} preset={rampPreset} />
+          <SpeedCurve key={`${rampPreset}-${segmentPreviews.length}-${analysis?.sourceLabel ?? "none"}`} minSpeed={minSpeed} maxSpeed={maxSpeed} preset={rampPreset} initialNodes={rampNodes} />
         </div>
       </div>
 
@@ -111,4 +148,70 @@ export function RampTab({
       </div>
     </>
   );
+}
+
+function buildRampNodes(params: {
+  segmentPreviews: SegmentPreview[];
+  analysis: BeatJoinAnalysis | null;
+  preset: RampPreset;
+  minSpeed: number;
+  maxSpeed: number;
+  buildBoost: number;
+  dropSlowdown: number;
+}) {
+  const { segmentPreviews, analysis, preset, minSpeed, maxSpeed, buildBoost, dropSlowdown } = params;
+  if (!segmentPreviews.length) return [];
+
+  const totalDuration = segmentPreviews.reduce((sum, preview) => sum + preview.duration, 0);
+  const sectionMap = (analysis?.sections ?? []).map((section) => ({
+    ...section,
+    normalized: analysis && analysis.duration > 0 ? section.start / analysis.duration : 0,
+  }));
+
+  const presetBias: Record<RampPreset, { high: number; low: number }> = {
+    subtle: { high: 0.18, low: 0.08 },
+    dynamic: { high: 0.38, low: 0.22 },
+    extreme: { high: 0.6, low: 0.34 },
+    cinematic: { high: 0.2, low: 0.26 },
+  };
+
+  const anchors: { x: number; y: number; kind?: string; label?: string }[] = [
+    { x: 0, y: normalizeSpeed(1, minSpeed, maxSpeed), kind: "start", label: "START" },
+  ];
+
+  let cursor = 0;
+  for (const preview of segmentPreviews) {
+    const midpoint = cursor + preview.duration / 2;
+    const normalized = midpoint / Math.max(totalDuration, 0.001);
+    const matchingSection = sectionMap.find((section, index) => {
+      const next = sectionMap[index + 1];
+      return normalized >= section.normalized && normalized < (next?.normalized ?? 1);
+    });
+    const energy = matchingSection?.energy ?? 0.5;
+    const highLift = presetBias[preset].high * buildBoost;
+    const lowDrop = presetBias[preset].low * (1 - dropSlowdown);
+    const targetSpeed =
+      energy >= 0.6
+        ? Math.min(maxSpeed, 1 + highLift * energy)
+        : Math.max(minSpeed, 1 - lowDrop * (1 - energy));
+
+    anchors.push({
+      x: normalized,
+      y: normalizeSpeed(targetSpeed, minSpeed, maxSpeed),
+      kind: matchingSection ? "section" : "cut",
+      label: matchingSection?.label?.slice(0, 3).toUpperCase() ?? `C${preview.clipId + 1}`,
+    });
+    cursor += preview.duration;
+  }
+
+  anchors.push({ x: 1, y: normalizeSpeed(1, minSpeed, maxSpeed), kind: "end", label: "END" });
+
+  return anchors
+    .sort((left, right) => left.x - right.x)
+    .filter((anchor, index, all) => index === 0 || Math.abs(anchor.x - all[index - 1].x) > 0.02);
+}
+
+function normalizeSpeed(value: number, minSpeed: number, maxSpeed: number) {
+  const bounded = Math.max(minSpeed, Math.min(maxSpeed, value));
+  return (bounded - minSpeed) / Math.max(maxSpeed - minSpeed, 0.001);
 }
