@@ -1,5 +1,7 @@
-import { readFile } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { stat } from "node:fs/promises";
 import path from "node:path";
+import { Readable } from "node:stream";
 
 import { resolveAllowedPreviewAssetPath } from "@/components/studio/previewAssetPath";
 
@@ -19,11 +21,14 @@ export async function GET(request: Request) {
   }
 
   try {
-    const file = await readFile(assetPath);
-    return new Response(file, {
+    const metadata = await stat(assetPath);
+    const fileStream = Readable.toWeb(createReadStream(assetPath)) as ReadableStream<Uint8Array>;
+
+    return new Response(fileStream, {
       headers: {
         "content-type": getPreviewContentType(assetPath),
         "cache-control": "no-store",
+        "content-length": `${metadata.size}`,
       },
     });
   } catch (error) {

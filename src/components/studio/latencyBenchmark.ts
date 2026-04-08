@@ -39,19 +39,18 @@ export interface LatencyBenchmarkParams {
 }
 
 export async function runLatencyBenchmark(params: LatencyBenchmarkParams = {}): Promise<LatencyBenchmarkResult> {
-  const inventoryResult = await probeFixtureInventory();
-  const inputPath = params.inputPath ?? inventoryResult.inventory.video[0];
-  const startTime = params.startTime ?? 0;
-  const endTime = params.endTime ?? Math.max(1, startTime + 1);
-  const requestKey = params.requestKey ?? `benchmark-${Date.now()}`;
-  const hardwareLane = params.hardwareLane ?? detectHardwareLane();
-  const notes = [...(params.notes ?? []), `platform=${process.platform}`, `hostname=${os.hostname()}`];
-
   const probeStartedAt = new Date().toISOString();
   const probeStart = performance.now();
   const probed = await probeFixtureInventory();
   const probeCompletedAt = new Date().toISOString();
   const probeDurationMs = roundMs(performance.now() - probeStart);
+
+  const inputPath = params.inputPath ?? probed.inventory.video[0];
+  const startTime = params.startTime ?? 0;
+  const endTime = params.endTime ?? Math.max(1, startTime + 1);
+  const requestKey = params.requestKey ?? `benchmark-${Date.now()}`;
+  const hardwareLane = params.hardwareLane ?? detectHardwareLane();
+  const notes = [...(params.notes ?? []), `platform=${process.platform}`, `hostname=${os.hostname()}`];
 
   if (!inputPath) {
     return {

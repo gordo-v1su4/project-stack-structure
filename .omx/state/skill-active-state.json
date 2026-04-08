@@ -4,14 +4,14 @@
   "skill": "cancel",
   "keyword": "stop",
   "phase": "completing",
-  "activated_at": "2026-04-06T08:39:34.498Z",
-  "updated_at": "2026-04-06T13:06:09.220Z",
+  "activated_at": "2026-04-08T00:02:02.180Z",
+  "updated_at": "2026-04-08T06:14:44.361Z",
   "source": "keyword-detector",
   "input_lock": {
     "active": false,
     "scope": "deep-interview-auto-approval",
     "acquired_at": "2026-04-05T01:02:26.229Z",
-    "released_at": "2026-04-06T08:39:34.498Z",
+    "released_at": "2026-04-08T00:02:02.180Z",
     "blocked_inputs": [
       "yes",
       "y",
