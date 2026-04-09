@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { parseEssentiaPayload } from "../../src/components/studio/audioAnalysis";
+import {
+  getEssentiaErrorMessage,
+  parseEssentiaPayload,
+  resolveEssentiaRequestTarget,
+} from "../../src/components/studio/audioAnalysis";
 
 describe("audioAnalysis.parseEssentiaPayload", () => {
   test("normalizes nested payloads into the beat join analysis model", () => {
@@ -42,3 +46,76 @@ describe("audioAnalysis.parseEssentiaPayload", () => {
     expect(parsed).toBeNull();
   });
 });
+
+describe("audioAnalysis.resolveEssentiaRequestTarget", () => {
+  test("prefers direct browser uploads when public Essentia credentials are available", () => {
+    const previousUrl = process.env.NEXT_PUBLIC_ESSENTIA_API_BASE_URL;
+    const previousKey = process.env.NEXT_PUBLIC_ESSENTIA_API_KEY;
+
+    process.env.NEXT_PUBLIC_ESSENTIA_API_BASE_URL = "https://essentia.example.dev/";
+    process.env.NEXT_PUBLIC_ESSENTIA_API_KEY = "public-key";
+
+    try {
+      expect(resolveEssentiaRequestTarget()).toEqual({
+        url: "https://essentia.example.dev/analyze/full",
+        transport: "direct",
+        headers: {
+          Authorization: "Bearer public-key",
+          "X-API-Key": "public-key",
+        },
+      });
+    } finally {
+      restoreEnvValue("NEXT_PUBLIC_ESSENTIA_API_BASE_URL", previousUrl);
+      restoreEnvValue("NEXT_PUBLIC_ESSENTIA_API_KEY", previousKey);
+    }
+  });
+
+  test("falls back to the local proxy when public Essentia credentials are missing", () => {
+    const previousUrl = process.env.NEXT_PUBLIC_ESSENTIA_API_BASE_URL;
+    const previousKey = process.env.NEXT_PUBLIC_ESSENTIA_API_KEY;
+
+    delete process.env.NEXT_PUBLIC_ESSENTIA_API_BASE_URL;
+    delete process.env.NEXT_PUBLIC_ESSENTIA_API_KEY;
+
+    try {
+      expect(resolveEssentiaRequestTarget()).toEqual({
+        url: "/api/essentia/full",
+        transport: "proxy",
+      });
+    } finally {
+      restoreEnvValue("NEXT_PUBLIC_ESSENTIA_API_BASE_URL", previousUrl);
+      restoreEnvValue("NEXT_PUBLIC_ESSENTIA_API_KEY", previousKey);
+    }
+  });
+});
+
+describe("audioAnalysis.getEssentiaErrorMessage", () => {
+  test("explains 413 responses from the proxy path", () => {
+    expect(
+      getEssentiaErrorMessage({
+        payload: null,
+        status: 413,
+        transport: "proxy",
+      }),
+    ).toContain("deployment");
+  });
+
+  test("surfaces direct Essentia error details when present", () => {
+    expect(
+      getEssentiaErrorMessage({
+        payload: { detail: "Remote limit hit" },
+        status: 413,
+        transport: "direct",
+      }),
+    ).toBe("Remote limit hit");
+  });
+});
+
+function restoreEnvValue(key: string, value: string | undefined) {
+  if (value === undefined) {
+    delete process.env[key];
+    return;
+  }
+
+  process.env[key] = value;
+}

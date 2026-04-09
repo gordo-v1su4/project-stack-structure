@@ -2,25 +2,35 @@ import type { BeatJoinAnalysis, BeatJoinSection } from "./types";
 
 const DEFAULT_EMPTY_SECTIONS: BeatJoinSection[] = [{ label: "Intro", start: 0, end: 1 }];
 
+interface EssentiaRequestTarget {
+  headers?: HeadersInit;
+  transport: "direct" | "proxy";
+  url: string;
+}
+
 export async function fetchEssentiaAnalysis(file: File) {
   const startedAt = performance.now();
+  const requestTarget = resolveEssentiaRequestTarget();
   console.groupCollapsed("[Essentia] Upload analysis");
   console.info("[Essentia] Request started", {
     fileName: file.name,
     fileSize: file.size,
     mimeType: file.type || "unknown",
+    transport: requestTarget.transport,
+    url: requestTarget.url,
   });
 
   const formData = new FormData();
   formData.append("file", file);
 
   try {
-    const response = await fetch("/api/essentia/full", {
+    const response = await fetch(requestTarget.url, {
       method: "POST",
+      headers: requestTarget.headers,
       body: formData,
     });
 
-    const payload = (await response.json()) as unknown;
+    const payload = await readResponsePayload(response);
 
     const responseObject = isRecord(payload) ? payload : null;
     const rawPayload = isRecord(responseObject?.raw) ? responseObject.raw : payload;
@@ -39,10 +49,12 @@ export async function fetchEssentiaAnalysis(file: File) {
     console.info("[Essentia] Raw upstream payload", rawPayload);
 
     if (!response.ok) {
-      const message =
-        payload && typeof payload === "object" && "error" in payload && typeof payload.error === "string"
-          ? payload.error
-          : `Analysis failed with ${response.status}`;
+      const message = getEssentiaErrorMessage({
+        payload,
+        status: response.status,
+        statusText: response.statusText,
+        transport: requestTarget.transport,
+      });
       console.error("[Essentia] Request failed", payload);
       throw new Error(message);
     }
@@ -50,6 +62,61 @@ export async function fetchEssentiaAnalysis(file: File) {
     return payload;
   } finally {
     console.groupEnd();
+  }
+}
+
+export function resolveEssentiaRequestTarget(): EssentiaRequestTarget {
+  const directApiUrl =
+    (process.env.NEXT_PUBLIC_ESSENTIA_API_BASE_URL ?? process.env.NEXT_PUBLIC_ESSENTIA_API_URL ?? "").trim().replace(/\/+$/, "");
+  const directApiKey = (process.env.NEXT_PUBLIC_ESSENTIA_API_KEY ?? "").trim();
+
+  if (directApiUrl && directApiKey) {
+    return {
+      url: `${directApiUrl}/analyze/full`,
+      transport: "direct",
+      headers: {
+        Authorization: `Bearer ${directApiKey}`,
+        "X-API-Key": directApiKey,
+      },
+    };
+  }
+
+  return {
+    url: "/api/essentia/full",
+    transport: "proxy",
+  };
+}
+
+export function getEssentiaErrorMessage(params: {
+  payload: unknown;
+  status: number;
+  statusText?: string;
+  transport: EssentiaRequestTarget["transport"];
+}) {
+  const { payload, status, statusText, transport } = params;
+  const detail = extractErrorText(payload);
+
+  if (status === 413) {
+    if (transport === "proxy") {
+      return detail ??
+        "The audio upload was rejected by this deployment before Essentia received it. This usually means the host's request-size limit was exceeded. Configure NEXT_PUBLIC_ESSENTIA_API_BASE_URL and NEXT_PUBLIC_ESSENTIA_API_KEY for direct uploads, or try a smaller/compressed file.";
+    }
+
+    return detail ?? "Essentia rejected the uploaded audio because the file is too large. Try a compressed MP3/M4A or a shorter excerpt.";
+  }
+
+  const normalizedStatusText = statusText?.trim();
+  return detail ?? normalizedStatusText ?? `Analysis failed with ${status}`;
+}
+
+async function readResponsePayload(response: Response) {
+  const text = await response.text();
+  if (!text.trim()) return null;
+
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return text;
   }
 }
 
@@ -222,6 +289,21 @@ function getLastSectionEnd(value: unknown) {
     .map((entry) => (entry && typeof entry === "object" ? getNumericValue((entry as Record<string, unknown>).end) : null))
     .filter((entry): entry is number => entry !== null);
   return ends.length ? Math.max(...ends) : 0;
+}
+
+function extractErrorText(payload: unknown) {
+  if (typeof payload === "string" && payload.trim()) return payload.trim();
+  if (!payload || typeof payload !== "object") return null;
+
+  if ("error" in payload && typeof payload.error === "string" && payload.error.trim()) {
+    return payload.error.trim();
+  }
+
+  if ("detail" in payload && typeof payload.detail === "string" && payload.detail.trim()) {
+    return payload.detail.trim();
+  }
+
+  return null;
 }
 
 function lastValue(values: number[]) {

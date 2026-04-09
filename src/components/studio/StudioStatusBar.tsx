@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { getPreviewAssetFileName } from "./studioUiState";
 
 type StudioStatusBarProps = {
@@ -12,6 +13,22 @@ type StudioStatusBarProps = {
 
 export function StudioStatusBar({ gpu, previewStage = "idle", activeRequestKey = null, assetKey = null, statusLabel = "Ready" }: StudioStatusBarProps) {
   const assetFileName = getPreviewAssetFileName(assetKey);
+  const [clockLabel, setClockLabel] = useState("--:--");
+
+  useEffect(() => {
+    if (assetFileName) return;
+
+    const updateClock = () => {
+      setClockLabel(formatStatusClock(new Date()));
+    };
+
+    updateClock();
+    const intervalId = window.setInterval(updateClock, 30_000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [assetFileName]);
 
   return (
     <footer className="flex items-center justify-between border-t border-[#181818] bg-[#0b0b0b] px-4 py-[5px] shrink-0">
@@ -26,8 +43,12 @@ export function StudioStatusBar({ gpu, previewStage = "idle", activeRequestKey =
       <div className="flex items-center gap-4 font-mono text-[10px] text-[#343434]">
         <span>FFmpeg 7.1 · CUDA 12.8</span>
         <span>·</span>
-        <span>{assetFileName ? `ASSET ${assetFileName}` : new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+        <span>{assetFileName ? `ASSET ${assetFileName}` : clockLabel}</span>
       </div>
     </footer>
   );
+}
+
+function formatStatusClock(date: Date) {
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
