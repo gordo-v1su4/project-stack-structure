@@ -2,7 +2,29 @@ export type Tab = "split" | "beatsplit" | "shuffle" | "join" | "beatjoin" | "ram
 
 export type ShuffleMode = "simple" | "size" | "color" | "motion";
 
-export type RampPreset = "subtle" | "dynamic" | "extreme" | "cinematic";
+export type RampPreset =
+  | "subtle"
+  | "dynamic"
+  | "extreme"
+  | "cinematic"
+  | "pulseTrain"
+  | "sawLift"
+  | "gateChop"
+  | "halfTimeBloom"
+  | "doubleTimeRush"
+  | "glitchSteps";
+
+export type StutterPreset =
+  | "steadyPulse"
+  | "tightChop"
+  | "ghostFrame"
+  | "riserScatter"
+  | "dropLatch"
+  | "liquidRoll"
+  | "syncopate"
+  | "holdAndBurst"
+  | "microMachine"
+  | "breathingCuts";
 
 export type ColorGradient = "Rainbow" | "Sunset" | "Ocean";
 

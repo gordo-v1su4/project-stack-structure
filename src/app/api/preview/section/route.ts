@@ -1,5 +1,6 @@
 import { listMediaFixtures } from "@/components/studio/mediaProbe";
-import { generateSectionPreview } from "@/components/studio/previewGeneration";
+import { generateConcatPreview, generateSectionPreview } from "@/components/studio/previewGeneration";
+import type { ConcatPreviewSegment } from "@/components/studio/previewGeneration";
 
 export const runtime = "nodejs";
 
@@ -8,13 +9,35 @@ interface PreviewSectionRequest {
   requestKey?: string;
   startTime?: number;
   endTime?: number;
+  segments?: Array<{
+    inputPath: string;
+    startTime: number;
+    endTime: number;
+  }>;
 }
 
 export async function POST(request: Request) {
   try {
     const payload = (await request.json()) as PreviewSectionRequest;
     const inventory = listMediaFixtures();
-    const inputPath = payload.inputPath ?? inventory.video[0];
+    const defaultInputPath = inventory.video[0];
+
+    if (payload.segments && payload.segments.length > 0) {
+      const segments: ConcatPreviewSegment[] = payload.segments.map((segment) => ({
+        inputPath: segment.inputPath || defaultInputPath || "",
+        startTime: segment.startTime ?? 0,
+        endTime: segment.endTime ?? 1,
+      }));
+
+      const asset = await generateConcatPreview({
+        segments,
+        requestKey: payload.requestKey ?? `preview-${Date.now()}`,
+      });
+
+      return Response.json({ success: true, asset });
+    }
+
+    const inputPath = payload.inputPath ?? defaultInputPath;
 
     if (!inputPath) {
       return Response.json({ success: false, error: "No video fixture available for preview generation." }, { status: 400 });

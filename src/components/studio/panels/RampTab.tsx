@@ -1,6 +1,7 @@
 "use client";
 
 import { ParamSlider } from "../ParamSlider";
+import { getRampPresetDefinition, RAMP_PRESETS } from "../remapPresets";
 import { SpeedCurve } from "../SpeedCurve";
 import type { BeatJoinAnalysis, RampPreset, SegmentPreview } from "../types";
 
@@ -24,13 +25,6 @@ type RampTabProps = {
   onEnergyThresh: (v: number) => void;
   onBuildBoost: (v: number) => void;
   onDropSlowdown: (v: number) => void;
-};
-
-const RAMP_META: Record<RampPreset, [string, string]> = {
-  subtle: ["0.8–1.2×", "Professional, minor"],
-  dynamic: ["0.5–2.0×", "Music video style"],
-  extreme: ["0.25–4×", "Action / maximum"],
-  cinematic: ["0.5–1.5×", "Smooth, emotional"],
 };
 
 export function RampTab({
@@ -60,9 +54,22 @@ export function RampTab({
     preset: rampPreset,
     minSpeed,
     maxSpeed,
+    energyThresh,
     buildBoost,
     dropSlowdown,
   });
+  const selectedPreset = getRampPresetDefinition(rampPreset);
+
+  function applyRampPreset(preset: RampPreset) {
+    const definition = getRampPresetDefinition(preset);
+    onRampPreset(preset);
+    onMinSpeed(definition.minSpeed);
+    onMaxSpeed(definition.maxSpeed);
+    onRampDur(definition.rampDur);
+    onEnergyThresh(definition.energyThresh);
+    onBuildBoost(definition.buildBoost);
+    onDropSlowdown(definition.dropSlowdown);
+  }
 
   return (
     <>
@@ -101,8 +108,8 @@ export function RampTab({
 
       <div className="border border-[#1a1a1a] rounded-[2px] bg-[#0c0c0c]">
         <div className="flex items-center justify-between px-3 py-2 border-b border-[#181818]">
-          <span className="text-[10px] uppercase tracking-[0.2em] text-[#404040]">Speed Envelope — drag anchors</span>
-          <span className="text-[10px] font-mono text-[#e05c00] uppercase">{rampPreset}</span>
+          <span className="text-[10px] uppercase tracking-[0.2em] text-[#6f8287]">Timing Remap Curve — drag anchors</span>
+          <span className="text-[10px] font-mono text-[#e05c00] uppercase">{selectedPreset.label}</span>
         </div>
         <div className="p-2">
           <SpeedCurve key={`${rampPreset}-${segmentPreviews.length}-${analysis?.sourceLabel ?? "none"}`} minSpeed={minSpeed} maxSpeed={maxSpeed} preset={rampPreset} initialNodes={rampNodes} />
@@ -120,30 +127,38 @@ export function RampTab({
           <ParamSlider label="Drop Slowdown" value={dropSlowdown} min={0.1} max={1} step={0.05} unit="×" onChange={onDropSlowdown} />
         </div>
         <div className="border border-[#1a1a1a] rounded-[2px] bg-[#0c0c0c] p-3">
-          <div className="mb-1 text-[10px] uppercase tracking-[0.2em] text-[#404040]">Preset</div>
-          {(["subtle", "dynamic", "extreme", "cinematic"] as RampPreset[]).map((p) => {
-            const meta = RAMP_META[p];
+          <div className="mb-2 flex items-center justify-between">
+            <div className="text-[10px] uppercase tracking-[0.2em] text-[#6f8287]">Remap Preset Bank</div>
+            <div className="font-mono text-[9px] text-[#40545a]">{RAMP_PRESETS.length} curves</div>
+          </div>
+          <div className="grid gap-1">
+            {RAMP_PRESETS.map((definition) => {
+            const p = definition.key;
             return (
               <button
                 key={p}
                 type="button"
-                onClick={() => onRampPreset(p)}
-                className={`flex w-full items-center justify-between px-2 py-[7px] mb-1 border rounded-[2px] text-left transition-colors ${
+                onClick={() => applyRampPreset(p)}
+                className={`grid w-full grid-cols-[minmax(0,1fr)_78px] items-center gap-2 px-2 py-[7px] border rounded-[2px] text-left transition-colors ${
                   rampPreset === p
-                    ? "border-[#e05c00] bg-[#e05c0012]"
-                    : "border-[#1a1a1a] bg-[#090909] hover:border-[#272727]"
+                    ? "border-[#e05c00] bg-[#e05c0012] shadow-[inset_0_0_0_1px_rgba(224,92,0,0.12)]"
+                    : "border-[#1a1a1a] bg-[#090909] hover:border-[#2d3c40]"
                 }`}
               >
                 <div>
-                  <div className={`text-[12px] capitalize font-medium ${rampPreset === p ? "text-[#e05c00]" : "text-[#777]"}`}>
-                    {p}
+                  <div className={`text-[11px] font-medium ${rampPreset === p ? "text-[#e05c00]" : "text-[#8ca0a5]"}`}>
+                    {definition.label}
                   </div>
-                  <div className="text-[10px] text-[#404040]">{meta[1]}</div>
+                  <div className="text-[9px] text-[#4d5a5e]">{definition.detail}</div>
                 </div>
-                <span className="font-mono text-[10px] text-[#484848]">{meta[0]}</span>
+                <div className="space-y-1">
+                  <PresetSparkline values={definition.shape} active={rampPreset === p} />
+                  <div className="text-right font-mono text-[9px] text-[#58656a]">{definition.rangeLabel}</div>
+                </div>
               </button>
             );
           })}
+          </div>
         </div>
       </div>
     </>
@@ -156,10 +171,11 @@ function buildRampNodes(params: {
   preset: RampPreset;
   minSpeed: number;
   maxSpeed: number;
+  energyThresh: number;
   buildBoost: number;
   dropSlowdown: number;
 }) {
-  const { segmentPreviews, analysis, preset, minSpeed, maxSpeed, buildBoost, dropSlowdown } = params;
+  const { segmentPreviews, analysis, preset, minSpeed, maxSpeed, energyThresh, buildBoost, dropSlowdown } = params;
   if (!segmentPreviews.length) return [];
 
   const totalDuration = segmentPreviews.reduce((sum, preview) => sum + preview.duration, 0);
@@ -168,12 +184,7 @@ function buildRampNodes(params: {
     normalized: analysis && analysis.duration > 0 ? section.start / analysis.duration : 0,
   }));
 
-  const presetBias: Record<RampPreset, { high: number; low: number }> = {
-    subtle: { high: 0.18, low: 0.08 },
-    dynamic: { high: 0.38, low: 0.22 },
-    extreme: { high: 0.6, low: 0.34 },
-    cinematic: { high: 0.2, low: 0.26 },
-  };
+  const presetDefinition = getRampPresetDefinition(preset);
 
   const anchors: { x: number; y: number; kind?: string; label?: string }[] = [
     { x: 0, y: normalizeSpeed(1, minSpeed, maxSpeed), kind: "start", label: "START" },
@@ -188,10 +199,10 @@ function buildRampNodes(params: {
       return normalized >= section.normalized && normalized < (next?.normalized ?? 1);
     });
     const energy = matchingSection?.energy ?? 0.5;
-    const highLift = presetBias[preset].high * buildBoost;
-    const lowDrop = presetBias[preset].low * (1 - dropSlowdown);
+    const highLift = presetDefinition.highBias * buildBoost;
+    const lowDrop = presetDefinition.lowBias * (1 - dropSlowdown);
     const targetSpeed =
-      energy >= 0.6
+      energy >= energyThresh
         ? Math.min(maxSpeed, 1 + highLift * energy)
         : Math.max(minSpeed, 1 - lowDrop * (1 - energy));
 
@@ -214,4 +225,37 @@ function buildRampNodes(params: {
 function normalizeSpeed(value: number, minSpeed: number, maxSpeed: number) {
   const bounded = Math.max(minSpeed, Math.min(maxSpeed, value));
   return (bounded - minSpeed) / Math.max(maxSpeed - minSpeed, 0.001);
+}
+
+function PresetSparkline({ values, active }: { values: number[]; active: boolean }) {
+  const width = 72;
+  const height = 20;
+  const points = values
+    .map((value, index) => {
+      const x = values.length <= 1 ? 0 : (index / (values.length - 1)) * width;
+      const y = (1 - value) * height;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(" ");
+
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} className="h-5 w-[72px] rounded-[1px] bg-[#071014]">
+      <polyline
+        points={points}
+        fill="none"
+        stroke={active ? "#e05c00" : "#6f8287"}
+        strokeWidth={1.6}
+        vectorEffect="non-scaling-stroke"
+      />
+      {values.map((value, index) => (
+        <circle
+          key={`${value}-${index}`}
+          cx={values.length <= 1 ? 0 : (index / (values.length - 1)) * width}
+          cy={(1 - value) * height}
+          r={1.5}
+          fill={active ? "#e05c00" : "#40545a"}
+        />
+      ))}
+    </svg>
+  );
 }

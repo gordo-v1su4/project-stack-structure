@@ -252,6 +252,26 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
+export function getSourceClipTimeOffset(sourceClips: SourceClipSpan[], clipId: number): number {
+  const clip = sourceClips.find((c) => c.id === clipId);
+  return clip ? clip.start : 0;
+}
+
+export function resolveSegmentLocalTimes(
+  sourceClips: SourceClipSpan[],
+  segment: { start: number; end: number; sourceClipIds: number[] }
+): { videoUrl: string | null; localStart: number; localEnd: number; sourceClipId: number } | null {
+  const clipId = segment.sourceClipIds[0] ?? -1;
+  const clip = sourceClips.find((c) => c.id === clipId);
+  if (!clip) return null;
+  return {
+    videoUrl: null,
+    localStart: segment.start - clip.start,
+    localEnd: segment.end - clip.start,
+    sourceClipId: clipId,
+  };
+}
+
 function collectSourceClipIds(sourceClips: SourceClipSpan[], start: number, end: number) {
   return sourceClips
     .filter((clip) => clip.start < end && clip.end > start)

@@ -3,8 +3,11 @@
 import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { extractWaveformData, fetchEssentiaAnalysis, parseEssentiaPayload } from "./studio/audioAnalysis";
+import { buildArrangementSegments } from "./studio/arrangementBuilder";
+import type { ArrangementSegment } from "./studio/arrangementBuilder";
 import { NAV } from "./studio/constants";
 import { prepareVideoSources, revokePreparedVideoSources } from "./studio/mediaUpload";
+import { BrowserPreviewPlayer, type PreviewPlayerState, type PreviewSegment } from "./studio/previewPlayer";
 import { ProcessActionBar } from "./studio/ProcessActionBar";
 import { buildReadout } from "./studio/readout";
 import { BeatJoinTab } from "./studio/panels/BeatJoinTab";
@@ -40,7 +43,7 @@ import {
   derivePreviewWindow,
   normalizeColorScore,
 } from "./studio/studioUiState";
-import { buildAudioDrivenSegments, buildBeatSegments, buildSourceClipSpans, buildStandardSegments } from "./studio/sourceTimeline";
+import { buildAudioDrivenSegments, buildBeatSegments, buildSourceClipSpans, buildStandardSegments, getSourceClipTimeOffset } from "./studio/sourceTimeline";
 import type { SourceTimelineSegment } from "./studio/sourceTimeline";
 import type {
   BeatJoinAnalysis,
@@ -113,6 +116,26 @@ export default function StudioApp() {
     signature: string;
     committedAt: string;
   } | null>(null);
+
+  const previewPlayerRef = useRef(new BrowserPreviewPlayer());
+  const [browserPreviewState, setBrowserPreviewState] = useState<PreviewPlayerState>({
+    status: "idle",
+    currentIndex: 0,
+    segmentCount: 0,
+    currentTime: 0,
+    totalDuration: 0,
+    errorMessage: null,
+  });
+  const [isBrowserPreviewActive, setIsBrowserPreviewActive] = useState(false);
+
+  useEffect(() => {
+    const player = previewPlayerRef.current;
+    const unsubscribe = player.subscribe((state) => {
+      setBrowserPreviewState(state);
+      setIsBrowserPreviewActive(state.status === "playing" || state.status === "paused" || state.status === "loading");
+    });
+    return unsubscribe;
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -377,6 +400,11 @@ export default function StudioApp() {
   async function runProcess() {
     if (isRunning || previewState.activeRequestKey) return;
 
+    if ((tab === "shuffle" || tab === "join" || tab === "beatjoin") && browserPreviewSegments.length > 0) {
+      runBrowserPreview();
+      return;
+    }
+
     const requestKey = `preview-${Date.now()}`;
     const { startTime, endTime } = derivePreviewWindow({
       tab,
@@ -436,6 +464,53 @@ export default function StudioApp() {
     } finally {
       setIsRunning(false);
     }
+  }
+
+  function runBrowserPreview() {
+    setIsRunning(true);
+    setDone(false);
+    setProgress(10);
+
+    const requestKey = `browser-preview-${Date.now()}`;
+    setPreviewState((current) =>
+      startSectionRecompute(current, {
+        requestKey,
+        sectionId: `${tab}:browser`,
+        continuityMode: shuffleMode,
+        paramsHash: `browser:${tab}`,
+        startedAt: new Date().toISOString(),
+        progress: 10,
+      }),
+    );
+    setPreviewState((current) => markSectionRecomputeRunning(current, requestKey));
+
+    const player = previewPlayerRef.current;
+    player.load(browserPreviewSegments);
+
+    setProgress(50);
+    setPreviewState((current) => updateSectionRecomputeProgress(current, { requestKey, progress: 50 }));
+
+    player.play().then(() => {
+      setProgress(90);
+      setPreviewState((current) => updateSectionRecomputeProgress(current, { requestKey, progress: 90 }));
+      setPreviewState((current) =>
+        markSectionReady(current, {
+          requestKey,
+          assetKey: "browser-preview",
+          duration: browserPreviewSegments.reduce((sum, s) => sum + (s.endTime - s.startTime), 0),
+          generatedAt: new Date().toISOString(),
+        }),
+      );
+      setPreviewState((current) => swapReadySection(current, requestKey));
+      setProgress(100);
+      setDone(true);
+      setIsRunning(false);
+    }).catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : "Browser preview failed.";
+      setPreviewState((current) => failSectionRecompute(current, { requestKey, message }));
+      setVideoError(message);
+      setIsRunning(false);
+    });
   }
 
   function handleCommitBeatSplit() {
@@ -592,6 +667,61 @@ export default function StudioApp() {
   });
   const previewAssetUrl = buildPreviewAssetUrl(previewState.currentAssetKey);
 
+  const arrangementSegments = useMemo<ArrangementSegment[]>(() => {
+    if (tab !== "beatjoin" || !beatJoinAnalysis) return [];
+    return buildArrangementSegments({
+      analysis: beatJoinAnalysis,
+      clipOrder: effectiveClipOrder,
+      minDur,
+      maxDur,
+      energyResp,
+      energyReactive,
+      lowEnergyRange,
+      highEnergyRange,
+      onsetBoost,
+      chaos,
+    });
+  }, [tab, beatJoinAnalysis, effectiveClipOrder, minDur, maxDur, energyResp, energyReactive, lowEnergyRange, highEnergyRange, onsetBoost, chaos]);
+
+  const browserPreviewSegments = useMemo<PreviewSegment[]>(() => {
+    if (tab === "shuffle" || tab === "join") {
+      return effectiveClipOrder
+        .map((clipId) => {
+          const segment = workingBeatSplitSegments[clipId];
+          if (!segment) return null;
+          const sourceClipId = segment.sourceClipIds[0] ?? -1;
+          const source = videoSources[sourceClipId];
+          if (!source) return null;
+          const offset = getSourceClipTimeOffset(sourceClips, sourceClipId);
+          return {
+            videoUrl: source.videoUrl,
+            startTime: Math.max(0, segment.start - offset),
+            endTime: Math.max(0, segment.end - offset),
+            label: `SEG_${String(clipId + 1).padStart(2, "0")}`,
+          };
+        })
+        .filter((s): s is PreviewSegment => s !== null && s.videoUrl !== undefined && s.endTime > s.startTime);
+    }
+
+    if (tab === "beatjoin" && arrangementSegments.length > 0) {
+      return arrangementSegments
+        .map((segment) => {
+          const source = videoSources[segment.clipId];
+          if (!source) return null;
+          const offset = getSourceClipTimeOffset(sourceClips, segment.clipId);
+          return {
+            videoUrl: source.videoUrl,
+            startTime: Math.max(0, segment.start - offset),
+            endTime: Math.max(0, segment.end - offset),
+            label: segment.detailLabel,
+          };
+        })
+        .filter((s): s is PreviewSegment => s !== null && s.videoUrl !== undefined && s.endTime > s.startTime);
+    }
+
+    return [];
+  }, [tab, effectiveClipOrder, workingBeatSplitSegments, videoSources, sourceClips, arrangementSegments]);
+
   const pipelineStages = [
     {
       label: "Split",
@@ -633,6 +763,8 @@ export default function StudioApp() {
     setDone(false);
     setProgress(0);
     setPreviewState(createSectionRecomputeState());
+    previewPlayerRef.current.stop();
+    setIsBrowserPreviewActive(false);
   }
 
   function handleSelectTab(t: Tab) {
@@ -803,6 +935,7 @@ export default function StudioApp() {
                 clipOrder={effectiveClipOrder}
                 shuffleMode={shuffleMode}
                 isUsingCommittedSplit={Boolean(committedBeatSplit)}
+                arrangementSegments={arrangementSegments}
                 activeClip={beatActiveClip}
                 onMinDur={setMinDur}
                 onMaxDur={setMaxDur}
@@ -866,6 +999,10 @@ export default function StudioApp() {
             rankedSegmentIds={manifestRankingPreview.ids}
             previewAssetKey={previewState.currentAssetKey}
             previewAssetUrl={previewAssetUrl}
+            previewPlayer={previewPlayerRef.current}
+            browserPreviewSegments={browserPreviewSegments}
+            browserPreviewState={browserPreviewState}
+            isBrowserPreviewActive={isBrowserPreviewActive}
           />
         </div>
 

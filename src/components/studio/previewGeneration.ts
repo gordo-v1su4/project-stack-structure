@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 
@@ -113,6 +113,134 @@ export async function generateSectionPreview(params: PreviewGenerationParams): P
     outputPath,
     startTime,
     endTime,
+  } satisfies GeneratedPreviewAsset;
+}
+
+export interface ConcatPreviewSegment {
+  inputPath: string;
+  startTime: number;
+  endTime: number;
+}
+
+export async function generateConcatPreview(params: {
+  segments: ConcatPreviewSegment[];
+  requestKey: string;
+  outputPath?: string;
+  ffmpegPath?: string;
+}): Promise<GeneratedPreviewAsset> {
+  const ffmpegPath = params.ffmpegPath ?? process.env.FFMPEG_PATH ?? "ffmpeg";
+  const outputPath = params.outputPath ?? buildPreviewOutputPath({ requestKey: params.requestKey });
+  const segments = params.segments.filter(
+    (segment) => segment.inputPath && segment.endTime > segment.startTime
+  );
+
+  if (segments.length === 0) {
+    throw new PreviewGenerationError("invalid-window", "No valid segments for concat preview.");
+  }
+
+  if (segments.length === 1) {
+    const segment = segments[0];
+    return generateSectionPreview({
+      inputPath: segment.inputPath,
+      requestKey: params.requestKey,
+      startTime: segment.startTime,
+      endTime: segment.endTime,
+      outputPath,
+      ffmpegPath,
+    });
+  }
+
+  await mkdir(path.dirname(outputPath), { recursive: true });
+
+  const segmentPaths = await Promise.all(
+    segments.map(async (segment, index) => {
+      const segmentOutputPath = buildPreviewOutputPath({
+        requestKey: `${sanitizeFileName(params.requestKey)}-part${index}`,
+      });
+      await mkdir(path.dirname(segmentOutputPath), { recursive: true });
+
+      const inputMetadata = await safeProbeInput(segment.inputPath);
+      if (!inputMetadata.hasVideo) {
+        throw new PreviewGenerationError("audio-only-input", `Concat segment ${index} has no video stream.`);
+      }
+
+      try {
+        await execFileAsync(ffmpegPath, [
+          "-y",
+          "-ss", `${clampTime(segment.startTime)}`,
+          "-to", `${clampTime(segment.endTime)}`,
+          "-i", segment.inputPath,
+          "-c:v", "libx264",
+          "-preset", "veryfast",
+          "-crf", "20",
+          "-c:a", "aac",
+          "-movflags", "+faststart",
+          segmentOutputPath,
+        ]);
+      } catch (segmentError) {
+        throw new PreviewGenerationError(
+          "ffmpeg-failed",
+          segmentError instanceof Error ? segmentError.message : `ffmpeg concat segment ${index} failed`,
+        );
+      }
+
+      return segmentOutputPath;
+    })
+  );
+
+  const concatListPath = buildPreviewOutputPath({
+    requestKey: `${sanitizeFileName(params.requestKey)}-concat-list`,
+    extension: ".txt",
+  });
+
+  const concatEntries = segmentPaths
+    .map((segmentPath) => `file '${segmentPath.replace(/'/g, "'\\''")}'`)
+    .join("\n");
+  await writeFile(concatListPath, concatEntries, "utf-8");
+
+  try {
+    await execFileAsync(ffmpegPath, [
+      "-y",
+      "-f", "concat",
+      "-safe", "0",
+      "-i", concatListPath,
+      "-c", "copy",
+      "-movflags", "+faststart",
+      outputPath,
+    ]);
+  } catch {
+    try {
+      await execFileAsync(ffmpegPath, [
+        "-y",
+        "-f", "concat",
+        "-safe", "0",
+        "-i", concatListPath,
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-crf", "20",
+        "-c:a", "aac",
+        "-movflags", "+faststart",
+        outputPath,
+      ]);
+    } catch (retryError) {
+      throw new PreviewGenerationError(
+        "ffmpeg-failed",
+        retryError instanceof Error ? retryError.message : "ffmpeg concat merge failed",
+      );
+    }
+  }
+
+  const metadata = await probeMediaFile(outputPath);
+
+  return {
+    requestKey: params.requestKey,
+    assetKey: outputPath,
+    generatedAt: new Date().toISOString(),
+    duration: metadata.duration,
+    inputPath: segments[0].inputPath,
+    outputPath,
+    startTime: segments[0].startTime,
+    endTime: segments[segments.length - 1].endTime,
   } satisfies GeneratedPreviewAsset;
 }
 
