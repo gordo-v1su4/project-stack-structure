@@ -1,6 +1,9 @@
 "use client";
 
 import { LOG } from "./constants";
+import { PreviewPlayer } from "./PreviewPlayerComponent";
+import type { BrowserPreviewPlayer } from "./previewPlayer";
+import type { PreviewPlayerState, PreviewSegment } from "./previewPlayer";
 import { getPreviewAssetFileName } from "./studioUiState";
 import type { ShuffleMode, Tab } from "./types";
 
@@ -12,6 +15,10 @@ type StudioRightPanelProps = {
   rankedSegmentIds?: string[];
   previewAssetKey?: string | null;
   previewAssetUrl?: string | null;
+  previewPlayer?: BrowserPreviewPlayer;
+  browserPreviewSegments?: PreviewSegment[];
+  browserPreviewState?: PreviewPlayerState;
+  isBrowserPreviewActive?: boolean;
 };
 
 export function StudioRightPanel({
@@ -22,8 +29,17 @@ export function StudioRightPanel({
   rankedSegmentIds = [],
   previewAssetKey = null,
   previewAssetUrl = null,
+  previewPlayer,
+  browserPreviewSegments = [],
+  browserPreviewState,
+  isBrowserPreviewActive = false,
 }: StudioRightPanelProps) {
   const previewAssetFileName = getPreviewAssetFileName(previewAssetKey);
+  const showBrowserPreview = isBrowserPreviewActive && browserPreviewSegments.length > 0 && previewPlayer;
+  const showFfmpegPreview = !isBrowserPreviewActive && previewAssetUrl;
+  const segmentCountLabel = browserPreviewSegments.length > 0
+    ? `${browserPreviewSegments.length} segments · ${browserPreviewState?.totalDuration.toFixed(1) ?? "0"}s`
+    : null;
 
   return (
     <aside className="w-52 shrink-0 border-l border-[#181818] bg-[#0c0c0c] flex flex-col overflow-y-auto">
@@ -78,15 +94,23 @@ export function StudioRightPanel({
               )}
             </div>
           </div>
-          {previewAssetFileName ? (
+          {previewAssetFileName && previewAssetFileName !== "browser-preview" ? (
             <div className="font-mono text-[9px] text-[#4d4d4d] break-all">{previewAssetFileName}</div>
           ) : null}
         </div>
       </div>
 
       <div className="border-b border-[#181818] p-3">
-        <div className="mb-2 text-[9px] uppercase tracking-[0.22em] text-[#343434]">Prepared Preview</div>
-        {previewAssetUrl ? (
+        <div className="mb-2 text-[9px] uppercase tracking-[0.22em] text-[#343434]">
+          {showBrowserPreview ? "Sequential Preview" : "Prepared Preview"}
+        </div>
+        {showBrowserPreview && browserPreviewState ? (
+          <PreviewPlayer
+            player={previewPlayer}
+            segments={browserPreviewSegments}
+            state={browserPreviewState}
+          />
+        ) : showFfmpegPreview ? (
           <div className="space-y-2">
             <video
               key={previewAssetUrl}
@@ -104,6 +128,9 @@ export function StudioRightPanel({
             Run a preview pass to prepare a playable section asset.
           </div>
         )}
+        {segmentCountLabel && showBrowserPreview ? (
+          <div className="mt-1 font-mono text-[9px] text-[#4d4d4d]">{segmentCountLabel}</div>
+        ) : null}
       </div>
 
       <div className="border-b border-[#181818] p-3 flex-1">
