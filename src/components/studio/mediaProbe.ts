@@ -109,7 +109,7 @@ export function getMediaFixturesDir() {
     return path.resolve(configuredDir);
   }
 
-  return path.join(process.cwd(), ".local-fixtures", "media");
+  return path.join(/*turbopackIgnore: true*/ process.cwd(), ".local-fixtures", "media");
 }
 
 export function listMediaFixtures(dir = getMediaFixturesDir()): MediaFixtureInventory {

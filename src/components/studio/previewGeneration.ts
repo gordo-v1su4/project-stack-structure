@@ -152,41 +152,41 @@ export async function generateConcatPreview(params: {
 
   await mkdir(path.dirname(outputPath), { recursive: true });
 
-  const segmentPaths = await Promise.all(
-    segments.map(async (segment, index) => {
-      const segmentOutputPath = buildPreviewOutputPath({
-        requestKey: `${sanitizeFileName(params.requestKey)}-part${index}`,
-      });
-      await mkdir(path.dirname(segmentOutputPath), { recursive: true });
+  const segmentPaths: string[] = [];
+  for (let index = 0; index < segments.length; index++) {
+    const segment = segments[index]!;
+    const segmentOutputPath = buildPreviewOutputPath({
+      requestKey: `${sanitizeFileName(params.requestKey)}-part${index}`,
+    });
+    await mkdir(path.dirname(segmentOutputPath), { recursive: true });
 
-      const inputMetadata = await safeProbeInput(segment.inputPath);
-      if (!inputMetadata.hasVideo) {
-        throw new PreviewGenerationError("audio-only-input", `Concat segment ${index} has no video stream.`);
-      }
+    const inputMetadata = await safeProbeInput(segment.inputPath);
+    if (!inputMetadata.hasVideo) {
+      throw new PreviewGenerationError("audio-only-input", `Concat segment ${index} has no video stream.`);
+    }
 
-      try {
-        await execFileAsync(ffmpegPath, [
-          "-y",
-          "-ss", `${clampTime(segment.startTime)}`,
-          "-to", `${clampTime(segment.endTime)}`,
-          "-i", segment.inputPath,
-          "-c:v", "libx264",
-          "-preset", "veryfast",
-          "-crf", "20",
-          "-c:a", "aac",
-          "-movflags", "+faststart",
-          segmentOutputPath,
-        ]);
-      } catch (segmentError) {
-        throw new PreviewGenerationError(
-          "ffmpeg-failed",
-          segmentError instanceof Error ? segmentError.message : `ffmpeg concat segment ${index} failed`,
-        );
-      }
+    try {
+      await execFileAsync(ffmpegPath, [
+        "-y",
+        "-ss", `${clampTime(segment.startTime)}`,
+        "-to", `${clampTime(segment.endTime)}`,
+        "-i", segment.inputPath,
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-crf", "20",
+        "-c:a", "aac",
+        "-movflags", "+faststart",
+        segmentOutputPath,
+      ]);
+    } catch (segmentError) {
+      throw new PreviewGenerationError(
+        "ffmpeg-failed",
+        segmentError instanceof Error ? segmentError.message : `ffmpeg concat segment ${index} failed`,
+      );
+    }
 
-      return segmentOutputPath;
-    })
-  );
+    segmentPaths.push(segmentOutputPath);
+  }
 
   const concatListPath = buildPreviewOutputPath({
     requestKey: `${sanitizeFileName(params.requestKey)}-concat-list`,
@@ -194,7 +194,7 @@ export async function generateConcatPreview(params: {
   });
 
   const concatEntries = segmentPaths
-    .map((segmentPath) => `file '${segmentPath.replace(/'/g, "'\\''")}'`)
+    .map((segmentPath) => `file '${segmentPath.replace(/'/g, "''")}'`)
     .join("\n");
   await writeFile(concatListPath, concatEntries, "utf-8");
 

@@ -34,6 +34,8 @@ export class BrowserPreviewPlayer {
   private status: PreviewPlayerState["status"] = "idle";
   private errorMessage: string | null = null;
   private seeking = false;
+  private currentSegmentEndTime: number | null = null;
+  private progressRafId: number | null = null;
 
   attach(videoElement: HTMLVideoElement) {
     this.videoElement = videoElement;
@@ -54,7 +56,7 @@ export class BrowserPreviewPlayer {
       0
     );
     this.currentIndex = 0;
-    this.status = this.segments.length > 0 ? "idle" : "idle";
+    this.status = "idle";
     this.errorMessage = this.segments.length > 0 ? null : "No valid segments to preview.";
     this.emit();
   }
@@ -77,17 +79,33 @@ export class BrowserPreviewPlayer {
     if (!this.videoElement) return;
     this.videoElement.pause();
     this.status = "paused";
+    this.stopProgressLoop();
     this.emit();
   }
 
   resume() {
     if (!this.videoElement) return;
+
+    if (this.currentSegmentEndTime !== null && this.status === "paused") {
+      this.videoElement.play().catch(() => {});
+      this.status = "playing";
+      this.startProgressLoop();
+      this.emit();
+
+      this.waitForSegmentEnd(this.currentSegmentEndTime)
+        .then(() => this.advanceToNext())
+        .catch(() => {});
+      return;
+    }
+
     this.videoElement.play().catch(() => {});
     this.status = "playing";
     this.emit();
   }
 
   stop() {
+    this.stopProgressLoop();
+    this.currentSegmentEndTime = null;
     if (this.videoElement) {
       this.videoElement.pause();
       this.videoElement.removeAttribute("src");
@@ -154,11 +172,11 @@ export class BrowserPreviewPlayer {
 
     await new Promise<void>((resolve, reject) => {
       const onLoaded = () => {
-        cleanup();
         video.currentTime = segment.startTime;
       };
 
       const onSeeked = () => {
+        cleanup();
         this.seeking = false;
         video
           .play()
@@ -183,6 +201,8 @@ export class BrowserPreviewPlayer {
     });
 
     this.status = "playing";
+    this.currentSegmentEndTime = segment.endTime;
+    this.startProgressLoop();
     this.emit();
 
     await this.waitForSegmentEnd(segment.endTime);
@@ -199,11 +219,6 @@ export class BrowserPreviewPlayer {
       const video = this.videoElement;
 
       const onTimeUpdate = () => {
-        if (this.status !== "playing") {
-          cleanup();
-          resolve();
-          return;
-        }
         if (video.currentTime >= endTime - 0.05) {
           cleanup();
           resolve();
@@ -215,22 +230,13 @@ export class BrowserPreviewPlayer {
         resolve();
       };
 
-      const onPause = () => {
-        if (this.status === "paused") {
-          cleanup();
-          resolve();
-        }
-      };
-
       const cleanup = () => {
         video.removeEventListener("timeupdate", onTimeUpdate);
         video.removeEventListener("ended", onEnded);
-        video.removeEventListener("pause", onPause);
       };
 
       video.addEventListener("timeupdate", onTimeUpdate);
       video.addEventListener("ended", onEnded);
-      video.addEventListener("pause", onPause);
     });
   }
 
@@ -239,6 +245,8 @@ export class BrowserPreviewPlayer {
 
     const nextIndex = this.currentIndex + 1;
     if (nextIndex >= this.segments.length) {
+      this.stopProgressLoop();
+      this.currentSegmentEndTime = null;
       this.status = "ended";
       this.emit();
       return;
@@ -247,20 +255,34 @@ export class BrowserPreviewPlayer {
     try {
       await this.playSegment(nextIndex);
     } catch (error) {
+      this.stopProgressLoop();
+      this.currentSegmentEndTime = null;
       this.status = "error";
       this.errorMessage = error instanceof Error ? error.message : "Segment playback failed.";
       this.emit();
     }
   }
 
-  private computeCurrentTime(): number {
-    if (this.segments.length === 0 || this.currentIndex === 0) {
-      if (this.videoElement && this.segments[0]) {
-        const segment = this.segments[0];
-        return Math.max(0, this.videoElement.currentTime - segment.startTime);
+  private startProgressLoop() {
+    this.stopProgressLoop();
+    const tick = () => {
+      if (this.status === "playing") {
+        this.emit();
       }
-      return 0;
+      this.progressRafId = requestAnimationFrame(tick);
+    };
+    this.progressRafId = requestAnimationFrame(tick);
+  }
+
+  private stopProgressLoop() {
+    if (this.progressRafId !== null) {
+      cancelAnimationFrame(this.progressRafId);
+      this.progressRafId = null;
     }
+  }
+
+  private computeCurrentTime(): number {
+    if (!this.videoElement || this.segments.length === 0) return 0;
 
     let elapsed = 0;
     for (let i = 0; i < this.currentIndex; i++) {
@@ -271,7 +293,7 @@ export class BrowserPreviewPlayer {
     }
 
     const currentSegment = this.segments[this.currentIndex];
-    if (currentSegment && this.videoElement) {
+    if (currentSegment) {
       elapsed += Math.max(0, this.videoElement.currentTime - currentSegment.startTime);
     }
 
