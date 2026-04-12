@@ -1,8 +1,14 @@
 import { describe, expect, test } from "bun:test";
 
 import { GET } from "../../src/app/api/preview/asset/route";
-import { createTempPreviewPath, generateSectionPreview } from "../../src/components/studio/previewGeneration";
+import { createTempPreviewPath, generateSectionPreview, type ProbeFn } from "../../src/components/studio/previewGeneration";
+import { probeMediaFile } from "../../src/components/studio/mediaProbe";
 import { listMediaFixtures } from "../helpers/mediaFixtures";
+
+const testProbeFn: ProbeFn = async (filePath) => {
+  const result = await probeMediaFile(filePath);
+  return { duration: result.duration, hasVideo: result.hasVideo };
+};
 
 describe("preview asset route", () => {
   test("serves a generated preview asset from the allowed preview directory", async () => {
@@ -16,6 +22,7 @@ describe("preview asset route", () => {
       startTime: 0,
       endTime: 1,
       outputPath: createTempPreviewPath("preview-route"),
+      probeFn: testProbeFn,
     });
 
     const response = await GET(new Request(`http://localhost/api/preview/asset?assetKey=${encodeURIComponent(asset.assetKey)}`));

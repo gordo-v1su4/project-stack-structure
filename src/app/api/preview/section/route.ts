@@ -1,5 +1,4 @@
-import { listMediaFixtures } from "@/components/studio/mediaProbe";
-import { generateConcatPreview, generateSectionPreview } from "@/components/studio/previewGeneration";
+import { generateConcatPreview, generateSectionPreview, type ProbeFn } from "@/components/studio/previewGeneration";
 import type { ConcatPreviewSegment } from "@/components/studio/previewGeneration";
 
 export const runtime = "nodejs";
@@ -16,11 +15,24 @@ interface PreviewSectionRequest {
   }>;
 }
 
+async function getProbeFn(): Promise<ProbeFn> {
+  const { probeMediaFile } = await import("@/components/studio/mediaProbe");
+  return async (filePath: string) => {
+    const result = await probeMediaFile(filePath);
+    return { duration: result.duration, hasVideo: result.hasVideo };
+  };
+}
+
+async function getDefaultInputPath() {
+  const { listMediaFixtures } = await import("@/components/studio/mediaProbe");
+  const inventory = listMediaFixtures();
+  return inventory.video[0];
+}
+
 export async function POST(request: Request) {
   try {
     const payload = (await request.json()) as PreviewSectionRequest;
-    const inventory = listMediaFixtures();
-    const defaultInputPath = inventory.video[0];
+    const [probeFn, defaultInputPath] = await Promise.all([getProbeFn(), getDefaultInputPath()]);
 
     if (payload.segments && payload.segments.length > 0) {
       const segments: ConcatPreviewSegment[] = payload.segments.map((segment) => ({
@@ -32,6 +44,7 @@ export async function POST(request: Request) {
       const asset = await generateConcatPreview({
         segments,
         requestKey: payload.requestKey ?? `preview-${Date.now()}`,
+        probeFn,
       });
 
       return Response.json({ success: true, asset });
@@ -48,6 +61,7 @@ export async function POST(request: Request) {
       requestKey: payload.requestKey ?? `preview-${Date.now()}`,
       startTime: payload.startTime ?? 0,
       endTime: payload.endTime ?? 1,
+      probeFn,
     });
 
     return Response.json({ success: true, asset });

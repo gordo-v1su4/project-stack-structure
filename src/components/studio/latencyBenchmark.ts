@@ -1,7 +1,7 @@
 import os from "node:os";
 
 import { probeFixtureInventory } from "./mediaProbe";
-import { createTempPreviewPath, generateSectionPreview, PreviewGenerationError } from "./previewGeneration";
+import { createTempPreviewPath, generateSectionPreview, PreviewGenerationError, type ProbeFn } from "./previewGeneration";
 
 export type HardwareLane = string;
 
@@ -80,12 +80,19 @@ export async function runLatencyBenchmark(params: LatencyBenchmarkParams = {}): 
   const previewStart = performance.now();
 
   try {
+    const probeFn: ProbeFn = async (filePath) => {
+      const { probeMediaFile } = await import("./mediaProbe");
+      const result = await probeMediaFile(filePath);
+      return { duration: result.duration, hasVideo: result.hasVideo };
+    };
+
     const preview = await generateSectionPreview({
       inputPath,
       requestKey,
       startTime,
       endTime,
       outputPath,
+      probeFn,
     });
     const previewCompletedAt = new Date().toISOString();
     const previewDurationMs = roundMs(performance.now() - previewStart);

@@ -8,6 +8,7 @@ import {
   createTempPreviewPath,
   generateSectionPreview,
   isPreviewDurationWithinTolerance,
+  type ProbeFn,
 } from "../../src/components/studio/previewGeneration";
 import {
   createSectionRecomputeState,
@@ -15,6 +16,11 @@ import {
   startSectionRecompute,
   swapReadySection,
 } from "../../src/components/studio/sectionRecompute";
+
+const testProbeFn: ProbeFn = async (filePath) => {
+  const result = await probeMediaFile(filePath);
+  return { duration: result.duration, hasVideo: result.hasVideo };
+};
 
 describe("previewGeneration integration", () => {
   test("generates a prepared preview asset from a real video fixture", async () => {
@@ -28,6 +34,7 @@ describe("previewGeneration integration", () => {
       requestKey: "preview-test",
       startTime: 0,
       endTime: 1,
+      probeFn: testProbeFn,
     });
 
     const metadata = await probeMediaFile(asset.outputPath);
@@ -52,6 +59,7 @@ describe("previewGeneration integration", () => {
       requestKey: "preview-section",
       startTime: 0.5,
       endTime: 1.25,
+      probeFn: testProbeFn,
     });
 
     expect(asset.startTime).toBe(0.5);
@@ -70,6 +78,7 @@ describe("previewGeneration integration", () => {
         requestKey: "bad-window",
         startTime: 1,
         endTime: 1,
+        probeFn: testProbeFn,
       }),
     );
 
@@ -84,6 +93,7 @@ describe("previewGeneration integration", () => {
         requestKey: "missing-input",
         startTime: 0,
         endTime: 1,
+        probeFn: testProbeFn,
       }),
     );
 
@@ -99,6 +109,7 @@ describe("previewGeneration integration", () => {
         requestKey: "audio-only",
         startTime: 0,
         endTime: 1,
+        probeFn: testProbeFn,
       }),
     );
 
@@ -117,6 +128,7 @@ describe("previewGeneration integration", () => {
       requestKey: "preview-music-window",
       startTime: 0,
       endTime: 1,
+      probeFn: testProbeFn,
     });
 
     expect(isPreviewDurationWithinTolerance(asset.duration, 1)).toBe(true);
@@ -142,6 +154,7 @@ describe("previewGeneration integration", () => {
       requestKey: "preview-ready-flow",
       startTime: 0,
       endTime: 1,
+      probeFn: testProbeFn,
     });
 
     const ready = markSectionReady(running, asset);

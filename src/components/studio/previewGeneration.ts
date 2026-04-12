@@ -3,12 +3,15 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 
-import { probeMediaFile } from "./mediaProbe";
 import { getDefaultPreviewOutputDir } from "./previewAssetPath";
 import type { SectionPreviewReadyAsset } from "./sectionRecompute";
 
 const execFileAsync = promisify(execFile);
 const PREVIEW_OUTPUT_DIR = getDefaultPreviewOutputDir();
+
+export type ProbeFn = (filePath: string) => Promise<{ duration: number; hasVideo: boolean }>;
+
+const stubProbeFn: ProbeFn = async () => ({ duration: 0, hasVideo: false });
 
 export type PreviewGenerationErrorCode =
   | "invalid-window"
@@ -34,6 +37,7 @@ export interface PreviewGenerationParams {
   startTime: number;
   endTime: number;
   ffmpegPath?: string;
+  probeFn?: ProbeFn;
 }
 
 export interface GeneratedPreviewAsset extends SectionPreviewReadyAsset {
@@ -50,11 +54,12 @@ export function buildPreviewOutputPath(params: {
 }) {
   const outputDir = params.outputDir ?? PREVIEW_OUTPUT_DIR;
   const extension = params.extension ?? ".mp4";
-  return path.join(outputDir, `${sanitizeFileName(params.requestKey)}${extension}`);
+  return path.join(/*turbopackIgnore: true*/ outputDir, `${sanitizeFileName(params.requestKey)}${extension}`);
 }
 
 export async function generateSectionPreview(params: PreviewGenerationParams): Promise<GeneratedPreviewAsset> {
   const ffmpegPath = params.ffmpegPath ?? process.env.FFMPEG_PATH ?? "ffmpeg";
+  const probeFn = params.probeFn ?? stubProbeFn;
   const outputPath = params.outputPath ?? buildPreviewOutputPath({ requestKey: params.requestKey });
   const startTime = clampTime(params.startTime);
   const endTime = clampTime(params.endTime);
@@ -62,7 +67,7 @@ export async function generateSectionPreview(params: PreviewGenerationParams): P
   validatePreviewWindow(startTime, endTime);
   await mkdir(path.dirname(outputPath), { recursive: true });
 
-  const inputMetadata = await safeProbeInput(params.inputPath);
+  const inputMetadata = await safeProbeInput(params.inputPath, probeFn);
   if (!inputMetadata.hasVideo) {
     throw new PreviewGenerationError("audio-only-input", "Preview generation requires a video source.");
   }
@@ -95,7 +100,7 @@ export async function generateSectionPreview(params: PreviewGenerationParams): P
     );
   }
 
-  const metadata = await probeMediaFile(outputPath);
+  const metadata = await probeFn(outputPath);
   const requestedDuration = roundDuration(endTime - startTime);
   if (!isPreviewDurationWithinTolerance(metadata.duration, requestedDuration)) {
     throw new PreviewGenerationError(
@@ -127,8 +132,10 @@ export async function generateConcatPreview(params: {
   requestKey: string;
   outputPath?: string;
   ffmpegPath?: string;
+  probeFn?: ProbeFn;
 }): Promise<GeneratedPreviewAsset> {
   const ffmpegPath = params.ffmpegPath ?? process.env.FFMPEG_PATH ?? "ffmpeg";
+  const probeFn = params.probeFn ?? stubProbeFn;
   const outputPath = params.outputPath ?? buildPreviewOutputPath({ requestKey: params.requestKey });
   const segments = params.segments.filter(
     (segment) => segment.inputPath && segment.endTime > segment.startTime
@@ -147,6 +154,7 @@ export async function generateConcatPreview(params: {
       endTime: segment.endTime,
       outputPath,
       ffmpegPath,
+      probeFn,
     });
   }
 
@@ -160,7 +168,7 @@ export async function generateConcatPreview(params: {
     });
     await mkdir(path.dirname(segmentOutputPath), { recursive: true });
 
-    const inputMetadata = await safeProbeInput(segment.inputPath);
+    const inputMetadata = await safeProbeInput(segment.inputPath, probeFn);
     if (!inputMetadata.hasVideo) {
       throw new PreviewGenerationError("audio-only-input", `Concat segment ${index} has no video stream.`);
     }
@@ -230,7 +238,7 @@ export async function generateConcatPreview(params: {
     }
   }
 
-  const metadata = await probeMediaFile(outputPath);
+  const metadata = await probeFn(outputPath);
 
   return {
     requestKey: params.requestKey,
@@ -264,9 +272,9 @@ function validatePreviewWindow(startTime: number, endTime: number) {
   }
 }
 
-async function safeProbeInput(inputPath: string) {
+async function safeProbeInput(inputPath: string, probeFn: ProbeFn) {
   try {
-    return await probeMediaFile(inputPath);
+    return await probeFn(inputPath);
   } catch (error) {
     if (error instanceof Error && /no such file|not found|cannot find/i.test(error.message)) {
       throw new PreviewGenerationError("missing-input", `Preview input not found: ${inputPath}`);
