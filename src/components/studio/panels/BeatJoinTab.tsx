@@ -3,6 +3,8 @@
 import { useMemo } from "react";
 import { lerp, sv } from "../math";
 import { ParamSlider } from "../ParamSlider";
+import { STUTTER_PRESETS } from "../remapPresets";
+import type { StutterPresetDefinition } from "../remapPresets";
 import type { BeatJoinAnalysis, BeatJoinSection, ShuffleMode } from "../types";
 
 const ENERGY_BIN_COUNT = 32;
@@ -137,6 +139,29 @@ export function BeatJoinTab({
       hasAnalysis,
     ]
   );
+  const activePresetKey = STUTTER_PRESETS.find((preset) =>
+    isStutterPresetActive(preset, {
+      minDur,
+      maxDur,
+      energyResp,
+      chaos,
+      onsetBoost,
+      lowEnergyRange,
+      highEnergyRange,
+      energyReactive,
+    })
+  )?.key;
+
+  function applyStutterPreset(preset: StutterPresetDefinition) {
+    onMinDur(preset.minDur);
+    onMaxDur(preset.maxDur);
+    onEnergyResp(preset.energyResp);
+    onChaos(preset.chaos);
+    onOnsetBoost(preset.onsetBoost);
+    onLowEnergyRange(preset.lowEnergyRange);
+    onHighEnergyRange(preset.highEnergyRange);
+    onEnergyReactive(preset.energyReactive);
+  }
 
   return (
     <>
@@ -145,6 +170,41 @@ export function BeatJoinTab({
           Commit Beat Split first so Beat Join reacts to the same working segment set as Shuffle and Join.
         </div>
       ) : null}
+
+      <div className="border border-[#1a1a1a] rounded-[2px] bg-[#0c0c0c] overflow-hidden">
+        <div className="flex items-center justify-between border-b border-[#181818] px-3 py-2">
+          <span className="text-[10px] uppercase tracking-[0.2em] text-[#6f8287]">Stutter Cut Presets</span>
+          <span className="font-mono text-[9px] text-[#40545a]">{STUTTER_PRESETS.length} working arrangements</span>
+        </div>
+        <div className="grid gap-1 p-2 md:grid-cols-2">
+          {STUTTER_PRESETS.map((preset) => {
+            const isActive = activePresetKey === preset.key;
+            return (
+              <button
+                key={preset.key}
+                type="button"
+                onClick={() => applyStutterPreset(preset)}
+                className={`grid grid-cols-[minmax(0,1fr)_86px] items-center gap-2 rounded-[2px] border px-2 py-[7px] text-left transition-colors ${
+                  isActive
+                    ? "border-[#e05c00] bg-[#e05c0012] shadow-[inset_0_0_0_1px_rgba(224,92,0,0.12)]"
+                    : "border-[#1a1a1a] bg-[#090909] hover:border-[#2d3c40]"
+                }`}
+              >
+                <div>
+                  <div className={`text-[11px] font-medium ${isActive ? "text-[#e05c00]" : "text-[#8ca0a5]"}`}>
+                    {preset.label}
+                  </div>
+                  <div className="text-[9px] text-[#4d5a5e]">{preset.detail}</div>
+                </div>
+                <div className="space-y-1">
+                  <MiniLane values={preset.laneShape} active={isActive} />
+                  <div className="text-right font-mono text-[9px] text-[#58656a]">{preset.densityLabel}</div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
       {!hasAnalysis ? (
         <div className="border border-[#1e1e1e] rounded-[2px] bg-[#070707] p-4">
@@ -161,7 +221,7 @@ export function BeatJoinTab({
       <div className="border border-[#1a1a1a] rounded-[2px] bg-[#080808] overflow-hidden">
         <div className="flex items-center justify-between px-3 py-2 border-b border-[#181818]">
           <span className="text-[10px] uppercase tracking-[0.18em] text-[#404040]">
-            Arrangement · Energy Reactive · {shuffleMode}
+            Arrangement · Stutter Envelope · {shuffleMode}
           </span>
           <div className="flex items-center gap-2">
             <span className="font-mono text-[10px] text-[#555]">{analysisStatus}</span>
@@ -432,6 +492,54 @@ function buildArrangementSegments(params: {
       tone,
     };
   });
+}
+
+function isStutterPresetActive(
+  preset: StutterPresetDefinition,
+  current: Pick<
+    StutterPresetDefinition,
+    | "minDur"
+    | "maxDur"
+    | "energyResp"
+    | "chaos"
+    | "onsetBoost"
+    | "lowEnergyRange"
+    | "highEnergyRange"
+    | "energyReactive"
+  >
+) {
+  return (
+    current.energyReactive === preset.energyReactive &&
+    nearlyEqual(current.minDur, preset.minDur, 0.005) &&
+    nearlyEqual(current.maxDur, preset.maxDur, 0.005) &&
+    nearlyEqual(current.energyResp, preset.energyResp, 0.025) &&
+    nearlyEqual(current.chaos, preset.chaos, 0.005) &&
+    nearlyEqual(current.onsetBoost, preset.onsetBoost, 0.005) &&
+    nearlyEqual(current.lowEnergyRange, preset.lowEnergyRange, 0.005) &&
+    nearlyEqual(current.highEnergyRange, preset.highEnergyRange, 0.005)
+  );
+}
+
+function nearlyEqual(left: number, right: number, epsilon: number) {
+  return Math.abs(left - right) <= epsilon;
+}
+
+function MiniLane({ values, active }: { values: number[]; active: boolean }) {
+  return (
+    <div className="flex h-5 items-end gap-[2px] rounded-[1px] bg-[#071014] px-[3px] pb-[3px]">
+      {values.map((value, index) => (
+        <span
+          key={`${value}-${index}`}
+          className="flex-1 rounded-t-[1px]"
+          style={{
+            height: `${Math.max(18, value * 100)}%`,
+            background: active ? "#e05c00" : index % 2 === 0 ? "#6f8287" : "#40545a",
+            opacity: active ? 1 : 0.72,
+          }}
+        />
+      ))}
+    </div>
+  );
 }
 
 function createCandidate(

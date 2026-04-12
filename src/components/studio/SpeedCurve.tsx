@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import { lerp } from "./math";
+import { getRampPresetDefinition } from "./remapPresets";
 import type { RampPreset } from "./types";
 
 type SpeedCurveProps = {
@@ -26,13 +27,7 @@ export function SpeedCurve({ minSpeed, maxSpeed, preset, initialNodes }: SpeedCu
   const chartH = H - PAD.t - PAD.b;
 
   const basePoints = useMemo(() => {
-    const shapes: Record<RampPreset, number[]> = {
-      subtle: [0.5, 0.55, 0.52, 0.6, 0.58, 0.65, 0.6, 0.55, 0.5],
-      dynamic: [0.3, 0.4, 0.55, 0.8, 1.0, 0.85, 0.7, 0.5, 0.35],
-      extreme: [0.25, 0.5, 0.9, 1.0, 0.75, 1.0, 0.6, 0.9, 0.25],
-      cinematic: [0.4, 0.45, 0.5, 0.6, 0.7, 0.75, 0.65, 0.55, 0.45],
-    };
-    return shapes[preset];
+    return getRampPresetDefinition(preset).shape;
   }, [preset]);
 
   const [nodes, setNodes] = useState<SpeedCurveNode[]>(() =>
@@ -105,6 +100,13 @@ export function SpeedCurve({ minSpeed, maxSpeed, preset, initialNodes }: SpeedCu
           <stop offset="0%" stopColor={accent} stopOpacity="0.18" />
           <stop offset="100%" stopColor={accent} stopOpacity="0.02" />
         </linearGradient>
+        <filter id="curveGlow" x="-20%" y="-80%" width="140%" height="260%">
+          <feGaussianBlur stdDeviation="2.5" result="blur" />
+          <feMerge>
+            <feMergeNode in="blur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
       </defs>
       {[0, 0.25, 0.5, 0.75, 1].map((t) => (
         <line
@@ -143,7 +145,8 @@ export function SpeedCurve({ minSpeed, maxSpeed, preset, initialNodes }: SpeedCu
         );
       })()}
       <path d={fillPath()} fill="url(#cf)" />
-      <path d={catmullPath()} fill="none" stroke={accent} strokeWidth={2.5} />
+      <path d={catmullPath()} fill="none" stroke="#81aeb8" strokeWidth={4.5} strokeOpacity="0.18" />
+      <path d={catmullPath()} fill="none" stroke={accent} strokeWidth={2.5} filter="url(#curveGlow)" />
       {nodes.map((n, i) => {
         const { sx, sy } = toScreen(n.x, n.y);
         return (
