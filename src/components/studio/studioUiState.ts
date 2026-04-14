@@ -94,6 +94,7 @@ export function getPreviewAssetFileName(assetKey: string | null) {
 
 export function buildPreviewAssetUrl(assetKey: string | null) {
   if (!assetKey) return null;
+  if (assetKey.startsWith("http://") || assetKey.startsWith("https://")) return assetKey;
   return `/api/preview/asset?assetKey=${encodeURIComponent(assetKey)}`;
 }
 

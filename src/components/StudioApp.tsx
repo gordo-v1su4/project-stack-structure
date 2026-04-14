@@ -466,10 +466,10 @@ export default function StudioApp() {
     }
   }
 
-  function runBrowserPreview() {
+  async function runBrowserPreview() {
     setIsRunning(true);
     setDone(false);
-    setProgress(10);
+    setProgress(5);
 
     const requestKey = `browser-preview-${Date.now()}`;
     setPreviewState((current) =>
@@ -479,38 +479,93 @@ export default function StudioApp() {
         continuityMode: shuffleMode,
         paramsHash: `browser:${tab}`,
         startedAt: new Date().toISOString(),
-        progress: 10,
+        progress: 5,
       }),
     );
     setPreviewState((current) => markSectionRecomputeRunning(current, requestKey));
 
-    const player = previewPlayerRef.current;
-    player.load(browserPreviewSegments);
+    const uniqueVideoUrls = [...new Set(browserPreviewSegments.map((s) => s.videoUrl))];
+    const videoFileMap = new Map<string, string>();
 
-    setProgress(50);
-    setPreviewState((current) => updateSectionRecomputeProgress(current, { requestKey, progress: 50 }));
+    try {
+      for (const url of uniqueVideoUrls) {
+        const response = await fetch(url);
+        const blob = await response.blob();
+        const ext = blob.type.includes("mp4") ? ".mp4" : blob.type.includes("webm") ? ".webm" : ".mp4";
+        const file = new File([blob], `source${videoFileMap.size}${ext}`, { type: blob.type || "video/mp4" });
+        videoFileMap.set(url, URL.createObjectURL(file));
+      }
 
-    player.play().then(() => {
+      setProgress(20);
+      setPreviewState((current) => updateSectionRecomputeProgress(current, { requestKey, progress: 20 }));
+
+      const firstUrl = uniqueVideoUrls[0];
+      const firstResponse = await fetch(firstUrl!);
+      const firstBlob = await firstResponse.blob();
+      const ext = firstBlob.type.includes("mp4") ? ".mp4" : firstBlob.type.includes("webm") ? ".webm" : ".mp4";
+      const videoFile = new File([firstBlob], `source0${ext}`, { type: firstBlob.type || "video/mp4" });
+
+      const segments = browserPreviewSegments.map((seg) => ({
+        startTime: seg.startTime,
+        endTime: seg.endTime,
+      }));
+
+      const gatewayForm = new FormData();
+      gatewayForm.set("file", videoFile);
+      gatewayForm.set("segments", JSON.stringify(segments));
+      gatewayForm.set("requestKey", requestKey);
+
+      setProgress(40);
+      setPreviewState((current) => updateSectionRecomputeProgress(current, { requestKey, progress: 40 }));
+
+      const gatewayResponse = await fetch("/api/preview/gateway", {
+        method: "POST",
+        body: gatewayForm,
+      });
+
+      const gatewayPayload = (await gatewayResponse.json()) as {
+        success?: boolean;
+        error?: string;
+        asset?: {
+          requestKey: string;
+          assetKey: string;
+          duration: number;
+          generatedAt: string;
+          videoUrl?: string;
+        };
+      };
+
+      if (!gatewayResponse.ok || !gatewayPayload.success || !gatewayPayload.asset) {
+        throw new Error(gatewayPayload.error ?? "Gateway preview generation failed.");
+      }
+
       setProgress(90);
       setPreviewState((current) => updateSectionRecomputeProgress(current, { requestKey, progress: 90 }));
-      setPreviewState((current) =>
-        markSectionReady(current, {
-          requestKey,
-          assetKey: "browser-preview",
-          duration: browserPreviewSegments.reduce((sum, s) => sum + (s.endTime - s.startTime), 0),
-          generatedAt: new Date().toISOString(),
-        }),
-      );
+
+      const videoUrl = gatewayPayload.asset.videoUrl ?? gatewayPayload.asset.assetKey;
+
+      const asset = {
+        requestKey: gatewayPayload.asset.requestKey,
+        assetKey: videoUrl,
+        duration: gatewayPayload.asset.duration,
+        generatedAt: gatewayPayload.asset.generatedAt,
+      };
+
+      setPreviewState((current) => markSectionReady(current, asset));
       setPreviewState((current) => swapReadySection(current, requestKey));
       setProgress(100);
       setDone(true);
       setIsRunning(false);
-    }).catch((error: unknown) => {
+    } catch (error) {
       const message = error instanceof Error ? error.message : "Browser preview failed.";
       setPreviewState((current) => failSectionRecompute(current, { requestKey, message }));
       setVideoError(message);
       setIsRunning(false);
-    });
+    } finally {
+      for (const objectUrl of videoFileMap.values()) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    }
   }
 
   function handleCommitBeatSplit() {
