@@ -131,3 +131,6 @@ For more detail, see `tests/README.md`.
 
 ## Notes
 This repo intentionally emphasizes documentation and planning right now. The approved architecture stays **web-first** for now, while preserving a **Tauri + sidecar** contingency if browser scheduling and media constraints cannot maintain musically correct preview playback.
+
+
+## test
