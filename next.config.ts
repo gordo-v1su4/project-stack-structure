@@ -16,11 +16,23 @@ const publicEssentiaApiKey = (
   ""
 ).trim();
 
+const serverFfmpegGatewayUrl = (
+  process.env.FFMPEG_GATEWAY_URL ??
+  ""
+).trim().replace(/\/+$/, "");
+
+const serverFfmpegGatewayApiKey = (
+  process.env.FFMPEG_GATEWAY_API_KEY ??
+  ""
+).trim();
+
 const nextConfig: NextConfig = {
   env: {
     NEXT_PUBLIC_ESSENTIA_API_BASE_URL: publicEssentiaApiBaseUrl,
     NEXT_PUBLIC_ESSENTIA_API_URL: publicEssentiaApiBaseUrl,
     NEXT_PUBLIC_ESSENTIA_API_KEY: publicEssentiaApiKey,
+    FFMPEG_GATEWAY_URL: serverFfmpegGatewayUrl,
+    FFMPEG_GATEWAY_API_KEY: serverFfmpegGatewayApiKey,
   },
   turbopack: {
     root: projectRoot,
