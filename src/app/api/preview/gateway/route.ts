@@ -66,14 +66,14 @@ export async function POST(request: Request) {
 
     const fileId = uploadPayload.fileId;
 
-    const concatPayload = {
+    const concatBody = {
       fileId,
       segments: JSON.stringify(segments),
     };
 
     const concatForm = new FormData();
     concatForm.set("file", new Blob([], { type: "application/octet-stream" }), "dummy.mp4");
-    concatForm.set("segments", concatPayload.segments);
+    concatForm.set("segments", concatBody.segments);
 
     const concatResponse = await fetch(`${FFMPEG_GATEWAY_URL}/ffmpeg/concat`, {
       method: "POST",
@@ -89,7 +89,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const concatPayload = (await concatResponse.json()) as {
+    const concatResult = (await concatResponse.json()) as {
       success?: boolean;
       fileId?: string;
       downloadUrl?: string;
@@ -97,15 +97,15 @@ export async function POST(request: Request) {
       error?: string;
     };
 
-    if (!concatPayload.success) {
+    if (!concatResult.success) {
       return Response.json(
-        { success: false, error: concatPayload.error ?? "Gateway concat returned failure." },
+        { success: false, error: concatResult.error ?? "Gateway concat returned failure." },
         { status: 500 },
       );
     }
 
-    const videoUrl = concatPayload.downloadUrl
-      ? `${FFMPEG_GATEWAY_URL}${concatPayload.downloadUrl}`
+    const videoUrl = concatResult.downloadUrl
+      ? `${FFMPEG_GATEWAY_URL}${concatResult.downloadUrl}`
       : null;
 
     if (!videoUrl) {
@@ -120,10 +120,10 @@ export async function POST(request: Request) {
       asset: {
         requestKey,
         assetKey: videoUrl,
-        duration: concatPayload.duration ?? 0,
+        duration: concatResult.duration ?? 0,
         generatedAt: new Date().toISOString(),
         videoUrl,
-        gatewayFileId: concatPayload.fileId,
+        gatewayFileId: concatResult.fileId,
       },
     });
   } catch (error) {
