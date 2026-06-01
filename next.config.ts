@@ -37,6 +37,9 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: projectRoot,
   },
+  // The review module's LFM-2.5-VL captioner runs client-side in a Web Worker
+  // (WebGPU). Keep transformers out of the server bundle.
+  serverExternalPackages: ["@huggingface/transformers"],
 };
 
 export default nextConfig;

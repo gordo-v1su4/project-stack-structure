@@ -19,6 +19,31 @@
   }
 }
 
+/* DAILIES review module design tokens (operator-console palette). */
+:root {
+  --bg-app: #0a0a0a;
+  --bg-panel: #0c0c0c;
+  --bg-inset: #090909;
+  --bg-inset-deep: #080808;
+  --bg-well: #050505;
+  --border: #1a1a1a;
+  --border-faint: #1e1e1e;
+  --border-soft: #161616;
+  --accent: #e05c00;
+  --accent-hover: #c95200;
+  --accent-active: #b34800;
+  --accent-ghost: #e05c0099;
+  --ok: #3a8a3a;
+  --reject: #b04040;
+  --gold: #6a5000;
+  --text-hi: #d4d4d4;
+  --text: #b8b8b8;
+  --text-2: #777;
+  --text-mut: #555;
+  --text-dim: #343434;
+  --text-faint: #222;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);

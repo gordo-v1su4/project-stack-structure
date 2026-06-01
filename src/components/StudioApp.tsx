@@ -14,6 +14,7 @@ import { BeatJoinTab } from "./studio/panels/BeatJoinTab";
 import { BeatSplitTab } from "./studio/panels/BeatSplitTab";
 import { JoinTab } from "./studio/panels/JoinTab";
 import { RampTab } from "./studio/panels/RampTab";
+import { ReviewTab } from "./studio/panels/ReviewTab";
 import { ShuffleTab } from "./studio/panels/ShuffleTab";
 import { SplitTab } from "./studio/panels/SplitTab";
 import { StudioHeader } from "./studio/StudioHeader";
@@ -58,7 +59,7 @@ import type {
 
 export default function StudioApp() {
   const videoSourcesRef = useRef<UploadedVideoSource[]>([]);
-  const [tab, setTab] = useState<Tab>("split");
+  const [tab, setTab] = useState<Tab>("review");
   const [playhead] = useState(0.08);
   const [audioPreviewPlayhead, setAudioPreviewPlayhead] = useState(0);
   const [activeClip, setActiveClip] = useState(2);
@@ -329,6 +330,25 @@ export default function StudioApp() {
       );
 
       return nextSources;
+    });
+  }
+
+  // Approved clips from the Review tab feed the shared editor source list.
+  function handleApprovedSources(approved: UploadedVideoSource[]) {
+    setVideoSources((current) => {
+      const currentKeys = new Set(current.map(buildVideoSourceKey));
+      const additions = approved.filter(
+        (source) => !currentKeys.has(buildVideoSourceKey(source)),
+      );
+      if (!additions.length) return current;
+      const next = [...current, ...additions].map((source, index) => ({
+        ...source,
+        id: index,
+      }));
+      setVideoStatus(
+        `Review approved ${additions.length} clip${additions.length === 1 ? "" : "s"} · ${next.length} total ready.`,
+      );
+      return next;
     });
   }
 
@@ -852,6 +872,10 @@ export default function StudioApp() {
         <StudioHeader tabLabel={tabLabel} tabSub={tabSub} playhead={playhead} bpm={bpm} />
 
         <div className="flex flex-1 overflow-hidden">
+          {tab === "review" ? (
+            <ReviewTab onApprovedSourcesChange={handleApprovedSources} />
+          ) : (
+          <>
           <main className="flex-1 overflow-y-auto p-4 space-y-3">
             <StudioAudioLane
               analysis={beatJoinAnalysis}
@@ -1059,6 +1083,8 @@ export default function StudioApp() {
             browserPreviewState={browserPreviewState}
             isBrowserPreviewActive={isBrowserPreviewActive}
           />
+          </>
+          )}
         </div>
 
         <StudioStatusBar

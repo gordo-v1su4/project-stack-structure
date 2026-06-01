@@ -1,4 +1,4 @@
-export type Tab = "split" | "beatsplit" | "shuffle" | "join" | "beatjoin" | "ramp";
+export type Tab = "review" | "split" | "beatsplit" | "shuffle" | "join" | "beatjoin" | "ramp";
 
 export type ShuffleMode = "simple" | "size" | "color" | "motion";
 

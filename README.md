@@ -5,6 +5,7 @@ Smart auto music-video editor foundation built on a Next.js studio prototype.
 ## Current product direction
 
 The app is being shaped around a few non-negotiable rules:
+
 - **musical alignment first**
 - **motion continuity as the default visual mode**
 - **accurate segment analysis over shallow quick-scan tagging**
@@ -47,7 +48,7 @@ graph TB
 ### External services
 
 | Service | URL | Repo | Stack |
-|---------|-----|------|-------|
+| --- | --- | --- | --- |
 | Essentia API | `essentia.v1su4.dev` | [essentia-endpoint](https://github.com/gordo-v1su4/essentia-endpoint) | FastAPI + Essentia C++ + GPU |
 | FFmpeg Gateway | `ffmpeg.v1su4.dev` | [ffmpeg-gateway](https://github.com/gordo-v1su4/ffmpeg-gateway) | FastAPI + FFmpeg + FFglitch |
 | Discord Bot | — | [discord-bot](https://github.com/gordo-v1su4/discord-bot) | Bun + Express |
@@ -55,7 +56,7 @@ graph TB
 ### FFmpeg Gateway endpoints
 
 | Method | Path | Description |
-|--------|------|-------------|
+| --- | --- | --- |
 | POST | `/ffmpeg/preview` | Section preview clip |
 | POST | `/ffmpeg/concat` | Concatenate segments |
 | POST | `/ffmpeg/split` | Split at time boundaries |
@@ -139,6 +140,3 @@ For more detail, see `tests/README.md`.
 ## Notes
 
 This repo intentionally emphasizes documentation and planning right now. The approved architecture stays **web-first** for now, while preserving a **Tauri + sidecar** contingency if browser scheduling and media constraints cannot maintain musically correct preview playback.
-
-
-## test
