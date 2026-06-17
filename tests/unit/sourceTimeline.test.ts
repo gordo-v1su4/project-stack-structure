@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildAudioDrivenSegments, buildBeatSegments, buildSourceClipSpans, buildStandardSegments } from "../../src/components/studio/sourceTimeline";
+import { buildAudioDrivenSegments, buildBeatSegments, buildSceneSplitSegments, buildSourceClipSpans, buildStandardSegments } from "../../src/components/studio/sourceTimeline";
 import { makeBeatJoinAnalysis, makeSourceClips, makeVideoSources } from "../helpers/studioFixtures";
 
 describe("sourceTimeline", () => {
@@ -22,6 +22,32 @@ describe("sourceTimeline", () => {
     expect(segments[0]?.start).toBe(0);
     expect(segments.at(-1)?.end).toBe(12);
     expect(segments.flatMap((segment) => segment.sourceClipIds)).toContain(1);
+  });
+
+  test("buildSceneSplitSegments maps detected per-source scenes onto the continuous source timeline", () => {
+    const [a, b, c] = makeVideoSources();
+    const segments = buildSceneSplitSegments([
+      {
+        ...a!,
+        scenes: [
+          { id: 0, sourceClipId: 0, label: "A1", start: 0, end: 1.5, duration: 1.5, detector: "pyscenedetect-adaptive" },
+          { id: 1, sourceClipId: 0, label: "A2", start: 1.5, end: 4, duration: 2.5, detector: "pyscenedetect-adaptive" },
+        ],
+      },
+      {
+        ...b!,
+        scenes: [
+          { id: 0, sourceClipId: 1, label: "B1", start: 0, end: 5, duration: 5, detector: "pyscenedetect-adaptive" },
+        ],
+      },
+      c!,
+    ]);
+
+    expect(segments).toHaveLength(4);
+    expect(segments[0]).toMatchObject({ start: 0, end: 1.5, sourceClipIds: [0], sceneId: 0, thumbnailUrl: undefined });
+    expect(segments[1]).toMatchObject({ start: 1.5, end: 4, sourceClipIds: [0], sceneId: 1 });
+    expect(segments[2]).toMatchObject({ start: 4, end: 9, sourceClipIds: [1], sceneId: 0 });
+    expect(segments[3]).toMatchObject({ start: 9, end: 12, sourceClipIds: [2], sceneId: null });
   });
 
   test("buildBeatSegments derives music-sized segments from bpm and bars", () => {

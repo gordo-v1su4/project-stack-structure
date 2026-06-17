@@ -1,4 +1,4 @@
-export type Tab = "review" | "split" | "beatsplit" | "shuffle" | "join" | "beatjoin" | "ramp";
+export type Tab = "review" | "story" | "split" | "beatsplit" | "shuffle" | "join" | "beatjoin" | "ramp";
 
 export type ShuffleMode = "simple" | "size" | "color" | "motion";
 
@@ -73,6 +73,22 @@ export interface MotionDescriptor {
   provenance: MotionProvenance;
 }
 
+export type SceneSplitStatus = "idle" | "uploading" | "detecting" | "ready" | "failed" | "fallback";
+
+export interface DetectedSceneSegment {
+  id: number;
+  sourceClipId: number;
+  label: string;
+  start: number;
+  end: number;
+  duration: number;
+  thumbnailUrl?: string;
+  clipUrl?: string;
+  assetPath?: string;
+  detector: "pyscenedetect-adaptive" | "browser-fallback";
+  confidence?: number | null;
+}
+
 export interface UploadedVideoSource {
   id: number;
   name: string;
@@ -80,6 +96,10 @@ export interface UploadedVideoSource {
   size: number;
   thumbnailUrl: string;
   videoUrl: string;
+  scenes?: DetectedSceneSegment[];
+  sceneStatus?: SceneSplitStatus;
+  sceneJobId?: string;
+  sceneError?: string | null;
 }
 
 export interface SegmentPreview {

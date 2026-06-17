@@ -2,7 +2,7 @@
 
 import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import { extractWaveformData, fetchEssentiaAnalysis, parseEssentiaPayload } from "./studio/audioAnalysis";
+import { buildLocalAudioAnalysis, extractWaveformData, fetchEssentiaAnalysis, parseEssentiaPayload } from "./studio/audioAnalysis";
 import { buildArrangementSegments } from "./studio/arrangementBuilder";
 import type { ArrangementSegment } from "./studio/arrangementBuilder";
 import { NAV } from "./studio/constants";
@@ -17,6 +17,7 @@ import { RampTab } from "./studio/panels/RampTab";
 import { ReviewTab } from "./studio/panels/ReviewTab";
 import { ShuffleTab } from "./studio/panels/ShuffleTab";
 import { SplitTab } from "./studio/panels/SplitTab";
+import { StoryTab } from "./studio/panels/StoryTab";
 import { StudioHeader } from "./studio/StudioHeader";
 import { StudioAudioLane } from "./studio/StudioAudioLane";
 import { StudioRightPanel } from "./studio/StudioRightPanel";
@@ -44,8 +45,8 @@ import {
   derivePreviewWindow,
   normalizeColorScore,
 } from "./studio/studioUiState";
-import { buildAudioDrivenSegments, buildBeatSegments, buildSourceClipSpans, buildStandardSegments, getSourceClipTimeOffset } from "./studio/sourceTimeline";
-import type { SourceTimelineSegment } from "./studio/sourceTimeline";
+import { buildAudioDrivenSegments, buildBeatSegments, buildSceneSplitSegments, buildSourceClipSpans, buildStandardSegments, getSourceClipTimeOffset } from "./studio/sourceTimeline";
+import type { SourceClipSpan, SourceTimelineSegment } from "./studio/sourceTimeline";
 import type {
   BeatJoinAnalysis,
   ColorGradient,
@@ -69,10 +70,10 @@ export default function StudioApp() {
   const [vram, setVram] = useState(7.8);
 
   const [clipDur, setClipDur] = useState(5);
-  const [barsPerSeg, setBarsPerSeg] = useState(2);
+  const [barsPerSeg, setBarsPerSeg] = useState(4);
   const [bpm] = useState(130);
-  const [sensitivity, setSensitivity] = useState(68);
-  const [beatSplitMode, setBeatSplitMode] = useState<"beats" | "onsets">("beats");
+  const [sensitivity, setSensitivity] = useState(20);
+  const [beatSplitMode, setBeatSplitMode] = useState<"beats" | "onsets">("onsets");
   const [videoSources, setVideoSources] = useState<UploadedVideoSource[]>([]);
   const [videoStatus, setVideoStatus] = useState("Upload one or more video clips to begin.");
   const [videoError, setVideoError] = useState<string | null>(null);
@@ -166,7 +167,11 @@ export default function StudioApp() {
   }, []);
 
   const sourceClips = useMemo(() => buildSourceClipSpans(videoSources), [videoSources]);
-  const splitSegments = useMemo(() => buildStandardSegments(sourceClips, clipDur), [sourceClips, clipDur]);
+  const sceneSplitSegments = useMemo(() => buildSceneSplitSegments(videoSources), [videoSources]);
+  const splitSegments = useMemo(
+    () => sceneSplitSegments.length ? sceneSplitSegments : buildStandardSegments(sourceClips, clipDur),
+    [sceneSplitSegments, sourceClips, clipDur],
+  );
   const beatSplitSegments = useMemo(() => {
     if (beatJoinAnalysis) {
       return buildAudioDrivenSegments({
@@ -210,17 +215,22 @@ export default function StudioApp() {
     () =>
       workingBeatSplitSegments.map((segment, index) => {
         const source = videoSources[segment.sourceClipIds[0] ?? -1];
+        const scene = resolveSceneForTimelineSegment(videoSources, sourceClips, segment);
         return {
           clipId: index,
           label: `SEG_${String(index + 1).padStart(2, "0")}`,
           duration: segment.duration,
-          thumbnailUrl: source?.thumbnailUrl,
+          thumbnailUrl: segment.thumbnailUrl ?? scene?.thumbnailUrl ?? source?.thumbnailUrl,
           sourceClipIds: segment.sourceClipIds,
-          sourceRefLabel: formatSourceRefs(segment.sourceClipIds),
+          sourceRefLabel: segment.sceneLabel
+            ? `${formatSourceRefs(segment.sourceClipIds)} · ${segment.sceneLabel}`
+            : scene
+              ? `${formatSourceRefs(segment.sourceClipIds)} · ${scene.label}`
+              : formatSourceRefs(segment.sourceClipIds),
           timeLabel: `${segment.start.toFixed(1)}–${segment.end.toFixed(1)}`,
         };
       }),
-    [videoSources, workingBeatSplitSegments]
+    [videoSources, sourceClips, workingBeatSplitSegments]
   );
 
   const handleJoinClips: Dispatch<SetStateAction<JoinClip[]>> = (value) => {
@@ -248,7 +258,28 @@ export default function StudioApp() {
     );
 
     try {
-      const prepared = await prepareVideoSources(files);
+      const prepared = await prepareVideoSources(files, ({ key, source }) => {
+        startTransition(() => {
+          setVideoSources((currentSources) => {
+            const sourceIndex = currentSources.findIndex((currentSource) => buildVideoSourceKey(currentSource) === key);
+            if (sourceIndex < 0) return currentSources;
+
+            const nextSources = currentSources.map((currentSource, index) => {
+              if (index !== sourceIndex) return currentSource;
+              return remapVideoSourceId(
+                {
+                  ...source,
+                  videoUrl: currentSource.videoUrl,
+                  thumbnailUrl: currentSource.thumbnailUrl,
+                },
+                currentSource.id,
+              );
+            });
+            setVideoStatus(formatVideoStatus(mode, nextSources.length, 0, nextSources));
+            return nextSources;
+          });
+        });
+      });
       if (!prepared.length) {
         throw new Error("No readable video files were selected.");
       }
@@ -269,8 +300,8 @@ export default function StudioApp() {
 
           const nextSources =
             mode === "append"
-              ? [...currentSources, ...uniquePrepared].map((source, index) => ({ ...source, id: index }))
-              : uniquePrepared.map((source, index) => ({ ...source, id: index }));
+              ? [...currentSources, ...uniquePrepared].map((source, index) => remapVideoSourceId(source, index))
+              : uniquePrepared.map((source, index) => remapVideoSourceId(source, index));
 
           if (mode === "replace") {
             revokePreparedVideoSources(currentSources);
@@ -283,11 +314,7 @@ export default function StudioApp() {
           }
 
           setVideoStatus(
-            mode === "append"
-              ? uniquePrepared.length
-                ? `Added ${uniquePrepared.length} clip${uniquePrepared.length === 1 ? "" : "s"} · ${nextSources.length} total ready.`
-                : `Skipped duplicate clip${skippedPrepared.length === 1 ? "" : "s"} · ${nextSources.length} total ready.`
-              : `Loaded ${uniquePrepared.length} clip${uniquePrepared.length === 1 ? "" : "s"} · ${nextSources.length} total ready.`,
+            formatVideoStatus(mode, uniquePrepared.length, skippedPrepared.length, nextSources),
           );
 
           return nextSources;
@@ -318,7 +345,7 @@ export default function StudioApp() {
       revokePreparedVideoSources([sourceToRemove]);
       const nextSources = currentSources
         .filter((source) => source.id !== sourceId)
-        .map((source, index) => ({ ...source, id: index }));
+        .map((source, index) => remapVideoSourceId(source, index));
 
       setCommittedBeatSplit(null);
       setJoinClipStates({});
@@ -373,12 +400,25 @@ export default function StudioApp() {
     }, 280);
 
     try {
-      const [{ waveform, duration }, response] = await Promise.all([
-        extractWaveformData(file),
-        fetchEssentiaAnalysis(file),
-      ]);
-      const parsed = parseEssentiaPayload({
-        payload: response,
+      const { waveform, duration } = await extractWaveformData(file);
+      let parsed = null;
+      let fallbackReason: string | null = null;
+
+      try {
+        const response = await fetchEssentiaAnalysis(file);
+        parsed = parseEssentiaPayload({
+          payload: response,
+          fileName: file.name,
+          waveform,
+          waveformDuration: duration,
+          audioUrl: nextAudioUrl,
+        });
+      } catch (error) {
+        fallbackReason = error instanceof Error ? error.message : "Essentia analysis failed";
+        console.warn("[Audio] Essentia unavailable; using local beat/onset fallback", error);
+      }
+
+      parsed ??= buildLocalAudioAnalysis({
         fileName: file.name,
         waveform,
         waveformDuration: duration,
@@ -386,14 +426,15 @@ export default function StudioApp() {
       });
 
       if (!parsed) {
-        throw new Error("The upload finished, but no usable beats/onsets/sections came back.");
+        throw new Error(fallbackReason ?? "The upload finished, but no usable beats/onsets/sections came back.");
       }
 
       startTransition(() => {
         setBeatJoinAnalysis(parsed);
         setCommittedBeatSplit(null);
         setAudioProgress(100);
-        setAudioStatus(`Ready · ${parsed.sourceLabel}`);
+        setAudioStatus(fallbackReason ? `Ready · ${parsed.sourceLabel} · local markers` : `Ready · ${parsed.sourceLabel}`);
+        setAudioError(fallbackReason ? `Essentia unreachable; showing local waveform/beat/onset markers. ${fallbackReason}` : null);
       });
 
       if (previousAudioUrl) {
@@ -847,7 +888,7 @@ export default function StudioApp() {
     resetPreparedPreview();
   }
 
-  const needsVideoSource = tab !== "beatjoin";
+  const needsVideoSource = tab !== "beatjoin" && tab !== "story";
   const actionState = deriveActionDisabledState({
     needsVideoSource,
     videoSourceCount: videoSources.length,
@@ -957,6 +998,15 @@ export default function StudioApp() {
               />
             )}
 
+            {tab === "story" && (
+              <StoryTab
+                analysis={beatJoinAnalysis}
+                audioStatus={audioStatus}
+                videoSources={videoSources}
+                segmentPreviews={segmentPreviews}
+              />
+            )}
+
             {tab === "shuffle" && (
               <ShuffleTab
                 playhead={playhead}
@@ -1052,22 +1102,24 @@ export default function StudioApp() {
               />
             )}
 
-            <ProcessActionBar
-              tab={tab}
-              done={done}
-              isRunning={isRunning}
-              progress={progress}
-              disabled={actionDisabled}
-              disabledReason={actionDisabledReason}
-              processingLabel={`Preparing Preview · ${previewState.stage}`}
-              completedLabel={
-                tab === "beatsplit"
-                  ? `Beat Split Committed — ${committedBeatSplit?.segments.length ?? beatSplitSegments.length} segments`
-                  : completedLabel
-              }
-              onRun={tab === "beatsplit" ? handleCommitBeatSplit : () => void runProcess()}
-              onResetDone={resetPreparedPreview}
-            />
+            {tab !== "story" && (
+              <ProcessActionBar
+                tab={tab}
+                done={done}
+                isRunning={isRunning}
+                progress={progress}
+                disabled={actionDisabled}
+                disabledReason={actionDisabledReason}
+                processingLabel={`Preparing Preview · ${previewState.stage}`}
+                completedLabel={
+                  tab === "beatsplit"
+                    ? `Beat Split Committed — ${committedBeatSplit?.segments.length ?? beatSplitSegments.length} segments`
+                    : completedLabel
+                }
+                onRun={tab === "beatsplit" ? handleCommitBeatSplit : () => void runProcess()}
+                onResetDone={resetPreparedPreview}
+              />
+            )}
           </main>
 
           <StudioRightPanel
@@ -1101,6 +1153,53 @@ export default function StudioApp() {
 
 function buildVideoSourceKey(source: Pick<UploadedVideoSource, "name" | "size" | "duration">) {
   return `${source.name}::${source.size}::${source.duration.toFixed(3)}`;
+}
+
+function remapVideoSourceId(source: UploadedVideoSource, id: number): UploadedVideoSource {
+  return {
+    ...source,
+    id,
+    scenes: source.scenes?.map((scene) => ({ ...scene, sourceClipId: id })),
+  };
+}
+
+function formatVideoStatus(
+  mode: "replace" | "append",
+  changedCount: number,
+  skippedCount: number,
+  sources: UploadedVideoSource[],
+) {
+  const sceneCount = sources.reduce((total, source) => total + (source.scenes?.length ?? 0), 0);
+  const fallbackCount = sources.filter((source) => source.sceneStatus === "fallback").length;
+  const sceneLabel = sceneCount
+    ? fallbackCount
+      ? `${sceneCount} fallback scene${sceneCount === 1 ? "" : "s"}`
+      : `${sceneCount} PySceneDetect scene${sceneCount === 1 ? "" : "s"}`
+    : "scene detection pending";
+
+  if (mode === "append") {
+    if (!changedCount) {
+      return `Skipped duplicate clip${skippedCount === 1 ? "" : "s"} · ${sources.length} total ready · ${sceneLabel}.`;
+    }
+    return `Added ${changedCount} clip${changedCount === 1 ? "" : "s"} · ${sources.length} total ready · ${sceneLabel}.`;
+  }
+
+  return `Loaded ${changedCount} clip${changedCount === 1 ? "" : "s"} · ${sources.length} total ready · ${sceneLabel}.`;
+}
+
+function resolveSceneForTimelineSegment(
+  sources: UploadedVideoSource[],
+  sourceClips: SourceClipSpan[],
+  segment: SourceTimelineSegment,
+) {
+  const sourceId = segment.sourceClipIds[0];
+  if (sourceId === undefined) return null;
+  const source = sources[sourceId];
+  const span = sourceClips.find((clip) => clip.id === sourceId);
+  if (!source || !span || !source.scenes?.length) return null;
+
+  const localMidpoint = Math.max(0, Math.min(source.duration, ((segment.start + segment.end) / 2) - span.start));
+  return source.scenes.find((scene) => localMidpoint >= scene.start && localMidpoint <= scene.end) ?? null;
 }
 
 function formatSourceRefs(sourceClipIds: number[]) {

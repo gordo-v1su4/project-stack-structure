@@ -21,6 +21,8 @@ function actionLabel(tab: Tab): string {
       return "Initialize Segments";
     case "beatsplit":
       return "Commit Beat Split";
+    case "story":
+      return "Generate Story Package";
     case "shuffle":
       return "Execute Shuffle";
     case "join":

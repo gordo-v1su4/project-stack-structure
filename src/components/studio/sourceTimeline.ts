@@ -16,6 +16,11 @@ export interface SourceTimelineSegment {
   duration: number;
   sourceClipIds: number[];
   mergedTail: boolean;
+  sceneId?: number | null;
+  sceneLabel?: string;
+  thumbnailUrl?: string;
+  clipUrl?: string;
+  detector?: "pyscenedetect-adaptive" | "browser-fallback";
 }
 
 export function buildSourceClipSpans(sources: UploadedVideoSource[]) {
@@ -44,6 +49,62 @@ export function buildStandardSegments(sourceClips: SourceClipSpan[], targetDurat
   return segmentTimeline(sourceClips, safeTargetDuration, Math.max(0.12, safeTargetDuration * 0.6));
 }
 
+export function buildSceneSplitSegments(sources: UploadedVideoSource[]) {
+  let offset = 0;
+  const segments: SourceTimelineSegment[] = [];
+
+  for (const source of sources) {
+    const duration = Number.isFinite(source.duration) && source.duration > 0 ? source.duration : 0;
+    if (duration <= 0) continue;
+
+    const validScenes = (source.scenes ?? [])
+      .filter((scene) => Number.isFinite(scene.start) && Number.isFinite(scene.end) && scene.end > scene.start)
+      .sort((left, right) => left.start - right.start);
+
+    if (!validScenes.length) {
+      segments.push({
+        id: segments.length,
+        start: offset,
+        end: offset + duration,
+        duration,
+        sourceClipIds: [source.id],
+        mergedTail: false,
+        sceneId: null,
+        sceneLabel: source.name,
+        thumbnailUrl: source.thumbnailUrl,
+        clipUrl: source.videoUrl,
+        detector: source.sceneStatus === "fallback" ? "browser-fallback" : undefined,
+      });
+      offset += duration;
+      continue;
+    }
+
+    for (const scene of validScenes) {
+      const localStart = Math.max(0, Math.min(duration, scene.start));
+      const localEnd = Math.max(localStart, Math.min(duration, scene.end));
+      if (localEnd <= localStart) continue;
+
+      segments.push({
+        id: segments.length,
+        start: offset + localStart,
+        end: offset + localEnd,
+        duration: localEnd - localStart,
+        sourceClipIds: [source.id],
+        mergedTail: false,
+        sceneId: scene.id,
+        sceneLabel: scene.label,
+        thumbnailUrl: scene.thumbnailUrl,
+        clipUrl: scene.clipUrl,
+        detector: scene.detector,
+      });
+    }
+
+    offset += duration;
+  }
+
+  return segments;
+}
+
 export function buildBeatSegments(sourceClips: SourceClipSpan[], bpm: number, barsPerSegment: number) {
   const barDuration = (60 / Math.max(1, bpm)) * 4;
   const targetDuration = Math.max(0.1, barDuration * Math.max(1, barsPerSegment));
@@ -60,7 +121,8 @@ export function buildAudioDrivenSegments(params: {
   const { sourceClips, analysis, mode, targetEvents, density } = params;
   if (!analysis) return [];
 
-  const totalDuration = sourceClips[sourceClips.length - 1]?.end ?? 0;
+  const sourceDuration = sourceClips[sourceClips.length - 1]?.end ?? 0;
+  const totalDuration = Math.min(sourceDuration, Math.max(analysis.duration, 0.001));
   if (totalDuration <= 0) return [];
 
   const pattern = mode === "beats"

@@ -1,6 +1,15 @@
+import { buildFallbackSceneSegments, detectScenesWithSplitter } from "./sceneSplit";
 import type { UploadedVideoSource } from "./types";
 
-export async function prepareVideoSources(files: File[]) {
+export type VideoSceneUpdate = {
+  key: string;
+  source: UploadedVideoSource;
+};
+
+export async function prepareVideoSources(
+  files: File[],
+  onSceneUpdate?: (update: VideoSceneUpdate) => void,
+) {
   const videoFiles = files.filter((file) => file.type.startsWith("video/"));
 
   return Promise.all(
@@ -11,14 +20,48 @@ export async function prepareVideoSources(files: File[]) {
         const duration = await readVideoDuration(objectUrl);
         const thumbnailUrl = await captureVideoThumbnail(objectUrl, duration);
 
-        return {
+        const source = {
           id: index,
           name: file.name,
           duration,
           size: file.size,
           thumbnailUrl,
           videoUrl: objectUrl,
+          scenes: [],
+          sceneStatus: "detecting" as const,
+          sceneError: null,
         } satisfies UploadedVideoSource;
+        const key = buildPreparedSourceKey(source);
+
+        if (onSceneUpdate) {
+          void detectScenesWithSplitter(file, index)
+            .then((scenes) => {
+              onSceneUpdate({
+                key,
+                source: {
+                  ...source,
+                  scenes,
+                  sceneStatus: "ready" as const,
+                  sceneError: null,
+                },
+              });
+            })
+            .catch((error) => {
+              const sceneError = error instanceof Error ? error.message : "Scene detection failed";
+              console.warn("[Splitter] Scene detection unavailable; using browser fallback scenes", error);
+              onSceneUpdate({
+                key,
+                source: {
+                  ...source,
+                  scenes: buildFallbackSceneSegments(source),
+                  sceneStatus: "fallback" as const,
+                  sceneError,
+                },
+              });
+            });
+        }
+
+        return source;
       } catch (error) {
         URL.revokeObjectURL(objectUrl);
         throw error;
@@ -31,6 +74,10 @@ export function revokePreparedVideoSources(sources: UploadedVideoSource[]) {
   for (const source of sources) {
     URL.revokeObjectURL(source.videoUrl);
   }
+}
+
+function buildPreparedSourceKey(source: Pick<UploadedVideoSource, "name" | "size" | "duration">) {
+  return `${source.name}::${source.size}::${source.duration.toFixed(3)}`;
 }
 
 function readVideoDuration(url: string) {

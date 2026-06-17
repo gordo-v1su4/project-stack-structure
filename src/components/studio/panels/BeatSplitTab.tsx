@@ -61,10 +61,13 @@ export function BeatSplitTab({
   onSplitMode,
   onActiveClip,
 }: BeatSplitTabProps) {
-  const totalDuration = sourceClips[sourceClips.length - 1]?.end ?? 0;
+  const totalDuration = analysis?.duration
+    ? Math.min(sourceClips[sourceClips.length - 1]?.end ?? 0, analysis.duration)
+    : sourceClips[sourceClips.length - 1]?.end ?? 0;
   const barDuration = (60 / Math.max(1, bpm)) * 4;
   const estimatedBars = Math.max(1, Math.round(totalDuration / barDuration));
   const hasSources = videoSources.length > 0;
+  const activeSourceIds = segments[activeClip]?.sourceClipIds ?? [];
   const hasAnalysis = analysis !== null;
   const markerPreview = buildMarkerPreview({
     analysis,
@@ -80,7 +83,7 @@ export function BeatSplitTab({
           <SourceVideoTimeline
             sources={videoSources}
             playhead={playhead}
-            label={`A/V SOURCE · ${sourceClips.length} CLIP${sourceClips.length === 1 ? "" : "S"} STITCHED · ${fmt(totalDuration)}`}
+            label={buildSourceLabel(videoSources, sourceClips.length, totalDuration)}
             height={124}
           />
           <SourceVideoLibrary
@@ -89,6 +92,7 @@ export function BeatSplitTab({
             onAppendVideos={onAppendVideos}
             onReplaceVideos={onVideoUpload}
             onRemoveVideo={onRemoveVideo}
+            activeSourceIds={activeSourceIds}
           />
         </div>
       ) : (
@@ -230,9 +234,12 @@ export function BeatSplitTab({
                   }`}
                 >
                   <div className="relative aspect-[16/9] bg-[#040404]">
-                    {primarySource?.thumbnailUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={primarySource.thumbnailUrl} alt={primarySource.name} className="absolute inset-0 h-full w-full object-cover opacity-90" />
+                    {primarySource ? (
+                      <SegmentThumbnail
+                        source={primarySource}
+                        sourceClips={sourceClips}
+                        segment={segment}
+                      />
                     ) : null}
                     <div className="absolute inset-0 bg-gradient-to-b from-[#0000002a] via-transparent to-[#000000b0]" />
                     <div className="absolute left-[6px] top-[6px] rounded-[2px] bg-[#00000088] px-1 py-[2px] text-[8px] font-mono text-[#d8d8d8]">
@@ -313,12 +320,55 @@ export function BeatSplitTab({
   );
 }
 
+function SegmentThumbnail({
+  source,
+  sourceClips,
+  segment,
+}: {
+  source: UploadedVideoSource;
+  sourceClips: SourceClipSpan[];
+  segment: SourceTimelineSegment;
+}) {
+  const span = sourceClips.find((clip) => clip.id === source.id);
+  const localStart = span ? Math.max(0, segment.start - span.start) : segment.start;
+  const sceneThumbnail = source.scenes
+    ?.find((scene) => localStart >= scene.start && localStart < scene.end)
+    ?.thumbnailUrl;
+  const thumbnailUrl = segment.thumbnailUrl ?? sceneThumbnail ?? source.thumbnailUrl;
+
+  if (!thumbnailUrl) return null;
+
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={thumbnailUrl}
+      alt={`${source.name} at ${segment.start.toFixed(1)}s`}
+      className="absolute inset-0 h-full w-full object-cover opacity-90"
+      loading="lazy"
+      decoding="async"
+    />
+  );
+}
+
 function formatSourceRefs(sourceClipIds: number[]) {
   if (!sourceClipIds.length) return "S0";
   if (sourceClipIds.length === 1) return `S${sourceClipIds[0] + 1}`;
   const first = sourceClipIds[0] ?? 0;
   const last = sourceClipIds[sourceClipIds.length - 1] ?? first;
   return `S${first + 1}-${last + 1}`;
+}
+
+function buildSourceLabel(sources: UploadedVideoSource[], sourceClipCount: number, totalDuration: number) {
+  const sceneCount = sources.reduce((total, source) => total + (source.scenes?.length ?? 0), 0);
+  const hasFallback = sources.some((source) => source.sceneStatus === "fallback");
+  const hasDetected = sources.some((source) => source.sceneStatus === "ready");
+  const provenance = sceneCount > 0
+    ? hasDetected && !hasFallback
+      ? `PYSCENEDETECT · ${sceneCount} DETECTED SCENE${sceneCount === 1 ? "" : "S"}`
+      : `FALLBACK SCENES · ${sceneCount} SCENE${sceneCount === 1 ? "" : "S"}`
+    : "SCENE DETECTION PENDING";
+
+  return `A/V SOURCE · ${sourceClipCount} CLIP${sourceClipCount === 1 ? "" : "S"} STITCHED · ${provenance} · ${fmt(totalDuration)}`;
 }
 
 function buildMarkerPreview(params: {

@@ -86,6 +86,26 @@ Make section recompute trustworthy.
 - Preview playback consumes stable prepared assets only.
 - Section changes preserve musical correctness.
 
+## Phase 2.5 — Low-latency music playback engine
+### Goal
+Recover the FFTRON/Svelte-style snappiness needed for rapid quick cuts while keeping this React/Next project as the clean main app.
+
+### Work
+- Keep React as the studio shell, not the frame-accurate playback clock.
+- Add a framework-independent imperative media engine for audio-master-clock playback.
+- Precompute a music cut schedule from beats, onsets, section boundaries, optional MIDI markers, density, min spacing, and deterministic skip rules.
+- Port/adapt the useful `svelte-video-shaders` WebCodecs frame-buffer approach for instant random frame access.
+- Render rapid preview frames through canvas/WebGL/WebGPU instead of swapping `video.src` for every cut.
+- Emit throttled UI snapshots for React; do not push every frame/playhead change through React state.
+
+### Exit criteria
+- Dense beat/onset triggers are deterministic and unit-tested.
+- Seeking resets the trigger cursor correctly.
+- Playback drains missed triggers between previous audio time and current audio time.
+- Rapid cuts do not depend on `HTMLVideoElement` source swapping.
+- React commit frequency is decoupled from frame render frequency.
+- Late-trigger / dropped-frame metrics are visible before any desktop/Tauri pivot decision.
+
 ## Phase 3 — Ranking and fit engine
 ### Goal
 Choose and fit segments intelligently.
@@ -134,7 +154,10 @@ Decide whether web-first remains viable.
 Stay **web-first with FFmpeg/FFprobe-backed section precompute**.
 
 ### Pivot trigger
-Escalate to **Tauri + sidecar media tooling** only if browser scheduling, decode behavior, or recompute orchestration cannot preserve musically correct preview playback.
+Escalate to **Tauri + sidecar media tooling** only if measured browser scheduling, decode behavior, WebCodecs/WebGPU rendering, or recompute orchestration cannot preserve musically correct preview playback.
+
+### React/Svelte latency decision
+Keep the main app in React/Next for now, but enforce a strict boundary: React is the control surface and project UI, while a framework-independent imperative media engine owns audio timing, rapid cut scheduling, decoded frame buffers, and rendering. This preserves the cleaner `project-stack-structure` UI while copying the low-latency lessons from FFTRON and `svelte-video-shaders`.
 
 ## Current vs Planned Scripts
 ### Current scripts

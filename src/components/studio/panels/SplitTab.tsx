@@ -43,6 +43,7 @@ export function SplitTab({
 }: SplitTabProps) {
   const totalDuration = sourceClips[sourceClips.length - 1]?.end ?? 0;
   const hasSources = videoSources.length > 0;
+  const activeSourceIds = segments[activeClip]?.sourceClipIds ?? [];
 
   return (
     <>
@@ -51,7 +52,7 @@ export function SplitTab({
           <SourceVideoTimeline
             sources={videoSources}
             playhead={playhead}
-            label={`SOURCE · ${sourceClips.length} CLIP${sourceClips.length === 1 ? "" : "S"} STITCHED · ${fmt(totalDuration)}`}
+            label={buildSourceLabel(videoSources, sourceClips.length, totalDuration)}
             height={124}
           />
           <SourceVideoLibrary
@@ -60,6 +61,7 @@ export function SplitTab({
             onAppendVideos={onAppendVideos}
             onReplaceVideos={onVideoUpload}
             onRemoveVideo={onRemoveVideo}
+            activeSourceIds={activeSourceIds}
           />
         </div>
       ) : (
@@ -83,7 +85,7 @@ export function SplitTab({
       <div>
         <div className="flex items-center justify-between mb-1">
           <span className="text-[10px] uppercase tracking-[0.18em] text-[#404040]">
-            Output Segments — {segments.length} clips @ {clipDur}s
+            Output Segments — {segments.length} {segments.some((segment) => segment.sceneId !== undefined && segment.sceneId !== null) ? "scene clips" : `clips @ ${clipDur}s`}
           </span>
           <span className="text-[10px] font-mono text-[#e05c00]">/output/split/</span>
         </div>
@@ -163,4 +165,17 @@ function formatSourceRefs(sourceClipIds: number[]) {
   const first = sourceClipIds[0] ?? 0;
   const last = sourceClipIds[sourceClipIds.length - 1] ?? first;
   return `S${first + 1}-${last + 1}`;
+}
+
+function buildSourceLabel(sources: UploadedVideoSource[], sourceClipCount: number, totalDuration: number) {
+  const sceneCount = sources.reduce((total, source) => total + (source.scenes?.length ?? 0), 0);
+  const hasFallback = sources.some((source) => source.sceneStatus === "fallback");
+  const hasDetected = sources.some((source) => source.sceneStatus === "ready");
+  const provenance = sceneCount > 0
+    ? hasDetected && !hasFallback
+      ? `PYSCENEDETECT · ${sceneCount} DETECTED SCENE${sceneCount === 1 ? "" : "S"}`
+      : `FALLBACK SCENES · ${sceneCount} SCENE${sceneCount === 1 ? "" : "S"}`
+    : "SCENE DETECTION PENDING";
+
+  return `SOURCE · ${sourceClipCount} CLIP${sourceClipCount === 1 ? "" : "S"} STITCHED · ${provenance} · ${fmt(totalDuration)}`;
 }

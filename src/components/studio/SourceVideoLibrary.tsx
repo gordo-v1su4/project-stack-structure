@@ -1,6 +1,7 @@
 "use client";
 
 import { fmt } from "./math";
+import { buildFallbackSceneSegments } from "./sceneSplit";
 import { UploadControl } from "./UploadControl";
 import type { UploadedVideoSource } from "./types";
 
@@ -10,6 +11,7 @@ type SourceVideoLibraryProps = {
   onAppendVideos: (files: File[]) => void | Promise<void>;
   onReplaceVideos: (files: File[]) => void | Promise<void>;
   onRemoveVideo: (sourceId: number) => void;
+  activeSourceIds?: number[];
 };
 
 export function SourceVideoLibrary({
@@ -18,6 +20,7 @@ export function SourceVideoLibrary({
   onAppendVideos,
   onReplaceVideos,
   onRemoveVideo,
+  activeSourceIds = [],
 }: SourceVideoLibraryProps) {
   return (
     <div className="border border-[#1a1a1a] rounded-[2px] bg-[#0b0b0b] p-2">
@@ -48,16 +51,35 @@ export function SourceVideoLibrary({
       </div>
 
       <div className="grid gap-2 md:grid-cols-3 xl:grid-cols-4">
-        {sources.map((source, index) => (
-          <div key={source.id} className="overflow-hidden rounded-[2px] border border-[#171717] bg-[#090909]">
+        {sources.map((source, index) => {
+          const isActiveSource = activeSourceIds.includes(source.id);
+          const sceneCount = source.scenes?.length ?? 0;
+          const statusLabel = source.sceneStatus === "ready"
+            ? `PYSCENEDETECT · ${sceneCount} SCENE${sceneCount === 1 ? "" : "S"}`
+            : source.sceneStatus === "fallback"
+              ? `FALLBACK · ${sceneCount || buildFallbackSceneSegments(source).length} SCENE${(sceneCount || buildFallbackSceneSegments(source).length) === 1 ? "" : "S"}`
+              : source.sceneStatus === "detecting"
+                ? "DETECTING SCENES"
+                : "SCENES PENDING";
+          return (
+          <div key={source.id} className={`overflow-hidden rounded-[2px] border bg-[#090909] transition-colors ${
+            isActiveSource ? "border-[#e05c00] shadow-[0_0_0_1px_#e05c0044]" : "border-[#171717]"
+          }`}>
             <div className="relative aspect-[16/9] bg-[#030303]">
-              <video
-                controls
-                preload="metadata"
-                poster={source.thumbnailUrl}
-                src={source.videoUrl}
-                className="absolute inset-0 h-full w-full object-cover"
-              />
+              {source.thumbnailUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={source.thumbnailUrl}
+                  alt={source.name}
+                  className="absolute inset-0 h-full w-full object-cover"
+                  loading="lazy"
+                  decoding="async"
+                />
+              ) : (
+                <div className="absolute inset-0 flex items-center justify-center text-[9px] uppercase tracking-[0.14em] text-[#444]">
+                  Preview pending
+                </div>
+              )}
               <button
                 type="button"
                 onClick={() => onRemoveVideo(source.id)}
@@ -74,11 +96,16 @@ export function SourceVideoLibrary({
                 {fmt(source.duration)}
               </div>
             </div>
-            <div className="truncate border-t border-[#141414] px-2 py-[5px] text-[9px] font-mono text-[#8b8b8b]">
-              {source.name}
+            <div className="border-t border-[#141414] px-2 py-[5px]">
+              <div className="truncate text-[9px] font-mono text-[#8b8b8b]">{source.name}</div>
+              <div className={`mt-1 text-[8px] font-mono uppercase tracking-[0.12em] ${source.sceneStatus === "fallback" ? "text-[#b96c43]" : "text-[#e05c00]"}`}>
+                {statusLabel}
+              </div>
+              {source.sceneError ? <div className="mt-1 truncate text-[8px] text-[#7b5b48]" title={source.sceneError}>{source.sceneError}</div> : null}
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

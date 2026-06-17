@@ -2,6 +2,7 @@ import type { Tab } from "./types";
 
 export const NAV: { key: Tab; label: string; sub: string }[] = [
   { key: "review", label: "Review", sub: "Scene tag · approve" },
+  { key: "story", label: "Story", sub: "SRT · cards" },
   { key: "split", label: "Standard Split", sub: "GPU / CUDA" },
   { key: "beatsplit", label: "Beat Split", sub: "BPM sync" },
   { key: "shuffle", label: "Shuffle Modes", sub: "5 algorithms" },
