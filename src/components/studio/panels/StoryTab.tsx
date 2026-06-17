@@ -21,13 +21,27 @@ type StoryTabProps = {
 
 const DEFAULT_STORY_BEATS: StoryBeatDraft[] = [
   { id: "intro", label: "Intro", prompt: "Opening visual / establishing image" },
-  { id: "verse-1", label: "Verse 1", prompt: "Main character, setting, or visual premise" },
-  { id: "chorus-1", label: "Chorus", prompt: "Big repeatable image or performance motif" },
-  { id: "bridge", label: "Bridge / Turn", prompt: "Contrast, complication, or visual shift" },
-  { id: "outro", label: "Outro", prompt: "Final image / emotional landing" },
+  { id: "verse-1", label: "Verse 1", prompt: "Main character, setting, or first visual idea" },
+  { id: "pre-chorus-1", label: "Pre-Chorus", prompt: "Build tension before the first chorus; remove if the song has no pre-chorus" },
+  { id: "chorus-1", label: "Chorus", prompt: "Main repeatable image, hook, or performance motif" },
+  { id: "verse-2", label: "Verse 2", prompt: "Second verse development or new visual variation" },
+  { id: "pre-chorus-2", label: "Pre-Chorus 2", prompt: "Second build before the chorus; remove if unused" },
+  { id: "chorus-2", label: "Chorus 2", prompt: "Return to the main hook with a bigger or altered visual" },
+  { id: "bridge", label: "Bridge", prompt: "Contrast section, breakdown, twist, or emotional turn" },
+  { id: "outro", label: "Final Chorus / Outro", prompt: "Final chorus, outro, last image, or emotional landing" },
 ];
 
-const SECTION_LABELS = ["Intro", "Verse 1", "Pre-Chorus", "Chorus", "Verse 2", "Bridge", "Final Chorus", "Outro"];
+const SECTION_LABELS = [
+  "Intro",
+  "Verse 1",
+  "Pre-Chorus",
+  "Chorus",
+  "Verse 2",
+  "Pre-Chorus 2",
+  "Chorus 2",
+  "Bridge",
+  "Final Chorus / Outro",
+];
 
 export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews }: StoryTabProps) {
   const [vocalStemName, setVocalStemName] = useState("");
@@ -163,7 +177,7 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews 
             <div>
               <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Song section story plan</div>
               <div className="mt-1 text-[11px] text-[#6d6d6d]">
-                These are editable music-video sections, not literal beat counts. Add/remove sections for intro, verse, chorus, bridge, outro, or custom story moments.
+                These are editable song sections, not literal beat counts. Start from the common structure: intro, verse, optional pre-chorus, chorus, verse 2, optional pre-chorus 2, chorus 2, bridge, final chorus/outro.
               </div>
             </div>
             <button type="button" onClick={addStoryBeat} className="rounded-[2px] border border-[#2a2a2a] px-2 py-1 text-[9px] uppercase tracking-[0.14em] text-[#bdbdbd] hover:border-[#e05c00]">
