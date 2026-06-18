@@ -20,7 +20,9 @@ export async function POST(request: Request) {
   const requestKey = payload.requestKey ?? `preview-${Date.now()}`;
 
   if (FFMPEG_GATEWAY_URL) {
-    return gatewayPreview(payload, requestKey);
+    const gatewayResponse = await gatewayPreview(payload, requestKey);
+    if (gatewayResponse.ok || gatewayResponse.status < 500) return gatewayResponse;
+    console.warn("[PreviewSection] Remote gateway failed; falling back to local FFmpeg preview.");
   }
 
   return localPreview(payload, requestKey);
@@ -44,33 +46,9 @@ async function gatewayPreview(payload: PreviewSectionRequest, requestKey: string
       const fileBuffer = await import("node:fs/promises").then((fs) => fs.readFile(firstInput));
       const ext = firstInput.match(/\.[^.]+$/)?.[0] ?? ".mp4";
 
-      const uploadForm = new FormData();
-      uploadForm.set("file", new Blob([fileBuffer], { type: "video/mp4" }), `source${ext}`);
-
-      const uploadResponse = await fetch(`${FFMPEG_GATEWAY_URL}/upload`, {
-        method: "POST",
-        headers,
-        body: uploadForm,
-      });
-
-      if (!uploadResponse.ok) {
-        const errorText = await uploadResponse.text();
-        return Response.json({ success: false, error: `Gateway upload failed: ${errorText.slice(0, 200)}` }, { status: uploadResponse.status });
-      }
-
-      const uploadResult = (await uploadResponse.json()) as { fileId?: string };
-      if (!uploadResult.fileId) {
-        return Response.json({ success: false, error: "Gateway upload returned no fileId." }, { status: 500 });
-      }
-
-      const segments = payload.segments.map((seg) => ({
-        startTime: seg.startTime ?? 0,
-        endTime: seg.endTime ?? 1,
-      }));
-
       const concatForm = new FormData();
-      concatForm.set("file", new Blob([], { type: "application/octet-stream" }), "dummy.mp4");
-      concatForm.set("segments", JSON.stringify(segments));
+      concatForm.set("file", new Blob([fileBuffer], { type: "video/mp4" }), `source${ext}`);
+      concatForm.set("segments", JSON.stringify(payload.segments));
 
       const concatResponse = await fetch(`${FFMPEG_GATEWAY_URL}/ffmpeg/concat`, {
         method: "POST",

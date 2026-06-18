@@ -636,33 +636,30 @@ export default function StudioApp() {
     setPreviewState((current) => markSectionRecomputeRunning(current, requestKey));
 
     const uniqueVideoUrls = [...new Set(browserPreviewSegments.map((s) => s.videoUrl))];
-    const videoFileMap = new Map<string, string>();
+    const videoUrlIndex = new Map(uniqueVideoUrls.map((url, index) => [url, index]));
 
     try {
-      for (const url of uniqueVideoUrls) {
-        const response = await fetch(url);
-        const blob = await response.blob();
-        const ext = blob.type.includes("mp4") ? ".mp4" : blob.type.includes("webm") ? ".webm" : ".mp4";
-        const file = new File([blob], `source${videoFileMap.size}${ext}`, { type: blob.type || "video/mp4" });
-        videoFileMap.set(url, URL.createObjectURL(file));
-      }
-
       setProgress(20);
       setPreviewState((current) => updateSectionRecomputeProgress(current, { requestKey, progress: 20 }));
 
-      const firstUrl = uniqueVideoUrls[0];
-      const firstResponse = await fetch(firstUrl!);
-      const firstBlob = await firstResponse.blob();
-      const ext = firstBlob.type.includes("mp4") ? ".mp4" : firstBlob.type.includes("webm") ? ".webm" : ".mp4";
-      const videoFile = new File([firstBlob], `source0${ext}`, { type: firstBlob.type || "video/mp4" });
+      const sourceFiles = await Promise.all(uniqueVideoUrls.map(async (url, index) => {
+        const response = await fetch(url);
+        const blob = await response.blob();
+        const ext = blob.type.includes("mp4") ? ".mp4" : blob.type.includes("webm") ? ".webm" : ".mp4";
+        return new File([blob], `source${index}${ext}`, { type: blob.type || "video/mp4" });
+      }));
 
       const segments = browserPreviewSegments.map((seg) => ({
         startTime: seg.startTime,
         endTime: seg.endTime,
+        sourceIndex: videoUrlIndex.get(seg.videoUrl) ?? 0,
       }));
 
       const gatewayForm = new FormData();
-      gatewayForm.set("file", videoFile);
+      gatewayForm.set("file", sourceFiles[0]);
+      sourceFiles.forEach((file, index) => {
+        gatewayForm.set(`file:${index}`, file);
+      });
       gatewayForm.set("segments", JSON.stringify(segments));
       gatewayForm.set("requestKey", requestKey);
 
@@ -693,11 +690,9 @@ export default function StudioApp() {
       setProgress(90);
       setPreviewState((current) => updateSectionRecomputeProgress(current, { requestKey, progress: 90 }));
 
-      const videoUrl = gatewayPayload.asset.videoUrl ?? gatewayPayload.asset.assetKey;
-
       const asset = {
         requestKey: gatewayPayload.asset.requestKey,
-        assetKey: videoUrl,
+        assetKey: gatewayPayload.asset.assetKey,
         duration: gatewayPayload.asset.duration,
         generatedAt: gatewayPayload.asset.generatedAt,
       };
@@ -712,10 +707,6 @@ export default function StudioApp() {
       setPreviewState((current) => failSectionRecompute(current, { requestKey, message }));
       setVideoError(message);
       setIsRunning(false);
-    } finally {
-      for (const objectUrl of videoFileMap.values()) {
-        URL.revokeObjectURL(objectUrl);
-      }
     }
   }
 

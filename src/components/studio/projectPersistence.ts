@@ -65,15 +65,19 @@ export function createPersistableStudioProjectDraft(params: {
       name: source.name,
       duration: source.duration,
       size: source.size,
-      thumbnailUrl: source.thumbnailUrl,
-      scenes: source.scenes,
+      thumbnailUrl: stripRuntimeUrl(source.thumbnailUrl),
+      scenes: source.scenes?.map((scene) => ({
+        ...scene,
+        thumbnailUrl: stripRuntimeUrl(scene.thumbnailUrl),
+        clipUrl: stripRuntimeUrl(scene.clipUrl),
+      })),
       sceneStatus: source.sceneStatus,
       sceneJobId: source.sceneJobId,
       sceneError: source.sceneError,
       mediaKey: buildVideoMediaKey(source),
     })),
     storyState: params.storyState,
-    musicVideoProject: params.musicVideoProject,
+    musicVideoProject: params.musicVideoProject ? sanitizeMusicVideoProjectForStorage(params.musicVideoProject) : null,
   };
 }
 
@@ -164,6 +168,27 @@ export function buildAudioMediaKey(sourceLabel: string) {
 
 export function buildVideoMediaKey(source: Pick<UploadedVideoSource, "name" | "size" | "duration">) {
   return `video:${source.name}:${source.size}:${source.duration.toFixed(3)}`;
+}
+
+function sanitizeMusicVideoProjectForStorage(project: MusicVideoProject): MusicVideoProject {
+  return {
+    ...project,
+    song: project.song
+      ? {
+          ...project.song,
+          audioUrl: stripRuntimeUrl(project.song.audioUrl),
+        }
+      : null,
+    videoMoments: project.videoMoments.map((moment) => ({
+      ...moment,
+      thumbnailUrl: stripRuntimeUrl(moment.thumbnailUrl),
+    })),
+  };
+}
+
+function stripRuntimeUrl(value: string | undefined) {
+  if (!value) return "";
+  return value.startsWith("data:") || value.startsWith("blob:") ? "" : value;
 }
 
 function parsePersistedDraft(raw: string): PersistedStudioProjectDraft | null {

@@ -5,6 +5,7 @@ import {
   createPersistableStudioProjectDraft,
   hydrateStudioProjectDraft,
 } from "@/components/studio/projectPersistence";
+import type { MusicVideoProject } from "@/components/studio/musicVideoProject";
 import type { UploadedVideoSource } from "@/components/studio/types";
 
 const source: UploadedVideoSource = {
@@ -24,6 +25,34 @@ const storyState = {
   storyGenerated: true,
 };
 
+const musicVideoProject: MusicVideoProject = {
+  id: "project",
+  song: {
+    sourceLabel: "song.wav",
+    audioUrl: "blob:project-audio",
+    waveform: [],
+    energy: [],
+    beats: [],
+    onsets: [],
+    sections: [],
+    duration: 2,
+  },
+  duration: 2,
+  lyricChunks: [],
+  storySections: [],
+  videoMoments: [{
+    id: "moment",
+    sourceClipId: 0,
+    label: "Moment",
+    start: 0,
+    end: 1,
+    duration: 1,
+    thumbnailUrl: "data:image/jpeg;base64,moment",
+  }],
+  editPlan: { id: "plan", timelineItems: [], createdAt: "2026-06-18T00:00:00.000Z" },
+  reviewFindings: [],
+};
+
 describe("projectPersistence", () => {
   test("creates a persistable draft without runtime object URLs", () => {
     const draft = createPersistableStudioProjectDraft({
@@ -39,12 +68,17 @@ describe("projectPersistence", () => {
       },
       videoSources: [source],
       storyState,
-      musicVideoProject: null,
+      musicVideoProject,
       savedAt: "2026-06-18T00:00:00.000Z",
     });
 
     expect(JSON.stringify(draft)).not.toContain("blob:runtime-only");
     expect(JSON.stringify(draft)).not.toContain("blob:audio");
+    expect(JSON.stringify(draft)).not.toContain("blob:project-audio");
+    expect(JSON.stringify(draft)).not.toContain("data:image/jpeg");
+    expect(draft.videoSources[0].thumbnailUrl).toBe("");
+    expect(draft.musicVideoProject?.song?.audioUrl).toBe("");
+    expect(draft.musicVideoProject?.videoMoments[0].thumbnailUrl).toBe("");
     expect(draft.videoSources[0].mediaKey).toBe(buildVideoMediaKey(source));
     expect(draft.analysis?.mediaKey).toBe("audio:song.wav");
   });
