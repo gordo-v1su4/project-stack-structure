@@ -110,6 +110,8 @@ export interface SegmentPreview {
   sourceClipIds: number[];
   sourceRefLabel?: string;
   timeLabel?: string;
+  sourceStart?: number;
+  sourceEnd?: number;
   motionDescriptor?: MotionDescriptor | null;
 }
 

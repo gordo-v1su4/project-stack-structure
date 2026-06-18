@@ -1,15 +1,29 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { transcribeAudioWithDeepgram, type DeepgramTranscriptSummary } from "../deepgramUtils";
 import { fmt } from "../math";
+import {
+  createMusicVideoProject,
+  getDefaultStorySectionDrafts,
+  type MusicVideoProject,
+  type StorySectionDraft,
+} from "../musicVideoProject";
 import { UploadControl } from "../UploadControl";
 import type { BeatJoinAnalysis, SegmentPreview, UploadedVideoSource } from "../types";
 
-type StoryBeatDraft = {
+export type StoryBeatDraft = StorySectionDraft & {
   id: string;
   label: string;
   prompt: string;
+};
+
+export type StoryTabState = {
+  vocalStemName: string;
+  transcriptSummary: DeepgramTranscriptSummary | null;
+  storyBeats: StoryBeatDraft[];
+  activeBeatId: string;
+  storyGenerated: boolean;
 };
 
 type StoryTabProps = {
@@ -17,43 +31,52 @@ type StoryTabProps = {
   audioStatus: string;
   videoSources: UploadedVideoSource[];
   segmentPreviews: SegmentPreview[];
+  state: StoryTabState;
+  onStateChange: Dispatch<SetStateAction<StoryTabState>>;
+  onProjectChange?: (project: MusicVideoProject) => void;
 };
 
-const DEFAULT_STORY_BEATS: StoryBeatDraft[] = [
-  { id: "intro", label: "Intro", prompt: "Opening visual / establishing image" },
-  { id: "verse-1", label: "Verse 1", prompt: "Main character, setting, or first visual idea" },
-  { id: "pre-chorus-1", label: "Pre-Chorus", prompt: "Build tension before the first chorus; remove if the song has no pre-chorus" },
-  { id: "chorus-1", label: "Chorus", prompt: "Main repeatable image, hook, or performance motif" },
-  { id: "verse-2", label: "Verse 2", prompt: "Second verse development or new visual variation" },
-  { id: "pre-chorus-2", label: "Pre-Chorus 2", prompt: "Second build before the chorus; remove if unused" },
-  { id: "chorus-2", label: "Chorus 2", prompt: "Return to the main hook with a bigger or altered visual" },
-  { id: "bridge", label: "Bridge", prompt: "Contrast section, breakdown, twist, or emotional turn" },
-  { id: "outro", label: "Final Chorus / Outro", prompt: "Final chorus, outro, last image, or emotional landing" },
-];
+const DEFAULT_STORY_BEATS: StoryBeatDraft[] = getDefaultStorySectionDrafts().map((draft, index) => ({
+  id: draft.id ?? `section-${index + 1}`,
+  label: draft.label,
+  prompt: draft.prompt ?? "Describe the visual idea for this song section",
+}));
 
-const SECTION_LABELS = [
-  "Intro",
-  "Verse 1",
-  "Pre-Chorus",
-  "Chorus",
-  "Verse 2",
-  "Pre-Chorus 2",
-  "Chorus 2",
-  "Bridge",
-  "Final Chorus / Outro",
-];
+const SECTION_LABELS = DEFAULT_STORY_BEATS.map((beat) => beat.label);
 
-export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews }: StoryTabProps) {
-  const [vocalStemName, setVocalStemName] = useState("");
+export function createDefaultStoryTabState(): StoryTabState {
+  return {
+    vocalStemName: "",
+    transcriptSummary: null,
+    storyBeats: DEFAULT_STORY_BEATS,
+    activeBeatId: DEFAULT_STORY_BEATS[0].id,
+    storyGenerated: false,
+  };
+}
+
+export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews, state, onStateChange, onProjectChange }: StoryTabProps) {
+  const { vocalStemName, transcriptSummary, storyBeats, activeBeatId, storyGenerated } = state;
   const [isTranscribingAudio, setIsTranscribingAudio] = useState(false);
   const [transcriptProgress, setTranscriptProgress] = useState(0);
   const [transcriptStatus, setTranscriptStatus] = useState("Deepgram SRT extraction ready when DEEPGRAM_API_KEY is configured");
   const [transcriptError, setTranscriptError] = useState<string | null>(null);
-  const [transcriptSummary, setTranscriptSummary] = useState<DeepgramTranscriptSummary | null>(null);
-  const [storyBeats, setStoryBeats] = useState<StoryBeatDraft[]>(DEFAULT_STORY_BEATS);
-  const [activeBeatId, setActiveBeatId] = useState(DEFAULT_STORY_BEATS[0].id);
-  const [storyGenerated, setStoryGenerated] = useState(false);
   const progressTimer = useRef<number | null>(null);
+
+  function updateState(patch: Partial<StoryTabState>) {
+    onStateChange((current) => ({ ...current, ...patch }));
+  }
+
+  function setActiveBeatId(activeBeatId: string) {
+    updateState({ activeBeatId });
+  }
+
+  function setStoryGenerated(storyGenerated: boolean) {
+    updateState({ storyGenerated });
+  }
+
+  function setTranscriptSummary(transcriptSummary: DeepgramTranscriptSummary | null) {
+    updateState({ transcriptSummary });
+  }
 
   const transcriptDuration = transcriptSummary?.duration && transcriptSummary.duration > 0 ? transcriptSummary.duration : null;
   const analysisDuration = analysis?.duration && analysis.duration > 0 ? analysis.duration : null;
@@ -61,26 +84,25 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews 
   const totalDuration = transcriptDuration ?? analysisDuration ?? videoDuration;
   const srtChunkCount = transcriptSummary?.chunks.length ?? 0;
 
-  const storyRail = useMemo(() => {
-    const total = Math.max(0, totalDuration || 0);
-    const hasDuration = total > 0;
-    const usableSections = (analysis?.sections ?? [])
-      .filter((section) => Number.isFinite(section.start) && Number.isFinite(section.end) && section.end > section.start)
-      .map((section) => ({ start: Math.max(0, section.start), end: Math.min(total, section.end) }))
-      .filter((section) => section.end > section.start && section.start < total);
+  const musicVideoProject = useMemo(
+    () =>
+      createMusicVideoProject({
+        analysis,
+        duration: totalDuration || 0,
+        lyricChunks: transcriptSummary?.chunks ?? [],
+        storyDrafts: storyBeats,
+        videoSources,
+        segmentPreviews,
+      }),
+    [analysis, segmentPreviews, storyBeats, totalDuration, transcriptSummary?.chunks, videoSources],
+  );
 
-    return storyBeats.map((beat, index) => {
-      const section = usableSections[index];
-      const fallbackStart = hasDuration ? (total / storyBeats.length) * index : 0;
-      const fallbackEnd = hasDuration ? (total / storyBeats.length) * (index + 1) : 0;
-      const start = section?.start ?? fallbackStart;
-      const end = hasDuration ? Math.min(total, Math.max(start + 0.25, section?.end ?? fallbackEnd)) : 0;
-      const label = beat.label || SECTION_LABELS[index] || `Section ${index + 1}`;
-      return { ...beat, label, start, end };
-    });
-  }, [analysis?.sections, storyBeats, totalDuration]);
-
+  const storyRail = musicVideoProject.storySections;
   const activeBeat = storyRail.find((beat) => beat.id === activeBeatId) ?? storyRail[0];
+
+  useEffect(() => {
+    onProjectChange?.(musicVideoProject);
+  }, [musicVideoProject, onProjectChange]);
 
   async function handleVocalStemUpload(files: File[]) {
     const file = files[0];
@@ -91,10 +113,8 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews 
       progressTimer.current = null;
     }
 
-    setVocalStemName(file.name);
-    setTranscriptSummary(null);
+    updateState({ vocalStemName: file.name, transcriptSummary: null, storyGenerated: false });
     setTranscriptError(null);
-    setStoryGenerated(false);
     setIsTranscribingAudio(true);
     setTranscriptProgress(8);
     setTranscriptStatus(`Vocal stem loaded: ${file.name}. Sending stem to Deepgram for lyrics/SRT...`);
@@ -139,33 +159,36 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews 
   function addStoryBeat() {
     const nextIndex = storyBeats.length + 1;
     const next = { id: `section-${Date.now()}`, label: SECTION_LABELS[nextIndex - 1] || `Section ${nextIndex}`, prompt: "Describe the visual idea for this song section" };
-    setStoryBeats((current) => [...current, next]);
-    setActiveBeatId(next.id);
-    setStoryGenerated(false);
+    updateState({ storyBeats: [...storyBeats, next], activeBeatId: next.id, storyGenerated: false });
   }
 
   function updateStoryBeat(id: string, patch: Partial<StoryBeatDraft>) {
-    setStoryBeats((current) => current.map((beat) => (beat.id === id ? { ...beat, ...patch } : beat)));
-    setStoryGenerated(false);
+    updateState({
+      storyBeats: storyBeats.map((beat) => (beat.id === id ? { ...beat, ...patch } : beat)),
+      storyGenerated: false,
+    });
   }
 
   function removeStoryBeat(id: string) {
-    setStoryBeats((current) => {
-      if (current.length <= 1) return current;
-      const next = current.filter((beat) => beat.id !== id);
-      if (activeBeatId === id) setActiveBeatId(next[0]?.id ?? "intro");
-      return next;
+    if (storyBeats.length <= 1) return;
+    const next = storyBeats.filter((beat) => beat.id !== id);
+    updateState({
+      storyBeats: next,
+      activeBeatId: activeBeatId === id ? next[0]?.id ?? "intro" : activeBeatId,
+      storyGenerated: false,
     });
-    setStoryGenerated(false);
   }
 
   function generateStoryLayout() {
     setStoryGenerated(true);
     console.info("[StoryTab][Story] Generated draft story layout", {
       sections: storyRail.length,
+      editPlanItems: musicVideoProject.editPlan.timelineItems.length,
+      reviewFindings: musicVideoProject.reviewFindings.length,
       srtChunks: srtChunkCount,
       transcriptWords: transcriptSummary?.wordCount ?? 0,
       sourceVideos: videoSources.length,
+      videoMoments: musicVideoProject.videoMoments.length,
     });
   }
 
@@ -244,7 +267,7 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews 
             <Metric label="Audio markers" value={analysis ? `${analysis.beats.length} beat markers` : audioStatus} />
             <Metric label="Vocal Stem" value={vocalStemName || "Not uploaded"} />
             <Metric label="Timed SRT" value={`${srtChunkCount} chunks`} />
-            <Metric label="Story Sections" value={`${storyRail.length} editable`} />
+            <Metric label="Source Moments" value={`${musicVideoProject.videoMoments.length} clips/segments`} />
           </div>
 
           <div className="mt-3 grid gap-2 lg:grid-cols-[0.9fr_1.1fr]">
@@ -260,9 +283,9 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews 
                 <span>{srtChunkCount}</span>
               </div>
               <div className="max-h-56 space-y-1 overflow-auto rounded-[2px] bg-[#030303] p-2 font-mono text-[9px] text-[#878787]">
-                {transcriptSummary?.chunks.length ? (
-                  transcriptSummary.chunks.map((chunk, index) => (
-                    <div key={`${chunk.start}-${index}`} className="grid grid-cols-[86px_1fr] gap-2 border-b border-[#101010] pb-1 last:border-b-0">
+                {musicVideoProject.lyricChunks.length ? (
+                  musicVideoProject.lyricChunks.map((chunk) => (
+                    <div key={chunk.id} className="grid grid-cols-[86px_1fr] gap-2 border-b border-[#101010] pb-1 last:border-b-0">
                       <span className="text-[#e05c00]">{fmt(chunk.start)}–{fmt(chunk.end)}</span>
                       <span className="text-[#9c9c9c]">{chunk.text}</span>
                     </div>
@@ -304,7 +327,7 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews 
           <div className="relative h-20 overflow-hidden rounded-[2px] border border-[#141414] bg-[#030303]">
             {storyRail.map((beat) => {
               const left = totalDuration ? (beat.start / totalDuration) * 100 : 0;
-              const width = totalDuration ? Math.max(3, ((beat.end - beat.start) / totalDuration) * 100) : 100 / storyRail.length;
+              const width = totalDuration ? Math.max(3, ((beat.end - beat.start) / totalDuration) * 100) : 100 / Math.max(1, storyRail.length);
               return (
                 <button
                   key={beat.id}
@@ -324,14 +347,14 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews 
         {storyGenerated ? (
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {storyRail.map((beat, index) => {
-              const relatedChunks = transcriptSummary?.chunks.filter((chunk) => chunk.end >= beat.start && chunk.start <= beat.end) ?? [];
-              const source = videoSources[index % Math.max(1, videoSources.length)];
+              const relatedChunks = musicVideoProject.lyricChunks.filter((chunk) => beat.lyricChunkIds.includes(chunk.id));
+              const sourceMoment = musicVideoProject.videoMoments.find((moment) => moment.id === beat.videoMomentIds[0]) ?? musicVideoProject.videoMoments[index % Math.max(1, musicVideoProject.videoMoments.length)];
               return (
                 <div key={beat.id} className="overflow-hidden rounded-[2px] border border-[#171717] bg-[#070707]">
                   <div className="aspect-video bg-[linear-gradient(135deg,#161616,#050505)]">
-                    {source?.thumbnailUrl ? (
+                    {sourceMoment?.thumbnailUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img src={source.thumbnailUrl} alt="" className="h-full w-full object-cover opacity-75" loading="lazy" decoding="async" />
+                      <img src={sourceMoment.thumbnailUrl} alt="" className="h-full w-full object-cover opacity-75" loading="lazy" decoding="async" />
                     ) : null}
                   </div>
                   <div className="space-y-2 border-t border-[#141414] p-3">
@@ -343,7 +366,10 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews 
                       <span className="text-[#e05c00]">Prompt:</span> {beat.prompt}
                     </div>
                     <div className="max-h-28 overflow-auto rounded-[2px] border border-[#191919] bg-[#030303] p-2 text-[9px] leading-4 text-[#8f8f8f]">
-                      {relatedChunks.length ? relatedChunks.map((chunk) => <div key={`${chunk.start}-${chunk.end}`}>{fmt(chunk.start)} {chunk.text}</div>) : "No lyric chunk overlaps this section yet."}
+                      {relatedChunks.length ? relatedChunks.map((chunk) => <div key={chunk.id}>{fmt(chunk.start)} {chunk.text}</div>) : "No lyric chunk overlaps this section yet."}
+                    </div>
+                    <div className="rounded-[2px] border border-[#191919] bg-[#030303] p-2 text-[8px] uppercase tracking-[0.12em] text-[#666]">
+                      Source: {sourceMoment ? `${sourceMoment.sourceRefLabel ?? `S${sourceMoment.sourceClipId + 1}`} · ${sourceMoment.label}` : "No source clip yet"}
                     </div>
                     <div className="grid grid-cols-3 gap-1 text-center text-[8px] uppercase tracking-[0.12em] text-[#666]">
                       <div className="rounded-[2px] border border-[#202020] py-1">Image prompt</div>

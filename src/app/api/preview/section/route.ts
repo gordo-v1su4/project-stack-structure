@@ -43,7 +43,6 @@ async function gatewayPreview(payload: PreviewSectionRequest, requestKey: string
 
       const fileBuffer = await import("node:fs/promises").then((fs) => fs.readFile(firstInput));
       const ext = firstInput.match(/\.[^.]+$/)?.[0] ?? ".mp4";
-      const file = new File([fileBuffer], `source${ext}`, { type: "video/mp4" });
 
       const uploadForm = new FormData();
       uploadForm.set("file", new Blob([fileBuffer], { type: "video/mp4" }), `source${ext}`);

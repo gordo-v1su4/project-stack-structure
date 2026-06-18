@@ -2,10 +2,37 @@ import { exportSRT, type SrtChunk } from "./srtUtils";
 
 export const DEEPGRAM_DEV_TRANSCRIBE_ENDPOINT = "/deepgram-transcribe";
 
-type AnyRecord = Record<string, any>;
+type JsonRecord = Record<string, unknown>;
 
-function getPrimaryAlternative(response: AnyRecord) {
-  return response?.results?.channels?.[0]?.alternatives?.[0] || {};
+type RankedLabel = {
+  label: string;
+  confidence?: number;
+  score?: number;
+  percent?: number;
+};
+
+function isRecord(value: unknown): value is JsonRecord {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function asRecord(value: unknown): JsonRecord {
+  return isRecord(value) ? value : {};
+}
+
+function asRecordArray(value: unknown): JsonRecord[] {
+  return Array.isArray(value) ? value.filter(isRecord) : [];
+}
+
+function optionalRecord(value: unknown): JsonRecord | null {
+  return isRecord(value) ? value : null;
+}
+
+function getPrimaryAlternative(response: JsonRecord) {
+  const results = asRecord(response.results);
+  const channels = asRecordArray(results.channels);
+  const firstChannel = asRecord(channels[0]);
+  const alternatives = asRecordArray(firstChannel.alternatives);
+  return asRecord(alternatives[0]);
 }
 
 function cleanText(value: unknown) {
@@ -14,21 +41,26 @@ function cleanText(value: unknown) {
     .trim();
 }
 
-function chunkWords(words: AnyRecord[], duration = 8): SrtChunk[] {
+function numberFrom(value: unknown, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function chunkWords(words: JsonRecord[], duration = 8): SrtChunk[] {
   if (!Array.isArray(words) || words.length === 0) return [];
   const chunks: SrtChunk[] = [];
-  let current: AnyRecord[] = [];
-  let start = Number(words[0]?.start) || 0;
+  let current: JsonRecord[] = [];
+  let start = numberFrom(words[0]?.start, 0);
 
   for (const word of words) {
-    const wordStart = Number(word.start) || start;
-    const wordEnd = Number(word.end) || wordStart + 0.3;
+    const wordStart = numberFrom(word.start, start);
+    const wordEnd = numberFrom(word.end, wordStart + 0.3);
     if (current.length > 0 && wordEnd - start >= duration) {
       chunks.push({
         index: chunks.length + 1,
         start,
-        end: Number(current.at(-1)?.end) || wordEnd,
-        text: current.map((item) => item.punctuated_word || item.word).join(" "),
+        end: numberFrom(current.at(-1)?.end, wordEnd),
+        text: current.map((item) => cleanText(item.punctuated_word || item.word)).join(" "),
       });
       current = [];
       start = wordStart;
@@ -40,66 +72,67 @@ function chunkWords(words: AnyRecord[], duration = 8): SrtChunk[] {
     chunks.push({
       index: chunks.length + 1,
       start,
-      end: Number(current.at(-1)?.end) || start + duration,
-      text: current.map((item) => item.punctuated_word || item.word).join(" "),
+      end: numberFrom(current.at(-1)?.end, start + duration),
+      text: current.map((item) => cleanText(item.punctuated_word || item.word)).join(" "),
     });
   }
 
   return chunks.map((chunk) => ({ ...chunk, text: cleanText(chunk.text) }));
 }
 
-function chunksFromParagraphs(paragraphs: AnyRecord): SrtChunk[] {
-  const sentences = paragraphs?.paragraphs?.flatMap((paragraph: AnyRecord) => paragraph.sentences || []) || [];
+function chunksFromParagraphs(paragraphs: unknown): SrtChunk[] {
+  const sentences = asRecordArray(asRecord(paragraphs).paragraphs).flatMap((paragraph) => asRecordArray(paragraph.sentences));
   return sentences
-    .filter((sentence: AnyRecord) => cleanText(sentence.text))
-    .map((sentence: AnyRecord, index: number) => ({
+    .filter((sentence) => cleanText(sentence.text))
+    .map((sentence, index) => ({
       index: index + 1,
-      start: Number(sentence.start) || 0,
-      end: Math.max(Number(sentence.end) || 0, Number(sentence.start) || 0),
+      start: numberFrom(sentence.start, 0),
+      end: Math.max(numberFrom(sentence.end, 0), numberFrom(sentence.start, 0)),
       text: cleanText(sentence.text),
-    }))
-    .filter((chunk: SrtChunk) => chunk.end > chunk.start);
-}
-
-function chunksFromUtterances(utterances: AnyRecord[]): SrtChunk[] {
-  return (utterances || [])
-    .filter((utterance) => cleanText(utterance.transcript))
-    .map((utterance, index) => ({
-      index: index + 1,
-      start: Number(utterance.start) || 0,
-      end: Math.max(Number(utterance.end) || 0, Number(utterance.start) || 0),
-      text: cleanText(utterance.transcript),
-      confidence: utterance.confidence,
-      sentiment: utterance.sentiment,
-      sentimentScore: utterance.sentiment_score,
     }))
     .filter((chunk) => chunk.end > chunk.start);
 }
 
-function extractSummary(response: AnyRecord) {
-  const summary = response?.results?.summary;
-  if (!summary) return "";
-  if (typeof summary === "string") return cleanText(summary);
-  return cleanText(summary.short || summary.result || summary.text || summary.summary);
+function chunksFromUtterances(utterances: unknown): SrtChunk[] {
+  return asRecordArray(utterances)
+    .filter((utterance) => cleanText(utterance.transcript))
+    .map((utterance, index) => ({
+      index: index + 1,
+      start: numberFrom(utterance.start, 0),
+      end: Math.max(numberFrom(utterance.end, 0), numberFrom(utterance.start, 0)),
+      text: cleanText(utterance.transcript),
+      confidence: typeof utterance.confidence === "number" ? utterance.confidence : undefined,
+      sentiment: utterance.sentiment,
+      sentimentScore: typeof utterance.sentiment_score === "number" ? utterance.sentiment_score : undefined,
+    }))
+    .filter((chunk) => chunk.end > chunk.start);
 }
 
-function normalizeLabeledSegments(segments: AnyRecord[], key: string) {
-  return (segments || []).flatMap((segment) =>
-    (segment?.[key] || []).map((item: AnyRecord) => ({
+function extractSummary(response: JsonRecord) {
+  const summary = asRecord(response.results).summary;
+  if (!summary) return "";
+  if (typeof summary === "string") return cleanText(summary);
+  const summaryRecord = asRecord(summary);
+  return cleanText(summaryRecord.short || summaryRecord.result || summaryRecord.text || summaryRecord.summary);
+}
+
+function normalizeLabeledSegments(segments: unknown, key: string): RankedLabel[] {
+  return asRecordArray(segments).flatMap((segment) =>
+    asRecordArray(segment[key]).map((item) => ({
       label: cleanText(item.topic || item.intent || item.label || item.text),
-      confidence: Number(item.confidence ?? item.score ?? 0),
-      start: Number(segment.start_word ?? segment.start ?? 0),
-      end: Number(segment.end_word ?? segment.end ?? 0),
+      confidence: numberFrom(item.confidence ?? item.score, 0),
+      start: numberFrom(segment.start_word ?? segment.start, 0),
+      end: numberFrom(segment.end_word ?? segment.end, 0),
     })),
   );
 }
 
-function rankLabels(items: AnyRecord[], fallbackWordCount = 0) {
+function rankLabels(items: RankedLabel[], fallbackWordCount = 0) {
   const totals = new Map<string, { label: string; score: number; count: number }>();
   for (const item of items || []) {
     if (!item.label) continue;
     const previous = totals.get(item.label) || { label: item.label, score: 0, count: 0 };
-    previous.score += Number(item.confidence) || 0.5;
+    previous.score += numberFrom(item.confidence ?? item.score, 0.5);
     previous.count += 1;
     totals.set(item.label, previous);
   }
@@ -111,34 +144,38 @@ function rankLabels(items: AnyRecord[], fallbackWordCount = 0) {
   }));
 }
 
-function extractTopicItems(response: AnyRecord) {
-  const topics = response?.results?.topics;
-  if (Array.isArray(topics)) return topics;
+function extractTopicItems(response: JsonRecord): RankedLabel[] {
+  const topics = asRecord(response.results).topics;
+  if (Array.isArray(topics)) return asRecordArray(topics).map((topic) => ({ ...topic, label: cleanText(topic.label ?? topic.topic ?? topic.text) }));
+  const topicRecord = asRecord(topics);
   return [
-    ...normalizeLabeledSegments(topics?.segments, "topics"),
-    ...normalizeLabeledSegments(topics?.results, "topics"),
+    ...normalizeLabeledSegments(topicRecord.segments, "topics"),
+    ...normalizeLabeledSegments(topicRecord.results, "topics"),
   ];
 }
 
-function extractIntentItems(response: AnyRecord) {
-  const intents = response?.results?.intents;
-  if (Array.isArray(intents)) return intents;
+function extractIntentItems(response: JsonRecord): RankedLabel[] {
+  const intents = asRecord(response.results).intents;
+  if (Array.isArray(intents)) return asRecordArray(intents).map((intent) => ({ ...intent, label: cleanText(intent.label ?? intent.intent ?? intent.text) }));
+  const intentRecord = asRecord(intents);
   return [
-    ...normalizeLabeledSegments(intents?.segments, "intents"),
-    ...normalizeLabeledSegments(intents?.results, "intents"),
+    ...normalizeLabeledSegments(intentRecord.segments, "intents"),
+    ...normalizeLabeledSegments(intentRecord.results, "intents"),
   ];
 }
 
-export function buildSrtChunksFromDeepgram(response: AnyRecord, options: AnyRecord = {}): SrtChunk[] {
+export function buildSrtChunksFromDeepgram(response: JsonRecord, options: JsonRecord = {}): SrtChunk[] {
   const alternative = getPrimaryAlternative(response);
-  const duration = Number(response?.metadata?.duration) || Number(options.duration) || 60;
-  const utteranceChunks = chunksFromUtterances(response?.results?.utterances);
+  const metadata = asRecord(response.metadata);
+  const results = asRecord(response.results);
+  const duration = numberFrom(metadata.duration, numberFrom(options.duration, 60));
+  const utteranceChunks = chunksFromUtterances(results.utterances);
   if (utteranceChunks.length > 0) return utteranceChunks;
 
   const paragraphChunks = chunksFromParagraphs(alternative.paragraphs);
   if (paragraphChunks.length > 0) return paragraphChunks;
 
-  const wordChunks = chunkWords(alternative.words, Number(options.chunkDuration) || 8);
+  const wordChunks = chunkWords(asRecordArray(alternative.words), numberFrom(options.chunkDuration, 8));
   if (wordChunks.length > 0) return wordChunks;
 
   const transcript = cleanText(alternative.transcript);
@@ -164,30 +201,32 @@ export type DeepgramTranscriptSummary = {
   chunks: SrtChunk[];
   srt: string;
   summary: string;
-  topics: AnyRecord[];
-  intents: AnyRecord[];
+  topics: ReturnType<typeof rankLabels>;
+  intents: ReturnType<typeof rankLabels>;
   sentiments: unknown;
   averageSentiment: unknown;
-  entities: AnyRecord[];
+  entities: JsonRecord[];
   warnings: unknown[];
 };
 
-export function summarizeDeepgramResponse(response: AnyRecord, options: AnyRecord = {}): DeepgramTranscriptSummary {
+export function summarizeDeepgramResponse(response: JsonRecord, options: JsonRecord = {}): DeepgramTranscriptSummary {
   const alternative = getPrimaryAlternative(response);
   const chunks = buildSrtChunksFromDeepgram(response, options);
   const transcript = cleanText(alternative.transcript || chunks.map((chunk) => chunk.text).join(" "));
-  const sentiments = response?.results?.sentiments || null;
-  const entities = alternative.entities || [];
-  const words = alternative.words || [];
+  const results = asRecord(response.results);
+  const metadata = asRecord(response.metadata);
+  const sentiments = optionalRecord(results.sentiments);
+  const entities = asRecordArray(alternative.entities);
+  const words = asRecordArray(alternative.words);
   const topics = rankLabels(extractTopicItems(response), words.length);
   const intents = rankLabels(extractIntentItems(response), words.length);
   const summary = extractSummary(response);
 
   return {
     provider: "deepgram",
-    model: response?.metadata?.model_info ? "nova-3" : options.model || "nova-3",
-    duration: Number(response?.metadata?.duration) || Number(options.duration) || 0,
-    confidence: alternative.confidence ?? null,
+    model: isRecord(metadata.model_info) ? "nova-3" : cleanText(options.model) || "nova-3",
+    duration: numberFrom(metadata.duration, numberFrom(options.duration, 0)),
+    confidence: typeof alternative.confidence === "number" ? alternative.confidence : null,
     transcript,
     wordCount: words.length || transcript.split(/\s+/).filter(Boolean).length,
     chunks,
@@ -198,7 +237,7 @@ export function summarizeDeepgramResponse(response: AnyRecord, options: AnyRecor
     sentiments,
     averageSentiment: sentiments?.average || null,
     entities,
-    warnings: response?.metadata?.warnings || response?.warnings || [],
+    warnings: Array.isArray(metadata.warnings) ? metadata.warnings : Array.isArray(response.warnings) ? response.warnings : [],
   };
 }
 
@@ -219,22 +258,22 @@ export async function transcribeAudioWithDeepgram(
   });
 
   const text = await response.text();
-  let payload: AnyRecord;
+  let payload: JsonRecord;
   try {
-    payload = text ? JSON.parse(text) : {};
+    payload = text ? asRecord(JSON.parse(text)) : {};
   } catch {
     payload = { error: text };
   }
 
   console.info(`[Deepgram] response ${response.status}`, payload);
 
-  if (!response.ok || payload?.ok === false) {
+  if (!response.ok || payload.ok === false) {
     if (response.status === 401) {
       throw new Error(
         "Deepgram authentication failed (401). Update DEEPGRAM_API_KEY in the dev server environment, then restart the app and re-upload the vocal stem.",
       );
     }
-    throw new Error(payload?.error || payload?.reason || `Deepgram transcription failed (${response.status})`);
+    throw new Error(cleanText(payload.error || payload.reason) || `Deepgram transcription failed (${response.status})`);
   }
 
   return summarizeDeepgramResponse(payload, {

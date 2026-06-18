@@ -7,6 +7,8 @@ import { buildArrangementSegments } from "./studio/arrangementBuilder";
 import type { ArrangementSegment } from "./studio/arrangementBuilder";
 import { NAV } from "./studio/constants";
 import { prepareVideoSources, revokePreparedVideoSources } from "./studio/mediaUpload";
+import { buildEditPlanPreviewSegments, type MusicVideoProject } from "./studio/musicVideoProject";
+import { buildVideoMediaKey, loadStudioProjectDraft, saveStudioProjectDraft } from "./studio/projectPersistence";
 import { BrowserPreviewPlayer, type PreviewPlayerState, type PreviewSegment } from "./studio/previewPlayer";
 import { ProcessActionBar } from "./studio/ProcessActionBar";
 import { buildReadout } from "./studio/readout";
@@ -17,7 +19,7 @@ import { RampTab } from "./studio/panels/RampTab";
 import { ReviewTab } from "./studio/panels/ReviewTab";
 import { ShuffleTab } from "./studio/panels/ShuffleTab";
 import { SplitTab } from "./studio/panels/SplitTab";
-import { StoryTab } from "./studio/panels/StoryTab";
+import { createDefaultStoryTabState, StoryTab } from "./studio/panels/StoryTab";
 import { StudioHeader } from "./studio/StudioHeader";
 import { StudioAudioLane } from "./studio/StudioAudioLane";
 import { StudioRightPanel } from "./studio/StudioRightPanel";
@@ -118,7 +120,13 @@ export default function StudioApp() {
     signature: string;
     committedAt: string;
   } | null>(null);
+  const [storyState, setStoryState] = useState(createDefaultStoryTabState);
+  const [musicVideoProject, setMusicVideoProject] = useState<MusicVideoProject | null>(null);
+  const [draftStatus, setDraftStatus] = useState("Project draft will autosave after media or story changes.");
+  const [draftRestored, setDraftRestored] = useState(false);
 
+  const audioFileRef = useRef<File | null>(null);
+  const videoFilesByMediaKeyRef = useRef(new Map<string, Blob>());
   const previewPlayerRef = useRef(new BrowserPreviewPlayer());
   const [browserPreviewState, setBrowserPreviewState] = useState<PreviewPlayerState>({
     status: "idle",
@@ -150,6 +158,71 @@ export default function StudioApp() {
   useEffect(() => {
     videoSourcesRef.current = videoSources;
   }, [videoSources]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    loadStudioProjectDraft()
+      .then((draft) => {
+        if (cancelled) return;
+        if (!draft) {
+          setDraftRestored(true);
+          return;
+        }
+
+        if (draft.analysis) {
+          setBeatJoinAnalysis(draft.analysis);
+          setAudioStatus(`Restored · ${draft.analysis.sourceLabel}`);
+        }
+        if (draft.videoSources.length) {
+          setVideoSources(draft.videoSources);
+          setVideoStatus(`Restored ${draft.videoSources.length} clip${draft.videoSources.length === 1 ? "" : "s"} from the local draft.`);
+        }
+        setStoryState(draft.storyState);
+        setMusicVideoProject(draft.musicVideoProject);
+        setDraftStatus(`Restored local draft saved from this browser.`);
+        setDraftRestored(true);
+      })
+      .catch((error) => {
+        console.warn("[Studio] Could not restore local project draft", error);
+        if (!cancelled) {
+          setDraftStatus("Could not restore the local project draft; starting fresh.");
+          setDraftRestored(true);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!draftRestored) return;
+
+    const saveTimer = window.setTimeout(() => {
+      void saveStudioProjectDraft(
+        {
+          analysis: beatJoinAnalysis,
+          videoSources,
+          storyState,
+          musicVideoProject,
+        },
+        {
+          audioFile: audioFileRef.current,
+          videoFilesByMediaKey: videoFilesByMediaKeyRef.current,
+        },
+      )
+        .then((draft) => {
+          if (draft) setDraftStatus(`Autosaved local draft · ${new Date(draft.savedAt).toLocaleTimeString()}`);
+        })
+        .catch((error) => {
+          console.warn("[Studio] Could not autosave local project draft", error);
+          setDraftStatus("Autosave unavailable for this browser session.");
+        });
+    }, 650);
+
+    return () => window.clearTimeout(saveTimer);
+  }, [beatJoinAnalysis, draftRestored, musicVideoProject, storyState, videoSources]);
 
   useEffect(() => {
     return () => {
@@ -228,6 +301,8 @@ export default function StudioApp() {
               ? `${formatSourceRefs(segment.sourceClipIds)} · ${scene.label}`
               : formatSourceRefs(segment.sourceClipIds),
           timeLabel: `${segment.start.toFixed(1)}–${segment.end.toFixed(1)}`,
+          sourceStart: Math.max(0, segment.start - getSourceClipTimeOffset(sourceClips, segment.sourceClipIds[0] ?? -1)),
+          sourceEnd: Math.max(0, segment.end - getSourceClipTimeOffset(sourceClips, segment.sourceClipIds[0] ?? -1)),
         };
       }),
     [videoSources, sourceClips, workingBeatSplitSegments]
@@ -251,6 +326,7 @@ export default function StudioApp() {
   };
 
   async function ingestVideoFiles(files: File[], mode: "replace" | "append") {
+    const videoFiles = files.filter((file) => file.type.startsWith("video/"));
     setVideoError(null);
     setIsPreparingVideos(true);
     setVideoStatus(
@@ -283,25 +359,36 @@ export default function StudioApp() {
       if (!prepared.length) {
         throw new Error("No readable video files were selected.");
       }
+      const preparedPairs = prepared.map((source, index) => ({ source, file: videoFiles[index] }));
 
       startTransition(() => {
         setVideoSources((currentSources) => {
           const existingKeys = new Set(currentSources.map(buildVideoSourceKey));
-          const uniquePrepared = mode === "append"
-            ? prepared.filter((source) => !existingKeys.has(buildVideoSourceKey(source)))
-            : prepared;
+          const uniquePreparedPairs = mode === "append"
+            ? preparedPairs.filter(({ source }) => !existingKeys.has(buildVideoSourceKey(source)))
+            : preparedPairs;
           const skippedPrepared = mode === "append"
-            ? prepared.filter((source) => existingKeys.has(buildVideoSourceKey(source)))
+            ? preparedPairs.filter(({ source }) => existingKeys.has(buildVideoSourceKey(source))).map(({ source }) => source)
             : [];
 
           if (skippedPrepared.length) {
             revokePreparedVideoSources(skippedPrepared);
           }
 
+          const uniquePrepared = uniquePreparedPairs.map(({ source }) => source);
           const nextSources =
             mode === "append"
               ? [...currentSources, ...uniquePrepared].map((source, index) => remapVideoSourceId(source, index))
               : uniquePrepared.map((source, index) => remapVideoSourceId(source, index));
+
+          const nextVideoFiles = mode === "append" ? new Map(videoFilesByMediaKeyRef.current) : new Map<string, Blob>();
+          for (const nextSource of nextSources) {
+            const pair = uniquePreparedPairs.find(({ source }) => buildVideoSourceKey(source) === buildVideoSourceKey(nextSource));
+            if (pair?.file) {
+              nextVideoFiles.set(buildVideoMediaKey(nextSource), pair.file);
+            }
+          }
+          videoFilesByMediaKeyRef.current = nextVideoFiles;
 
           if (mode === "replace") {
             revokePreparedVideoSources(currentSources);
@@ -343,6 +430,7 @@ export default function StudioApp() {
       if (!sourceToRemove) return currentSources;
 
       revokePreparedVideoSources([sourceToRemove]);
+      videoFilesByMediaKeyRef.current.delete(buildVideoMediaKey(sourceToRemove));
       const nextSources = currentSources
         .filter((source) => source.id !== sourceId)
         .map((source, index) => remapVideoSourceId(source, index));
@@ -429,6 +517,8 @@ export default function StudioApp() {
         throw new Error(fallbackReason ?? "The upload finished, but no usable beats/onsets/sections came back.");
       }
 
+      audioFileRef.current = file;
+
       startTransition(() => {
         setBeatJoinAnalysis(parsed);
         setCommittedBeatSplit(null);
@@ -461,7 +551,7 @@ export default function StudioApp() {
   async function runProcess() {
     if (isRunning || previewState.activeRequestKey) return;
 
-    if ((tab === "shuffle" || tab === "join" || tab === "beatjoin") && browserPreviewSegments.length > 0) {
+    if ((tab === "story" || tab === "shuffle" || tab === "join" || tab === "beatjoin") && browserPreviewSegments.length > 0) {
       runBrowserPreview();
       return;
     }
@@ -706,6 +796,8 @@ export default function StudioApp() {
     switch (tab) {
       case "beatsplit":
         return `Master Audio Track · ${beatSplitMode === "beats" ? "Beat Split" : "Onset Split"}`;
+      case "story":
+        return "Master Audio Track · Story/Edit Plan";
       case "beatjoin":
         return "Master Audio Track · Beat Join";
       case "shuffle":
@@ -799,7 +891,22 @@ export default function StudioApp() {
     });
   }, [tab, beatJoinAnalysis, effectiveClipOrder, minDur, maxDur, energyResp, energyReactive, lowEnergyRange, highEnergyRange, onsetBoost, chaos]);
 
+  const storyPreviewSegments = useMemo<PreviewSegment[]>(
+    () =>
+      storyState.storyGenerated
+        ? buildEditPlanPreviewSegments({
+            project: musicVideoProject,
+            videoSources,
+          })
+        : [],
+    [musicVideoProject, storyState.storyGenerated, videoSources],
+  );
+
   const browserPreviewSegments = useMemo<PreviewSegment[]>(() => {
+    if (tab === "story") {
+      return storyPreviewSegments;
+    }
+
     if (tab === "shuffle" || tab === "join") {
       return effectiveClipOrder
         .map((clipId) => {
@@ -836,9 +943,15 @@ export default function StudioApp() {
     }
 
     return [];
-  }, [tab, effectiveClipOrder, workingBeatSplitSegments, videoSources, sourceClips, arrangementSegments]);
+  }, [tab, storyPreviewSegments, effectiveClipOrder, workingBeatSplitSegments, videoSources, sourceClips, arrangementSegments]);
 
   const pipelineStages = [
+    {
+      label: "Story",
+      status: storyState.storyGenerated ? `${musicVideoProject?.editPlan.timelineItems.length ?? 0} edit slots` : "Draft",
+      active: tab === "story",
+      ready: Boolean(storyState.storyGenerated && musicVideoProject?.editPlan.timelineItems.length),
+    },
     {
       label: "Split",
       status: committedBeatSplit
@@ -896,11 +1009,20 @@ export default function StudioApp() {
     hasAudioSource: beatJoinAnalysis !== null,
     activeRequestKey: previewState.activeRequestKey,
   });
-  const actionDisabled = actionState.disabled;
-  const actionDisabledReason = actionState.reason ?? "Unavailable";
+  const storyActionReason = !storyState.storyGenerated
+    ? "Generate story first."
+    : storyPreviewSegments.length === 0
+      ? "Upload source clips."
+      : previewState.activeRequestKey
+        ? "Preview already running."
+        : null;
+  const actionDisabled = tab === "story" ? Boolean(storyActionReason) : actionState.disabled;
+  const actionDisabledReason = tab === "story" ? storyActionReason ?? "Unavailable" : actionState.reason ?? "Unavailable";
 
   const previewStatusLabel = derivePreviewStatusLabel(previewState);
-  const completedLabel = deriveCompletedLabel(previewState.currentAssetKey);
+  const completedLabel = tab === "story"
+    ? `Story Preview Ready${previewState.currentAssetKey ? ` — ${previewState.currentAssetKey.split(/[\\/]/).pop()}` : ""}`
+    : deriveCompletedLabel(previewState.currentAssetKey);
 
   return (
     <div
@@ -948,6 +1070,10 @@ export default function StudioApp() {
                   <div className="mt-1 font-mono text-[10px] text-[#9a9a9a]">{stage.status}</div>
                 </div>
               ))}
+            </div>
+
+            <div className="rounded-[2px] border border-[#171717] bg-[#080808] px-3 py-2 text-[10px] text-[#666]">
+              Local project draft: <span className="font-mono text-[#8a8a8a]">{draftStatus}</span>
             </div>
 
             {tab === "split" && (
@@ -1004,6 +1130,9 @@ export default function StudioApp() {
                 audioStatus={audioStatus}
                 videoSources={videoSources}
                 segmentPreviews={segmentPreviews}
+                state={storyState}
+                onStateChange={setStoryState}
+                onProjectChange={setMusicVideoProject}
               />
             )}
 
@@ -1102,8 +1231,7 @@ export default function StudioApp() {
               />
             )}
 
-            {tab !== "story" && (
-              <ProcessActionBar
+            <ProcessActionBar
                 tab={tab}
                 done={done}
                 isRunning={isRunning}
@@ -1119,7 +1247,6 @@ export default function StudioApp() {
                 onRun={tab === "beatsplit" ? handleCommitBeatSplit : () => void runProcess()}
                 onResetDone={resetPreparedPreview}
               />
-            )}
           </main>
 
           <StudioRightPanel
