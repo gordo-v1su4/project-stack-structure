@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 
-import { BrowserPreviewPlayer, createPreviewPlayerState, type PreviewSegment } from "@/components/studio/previewPlayer";
+import {
+  BrowserPreviewPlayer,
+  createPreviewPlayerState,
+  getWarmSegmentTargets,
+  type PreviewSegment,
+} from "@/components/studio/previewPlayer";
 
 describe("createPreviewPlayerState", () => {
   test("returns idle state with zeroed fields", () => {
@@ -11,6 +16,30 @@ describe("createPreviewPlayerState", () => {
     expect(state.currentTime).toBe(0);
     expect(state.totalDuration).toBe(0);
     expect(state.errorMessage).toBeNull();
+    expect(state.engineMode).toBe("html-video");
+    expect(state.warmedSourceCount).toBe(0);
+  });
+});
+
+describe("getWarmSegmentTargets", () => {
+  test("deduplicates upcoming sources and applies preroll for decoder warmup", () => {
+    const segments: PreviewSegment[] = [
+      { videoUrl: "blob:a", startTime: 3, endTime: 4, label: "A1" },
+      { videoUrl: "blob:a", startTime: 5, endTime: 6, label: "A2" },
+      { videoUrl: "blob:b", startTime: 0.02, endTime: 1, label: "B1" },
+      { videoUrl: "blob:c", startTime: 9, endTime: 10, label: "C1" },
+    ];
+
+    expect(getWarmSegmentTargets({
+      segments,
+      startIndex: 0,
+      aheadSegments: 3,
+      limit: 2,
+      prerollSeconds: 0.1,
+    })).toEqual([
+      { videoUrl: "blob:a", warmTime: 2.9 },
+      { videoUrl: "blob:b", warmTime: 0 },
+    ]);
   });
 });
 

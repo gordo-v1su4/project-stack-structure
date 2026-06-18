@@ -70,9 +70,10 @@ export function PreviewPlayer({
       <div className="relative">
         <video
           ref={videoRef}
-          preload="metadata"
+          preload="auto"
           muted={false}
           playsInline
+          data-preview-engine={state.engineMode}
           className="aspect-video w-full rounded-[2px] border border-[#181818] bg-[#050505]"
         />
         {state.status === "loading" && (
@@ -126,6 +127,16 @@ export function PreviewPlayer({
           {state.segmentCount > 0
             ? `${state.currentIndex + 1}/${state.segmentCount}`
             : "—"}
+        </span>
+      </div>
+
+      <div className="flex items-center justify-between font-mono text-[8px] uppercase tracking-[0.12em] text-[#3f3f3f]">
+        <span>
+          {state.engineMode === "warm-video" ? "Warm native preview" : "Native preview"}
+        </span>
+        <span>
+          {state.warmedSourceCount > 0 ? `${state.warmedSourceCount} hot source${state.warmedSourceCount === 1 ? "" : "s"}` : "no prewarm"}
+          {state.usesFrameCallback ? " · frame callback" : ""}
         </span>
       </div>
 

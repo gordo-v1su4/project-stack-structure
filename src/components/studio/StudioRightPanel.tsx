@@ -35,8 +35,9 @@ export function StudioRightPanel({
   isBrowserPreviewActive = false,
 }: StudioRightPanelProps) {
   const previewAssetFileName = getPreviewAssetFileName(previewAssetKey);
-  const showBrowserPreview = isBrowserPreviewActive && browserPreviewSegments.length > 0 && previewPlayer;
-  const showFfmpegPreview = !isBrowserPreviewActive && previewAssetUrl;
+  const supportsInstantPreview = tab === "story" || tab === "shuffle" || tab === "join" || tab === "beatjoin";
+  const showBrowserPreview = supportsInstantPreview && browserPreviewSegments.length > 0 && previewPlayer;
+  const showFfmpegPreview = !showBrowserPreview && !isBrowserPreviewActive && previewAssetUrl;
   const segmentCountLabel = browserPreviewSegments.length > 0
     ? `${browserPreviewSegments.length} segments · ${browserPreviewState?.totalDuration.toFixed(1) ?? "0"}s`
     : null;
@@ -102,7 +103,7 @@ export function StudioRightPanel({
 
       <div className="border-b border-[#181818] p-3">
         <div className="mb-2 text-[9px] uppercase tracking-[0.22em] text-[#343434]">
-          {showBrowserPreview ? "Sequential Preview" : "Prepared Preview"}
+          {showBrowserPreview ? "Instant Preview" : "Prepared Preview"}
         </div>
         {showBrowserPreview && browserPreviewState ? (
           <PreviewPlayer

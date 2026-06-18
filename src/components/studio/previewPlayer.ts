@@ -12,9 +12,28 @@ export interface PreviewPlayerState {
   currentTime: number;
   totalDuration: number;
   errorMessage: string | null;
+  engineMode: "html-video" | "warm-video";
+  warmedSourceCount: number;
+  usesFrameCallback: boolean;
 }
 
 export type PreviewPlayerListener = (state: PreviewPlayerState) => void;
+
+export interface BrowserPreviewPlayerOptions {
+  /** Number of upcoming unique source URLs to keep hot in hidden native video decoders. */
+  warmSourceLimit?: number;
+  /** Number of timeline segments to scan ahead when choosing sources to warm. */
+  warmAheadSegments?: number;
+  /** Seconds before a segment start used for decoder pre-roll seeks. */
+  prerollSeconds?: number;
+}
+
+type FrameCallbackMetadata = { mediaTime: number };
+type FrameCallback = (now: number, metadata: FrameCallbackMetadata) => void;
+type VideoWithFrameCallback = HTMLVideoElement & {
+  requestVideoFrameCallback?: (callback: FrameCallback) => number;
+  cancelVideoFrameCallback?: (handle: number) => void;
+};
 
 const STATE_IDLE: PreviewPlayerState = {
   status: "idle",
@@ -23,7 +42,15 @@ const STATE_IDLE: PreviewPlayerState = {
   currentTime: 0,
   totalDuration: 0,
   errorMessage: null,
+  engineMode: "html-video",
+  warmedSourceCount: 0,
+  usesFrameCallback: false,
 };
+
+const DEFAULT_WARM_SOURCE_LIMIT = 4;
+const DEFAULT_WARM_AHEAD_SEGMENTS = 6;
+const DEFAULT_PREROLL_SECONDS = 0.08;
+const SEGMENT_END_TOLERANCE_SECONDS = 0.025;
 
 export class BrowserPreviewPlayer {
   private segments: PreviewSegment[] = [];
@@ -33,16 +60,30 @@ export class BrowserPreviewPlayer {
   private totalDuration = 0;
   private status: PreviewPlayerState["status"] = "idle";
   private errorMessage: string | null = null;
-  private seeking = false;
   private currentSegmentEndTime: number | null = null;
   private progressRafId: number | null = null;
+  private progressFrameCallbackId: number | null = null;
+  private playbackToken = 0;
+  private warmElements = new Map<string, HTMLVideoElement>();
+  private readonly warmSourceLimit: number;
+  private readonly warmAheadSegments: number;
+  private readonly prerollSeconds: number;
+
+  constructor(options: BrowserPreviewPlayerOptions = {}) {
+    this.warmSourceLimit = Math.max(0, options.warmSourceLimit ?? DEFAULT_WARM_SOURCE_LIMIT);
+    this.warmAheadSegments = Math.max(0, options.warmAheadSegments ?? DEFAULT_WARM_AHEAD_SEGMENTS);
+    this.prerollSeconds = Math.max(0, options.prerollSeconds ?? DEFAULT_PREROLL_SECONDS);
+  }
 
   attach(videoElement: HTMLVideoElement) {
     this.videoElement = videoElement;
+    videoElement.preload = "auto";
+    videoElement.playsInline = true;
   }
 
   detach() {
     this.stop();
+    this.releaseWarmElements();
     this.videoElement = null;
   }
 
@@ -58,6 +99,7 @@ export class BrowserPreviewPlayer {
     this.currentIndex = 0;
     this.status = "idle";
     this.errorMessage = this.segments.length > 0 ? null : "No valid segments to preview.";
+    this.warmSourcesAround(0);
     this.emit();
   }
 
@@ -67,10 +109,12 @@ export class BrowserPreviewPlayer {
     this.emit();
 
     try {
-      await this.playSegment(this.currentIndex);
+      await this.playSegment(this.currentIndex, ++this.playbackToken);
     } catch (error) {
       this.status = "error";
+      this.currentSegmentEndTime = null;
       this.errorMessage = error instanceof Error ? error.message : "Playback failed.";
+      this.stopProgressLoop();
       this.emit();
     }
   }
@@ -87,23 +131,26 @@ export class BrowserPreviewPlayer {
     if (!this.videoElement) return;
 
     if (this.currentSegmentEndTime !== null && this.status === "paused") {
+      const token = ++this.playbackToken;
       this.videoElement.play().catch(() => {});
       this.status = "playing";
       this.startProgressLoop();
       this.emit();
 
-      this.waitForSegmentEnd(this.currentSegmentEndTime)
-        .then(() => this.advanceToNext())
+      this.waitForSegmentEnd(this.currentSegmentEndTime, token)
+        .then(() => this.advanceToNext(token))
         .catch(() => {});
       return;
     }
 
     this.videoElement.play().catch(() => {});
     this.status = "playing";
+    this.startProgressLoop();
     this.emit();
   }
 
   stop() {
+    this.playbackToken++;
     this.stopProgressLoop();
     this.currentSegmentEndTime = null;
     if (this.videoElement) {
@@ -120,7 +167,8 @@ export class BrowserPreviewPlayer {
     if (index < 0 || index >= this.segments.length) return;
     this.stop();
     this.currentIndex = index;
-    this.play();
+    this.warmSourcesAround(index);
+    void this.play();
   }
 
   getState(): PreviewPlayerState {
@@ -132,6 +180,9 @@ export class BrowserPreviewPlayer {
       currentTime,
       totalDuration: this.totalDuration,
       errorMessage: this.errorMessage,
+      engineMode: this.warmElements.size > 0 ? "warm-video" : "html-video",
+      warmedSourceCount: this.warmElements.size,
+      usesFrameCallback: this.hasFrameCallbackSupport(),
     };
   }
 
@@ -150,8 +201,20 @@ export class BrowserPreviewPlayer {
     return this.segments[this.currentIndex] ?? null;
   }
 
-  private async playSegment(index: number) {
-    if (!this.videoElement || index >= this.segments.length) {
+  getWarmedSourceCount(): number {
+    return this.warmElements.size;
+  }
+
+  getWarmSourceLimit(): number {
+    return this.warmSourceLimit;
+  }
+
+  getWarmSourceUrls(): string[] {
+    return [...this.warmElements.keys()];
+  }
+
+  private async playSegment(index: number, token: number) {
+    if (!this.videoElement || index >= this.segments.length || token !== this.playbackToken) {
       this.status = "ended";
       this.emit();
       return;
@@ -165,83 +228,98 @@ export class BrowserPreviewPlayer {
     }
 
     this.currentIndex = index;
-    this.seeking = true;
+    this.warmSourcesAround(index);
 
     const video = this.videoElement;
-    video.src = segment.videoUrl;
+    await this.prepareVisibleVideo(video, segment, token);
+    if (token !== this.playbackToken) return;
 
-    await new Promise<void>((resolve, reject) => {
-      const onLoaded = () => {
-        video.currentTime = segment.startTime;
-      };
-
-      const onSeeked = () => {
-        cleanup();
-        this.seeking = false;
-        video
-          .play()
-          .then(resolve)
-          .catch(reject);
-      };
-
-      const onError = () => {
-        cleanup();
-        reject(new Error(`Failed to load segment: ${segment.label}`));
-      };
-
-      const cleanup = () => {
-        video.removeEventListener("loadedmetadata", onLoaded);
-        video.removeEventListener("seeked", onSeeked);
-        video.removeEventListener("error", onError);
-      };
-
-      video.addEventListener("loadedmetadata", onLoaded, { once: true });
-      video.addEventListener("seeked", onSeeked, { once: true });
-      video.addEventListener("error", onError, { once: true });
-    });
+    await video.play();
+    if (token !== this.playbackToken) return;
 
     this.status = "playing";
     this.currentSegmentEndTime = segment.endTime;
     this.startProgressLoop();
     this.emit();
 
-    await this.waitForSegmentEnd(segment.endTime);
-    await this.advanceToNext();
+    await this.waitForSegmentEnd(segment.endTime, token);
+    await this.advanceToNext(token);
   }
 
-  private waitForSegmentEnd(endTime: number): Promise<void> {
+  private async prepareVisibleVideo(video: HTMLVideoElement, segment: PreviewSegment, token: number) {
+    const sameSource = video.currentSrc === segment.videoUrl || video.src === segment.videoUrl;
+    if (!sameSource) {
+      video.pause();
+      video.preload = "auto";
+      video.src = segment.videoUrl;
+      video.load();
+    }
+
+    await waitForMetadata(video, token, () => this.playbackToken);
+    if (token !== this.playbackToken) return;
+    await seekVideo(video, segment.startTime, token, () => this.playbackToken);
+  }
+
+  private waitForSegmentEnd(endTime: number, token: number): Promise<void> {
     return new Promise<void>((resolve) => {
-      if (!this.videoElement) {
+      if (!this.videoElement || token !== this.playbackToken) {
         resolve();
         return;
       }
 
-      const video = this.videoElement;
+      const video = this.videoElement as VideoWithFrameCallback;
+      let frameCallbackId: number | null = null;
+      let settled = false;
 
-      const onTimeUpdate = () => {
-        if (video.currentTime >= endTime - 0.05) {
-          cleanup();
-          resolve();
-        }
-      };
-
-      const onEnded = () => {
+      const finish = () => {
+        if (settled) return;
+        settled = true;
         cleanup();
         resolve();
       };
 
+      const isDone = () => token !== this.playbackToken || video.currentTime >= endTime - SEGMENT_END_TOLERANCE_SECONDS;
+
+      const check = () => {
+        if (isDone()) finish();
+      };
+
+      const onFrame: FrameCallback = () => {
+        if (isDone()) {
+          finish();
+          return;
+        }
+        frameCallbackId = video.requestVideoFrameCallback?.(onFrame) ?? null;
+      };
+
+      const onTimeUpdate = () => check();
+      const onEnded = () => finish();
+      const onError = () => finish();
+
       const cleanup = () => {
         video.removeEventListener("timeupdate", onTimeUpdate);
         video.removeEventListener("ended", onEnded);
+        video.removeEventListener("error", onError);
+        if (frameCallbackId !== null) {
+          video.cancelVideoFrameCallback?.(frameCallbackId);
+          frameCallbackId = null;
+        }
       };
 
-      video.addEventListener("timeupdate", onTimeUpdate);
       video.addEventListener("ended", onEnded);
+      video.addEventListener("error", onError);
+
+      if (video.requestVideoFrameCallback) {
+        frameCallbackId = video.requestVideoFrameCallback(onFrame);
+      } else {
+        video.addEventListener("timeupdate", onTimeUpdate);
+      }
+      check();
     });
   }
 
-  private async advanceToNext() {
-    if (this.status !== "playing") return;
+  private async advanceToNext(token: number) {
+    if (this.status !== "playing" || token !== this.playbackToken) return;
 
     const nextIndex = this.currentIndex + 1;
     if (nextIndex >= this.segments.length) {
@@ -253,8 +331,9 @@ export class BrowserPreviewPlayer {
     }
 
     try {
-      await this.playSegment(nextIndex);
+      await this.playSegment(nextIndex, token);
     } catch (error) {
+      if (token !== this.playbackToken) return;
       this.stopProgressLoop();
       this.currentSegmentEndTime = null;
       this.status = "error";
@@ -265,6 +344,18 @@ export class BrowserPreviewPlayer {
 
   private startProgressLoop() {
     this.stopProgressLoop();
+    const video = this.videoElement as VideoWithFrameCallback | null;
+    if (video?.requestVideoFrameCallback) {
+      const tick: FrameCallback = () => {
+        if (this.status === "playing") {
+          this.emit();
+          this.progressFrameCallbackId = video.requestVideoFrameCallback?.(tick) ?? null;
+        }
+      };
+      this.progressFrameCallbackId = video.requestVideoFrameCallback(tick);
+      return;
+    }
+
     const tick = () => {
       if (this.status === "playing") {
         this.emit();
@@ -275,6 +366,11 @@ export class BrowserPreviewPlayer {
   }
 
   private stopProgressLoop() {
+    const video = this.videoElement as VideoWithFrameCallback | null;
+    if (this.progressFrameCallbackId !== null) {
+      video?.cancelVideoFrameCallback?.(this.progressFrameCallbackId);
+      this.progressFrameCallbackId = null;
+    }
     if (this.progressRafId !== null) {
       cancelAnimationFrame(this.progressRafId);
       this.progressRafId = null;
@@ -300,6 +396,43 @@ export class BrowserPreviewPlayer {
     return Math.min(elapsed, this.totalDuration);
   }
 
+  private warmSourcesAround(index: number) {
+    if (this.warmSourceLimit <= 0 || typeof document === "undefined") return;
+
+    const targets = getWarmSegmentTargets({
+      segments: this.segments,
+      startIndex: index,
+      aheadSegments: this.warmAheadSegments,
+      limit: this.warmSourceLimit,
+      prerollSeconds: this.prerollSeconds,
+    });
+    const targetUrls = new Set(targets.map((target) => target.videoUrl));
+
+    for (const [url, element] of this.warmElements) {
+      if (!targetUrls.has(url)) {
+        releaseVideoElement(element);
+        this.warmElements.delete(url);
+      }
+    }
+
+    for (const target of targets) {
+      const element = this.warmElements.get(target.videoUrl) ?? createWarmVideoElement(target.videoUrl);
+      this.warmElements.set(target.videoUrl, element);
+      warmVideoElement(element, target.warmTime);
+    }
+  }
+
+  private releaseWarmElements() {
+    for (const element of this.warmElements.values()) {
+      releaseVideoElement(element);
+    }
+    this.warmElements.clear();
+  }
+
+  private hasFrameCallbackSupport(): boolean {
+    return typeof (this.videoElement as VideoWithFrameCallback | null)?.requestVideoFrameCallback === "function";
+  }
+
   private emit() {
     const state = this.getState();
     for (const listener of this.listeners) {
@@ -310,4 +443,136 @@ export class BrowserPreviewPlayer {
 
 export function createPreviewPlayerState(): PreviewPlayerState {
   return { ...STATE_IDLE };
+}
+
+export function getWarmSegmentTargets(params: {
+  segments: PreviewSegment[];
+  startIndex: number;
+  aheadSegments: number;
+  limit: number;
+  prerollSeconds?: number;
+}): Array<{ videoUrl: string; warmTime: number }> {
+  const targets: Array<{ videoUrl: string; warmTime: number }> = [];
+  const seen = new Set<string>();
+  const endIndex = Math.min(params.segments.length, params.startIndex + params.aheadSegments + 1);
+  for (let index = Math.max(0, params.startIndex); index < endIndex; index++) {
+    const segment = params.segments[index];
+    if (!segment?.videoUrl || seen.has(segment.videoUrl)) continue;
+    seen.add(segment.videoUrl);
+    targets.push({
+      videoUrl: segment.videoUrl,
+      warmTime: Math.max(0, segment.startTime - (params.prerollSeconds ?? DEFAULT_PREROLL_SECONDS)),
+    });
+    if (targets.length >= params.limit) break;
+  }
+  return targets;
+}
+
+function createWarmVideoElement(videoUrl: string) {
+  const video = document.createElement("video");
+  video.muted = true;
+  video.playsInline = true;
+  video.preload = "auto";
+  video.src = videoUrl;
+  video.setAttribute("data-preview-warm-source", "true");
+  video.style.position = "fixed";
+  video.style.width = "1px";
+  video.style.height = "1px";
+  video.style.opacity = "0";
+  video.style.pointerEvents = "none";
+  video.style.left = "-9999px";
+  video.style.top = "-9999px";
+  document.body.appendChild(video);
+  video.load();
+  return video;
+}
+
+function warmVideoElement(video: HTMLVideoElement, warmTime: number) {
+  const seek = () => {
+    try {
+      if (Number.isFinite(video.duration) && video.duration > 0) {
+        video.currentTime = Math.min(Math.max(0, warmTime), Math.max(0, video.duration - 0.05));
+      }
+    } catch {
+      // Browser decoders can reject rapid background seeks; warmup is best-effort.
+    }
+  };
+
+  if (video.readyState >= HTMLMediaElement.HAVE_METADATA) {
+    seek();
+    return;
+  }
+
+  video.addEventListener("loadedmetadata", seek, { once: true });
+}
+
+function releaseVideoElement(video: HTMLVideoElement) {
+  video.pause();
+  video.removeAttribute("src");
+  video.load();
+  video.remove();
+}
+
+function waitForMetadata(video: HTMLVideoElement, token: number, getToken: () => number): Promise<void> {
+  if (video.readyState >= HTMLMediaElement.HAVE_METADATA) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      video.removeEventListener("loadedmetadata", onLoaded);
+      video.removeEventListener("error", onError);
+    };
+    const onLoaded = () => {
+      cleanup();
+      resolve();
+    };
+    const onError = () => {
+      cleanup();
+      reject(new Error("Could not load preview video metadata."));
+    };
+    if (token !== getToken()) {
+      resolve();
+      return;
+    }
+    video.addEventListener("loadedmetadata", onLoaded, { once: true });
+    video.addEventListener("error", onError, { once: true });
+  });
+}
+
+function seekVideo(video: HTMLVideoElement, time: number, token: number, getToken: () => number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (token !== getToken()) {
+      resolve();
+      return;
+    }
+
+    const targetTime = Number.isFinite(video.duration) && video.duration > 0
+      ? Math.min(Math.max(0, time), Math.max(0, video.duration - 0.01))
+      : Math.max(0, time);
+
+    const cleanup = () => {
+      video.removeEventListener("seeked", onSeeked);
+      video.removeEventListener("error", onError);
+    };
+    const onSeeked = () => {
+      cleanup();
+      resolve();
+    };
+    const onError = () => {
+      cleanup();
+      reject(new Error("Could not seek preview video."));
+    };
+
+    if (Math.abs(video.currentTime - targetTime) < 0.01) {
+      resolve();
+      return;
+    }
+
+    video.addEventListener("seeked", onSeeked, { once: true });
+    video.addEventListener("error", onError, { once: true });
+    try {
+      video.currentTime = targetTime;
+    } catch (error) {
+      cleanup();
+      reject(error);
+    }
+  });
 }

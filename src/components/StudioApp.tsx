@@ -9,7 +9,7 @@ import { NAV } from "./studio/constants";
 import { prepareVideoSources, revokePreparedVideoSources } from "./studio/mediaUpload";
 import { buildEditPlanPreviewSegments, type MusicVideoProject } from "./studio/musicVideoProject";
 import { buildVideoMediaKey, loadStudioProjectDraft, saveStudioProjectDraft } from "./studio/projectPersistence";
-import { BrowserPreviewPlayer, type PreviewPlayerState, type PreviewSegment } from "./studio/previewPlayer";
+import { BrowserPreviewPlayer, createPreviewPlayerState, type PreviewPlayerState, type PreviewSegment } from "./studio/previewPlayer";
 import { ProcessActionBar } from "./studio/ProcessActionBar";
 import { buildReadout } from "./studio/readout";
 import { BeatJoinTab } from "./studio/panels/BeatJoinTab";
@@ -127,15 +127,8 @@ export default function StudioApp() {
 
   const audioFileRef = useRef<File | null>(null);
   const videoFilesByMediaKeyRef = useRef(new Map<string, Blob>());
-  const previewPlayerRef = useRef(new BrowserPreviewPlayer());
-  const [browserPreviewState, setBrowserPreviewState] = useState<PreviewPlayerState>({
-    status: "idle",
-    currentIndex: 0,
-    segmentCount: 0,
-    currentTime: 0,
-    totalDuration: 0,
-    errorMessage: null,
-  });
+  const previewPlayerRef = useRef(new BrowserPreviewPlayer({ warmSourceLimit: 4, warmAheadSegments: 8 }));
+  const [browserPreviewState, setBrowserPreviewState] = useState<PreviewPlayerState>(createPreviewPlayerState);
   const [isBrowserPreviewActive, setIsBrowserPreviewActive] = useState(false);
 
   useEffect(() => {
