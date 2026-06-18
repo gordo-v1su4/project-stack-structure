@@ -37,6 +37,7 @@ const INCLUDE_RAW_UPSTREAM_PAYLOAD = process.env.NODE_ENV !== "production";
 
 export async function POST(request: Request) {
   try {
+    const mode = getAnalysisMode(request);
     const formData = await request.formData();
     const file = formData.get("file");
 
@@ -59,7 +60,7 @@ export async function POST(request: Request) {
     const upstreamForm = new FormData();
     upstreamForm.set("file", file, file.name);
 
-    const upstreamResponse = await fetch(`${config.apiUrl}/analyze/full`, {
+    const upstreamResponse = await fetch(`${config.apiUrl}/analyze/${mode}`, {
       method: "POST",
       headers: {
         // The sibling Essentia clients use both headers, so we preserve that contract here.
@@ -97,6 +98,11 @@ export async function POST(request: Request) {
     const message = error instanceof Error ? error.message : "Unknown Essentia proxy error";
     return Response.json({ error: message }, { status: 500 });
   }
+}
+
+function getAnalysisMode(request: Request): "fast" | "full" {
+  const mode = new URL(request.url).searchParams.get("mode")?.trim().toLowerCase();
+  return mode === "full" ? "full" : "fast";
 }
 
 async function loadEssentiaConfig() {

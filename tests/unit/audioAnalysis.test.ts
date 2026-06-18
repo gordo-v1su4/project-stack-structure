@@ -100,7 +100,7 @@ describe("audioAnalysis.resolveEssentiaRequestTarget", () => {
 
     try {
       expect(resolveEssentiaRequestTarget()).toEqual({
-        url: "/api/essentia/full",
+        url: "/api/essentia/full?mode=fast",
         transport: "proxy",
       });
     } finally {

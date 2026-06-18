@@ -82,7 +82,7 @@ export function resolveEssentiaRequestTarget(): EssentiaRequestTarget {
   }
 
   return {
-    url: "/api/essentia/full",
+    url: "/api/essentia/full?mode=fast",
     transport: "proxy",
   };
 }
