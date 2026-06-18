@@ -1,7 +1,14 @@
-import { buildFallbackSceneSegments, detectScenesWithSplitter } from "./sceneSplit";
-import type { UploadedVideoSource } from "./types";
+import { uploadSceneCaptionManifestToRustFs, uploadVideoFileToRustFs } from "./mediaStorage";
+import { captionDetectedScenes } from "./sceneCaptioning";
+import { buildFallbackSceneSegments, detectScenesFromStoredVideo, detectScenesWithSplitter } from "./sceneSplit";
+import type { DetectedSceneSegment, UploadedVideoSource } from "./types";
 
 export type VideoSceneUpdate = {
+  key: string;
+  source: UploadedVideoSource;
+};
+
+export type VideoStorageUpdate = {
   key: string;
   source: UploadedVideoSource;
 };
@@ -9,6 +16,7 @@ export type VideoSceneUpdate = {
 export async function prepareVideoSources(
   files: File[],
   onSceneUpdate?: (update: VideoSceneUpdate) => void,
+  onStorageUpdate?: (update: VideoStorageUpdate) => void,
 ) {
   const videoFiles = files.filter((file) => file.type.startsWith("video/"));
 
@@ -27,37 +35,106 @@ export async function prepareVideoSources(
           size: file.size,
           thumbnailUrl,
           videoUrl: objectUrl,
+          storageProvider: "local" as const,
+          storageStatus: "uploading" as const,
+          storageError: null,
           scenes: [],
           sceneStatus: "detecting" as const,
           sceneError: null,
         } satisfies UploadedVideoSource;
         const key = buildPreparedSourceKey(source);
 
-        if (onSceneUpdate) {
-          void detectScenesWithSplitter(file, index)
-            .then((scenes) => {
-              onSceneUpdate({
+        if (onStorageUpdate || onSceneUpdate) {
+          void uploadVideoFileToRustFs(file)
+            .then((storage) => {
+              const storedSource = {
+                ...source,
+                ...storage,
+              };
+              onStorageUpdate?.({
+                key,
+                source: storedSource,
+              });
+
+              if (onSceneUpdate && storage.storageBucket && storage.storagePath) {
+                return detectScenesFromStoredVideo({
+                  bucket: storage.storageBucket,
+                  objectKey: storage.storagePath,
+                }, index)
+                  .then(async (scenes) => {
+                    const readySource = {
+                      ...storedSource,
+                      scenes,
+                      sceneStatus: "ready" as const,
+                      sceneError: null,
+                      captionStatus: "captioning" as const,
+                      captionError: null,
+                    };
+                    onSceneUpdate({
+                      key,
+                      source: readySource,
+                    });
+
+                    const captionedSource = await captionAndPersistSourceScenes(readySource, key, onSceneUpdate);
+                    onSceneUpdate({ key, source: captionedSource });
+                  })
+                  .catch((error) => {
+                    console.warn("[RustFS] Stored-object scene job unavailable; keeping Splitter/browser scene result", error);
+                  });
+              }
+              return undefined;
+            })
+            .catch((error) => {
+              const storageError = error instanceof Error ? error.message : "RustFS upload failed";
+              console.warn("[RustFS] Durable media upload unavailable; keeping local browser media", error);
+              onStorageUpdate?.({
                 key,
                 source: {
                   ...source,
-                  scenes,
-                  sceneStatus: "ready" as const,
-                  sceneError: null,
+                  storageStatus: "failed" as const,
+                  storageError,
                 },
               });
+            });
+        }
+
+        if (onSceneUpdate) {
+          void detectScenesWithSplitter(file, index)
+            .then(async (scenes) => {
+              const readySource = {
+                ...source,
+                scenes,
+                sceneStatus: "ready" as const,
+                sceneError: null,
+                captionStatus: "captioning" as const,
+                captionError: null,
+              };
+              onSceneUpdate({
+                key,
+                source: readySource,
+              });
+              const captionedSource = await captionAndPersistSourceScenes(readySource, key, onSceneUpdate);
+              onSceneUpdate({ key, source: captionedSource });
             })
             .catch((error) => {
               const sceneError = error instanceof Error ? error.message : "Scene detection failed";
+              const fallbackScenes = buildFallbackSceneSegments(source);
+              const fallbackSource = {
+                ...source,
+                scenes: fallbackScenes,
+                sceneStatus: "fallback" as const,
+                sceneError,
+                captionStatus: "captioning" as const,
+                captionError: null,
+              };
               console.warn("[Splitter] Scene detection unavailable; using browser fallback scenes", error);
               onSceneUpdate({
                 key,
-                source: {
-                  ...source,
-                  scenes: buildFallbackSceneSegments(source),
-                  sceneStatus: "fallback" as const,
-                  sceneError,
-                },
+                source: fallbackSource,
               });
+              void captionAndPersistSourceScenes(fallbackSource, key, onSceneUpdate)
+                .then((captionedSource) => onSceneUpdate({ key, source: captionedSource }))
+                .catch(() => undefined);
             });
         }
 
@@ -74,6 +151,66 @@ export function revokePreparedVideoSources(sources: UploadedVideoSource[]) {
   for (const source of sources) {
     URL.revokeObjectURL(source.videoUrl);
   }
+}
+
+async function captionAndPersistSourceScenes(
+  source: UploadedVideoSource,
+  key: string,
+  onSceneUpdate?: (update: VideoSceneUpdate) => void,
+): Promise<UploadedVideoSource> {
+  const scenes = source.scenes ?? [];
+  if (!scenes.length) {
+    return {
+      ...source,
+      captionStatus: "ready",
+      captionError: null,
+    };
+  }
+
+  try {
+    const captionedScenes = await captionDetectedScenes(source, scenes, (_progress, partialScenes) => {
+      onSceneUpdate?.({
+        key,
+        source: {
+          ...source,
+          scenes: partialScenes,
+          captionStatus: "captioning",
+          captionError: null,
+        },
+      });
+    });
+    let captionedSource: UploadedVideoSource = {
+      ...source,
+      scenes: captionedScenes,
+      captionStatus: "ready",
+      captionError: null,
+    };
+
+    if (source.storageProvider === "rustfs" && source.storageBucket && source.storagePath) {
+      try {
+        captionedSource = {
+          ...captionedSource,
+          ...(await uploadSceneCaptionManifestToRustFs(captionedSource)),
+        };
+      } catch (error) {
+        console.warn("[RustFS] Scene caption manifest upload failed; keeping local captions", error);
+      }
+    }
+
+    return captionedSource;
+  } catch (error) {
+    return {
+      ...source,
+      scenes: markCaptionError(scenes, error),
+      captionStatus: "failed",
+      captionError: error instanceof Error ? error.message : "Scene captioning failed",
+    };
+  }
+}
+
+function markCaptionError(scenes: DetectedSceneSegment[], error: unknown) {
+  const message = error instanceof Error ? error.message : "Scene captioning failed";
+  return scenes.map((scene) => scene.caption ? scene : { ...scene, captionError: message });
 }
 
 function buildPreparedSourceKey(source: Pick<UploadedVideoSource, "name" | "size" | "duration">) {
@@ -137,4 +274,39 @@ function renderVideoFrame(video: HTMLVideoElement) {
 
   context.drawImage(video, 0, 0, width, height);
   return canvas.toDataURL("image/jpeg", 0.84);
+}
+
+
+export function mergeUploadedVideoSourceUpdate(
+  currentSource: UploadedVideoSource,
+  update: UploadedVideoSource,
+): UploadedVideoSource {
+  return {
+    ...update,
+    videoUrl: currentSource.videoUrl,
+    thumbnailUrl: currentSource.thumbnailUrl,
+    scenes: update.scenes?.length ? update.scenes : currentSource.scenes,
+    sceneStatus: update.sceneStatus ?? currentSource.sceneStatus,
+    sceneError: update.sceneError ?? currentSource.sceneError,
+    captionStatus: update.captionStatus ?? currentSource.captionStatus,
+    captionError: update.captionError ?? currentSource.captionError,
+    captionManifestPath: update.captionManifestPath ?? currentSource.captionManifestPath,
+    captionManifestUrl: update.captionManifestUrl ?? currentSource.captionManifestUrl,
+    storageProvider: mergeStorageProvider(currentSource, update),
+    storageBucket: update.storageBucket ?? currentSource.storageBucket,
+    storagePath: update.storagePath ?? currentSource.storagePath,
+    storageUrl: update.storageUrl ?? currentSource.storageUrl,
+    storageStatus: mergeStorageStatus(currentSource, update),
+    storageError: update.storageError ?? currentSource.storageError,
+  };
+}
+
+function mergeStorageProvider(currentSource: UploadedVideoSource, update: UploadedVideoSource) {
+  if (update.storageProvider && update.storageProvider !== "local") return update.storageProvider;
+  return currentSource.storageProvider ?? update.storageProvider;
+}
+
+function mergeStorageStatus(currentSource: UploadedVideoSource, update: UploadedVideoSource) {
+  if (update.storageStatus && update.storageStatus !== "uploading") return update.storageStatus;
+  return currentSource.storageStatus ?? update.storageStatus;
 }

@@ -15,6 +15,12 @@ const source: UploadedVideoSource = {
   size: 1234,
   thumbnailUrl: "data:image/jpeg;base64,thumb",
   videoUrl: "blob:runtime-only",
+  storageProvider: "rustfs",
+  storageBucket: "stack-structure",
+  storagePath: "media-uploads/2026/06_18/clip.mp4",
+  storageUrl: "https://s3.v1su4.dev/stack-structure/media-uploads/2026/06_18/clip.mp4",
+  storageStatus: "uploaded",
+  storageError: null,
 };
 
 const storyState = {
@@ -77,6 +83,9 @@ describe("projectPersistence", () => {
     expect(JSON.stringify(draft)).not.toContain("blob:project-audio");
     expect(JSON.stringify(draft)).not.toContain("data:image/jpeg");
     expect(draft.videoSources[0].thumbnailUrl).toBe("");
+    expect(draft.videoSources[0].storageProvider).toBe("rustfs");
+    expect(draft.videoSources[0].storageBucket).toBe("stack-structure");
+    expect(draft.videoSources[0].storageUrl).toBe(source.storageUrl);
     expect(draft.musicVideoProject?.song?.audioUrl).toBe("");
     expect(draft.musicVideoProject?.videoMoments[0].thumbnailUrl).toBe("");
     expect(draft.videoSources[0].mediaKey).toBe(buildVideoMediaKey(source));
@@ -100,5 +109,21 @@ describe("projectPersistence", () => {
     expect(hydrated.videoSources).toHaveLength(1);
     expect(hydrated.videoSources[0].videoUrl).toBe("blob:restored-video");
     expect(hydrated.storyState.storyGenerated).toBe(true);
+  });
+
+  test("hydrates a persisted draft from durable RustFS URL when local media cache is absent", () => {
+    const draft = createPersistableStudioProjectDraft({
+      analysis: null,
+      videoSources: [source],
+      storyState,
+      musicVideoProject: null,
+      savedAt: "2026-06-18T00:00:00.000Z",
+    });
+
+    const hydrated = hydrateStudioProjectDraft({ draft });
+
+    expect(hydrated.videoSources).toHaveLength(1);
+    expect(hydrated.videoSources[0].videoUrl).toBe(source.storageUrl);
+    expect(hydrated.videoSources[0].storageProvider).toBe("rustfs");
   });
 });

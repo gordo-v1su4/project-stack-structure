@@ -54,6 +54,7 @@ export function SourceVideoLibrary({
         {sources.map((source, index) => {
           const isActiveSource = activeSourceIds.includes(source.id);
           const sceneCount = source.scenes?.length ?? 0;
+          const captionCount = countSceneCaptions(source);
           const statusLabel = source.sceneStatus === "ready"
             ? `PYSCENEDETECT · ${sceneCount} SCENE${sceneCount === 1 ? "" : "S"}`
             : source.sceneStatus === "fallback"
@@ -101,7 +102,19 @@ export function SourceVideoLibrary({
               <div className={`mt-1 text-[8px] font-mono uppercase tracking-[0.12em] ${source.sceneStatus === "fallback" ? "text-[#b96c43]" : "text-[#e05c00]"}`}>
                 {statusLabel}
               </div>
+              <div className={`mt-1 text-[8px] font-mono uppercase tracking-[0.12em] ${source.captionStatus === "failed" ? "text-[#7b5b48]" : "text-[#6f6f6f]"}`}>
+                {source.captionStatus === "captioning"
+                  ? `CAPTIONING · ${captionCount}/${Math.max(sceneCount, 1)}`
+                  : source.captionStatus === "ready"
+                    ? `CAPTIONED · ${captionCount}/${sceneCount}`
+                    : source.captionStatus === "failed"
+                      ? "CAPTIONS FAILED"
+                      : source.captionManifestUrl
+                        ? "CAPTIONS STORED"
+                        : "CAPTIONS PENDING"}
+              </div>
               {source.sceneError ? <div className="mt-1 truncate text-[8px] text-[#7b5b48]" title={source.sceneError}>{source.sceneError}</div> : null}
+              {source.captionError ? <div className="mt-1 truncate text-[8px] text-[#7b5b48]" title={source.captionError}>{source.captionError}</div> : null}
             </div>
           </div>
           );
@@ -109,4 +122,8 @@ export function SourceVideoLibrary({
       </div>
     </div>
   );
+}
+
+function countSceneCaptions(source: UploadedVideoSource) {
+  return source.scenes?.filter((scene) => Boolean(scene.caption)).length ?? 0;
 }

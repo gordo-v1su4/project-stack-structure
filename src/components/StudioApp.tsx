@@ -6,7 +6,7 @@ import { buildLocalAudioAnalysis, extractWaveformData, fetchEssentiaAnalysis, pa
 import { buildArrangementSegments } from "./studio/arrangementBuilder";
 import type { ArrangementSegment } from "./studio/arrangementBuilder";
 import { NAV } from "./studio/constants";
-import { prepareVideoSources, revokePreparedVideoSources } from "./studio/mediaUpload";
+import { mergeUploadedVideoSourceUpdate, prepareVideoSources, revokePreparedVideoSources } from "./studio/mediaUpload";
 import { buildEditPlanPreviewSegments, type MusicVideoProject } from "./studio/musicVideoProject";
 import { buildVideoMediaKey, loadStudioProjectDraft, saveStudioProjectDraft } from "./studio/projectPersistence";
 import { BrowserPreviewPlayer, createPreviewPlayerState, type PreviewPlayerState, type PreviewSegment } from "./studio/previewPlayer";
@@ -327,7 +327,7 @@ export default function StudioApp() {
     );
 
     try {
-      const prepared = await prepareVideoSources(files, ({ key, source }) => {
+      const mergePreparedSourceUpdate = ({ key, source }: { key: string; source: UploadedVideoSource }) => {
         startTransition(() => {
           setVideoSources((currentSources) => {
             const sourceIndex = currentSources.findIndex((currentSource) => buildVideoSourceKey(currentSource) === key);
@@ -336,11 +336,7 @@ export default function StudioApp() {
             const nextSources = currentSources.map((currentSource, index) => {
               if (index !== sourceIndex) return currentSource;
               return remapVideoSourceId(
-                {
-                  ...source,
-                  videoUrl: currentSource.videoUrl,
-                  thumbnailUrl: currentSource.thumbnailUrl,
-                },
+                mergeUploadedVideoSourceUpdate(currentSource, source),
                 currentSource.id,
               );
             });
@@ -348,7 +344,9 @@ export default function StudioApp() {
             return nextSources;
           });
         });
-      });
+      };
+
+      const prepared = await prepareVideoSources(files, mergePreparedSourceUpdate, mergePreparedSourceUpdate);
       if (!prepared.length) {
         throw new Error("No readable video files were selected.");
       }
@@ -1261,6 +1259,7 @@ export default function StudioApp() {
     </div>
   );
 }
+
 
 function buildVideoSourceKey(source: Pick<UploadedVideoSource, "name" | "size" | "duration">) {
   return `${source.name}::${source.size}::${source.duration.toFixed(3)}`;

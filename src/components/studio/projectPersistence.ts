@@ -66,6 +66,12 @@ export function createPersistableStudioProjectDraft(params: {
       duration: source.duration,
       size: source.size,
       thumbnailUrl: stripRuntimeUrl(source.thumbnailUrl),
+      storageProvider: source.storageProvider,
+      storageBucket: source.storageBucket,
+      storagePath: source.storagePath,
+      storageUrl: stripRuntimeUrl(source.storageUrl),
+      storageStatus: source.storageStatus,
+      storageError: source.storageError,
       scenes: source.scenes?.map((scene) => ({
         ...scene,
         thumbnailUrl: stripRuntimeUrl(scene.thumbnailUrl),
@@ -74,6 +80,10 @@ export function createPersistableStudioProjectDraft(params: {
       sceneStatus: source.sceneStatus,
       sceneJobId: source.sceneJobId,
       sceneError: source.sceneError,
+      captionStatus: source.captionStatus,
+      captionError: source.captionError,
+      captionManifestPath: source.captionManifestPath,
+      captionManifestUrl: stripRuntimeUrl(source.captionManifestUrl),
       mediaKey: buildVideoMediaKey(source),
     })),
     storyState: params.storyState,
@@ -103,7 +113,7 @@ export function hydrateStudioProjectDraft(params: {
     videoSources: params.draft.videoSources
       .map((source) => ({
         ...source,
-        videoUrl: videoUrlsByMediaKey[source.mediaKey] ?? "",
+        videoUrl: videoUrlsByMediaKey[source.mediaKey] ?? source.storageUrl ?? "",
       }))
       .filter((source) => source.videoUrl),
     storyState: params.draft.storyState,

@@ -74,6 +74,19 @@ export interface MotionDescriptor {
 }
 
 export type SceneSplitStatus = "idle" | "uploading" | "detecting" | "ready" | "failed" | "fallback";
+export type MediaStorageStatus = "local" | "uploading" | "uploaded" | "failed";
+export type SceneCaptionStatus = "idle" | "captioning" | "ready" | "failed";
+
+export interface SceneCaptionData {
+  caption?: string;
+  shotType?: string;
+  subjects?: string[];
+  action?: string;
+  setting?: string;
+  lighting?: string;
+  timeOfDay?: string;
+  weather?: string;
+}
 
 export interface DetectedSceneSegment {
   id: number;
@@ -87,6 +100,10 @@ export interface DetectedSceneSegment {
   assetPath?: string;
   detector: "pyscenedetect-adaptive" | "browser-fallback";
   confidence?: number | null;
+  caption?: string;
+  captionMeta?: SceneCaptionData;
+  captionSource?: "lfm-webgpu" | "manual" | "imported";
+  captionError?: string | null;
 }
 
 export interface UploadedVideoSource {
@@ -96,10 +113,20 @@ export interface UploadedVideoSource {
   size: number;
   thumbnailUrl: string;
   videoUrl: string;
+  storageProvider?: "local" | "rustfs";
+  storageBucket?: string;
+  storagePath?: string;
+  storageUrl?: string;
+  storageStatus?: MediaStorageStatus;
+  storageError?: string | null;
   scenes?: DetectedSceneSegment[];
   sceneStatus?: SceneSplitStatus;
   sceneJobId?: string;
   sceneError?: string | null;
+  captionStatus?: SceneCaptionStatus;
+  captionError?: string | null;
+  captionManifestPath?: string;
+  captionManifestUrl?: string;
 }
 
 export interface SegmentPreview {
