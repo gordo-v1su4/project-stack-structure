@@ -116,6 +116,7 @@ For more detail, see `tests/README.md`.
 
 ## Canonical planning and architecture docs
 
+- [Creative production brief](docs/product/creative-production-brief.md)
 - [Roadmap](docs/roadmap.md)
 - [Media pipeline architecture](docs/architecture/media-pipeline.md)
 - [Spec workflow protocol](docs/protocols/spec-workflow.md)
@@ -132,10 +133,12 @@ For more detail, see `tests/README.md`.
 
 ## Near-term roadmap
 
-1. Lock canonical ingest contracts
-2. Define deterministic section preview behavior
-3. Build ranking and fit rules around music-first joins
-4. Measure whether web-first remains viable before any desktop pivot
+1. Lock the confirmed donor map and source-of-truth docs
+2. Lock canonical song / lyric / video-moment contracts
+3. Define deterministic section preview behavior
+4. Build ranking and fit rules around music-first joins
+5. Add the low-latency engine path without making React the playback clock
+6. Measure whether web-first remains viable before any desktop pivot
 
 ## Notes
 

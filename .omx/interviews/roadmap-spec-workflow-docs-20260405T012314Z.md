@@ -1,4 +1,7 @@
-# Deep Interview Transcript Summary — roadmap-spec-workflow-docs
+# ARCHIVED Deep Interview Transcript Summary — roadmap-spec-workflow-docs
+
+> Archived historical interview summary from 2026-04-05. Do not treat this as current source of truth. Current planning source is `.omx/specs/deep-interview-roadmap-spec-workflow-docs.md` and `.omx/plans/prd-roadmap-spec-workflow-docs.md`.
+
 
 - Date: 2026-04-05 UTC
 - Profile: standard

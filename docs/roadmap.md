@@ -1,189 +1,203 @@
 # Product Roadmap
 
 ## Purpose
-This roadmap turns the approved PRD into a phased delivery path for the smart auto music-video editor.
+This roadmap turns the current PRD into a phased delivery path for `project-stack-structure`, the active smart auto music-video editor repo.
 
-The product goal is to:
-- analyze uploaded audio,
-- cut and rearrange user-supplied video to music events,
-- keep **musical alignment** as the top priority,
-- use **motion continuity** as the default visual continuity mode,
-- prefer **accurate, prepared section preview** over laggy pseudo-live playback.
+Canonical planning source:
+
+- `docs/product/creative-production-brief.md`
+- `.omx/specs/deep-interview-roadmap-spec-workflow-docs.md`
+- `.omx/plans/prd-roadmap-spec-workflow-docs.md`
+- `.omx/plans/test-spec-roadmap-spec-workflow-docs.md`
+- `.omx/plans/prd-implementation-buildout.md`
+
+## Current Product Goal
+Build a web-first smart auto music-video editor where the user supplies a song and video clips, the app analyzes musical structure, probes and segments video, ranks candidate segments by musical alignment first and motion continuity second, prepares section previews, and only plays ready preview assets.
+
+The product is not a full NLE. It is a music-first auto-editing studio with explicit recompute/readiness states.
+
+## Non-Negotiable Rules
+
+1. **Musical alignment first** — beat/onset/section fit outranks visual heuristics.
+2. **Motion continuity second** — motion continuity is the default visual continuity mode.
+3. **Prepared preview over fake live mutation** — show stale/recomputing/ready states and swap assets only when ready.
+4. **Segment-level analysis** — rank post-cut segments, not just whole clips.
+5. **Accuracy over shallow quick scan** — typed descriptors beat loose tags.
+6. **Web-first until evidence says otherwise** — Tauri/desktop is contingent on benchmark evidence.
+7. **Reference repos are references** — donor repos inform specific capabilities, but `project-stack-structure` remains the active product repo.
+
+## Confirmed Donor Map
+
+These donors are confirmed for this plan:
+
+- `review-room` — reviewer/media-review workflow, polished client-facing review feel, media cards, hover scrub, ratings, shortlist/selects, comments, approvals, and metadata-driven smart views.
+- `freecut` — browser media/runtime/editor primitives, timeline concepts, preview handoff, media library, WebCodecs/WebGPU/export ideas, scene/optical-flow references.
+- `MasterSelects` — successful preview/playback/render-target/RAM-preview patterns, WebGPU engine structure, source monitor, playback health/debug monitoring, and native-helper contingency patterns.
+- `svelte-video-shaders` — WebCodecs frame buffer, audio-master-clock playback, section clip buckets, section waveform overlays, trigger system, energy speed remap, shader/effect catalogue, and the Deepgram/SRT/Kimi/auto-edit path from the M3 copy.
+- `stutter-blaster` — rhythm/runtime reference: Essentia client/cache, audio master clock, quantization, musical moments, scheduler/A-V sync, WebCodecs/WebGPU ideas.
+- `video-timeshaper` — audio-reactive preview/remap reference: envelopes, feature extraction, time engine, edit engine, trigger ordering, curve editor.
+- `auto-video-scrambler` — backend FFmpeg behavior, beat split/join/shuffle/speed-ramp patterns, motion-vector extraction and motion-sequence sorting.
+- `fftron-sync` — onset switch scheduling, rapid cut timing, time-shaper algorithms, music-first switching.
+- `audio-ui-curves` — ramp/envelope controls and speed-ramp UX.
+- `storyception` — story/treatment layer, story arc over music sections, motif planning.
+
 
 ## Current Brownfield Baseline
-Current evidence from the codebase:
-- `package.json` currently exposes `dev`, `build`, `start`, and `lint`.
-- `src/components/StudioApp.tsx` already provides the main studio UI with split/join/shuffle/ramp flows.
-- `src/components/studio/audioAnalysis.ts` already uploads audio, derives waveform data, and normalizes beats/onsets/sections.
-- `src/components/studio/mediaUpload.ts` currently extracts basic metadata and thumbnails, but does not yet establish a deterministic preview pipeline.
-- `src/app/api/essentia/full/route.ts` already proxies hosted audio analysis.
 
-## Product Priorities
-1. **Musicality first**
-   - Beat/onset/section alignment outranks every secondary heuristic.
-2. **Motion continuity second**
-   - Motion continuity is the default visual rejoin mode.
-3. **Accuracy over quick scan**
-   - Rich segment descriptors are preferred over shallow clip tagging.
-4. **Prepared playback over fake real time**
-   - The app should show explicit recompute/progress states whenever preview assets are not ready.
+Current repo anchors:
 
-## What the first serious version must prove
-- Audio analysis is reliable and visually useful.
-- Music-driven cut events can define candidate segment boundaries.
-- Post-cut video segments can be analyzed and reordered.
-- Preview playback can stay musically correct after section recompute.
-- Motion continuity can produce better joins than naive/random ordering.
+- `src/components/StudioApp.tsx` — main studio UI/control shell.
+- `src/components/studio/audioAnalysis.ts` — hosted audio analysis and waveform normalization.
+- `src/components/studio/mediaUpload.ts` — browser-side video metadata and thumbnail prep.
+- `src/components/studio/previewGeneration.ts` — preview/concat generation integration.
+- `src/components/studio/ffglitchApi.ts` — FFglitch integration.
+- `src/app/api/essentia/full/route.ts` — hosted audio-analysis proxy.
+- `src/app/api/ffglitch/route.ts` — FFglitch proxy/capability route.
 
-## What is explicitly out of scope for this phase
-- Final export as a must-have milestone
-- Auth, billing, collaboration
-- Mobile app
-- Full professional NLE timeline editing
-- Model training / fine-tuning
+Current verification scripts:
 
-## Phase 0 — Documentation and control-plane foundation
+- `bun run lint`
+- `bun run typecheck`
+- `bun run test`
+- `bun run check`
+- `bun run build`
+- `bun run probe:media`
+- `bun run preview:section`
+- `bun run bench:latency`
+- `bun run bench:compare -- <local-json> <remote-json>`
+
+## Phase 0 — Planning Source Cleanup
+
 ### Goal
-Make future work execution-safe before feature implementation accelerates.
+Make `.omx` and `docs/` agree on the active product goal so agents do not follow stale April planning or reference-repo assumptions.
 
 ### Deliverables
-- Approved deep-interview artifact
-- PRD and test spec in `.omx/plans/`
-- Canonical docs under `docs/`
-- Shared terminology for cut events, segments, recompute states, continuity modes, and fit fallback behavior
+- Current source spec in `.omx/specs/`.
+- Current PRD in `.omx/plans/prd-roadmap-spec-workflow-docs.md`.
+- Current test spec in `.omx/plans/test-spec-roadmap-spec-workflow-docs.md`.
+- Current implementation buildout in `.omx/plans/prd-implementation-buildout.md`.
+- Current public roadmap in `docs/roadmap.md`.
 
 ### Exit criteria
-- All planning artifacts exist.
-- Acceptance criteria are explicit and testable.
-- Execution can proceed without reopening scope ambiguity.
+- Active repo is clearly `project-stack-structure`.
+- `svelte-video-shaders` is mentioned only as a reference repo, if at all.
+- Docs no longer imply missing scripts that now exist.
 
-## Phase 1 — Canonical ingest contracts
+## Phase 1 — Contract Audit
+
 ### Goal
-Stabilize source-of-truth data flowing into the editor.
+Verify the current code contracts before new media-pipeline work accelerates.
 
 ### Work
-- Lock audio analysis contract from `/api/essentia/full` through normalized UI state.
-- Define canonical video probe output for each uploaded clip.
-- Define a canonical segment manifest keyed to music-driven cuts.
+- Audit audio analysis normalization from `/api/essentia/full` through UI state.
+- Audit clip probe/thumbnail flow and clarify Clip Manifest fields.
+- Audit existing Segment Manifest and preview scripts.
+- Update `docs/architecture/media-pipeline.md` with any contract gaps.
 
 ### Exit criteria
-- Audio analysis fields are stable and documented.
-- Clip probe schema is documented.
-- Segment manifest inputs and outputs are explicit.
+- Audio Analysis fields are documented.
+- Clip Manifest fields are documented.
+- Segment Manifest assumptions are documented.
+- Next implementation stories have exact file/module touchpoints.
 
-## Phase 2 — Deterministic section preview
+### Verification
+- `bun run check`
+- `bun run probe:media`
+
+## Phase 2 — Recompute State Machine
+
 ### Goal
-Make section recompute trustworthy.
+Make section preview lifecycle explicit and race-safe.
 
 ### Work
-- Introduce a section recompute lifecycle.
-- Define stale-job cancellation behavior.
-- Swap preview assets only when the recomputed result is ready.
-- Surface recompute/progress in the UI.
+- Define states: ready, stale, recomputing, cancelled, failed.
+- Add versioning/job identity to prevent stale publish.
+- Surface recompute/readiness state in the Studio UI.
+- Ensure playback uses last ready asset until new asset is ready.
 
 ### Exit criteria
-- No stale work silently competes with active playback.
-- Preview playback consumes stable prepared assets only.
-- Section changes preserve musical correctness.
+- Stale jobs cannot replace newer prepared assets.
+- UI exposes recomputing/ready/failed states.
+- Playback does not consume partial preview output.
 
-## Phase 2.5 — Low-latency music playback engine
+### Verification
+- `bun run check`
+- targeted recompute state tests
+- browser/manual UI verification for readiness states
+
+## Phase 3 — Ranking and Fit Policy
+
 ### Goal
-Recover the FFTRON/Svelte-style snappiness needed for rapid quick cuts while keeping this React/Next project as the clean main app.
+Prove music-first ranking and motion-continuity default behavior in tests and code.
 
 ### Work
-- Keep React as the studio shell, not the frame-accurate playback clock.
-- Add a framework-independent imperative media engine for audio-master-clock playback.
-- Precompute a music cut schedule from beats, onsets, section boundaries, optional MIDI markers, density, min spacing, and deterministic skip rules.
-- Port/adapt the useful `svelte-video-shaders` WebCodecs frame-buffer approach for instant random frame access.
-- Render rapid preview frames through canvas/WebGL/WebGPU instead of swapping `video.src` for every cut.
-- Emit throttled UI snapshots for React; do not push every frame/playhead change through React state.
+- Define candidate shape with musical fit and Motion Descriptor fields.
+- Add comparator tests proving musical alignment wins.
+- Add default motion-continuity ranking mode after musical fit.
+- Add Fit Policy decisions: trim, speed ramp, reject, overlap eligibility.
 
 ### Exit criteria
-- Dense beat/onset triggers are deterministic and unit-tested.
-- Seeking resets the trigger cursor correctly.
-- Playback drains missed triggers between previous audio time and current audio time.
-- Rapid cuts do not depend on `HTMLVideoElement` source swapping.
-- React commit frequency is decoupled from frame render frequency.
-- Late-trigger / dropped-frame metrics are visible before any desktop/Tauri pivot decision.
+- Tests fail if motion continuity outranks musical alignment.
+- Fit policy returns explicit decisions.
+- Random/color modes cannot silently become the default over motion continuity.
 
-## Phase 3 — Ranking and fit engine
+### Verification
+- `bun run test`
+- `bun run check`
+
+## Phase 4 — Prepared Section Preview
+
 ### Goal
-Choose and fit segments intelligently.
+Generate and consume ready section preview assets through the app pipeline.
 
 ### Work
-- Make **motion continuity** the default rejoin mode.
-- Add alternate modes later such as **color continuity** and **random**.
-- Use rich motion descriptors:
-  - global motion field
-  - residual motion
-  - continuity score
-- Define fit fallback behavior:
-  - slight trim
-  - speed ramp in/out
-  - reject placement
-  - layered overlap when supported
+- Inspect and harden `src/components/studio/previewGeneration.ts`.
+- Ensure `scripts/preview-section.ts` produces/verifies prepared preview assets with fixture media.
+- Ensure UI consumes only ready output.
+- Add visible failure/readiness states where missing.
 
 ### Exit criteria
-- Ranking precedence is explicit and testable.
-- Segment fit behavior is predictable.
-- Motion descriptors are richer than coarse direction tags.
+- Section preview path is deterministic for the same inputs/settings.
+- Last-ready vs current-settings-stale is visible.
+- Preview generation failure is recoverable.
 
-## Phase 4 — Performance checkpoint
+### Verification
+- `bun run preview:section`
+- `bun run check`
+
+## Phase 5 — Benchmark and Platform Decision
+
 ### Goal
-Decide whether web-first remains viable.
+Decide whether web-first remains viable using evidence.
 
 ### Work
-- Measure local macOS behavior.
-- Optionally benchmark on remote Tailscale-accessible hardware.
-- Use heavier hardware, including a Windows machine with RTX 5090 or dockerized GPU pass-through, only when accuracy testing requires it.
-- Decide if the browser path preserves musical correctness under load.
+- Run local latency benchmarks.
+- Compare against prior/remote benchmark data where available.
+- Update `docs/benchmarks/` with current findings.
+- Keep Tauri/desktop as a contingency unless evidence crosses threshold.
 
 ### Exit criteria
-- A latency benchmark exists.
-- The team can say whether web-first remains acceptable.
-- If not, the desktop/Tauri pivot is justified by evidence instead of assumption.
+- Latest benchmark evidence exists.
+- Roadmap can justify staying web-first or opening a Tauri branch.
 
-## Phase 5 — Later capabilities
-- Final export
-- richer continuity modes
-- expanded editing controls
-- packaging/distribution hardening
+### Verification
+- `bun run bench:latency`
+- `bun run bench:compare -- <local-json> <remote-json>` when applicable
 
-## Architecture Decision Checkpoint
-### Default baseline
-Stay **web-first with FFmpeg/FFprobe-backed section precompute**.
+## Later Capabilities
 
-### Pivot trigger
-Escalate to **Tauri + sidecar media tooling** only if measured browser scheduling, decode behavior, WebCodecs/WebGPU rendering, or recompute orchestration cannot preserve musically correct preview playback.
+- Whole-song rough cut after section preview is credible.
+- Final export pipeline.
+- Additional continuity modes.
+- Richer controls and review UI.
+- Desktop/Tauri package only if evidence justifies it.
 
-### React/Svelte latency decision
-Keep the main app in React/Next for now, but enforce a strict boundary: React is the control surface and project UI, while a framework-independent imperative media engine owns audio timing, rapid cut scheduling, decoded frame buffers, and rendering. This preserves the cleaner `project-stack-structure` UI while copying the low-latency lessons from FFTRON and `svelte-video-shaders`.
-
-## Current vs Planned Scripts
-### Current scripts
-| Script | Meaning |
-| --- | --- |
-| `dev` | local app development |
-| `build` | production build verification |
-| `start` | run the built app |
-| `lint` | linting |
-
-### Recommended future scripts
-| Script | Purpose |
-| --- | --- |
-| `typecheck` | TypeScript verification lane |
-| `check` | aggregate quality gate |
-| `probe:media` | inspect source media via ffprobe |
-| `analyze:audio` | replay/canonicalize audio-analysis flow |
-| `preview:section` | build deterministic section preview |
-| `bench:latency` | measure recompute + ready-to-play timing |
-| `doctor:media` | detect missing media capabilities |
-| `docs:spec:new` | scaffold spec artifacts |
-| `docs:spec:check` | validate required spec sections |
-
-## Success definition for roadmap execution
+## Success Definition
 The roadmap is succeeding when:
-- the planning artifacts stay synchronized with implementation reality,
-- musical alignment remains the non-negotiable top priority,
+
+- planning artifacts stay synchronized with implementation reality,
+- musical alignment remains the top priority,
 - motion continuity has a credible default path,
-- the platform decision stays evidence-driven.
+- section preview readiness is explicit and trustworthy,
+- the web-vs-desktop decision stays evidence-driven,
+- agents can pick up a slice and verify it without asking what repo or goal applies.

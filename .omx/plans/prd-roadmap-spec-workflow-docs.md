@@ -1,281 +1,290 @@
-# PRD — Auto Music Video Editor Foundation
+# PRD — Smart Auto Music Video Editor
 
 ## Metadata
-- Date: 2026-04-05 UTC
-- Planning mode: ralplan / consensus / short
+- Updated: 2026-06-18 UTC
+- Status: current draft for user review
+- Active repo: `project-stack-structure`
 - Source spec: `.omx/specs/deep-interview-roadmap-spec-workflow-docs.md`
-- Source transcript: `.omx/interviews/roadmap-spec-workflow-docs-20260405T012314Z.md`
-- Context snapshot: `.omx/context/roadmap-spec-workflow-docs-20260405T010154Z.md`
-- Planning scope: documentation + roadmap + protocols only
 
-## Requirements Summary
-This app should become a smart auto music-video editor that:
-- analyzes uploaded audio,
-- cuts/reorganizes uploaded video to music events,
-- prioritizes musical alignment above all other join heuristics,
-- defaults to motion continuity as the primary visual rejoin mode,
-- uses richer motion analysis (`global motion field + residual motion + continuity score`) rather than coarse direction tags,
-- favors explicit section recompute states over laggy pseudo-live playback.
+## 0. Document Purpose
+This PRD defines the current product requirements for `project-stack-structure`. It replaces stale April planning assumptions with the current goal: a web-first, music-first auto music-video editor with deterministic prepared section previews, music-first ranking, and agent-ready implementation slices.
 
-The current brownfield evidence is:
-- `package.json` only exposes `dev`, `build`, `start`, and `lint`.
-- `src/components/StudioApp.tsx` already models split/join/shuffle/ramp controls and preview-oriented studio UX.
-- `src/components/studio/audioAnalysis.ts` already uploads audio, decodes waveform data, and normalizes beats/onsets/sections.
-- `src/components/studio/mediaUpload.ts` currently prepares video metadata and thumbnails only.
-- `src/app/api/essentia/full/route.ts` already proxies hosted analysis.
+This PRD is the source of truth for product intent. `docs/roadmap.md`, `docs/architecture/media-pipeline.md`, and `.omx/plans/prd-implementation-buildout.md` should stay aligned with it.
 
-## Acceptance Criteria
-1. Roadmap documents a phase-based path from current prototype to deterministic section preview system.
-2. Spec workflow documents a repeatable path: deep interview -> PRD -> test spec -> implementation -> verification.
-3. Documentation defines segment analysis at the **post-cut segment** level, not whole-clip tags or fixed-duration chunking.
-4. Documentation defines ranking precedence: **musical alignment first**, **motion continuity default visual mode**, optional secondary modes like color/random later.
-5. Documentation defines fit fallbacks: slight trim, speed ramp in/out, reject placement, layered overlap when supported.
-6. Documentation defines a media-processing protocol that avoids overlapping playback and recompute work.
-7. Documentation separates **current scripts** from **recommended future scripts**.
-8. Documentation records the web-first baseline and the explicit desktop/Tauri pivot condition if browser latency cannot preserve musical correctness.
-9. Documentation standardizes future model references on GPT-5.4 wording and removes stale older-model wording from future project docs.
+## 1. Vision
+The product is a smart auto music-video editor. A creator supplies a song and video clips; the app analyzes musical structure, probes and segments video, ranks candidate joins, prepares section previews, and lets the user iterate while preserving musical alignment.
 
-## RALPLAN-DR Summary
+The core promise is not “live edit everything instantly.” The core promise is trustworthy music-synced preview: when a section is ready, playback is correct. If a setting change requires recompute, the UI should say so and swap in the result only when ready.
 
-### Principles
-1. Musical alignment outranks every secondary heuristic.
-2. Prepared, trustworthy playback is better than fake real-time lag.
-3. Segment-level analysis is the atomic unit for rearrangement.
-4. Accuracy is favored over shallow quick-scan analysis.
-5. Architecture should stay reversible until performance evidence forces a pivot.
+The app should remain web-first while the workflow is proven. A desktop/Tauri sidecar path is a contingency, not the default, and should be triggered only by benchmark evidence that browser scheduling/decode/media constraints prevent musically correct preview.
 
-### Decision Drivers
-1. Preserve musicality at joins and section transitions.
-2. Achieve reliable segment recompute + preview without drift.
-3. Choose a media backbone that is correct first and optimizable second.
+## 2. Target User
 
-### Viable Options
-#### Option A — Web-first with FFmpeg/FFprobe backbone and section precompute
-**Pros**
-- Best match for current brownfield app shape.
-- Strongest correctness path for media probing, segmentation, and deterministic preview asset prep.
-- Keeps browser UI while avoiding overpromising live mutation.
-- Leaves desktop pivot open.
+### 2.1 Jobs To Be Done
+- As a creator, I want to upload a song and clips and get a musically aligned visual edit without manually cutting every beat.
+- As a creator, I want the system to preserve motion flow where possible so cuts feel intentional rather than random.
+- As a creator, I want explicit recompute/readiness states so I know whether I am watching the current prepared result.
+- As a developer/agent, I want stable requirements and acceptance criteria so implementation does not reopen product direction.
 
-**Cons**
-- Requires non-trivial media orchestration beyond current browser-only thumbnail prep.
-- Browser UX must tolerate explicit recompute states.
+### 2.2 Non-Users for MVP
+- Professional editors needing a complete NLE timeline.
+- Teams needing auth, billing, collaboration, approval workflows, or cloud storage.
+- Users needing mobile-first editing.
+- Users needing guaranteed desktop-native packaging before web viability is measured.
 
-#### Option B — Browser-native first with WebCodecs/WebGPU-heavy path
-**Pros**
-- Potentially strong future interactivity.
-- Keeps everything inside the web runtime.
+### 2.3 Key User Journeys
 
-**Cons**
-- Higher implementation risk now.
-- WebCodecs does not demux containers itself.
-- WebGPU support is less universal and is better treated as optimization, not baseline.
-- Higher chance of rebuilding the pipeline twice.
+#### UJ-1: Creator prepares a section preview
+The creator uploads audio and video clips. The app analyzes the audio and probes the clips. The creator chooses a song section or changes a setting. The app marks affected preview work stale/recomputing, creates a prepared section preview, and swaps it into playback only when ready. The result cuts on musical events and favors motion continuity.
 
-#### Option C — Desktop-first pivot now via Tauri + sidecar binaries
-**Pros**
-- Strong hardware control and easier heavy processing path.
-- Natural fit for bundled FFmpeg/FFprobe sidecars.
+#### UJ-2: Creator changes section focus without playback drift
+The creator adjusts section boundaries or a section-specific parameter. The app cancels or supersedes stale work, recomputes the affected section, and keeps active playback tied to the last ready preview asset until the new one is ready.
 
-**Cons**
-- Premature platform pivot before proving the current app’s UX and protocol model.
-- Raises packaging/distribution complexity too early.
+#### UJ-3: Agent implements a media-pipeline slice
+An agent receives one story tied to FR IDs. It edits only the active repo, runs `bun run check` or targeted commands, verifies behavior with fixtures/scripts/browser where needed, and reports actual evidence.
 
-### Favored Option
-Option A.
+## 3. Glossary
+- **Audio Track** — The uploaded song that defines musical timing.
+- **Audio Analysis** — Normalized beats, onsets, sections, waveform, and metadata from the analysis endpoint.
+- **Cut Event** — A beat, onset, section boundary, or other musical moment eligible for segmentation or edit decisions.
+- **Source Clip** — A user-supplied video file before segmentation.
+- **Clip Manifest** — Canonical metadata for a Source Clip: duration, dimensions, fps, codec/container, keyframes, audio presence, thumbnail metadata, support status.
+- **Segment** — A post-cut media unit derived from Source Clips around musical Cut Events.
+- **Segment Manifest** — Canonical data structure describing candidate Segments and their relationship to source media and musical timing.
+- **Motion Descriptor** — Data used to score visual continuity, including global motion field, residual motion, motion magnitude/coherence, and continuity score.
+- **Fit Policy** — Rules for trim, speed ramp, reject, or overlap when a candidate Segment does not naturally fit a target slot.
+- **Section Preview** — A prepared preview asset for a song section.
+- **Recompute State** — Lifecycle for preview work: fresh/ready, stale, recomputing, cancelled, failed.
+- **Prepared Asset** — A preview media artifact that is complete and safe for playback.
+- **Musical Alignment** — The rule that cuts/transitions land on intended musical events.
+- **Motion Continuity** — The default visual mode that prefers joins with coherent motion flow.
 
-### Invalidation Rationale
-- Option B is rejected as the baseline because it optimizes too early for browser-native sophistication before the segment protocol is proven.
-- Option C is rejected as the immediate baseline because the product still needs to prove its workflow and UX assumptions before a platform pivot.
+## 4. Features and Functional Requirements
 
-## ADR
-### Decision
-Adopt a **web-first, FFmpeg/FFprobe-backed, section-precompute architecture** as the planned baseline.
+### 4.1 Audio Analysis Plane
 
-### Drivers
-- Musical accuracy must remain authoritative.
-- Motion continuity needs richer descriptors than coarse tags.
-- Current repo already has a browser-first surface and hosted audio analysis path.
-- The user explicitly accepts recompute/loading states if playback stays trustworthy.
+#### FR-1: Upload and analyze Audio Track
+The user can upload an Audio Track and receive normalized Audio Analysis.
 
-### Alternatives considered
-- Browser-native WebCodecs/WebGPU-first pipeline
-- Immediate desktop-first Tauri pivot
+Consequences:
+- `/api/essentia/full` remains the canonical app proxy for hosted analysis.
+- Analysis returns enough structure for beats, onsets, sections, and waveform UI.
+- Analysis errors are visible and recoverable.
+- Secrets are never logged or committed.
 
-### Why chosen
-It is the narrowest plan that preserves correctness, respects current app shape, and creates a reversible path to a desktop pivot if needed.
+#### FR-2: Normalize analysis into canonical model
+The app stores analysis output in a stable shape consumed by UI and pipeline modules.
 
-### Consequences
-- Preview generation becomes an explicit staged pipeline, not an implicit live-edit illusion.
-- Segment manifests and motion descriptors become first-class data products.
-- Some future media work may need heavier external compute or remote hardware validation.
+Consequences:
+- Beats/onsets/sections have consistent units and ordering.
+- Downstream segmentation does not depend on raw endpoint quirks.
+- Tests can use fixture analysis data.
 
-### Follow-ups
-- Define canonical segment manifest.
-- Define motion descriptor schema.
-- Define recompute/playback state machine.
-- Define latency benchmark and pivot trigger.
+### 4.2 Video Ingest and Probe Plane
 
+#### FR-3: Probe Source Clips
+The app can probe Source Clips into a Clip Manifest.
 
-## Architect Review
-### Steelman antithesis
-A stronger long-term architecture may be to pivot earlier toward a desktop runtime with bundled sidecars, because media-heavy preview systems often suffer from browser scheduling, decode variability, and worker/UI contention. If the app’s core promise is musically exact preview under load, browser-first may delay the inevitable.
+Consequences:
+- Probe output includes duration, dimensions, fps, codec/container, keyframe/audio presence, and support status.
+- Unsupported/risky media is flagged early.
+- Probe scripts and UI agree on the canonical fields.
 
-### Tradeoff tension
-- **Web-first** preserves current app shape and lowers initial coordination cost.
-- **Desktop-first** may better serve hard latency and compute goals, but increases platform and packaging complexity before the workflow is proven.
+#### FR-4: Preserve thumbnails as browsing aids only
+Thumbnail extraction helps the user browse clips but is not treated as the playback/render pipeline.
 
-### Synthesis
-Use web-first as the proving lane, but make the performance checkpoint explicit and early. Treat the desktop pivot as a planned branch, not a failure.
+Consequences:
+- Thumbnail failure does not imply clip failure.
+- Playback/preview readiness depends on probe/segment/prepared asset status, not thumbnails alone.
 
-## Critic Review
-### Verdict
-APPROVE
+### 4.3 Music-Driven Segmentation
 
-### Findings applied
-- Ranking precedence is explicit.
-- Viable options are fairly compared and rejected with rationale.
-- Risks and mitigations are concrete.
-- Verification path is testable.
-- Staffing and execution handoff guidance are present.
+#### FR-5: Generate Cut Events from music structure
+The system derives candidate Cut Events from beats, onsets, and sections.
 
-## Product Scope
-### In scope now
-- Documentation roadmap
-- Spec workflow
-- Media protocols
-- Ranking rules
-- Script taxonomy
-- Execution/testing guidance
+Consequences:
+- Fixed-duration chunking is not the default segmentation model.
+- Cut Events preserve musical timing and section context.
+- Density/min-spacing rules are explicit and testable.
 
-### Out of scope now
-- Coding the pipeline
-- Final export
-- Auth/billing/collaboration
-- Mobile app
-- Full pro timeline editor
-- Model training/fine-tuning
+#### FR-6: Build Segment Manifest
+The system builds a Segment Manifest from Source Clips and Cut Events.
 
-## Proposed Roadmap
-### Phase 0 — Documentation and control-plane foundation
-- Publish roadmap, PRD, and test spec.
-- Define canonical terminology: cut event, segment, section recompute, continuity mode, fit fallback.
-- Define doc ownership and plan gates.
+Consequences:
+- Segments retain source references and timing.
+- Segment creation is deterministic for the same inputs/settings.
+- Segment data can be tested without UI.
 
-### Phase 1 — Canonical ingest contracts
-- Lock audio analysis contract from `/api/essentia/full` through normalized UI model.
-- Define canonical clip probe contract for video assets.
-- Define segment manifest schema tied to music-driven cut events.
+### 4.4 Segment Analysis and Motion Descriptors
 
-### Phase 2 — Deterministic section preview protocol
-- Build/document section recompute lifecycle.
-- Define stale-job cancellation and prepared-asset swap rules.
-- Ensure playback only consumes fully ready assets.
+#### FR-7: Attach Motion Descriptors to Segments
+Segments can carry typed Motion Descriptor data.
 
-### Phase 3 — Ranking and fit engine
-- Make motion continuity the default rejoin mode.
-- Add alternate modes: color continuity, random.
-- Define motion descriptor schema around global motion field + residual motion + continuity score.
-- Define fit fallback policies: trim, speed ramp, reject placement, layered overlap.
+Consequences:
+- Descriptor schema exists and is tested.
+- Simple placeholders are allowed only if typed and replaceable.
+- The schema can later accept FFglitch/motion-vector-derived data.
 
-### Phase 4 — Performance checkpoint
-- Benchmark local macOS path.
-- Benchmark remote heavy-compute path over Tailscale / RTX 5090 / containerized GPU pass-through when needed.
-- Decide whether browser baseline remains viable or whether Tauri becomes necessary.
+#### FR-8: Prefer rich motion signals over cardinal tags
+Coarse direction tags may be display summaries but not the primary ranking engine.
 
-### Phase 5 — Later product capabilities
-- Final export
-- richer controls
-- broader continuity modes
-- packaging/distribution hardening
+Consequences:
+- Ranking code uses richer descriptor fields when available.
+- Tests prevent regression to pure random/cardinal matching as default.
 
-## Implementation Steps (for downstream execution)
-1. **Documentation lane**
-   - Author canonical docs under `docs/` using the PRD and test spec as source of truth.
-   - Likely touchpoints: new `docs/roadmap.md`, `docs/protocols/spec-workflow.md`, `docs/architecture/media-pipeline.md`, `docs/protocols/latency-budget.md`.
-2. **Data-contract lane**
-   - Define canonical analysis and segment manifest schemas based on existing structures in `src/components/studio/audioAnalysis.ts` and future video probe outputs.
-3. **Preview-state lane**
-   - Define section recompute state machine against current `StudioApp` behavior in `src/components/StudioApp.tsx`.
-4. **Media-backbone lane**
-   - Introduce planned FFprobe/FFmpeg probe and preview commands/scripts, separate from UI concerns.
-5. **Benchmark lane**
-   - Define latency benchmark harness and remote-test procedure.
+### 4.5 Ranking and Fit Engine
 
-## Risks and Mitigations
-| Risk | Mitigation |
-| --- | --- |
-| Motion analysis becomes too coarse and produces ugly joins | Use richer segment descriptors, not cardinal tags |
-| Browser path keeps drifting under recompute load | Explicit prepared-asset swap model; performance checkpoint with desktop pivot path |
-| Cuts become over-quantized and lose musicality | Keep beats/onsets authoritative; avoid blind quantization |
-| Segment fit issues cause broken reorderability | Allow trim/ramp/reject/layered-overlap fallback rules |
-| Docs drift from actual codebase | Keep file-based evidence sections and require plan/test-spec updates before implementation |
+#### FR-9: Enforce musical alignment first
+Ranking must prioritize musical fit above motion/color/random modes.
 
-## Verification Steps
-- Verify PRD references current repo facts (`package.json`, `StudioApp.tsx`, `audioAnalysis.ts`, `mediaUpload.ts`, `route.ts`).
-- Verify all acceptance criteria are concrete and testable.
-- Verify roadmap phases align with user-stated priorities: musicality first, motion continuity default, accuracy over quick scan.
-- Verify desktop pivot remains contingent, not assumed.
+Consequences:
+- A visually smooth but musically wrong candidate loses to a musically correct candidate.
+- Tests encode the precedence.
 
-## Available-Agent-Types Roster
-- `planner` — sequencing and artifact structure
-- `architect` — architecture and boundary tradeoffs
-- `critic` — plan quality and testability
-- `executor` — implementation lanes
-- `debugger` — failure diagnosis
-- `verifier` — completion evidence
-- `test-engineer` — test design and harness coverage
-- `researcher` — external docs / protocol research
-- `writer` — documentation authoring
-- `designer` — UI/UX flow shaping
-- `security-reviewer` — trust boundary review when needed
-- `code-reviewer` — final integrated review
+#### FR-10: Use motion continuity as default visual mode
+After musical alignment, default ranking favors motion continuity.
 
-## Follow-up Staffing Guidance
-### If executed via `$ralph`
-- `executor` (high): media contract + preview state implementation
-- `test-engineer` (medium): test harness + acceptance coverage
-- `verifier` (high): proof that recompute/playback and ranking precedence match the plan
-- `writer` (medium): docs sync after implementation
+Consequences:
+- Motion continuity is the default mode in code and docs.
+- Alternate modes may exist but do not outrank musical alignment.
 
-### If executed via `$team`
-- Lane 1: `writer` / medium — publish docs and protocol pages
-- Lane 2: `executor` / high — segment manifest + ranking contract
-- Lane 3: `executor` / high — preview-state architecture and orchestration lane
-- Lane 4: `test-engineer` / medium — benchmark + verification harness
-- Lane 5: `researcher` or `architect` / medium-high — remote compute / Tauri contingency analysis
-- Verification owner: `verifier` / high
+#### FR-11: Apply explicit Fit Policy
+When a Segment does not fit a target slot, the system chooses from allowed fallback behaviors.
 
-## Launch Hints
-### Ralph hint
-```text
-$ralph .omx/plans/prd-roadmap-spec-workflow-docs.md
-```
+Consequences:
+- Allowed behaviors: slight trim, speed ramp in/out, reject placement, layered overlap when supported.
+- Illegal or unsupported fits are rejected visibly/testably.
 
-### Team hint
-```text
-$team .omx/plans/prd-roadmap-spec-workflow-docs.md
-```
+### 4.6 Section Recompute and Prepared Preview
 
-Or explicit CLI-style coordination hint:
-```text
-omx team start .omx/plans/prd-roadmap-spec-workflow-docs.md
-```
+#### FR-12: Track recompute lifecycle
+The app tracks Section Preview lifecycle explicitly.
 
-## Team Verification Path
-Before shutdown, team execution should prove:
-1. Canonical docs exist and match this PRD.
-2. Segment/ranking rules are implemented or explicitly documented with no ambiguity.
-3. Recompute/playback orchestration avoids overlapping stale work.
-4. Benchmark lane captures evidence for whether web-first remains viable.
+Consequences:
+- States include ready, stale, recomputing, cancelled, failed.
+- User-visible UI reflects state.
+- Stale work cannot silently replace current work.
 
-If team execution completes, a final Ralph/verifier pass should confirm:
-- acceptance criteria are met,
-- docs and implementation match,
-- no unresolved ambiguity remains in ranking precedence or media fit rules.
+#### FR-13: Generate prepared Section Preview assets
+The system prepares preview assets for affected sections.
 
-## Planner Changelog
-- Chose web-first FFmpeg/FFprobe baseline.
-- Kept Tauri as contingency rather than default.
-- Elevated musical alignment and motion continuity precedence.
-- Added remote-heavy-compute testing policy.
+Consequences:
+- Playback consumes ready Prepared Assets.
+- Section-scoped recompute is preferred over full-song recompute where possible.
+- Preview-generation failures are visible.
+
+#### FR-14: Cancel or supersede stale jobs
+When inputs change, stale jobs are cancelled or superseded.
+
+Consequences:
+- Only one current asset version may be active per section.
+- Old work cannot race against new work and win accidentally.
+
+### 4.7 Playback and UI
+
+#### FR-15: Playback uses ready assets only
+Playback never pretends stale/partial preview output is current.
+
+Consequences:
+- UI may keep playing the last ready asset while recompute runs.
+- UI clearly marks when a visible preview is stale relative to current settings.
+
+#### FR-16: Studio UI exposes readiness and progress
+The user can see upload, analysis, probe, recompute, preview, and error states.
+
+Consequences:
+- No important media state is only hidden in console logs.
+- Progress/readiness language is understandable to creators.
+
+### 4.8 Verification and Platform Decision
+
+#### FR-17: Benchmark latency and correctness
+The repo can collect evidence about recompute timing and ready-to-play timing.
+
+Consequences:
+- `bench:latency` and `bench:compare` outputs inform platform decisions.
+- Local and remote lanes are documented.
+
+#### FR-18: Keep web-first unless evidence forces pivot
+The app remains web-first until benchmarks or correctness failures justify Tauri/sidecar.
+
+Consequences:
+- Desktop pivot requires documented evidence, not frustration or speculation.
+
+### 4.9 Agent Workflow
+
+#### FR-19: Keep PRD/roadmap/test spec current
+Planning artifacts in `.omx` and `docs/` remain synchronized with implementation reality.
+
+Consequences:
+- Agents update specs when product decisions change.
+- Old reference-repo assumptions do not become active requirements.
+
+#### FR-20: Require real verification evidence
+Agents must run actual commands/checks before reporting completion.
+
+Consequences:
+- Preferred checks: `bun run check`, `bun run build`, `bun run probe:media`, `bun run preview:section`, `bun run bench:latency` as relevant.
+- If checks fail, agents report actual output and whether failures are related.
+
+## 5. Non-Goals
+- Full professional NLE timeline in MVP.
+- Auth, billing, collaboration, or cloud media management in MVP.
+- Mobile app in MVP.
+- Model training/fine-tuning in MVP.
+- Final export before section preview/ranking correctness is credible.
+- Immediate Tauri/desktop rewrite.
+- Treating `svelte-video-shaders` as the active app repo.
+
+## 6. MVP Scope
+
+### In Scope
+- Audio upload + hosted analysis proxy.
+- Canonical analysis model.
+- Clip probe/manifest.
+- Music-driven Cut Events.
+- Segment Manifest.
+- Typed Motion Descriptor contract.
+- Ranking engine with music-first precedence and motion-continuity default.
+- Fit Policy.
+- Section recompute lifecycle.
+- Prepared Section Preview generation.
+- Readiness/progress/error UI.
+- Latency benchmark evidence.
+
+### Out of Scope for MVP
+- Final export as the first proof.
+- Full-song auto-edit if section preview is not yet trustworthy.
+- Cloud persistence/accounts.
+- Desktop packaging.
+
+## 7. Success Metrics
+
+Primary:
+- **SM-1:** A fixture-backed section can be recomputed into a ready preview asset and played without musical drift.
+- **SM-2:** Ranking tests prove musical alignment beats motion continuity when they conflict.
+- **SM-3:** Recompute tests prove stale jobs cannot silently replace newer work.
+- **SM-4:** Benchmark output exists and supports the web-first/desktop decision.
+
+Secondary:
+- **SM-5:** UI clearly shows analysis/probe/recompute/readiness state.
+- **SM-6:** Agents can complete a roadmap story using linked FR IDs and verification commands without asking what repo or product goal applies.
+
+Counter-metrics:
+- **SM-C1:** Number of UI controls is not success if preview correctness is unstable.
+- **SM-C2:** Lower latency is not success if musical alignment is wrong.
+- **SM-C3:** More continuity modes are not success if default motion continuity is unproven.
+
+## 8. Open Questions
+1. Is the first user-facing milestone “single section preview” or “whole-song rough cut”?
+2. Should final export remain after section-preview correctness, or become an MVP acceptance item?
+3. Should initial Motion Descriptors be lightweight placeholders or FFglitch/motion-vector backed immediately?
+4. What exact latency threshold should trigger a desktop/Tauri decision review?
+5. Which reference-repo ideas from `svelte-video-shaders` are worth porting first: WebCodecs buffer, shader preview, waveform/section UX, or none yet?
+
+## 9. Assumptions Index
+- The active product repo is `project-stack-structure`.
+- `svelte-video-shaders` is a reference repo only.
+- Web-first remains default until measured evidence says otherwise.
+- Final export is secondary to section preview correctness unless user changes priority.
+- Motion descriptor schema may start simple if tests preserve replaceability and ranking precedence.

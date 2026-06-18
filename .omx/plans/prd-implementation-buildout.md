@@ -1,148 +1,213 @@
-# PRD — Media Pipeline Buildout
+# PRD — Current Implementation Buildout
 
 ## Metadata
-- Date: 2026-04-06 UTC
-- Source roadmap PRD: `.omx/plans/prd-roadmap-spec-workflow-docs.md`
+- Updated: 2026-06-18 UTC
+- Status: current implementation roadmap
+- Source PRD: `.omx/plans/prd-roadmap-spec-workflow-docs.md`
 - Source test spec: `.omx/plans/test-spec-roadmap-spec-workflow-docs.md`
-- Scope: implementation path from current documentation/test foundation to a working media pipeline
+- Active repo: `project-stack-structure`
 
 ## Purpose
-This PRD translates the roadmap into a concrete buildout path so the project can move from planning and contract validation into a real music-first preview system.
+This document converts the current PRD into an agent-executable buildout path. It replaces older implementation notes that treated the April docs as final. The current goal is a section-preview-first, music-aligned, motion-continuity smart music-video editor in this repo.
 
 ## Product Rules That Cannot Change
-1. **Musical alignment is always the top priority.**
-2. **Motion continuity is the default visual continuity mode.**
-3. **Accuracy beats quick-scan shortcuts.**
-4. **Prepared section preview is better than laggy pseudo-live playback.**
-5. **Desktop/Tauri remains a contingency, not the default, until evidence proves otherwise.**
+1. Musical alignment is always the top priority.
+2. Motion continuity is the default visual continuity mode.
+3. Prepared section preview beats fake live mutation.
+4. Post-cut segments are the analysis/ranking unit.
+5. Web-first remains default until benchmark evidence says otherwise.
+6. Reference repos are references, not active workspaces.
+7. No secrets in docs, logs, prompts, or commits.
 
-## Current Verified State
-### Completed
-- Documentation foundation exists under `docs/`.
-- Consensus PRD and test spec exist under `.omx/plans/`.
-- Bun-based test structure exists under `tests/`.
-- Local fixture lane is established at `.local-fixtures/media/` and ignored from git.
-- `segmentManifest.ts` exists and is tested.
-- `mediaProbe.ts` exists and probes real local media through `ffprobe`.
-- `probe:media` command emits a canonical fixture manifest.
-- Motion descriptor contracts now exist for probed files and segment manifests.
+## Current Verified Starting Point
+Known repo anchors:
 
-### Fresh evidence
-- `bun run check` passes.
-- `bun run build` passes.
-- `bun run probe:media` passes.
-- Current observed fixture inventory:
-  - audio files: 1
-  - video files: 23
-  - total probed items: 24
+- `src/components/StudioApp.tsx`
+- `src/components/studio/audioAnalysis.ts`
+- `src/components/studio/mediaUpload.ts`
+- `src/components/studio/previewGeneration.ts`
+- `src/components/studio/ffglitchApi.ts`
+- `src/app/api/essentia/full/route.ts`
+- `src/app/api/ffglitch/route.ts`
+- `docs/roadmap.md`
+- `docs/architecture/media-pipeline.md`
+- `docs/protocols/spec-workflow.md`
+- `docs/protocols/latency-budget.md`
 
-## Problem Statement
-The repo now has planning artifacts, test structure, segment-manifest logic, and real fixture probing. What it does not yet have is the rest of the execution path needed to turn those contracts into a musically correct preview engine:
-- real motion descriptor extraction,
-- ranking over real descriptors,
-- fit policy execution,
-- section recompute state orchestration,
-- preview asset generation,
-- benchmark evidence for the web-vs-desktop decision.
+Current verification scripts exist in `package.json`:
 
-## Desired Outcome
-The project should reach a state where:
-- real fixture media can be probed,
-- descriptors can be attached to media/segments,
-- ranking decisions are provably music-first,
-- fit fallbacks are encoded and tested,
-- section recompute behavior is explicit and testable,
-- a first real preview pipeline exists,
-- latency evidence exists to support or reject the web-first baseline.
-
-## In Scope
-- Media probe and manifest evolution
-- Motion descriptor extraction contract
-- Ranking engine implementation over real descriptors
-- Fit policy implementation
-- Section recompute state machine
-- Preview generation contract and first implementation
-- Benchmark / latency evidence capture
-- Supporting tests and scripts
-
-## Out of Scope
-- Final export pipeline
-- Auth, billing, collaboration
-- Mobile app
-- Full professional editing UI
-- Production deployment hardening
-
-## Acceptance Criteria
-1. A canonical motion descriptor schema exists and is exercised by tests.
-2. Ranking functions operate on real descriptor/manifests and prove musicality-first behavior.
-3. Fit policy rules exist for trim, speed-ramp, reject, and overlap eligibility.
-4. A section recompute state machine exists with tests for stale/recomputing/ready/cancelled behavior.
-5. A first preview-generation path exists and uses prepared assets only.
-6. A benchmark path exists for recompute timing and ready-to-play timing.
-7. The repo can produce evidence supporting or challenging the web-first baseline.
-
-## Buildout Phases
-### Phase A — Motion descriptor contract
-Create a first descriptor layer that can be attached to probed fixture media and, later, to post-cut segments.
-
-Deliverables:
-- motion descriptor module
-- typed schema
-- fixture-backed tests
-
-### Phase B — Ranking engine on real descriptors
-Use descriptor data to rank candidate joins while preserving music-first precedence.
-
-Deliverables:
-- ranking module
-- integration tests over real manifests/descriptors
-- alternate mode hooks for motion/color/random
-
-### Phase C — Fit policy engine
-Encode the legal fit decisions when a segment does not naturally fit a target slot.
-
-Deliverables:
-- fit-policy module
-- tests for trim / ramp / reject / overlap gating
-
-### Phase D — Section recompute orchestration
-Formalize the state transitions for recompute and preview readiness.
-
-Deliverables:
-- recompute state machine
-- tests for stale cancellation and ready-only swap behavior
-
-### Phase E — Preview generation path
-Implement a first real preview generation flow, likely FFmpeg-backed and section-scoped.
-
-Deliverables:
-- preview generation module/command
-- prepared preview artifacts
-- integration tests
-
-### Phase F — Benchmark and checkpoint
-Measure whether the web-first path remains viable.
-
-Deliverables:
-- latency benchmark harness
-- hardware lane notes (local macOS vs remote Tailscale machine)
-- decision memo for web-first vs desktop contingency
-
-## Risks and Mitigations
-| Risk | Mitigation |
-| --- | --- |
-| Motion descriptors are too weak to improve joins | Start with a typed schema and fixture-backed assertions before UI use |
-| Ranking starts favoring continuity over music | Keep explicit music-first comparator tests in every ranking layer |
-| Recompute work overlaps active playback | Encode cancellation/ready-state rules before preview integration |
-| Preview generation becomes expensive too early | Keep first path section-scoped and prepared-asset-only |
-| Desktop pivot pressure appears before evidence exists | Require benchmark output before platform re-decision |
-
-## Verification Plan
+- `bun run lint`
+- `bun run typecheck`
+- `bun run test`
 - `bun run check`
 - `bun run build`
 - `bun run probe:media`
-- targeted integration tests for descriptor, ranking, fit, recompute, and preview modules
-- architect verification at each significant milestone slice
+- `bun run preview:section`
+- `bun run bench:latency`
+- `bun run bench:compare`
 
-## Current Position on the Path
-The repo is now through local and remote benchmark comparison for the current prepared-preview slice. Current evidence supports staying web-first. The next clean implementation slice is deeper UI/runtime integration so manifest, descriptor, and ranking decisions affect more of the preview experience.
+## Recommended First Slice
+
+### Slice 1 — Planning source cleanup and sync
+
+**FRs:** FR-19, FR-20
+
+Goal: Make `.omx` and `docs/` agree on the current active goal.
+
+Tasks:
+1. Replace stale `.omx` PRD/spec/test/buildout artifacts with current versions.
+2. Update `docs/roadmap.md` to point to the current PRD and remove stale “recommended future scripts” language that is now implemented.
+3. Update `README.md` planning section if needed.
+4. Run docs sanity checks and `git status`.
+
+Acceptance:
+- `.omx/plans/prd-roadmap-spec-workflow-docs.md` is current.
+- `.omx/plans/test-spec-roadmap-spec-workflow-docs.md` is current.
+- `.omx/plans/prd-implementation-buildout.md` is current.
+- `docs/roadmap.md` does not contradict current PRD.
+- Active repo is clearly `project-stack-structure`.
+
+Verification:
+- `git status --short --branch`
+- `grep -R "svelte-video-shaders" .omx/plans docs README.md` should mention it only as a reference repo, if at all.
+- `grep -R "recommended future scripts" docs .omx/plans` should not imply missing scripts that now exist.
+
+### Slice 2 — Contract audit against current code
+
+**FRs:** FR-1 through FR-6, FR-19
+
+Goal: Audit current code against the PRD contracts before adding new behavior.
+
+Tasks:
+1. Inspect audio analysis model in `src/components/studio/audioAnalysis.ts`.
+2. Inspect media probe/thumbnail flow in `src/components/studio/mediaUpload.ts`.
+3. Inspect segment manifest and preview scripts/modules.
+4. Write or update contract notes in `docs/architecture/media-pipeline.md`.
+5. Identify exact gaps for the next implementation slice.
+
+Acceptance:
+- Audio Analysis fields are documented.
+- Clip Manifest fields are documented.
+- Segment Manifest assumptions are documented.
+- Gaps are turned into concrete stories.
+
+Verification:
+- `bun run check`
+- `bun run probe:media`
+
+### Slice 3 — Recompute state machine hardening
+
+**FRs:** FR-12, FR-13, FR-14, FR-15, FR-16
+
+Goal: Make section preview lifecycle explicit and race-safe.
+
+Likely files:
+- `src/components/StudioApp.tsx`
+- `src/components/studio/previewGeneration.ts`
+- related state modules/hooks if present
+
+Tasks:
+1. Identify current preview/recompute state shape.
+2. Define explicit states: ready, stale, recomputing, cancelled, failed.
+3. Add versioning/job identity to prevent stale publish.
+4. Surface state in UI.
+5. Add tests around stale/new job behavior if feasible.
+
+Acceptance:
+- Stale jobs cannot replace newer prepared assets.
+- UI shows recomputing/ready/failed state.
+- Playback uses last ready asset until new one is ready.
+
+Verification:
+- `bun run check`
+- targeted tests for recompute state
+- browser/manual check if UI state changes
+
+### Slice 4 — Ranking and fit policy proof
+
+**FRs:** FR-7 through FR-11
+
+Goal: Prove music-first ranking and default motion-continuity behavior in code.
+
+Tasks:
+1. Locate or create ranking module.
+2. Define candidate shape with musical fit and motion descriptor fields.
+3. Add comparator tests proving musical alignment wins.
+4. Add fit policy tests for trim/ramp/reject/overlap.
+5. Document any placeholder descriptor fields as temporary but typed.
+
+Acceptance:
+- Tests fail if motion continuity outranks musical alignment.
+- Motion continuity is the default mode after musical fit.
+- Fit policy returns explicit decisions.
+
+Verification:
+- `bun run test`
+- `bun run check`
+
+### Slice 5 — Prepared section preview path
+
+**FRs:** FR-12 through FR-16
+
+Goal: Ensure preview generation consumes the ranking/fit/manifest contracts and produces a ready section preview.
+
+Tasks:
+1. Inspect `src/components/studio/previewGeneration.ts` and `scripts/preview-section.ts`.
+2. Ensure prepared preview output has a stable manifest/metadata shape.
+3. Ensure UI consumes only ready output.
+4. Add failure/readiness UI if missing.
+
+Acceptance:
+- `preview:section` produces or verifies a prepared section preview with fixture media.
+- UI state clearly distinguishes stale/current settings from last-ready preview.
+
+Verification:
+- `bun run preview:section`
+- `bun run check`
+
+### Slice 6 — Benchmark and platform decision checkpoint
+
+**FRs:** FR-17, FR-18
+
+Goal: Maintain evidence for web-first viability.
+
+Tasks:
+1. Run `bun run bench:latency` locally.
+2. Compare to existing benchmark docs.
+3. If remote benchmark data exists, run `bench:compare`.
+4. Update `docs/benchmarks/` with findings.
+5. Decide whether web-first remains supported.
+
+Acceptance:
+- Latest benchmark evidence exists.
+- Docs state whether web-first remains viable and why.
+- Desktop/Tauri remains contingent unless evidence crosses threshold.
+
+Verification:
+- `bun run bench:latency`
+- `bun run bench:compare -- <local-json> <remote-json>` when applicable
+
+## Agent Execution Rules
+
+- Work only in `project-stack-structure` unless user explicitly names another repo.
+- Treat `svelte-video-shaders` as a reference repo only.
+- Start each coding slice by reading the linked PRD FRs.
+- Run relevant commands and report actual output.
+- Do not repeat a failed approach more than three times; reassess with file state, system state, and approach validity.
+- Do not expose secrets.
+- Keep changes focused and commit docs separately from implementation.
+
+## Immediate Next Commit Candidate
+
+A safe first commit is documentation-only:
+
+```bash
+git add .omx/specs/deep-interview-roadmap-spec-workflow-docs.md \
+  .omx/plans/prd-roadmap-spec-workflow-docs.md \
+  .omx/plans/test-spec-roadmap-spec-workflow-docs.md \
+  .omx/plans/prd-implementation-buildout.md
+
+git commit -m "docs: refresh music video product specs"
+```
+
+Only commit after user review or explicit approval.

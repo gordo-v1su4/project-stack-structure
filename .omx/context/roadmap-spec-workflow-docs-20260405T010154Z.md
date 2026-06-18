@@ -1,4 +1,7 @@
-# Context Snapshot
+# ARCHIVED Context Snapshot
+
+> Archived historical context from 2026-04-05. Do not treat this as current source of truth. Current planning source is `.omx/specs/deep-interview-roadmap-spec-workflow-docs.md` and `.omx/plans/prd-roadmap-spec-workflow-docs.md`.
+
 
 - Task statement: Use the deep-interview workflow to plan a roadmap, solidify a specification workflow, and identify the most correct scripts and protocols to use in this app.
 - Desired outcome: Documentation-only artifacts that clarify roadmap, spec process, script conventions, and operating protocols for this existing app.
