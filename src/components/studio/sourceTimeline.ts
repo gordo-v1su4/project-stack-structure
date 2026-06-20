@@ -1,6 +1,8 @@
 import { lerp, sv } from "./math";
 import type { BeatJoinAnalysis, UploadedVideoSource } from "./types";
 
+export type SplitMode = "scene" | "beat" | "onset" | "scene-beat" | "scene-onset";
+
 export interface SourceClipSpan {
   id: number;
   label: string;
@@ -20,7 +22,7 @@ export interface SourceTimelineSegment {
   sceneLabel?: string;
   thumbnailUrl?: string;
   clipUrl?: string;
-  detector?: "pyscenedetect-adaptive" | "browser-fallback";
+  detector?: "pyscenedetect-adaptive";
 }
 
 export function buildSourceClipSpans(sources: UploadedVideoSource[]) {
@@ -62,19 +64,6 @@ export function buildSceneSplitSegments(sources: UploadedVideoSource[]) {
       .sort((left, right) => left.start - right.start);
 
     if (!validScenes.length) {
-      segments.push({
-        id: segments.length,
-        start: offset,
-        end: offset + duration,
-        duration,
-        sourceClipIds: [source.id],
-        mergedTail: false,
-        sceneId: null,
-        sceneLabel: source.name,
-        thumbnailUrl: source.thumbnailUrl,
-        clipUrl: source.videoUrl,
-        detector: source.sceneStatus === "fallback" ? "browser-fallback" : undefined,
-      });
       offset += duration;
       continue;
     }
@@ -132,6 +121,68 @@ export function buildAudioDrivenSegments(params: {
   if (!pattern.length) return [];
 
   return segmentTimelineByDurations(sourceClips, totalDuration, pattern);
+}
+
+export function buildUnifiedSplitSegments(params: {
+  sources: UploadedVideoSource[];
+  sourceClips: SourceClipSpan[];
+  analysis: BeatJoinAnalysis | null;
+  mode: SplitMode;
+  targetEvents: number;
+  density: number;
+}) {
+  const { sources, sourceClips, analysis, mode, targetEvents, density } = params;
+
+  if (mode === "scene") {
+    return buildSceneSplitSegments(sources);
+  }
+
+  const musicMode = mode === "beat" || mode === "scene-beat" ? "beats" : "onsets";
+  const musicSegments = buildAudioDrivenSegments({
+    sourceClips,
+    analysis,
+    mode: musicMode,
+    targetEvents,
+    density,
+  });
+
+  if (mode === "beat" || mode === "onset") {
+    return musicSegments;
+  }
+
+  const sceneSegments = buildSceneSplitSegments(sources);
+  if (!sceneSegments.length || !musicSegments.length) return [];
+
+  return intersectSceneAndMusicSegments(sceneSegments, musicSegments);
+}
+
+function intersectSceneAndMusicSegments(sceneSegments: SourceTimelineSegment[], musicSegments: SourceTimelineSegment[]) {
+  const segments: SourceTimelineSegment[] = [];
+
+  for (const scene of sceneSegments) {
+    for (const music of musicSegments) {
+      const start = Math.max(scene.start, music.start);
+      const end = Math.min(scene.end, music.end);
+      const duration = end - start;
+      if (duration <= 0.045) continue;
+
+      segments.push({
+        id: segments.length,
+        start,
+        end,
+        duration,
+        sourceClipIds: [...scene.sourceClipIds],
+        mergedTail: false,
+        sceneId: scene.sceneId,
+        sceneLabel: scene.sceneLabel,
+        thumbnailUrl: scene.thumbnailUrl,
+        clipUrl: scene.clipUrl,
+        detector: scene.detector,
+      });
+    }
+  }
+
+  return segments;
 }
 
 function segmentTimeline(sourceClips: SourceClipSpan[], targetDuration: number, minTailDuration: number) {

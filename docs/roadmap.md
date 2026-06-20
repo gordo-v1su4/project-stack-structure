@@ -186,6 +186,11 @@ Decide whether web-first remains viable using evidence.
 
 ## Later Capabilities
 
+- Optional fine-cut / micro-shot backend pass after the current full-workflow review:
+  keep PySceneDetect as the major scene detector, then split long/one-shot scenes
+  into candidate `micro-shot` segments using frame-difference, FFmpeg scene score,
+  optical-flow discontinuity, and minimum-duration guards. These should be
+  candidate cut points for Match/Join density controls, not forced final edits.
 - Whole-song rough cut after section preview is credible.
 - Final export pipeline.
 - Additional continuity modes.

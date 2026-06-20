@@ -61,6 +61,7 @@ export function StudioAudioLane({
         <div>
           <div className="text-[10px] uppercase tracking-[0.2em] text-[#d7d7d7]">Master Song Lane</div>
           <div className="mt-1 text-[9px] uppercase tracking-[0.16em] text-[#5f5f5f]">{audioStatus}</div>
+          {audioError ? <div className="mt-1 text-[9px] font-mono text-[#d24b3f]">{audioError}</div> : null}
         </div>
         <UploadControl
           accept="audio/*"

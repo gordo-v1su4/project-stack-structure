@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildAudioDrivenSegments, buildBeatSegments, buildSceneSplitSegments, buildSourceClipSpans, buildStandardSegments } from "../../src/components/studio/sourceTimeline";
+import { buildAudioDrivenSegments, buildBeatSegments, buildSceneSplitSegments, buildSourceClipSpans, buildStandardSegments, buildUnifiedSplitSegments } from "../../src/components/studio/sourceTimeline";
 import { makeBeatJoinAnalysis, makeSourceClips, makeVideoSources } from "../helpers/studioFixtures";
 
 describe("sourceTimeline", () => {
@@ -43,11 +43,10 @@ describe("sourceTimeline", () => {
       c!,
     ]);
 
-    expect(segments).toHaveLength(4);
+    expect(segments).toHaveLength(3);
     expect(segments[0]).toMatchObject({ start: 0, end: 1.5, sourceClipIds: [0], sceneId: 0, thumbnailUrl: undefined });
     expect(segments[1]).toMatchObject({ start: 1.5, end: 4, sourceClipIds: [0], sceneId: 1 });
     expect(segments[2]).toMatchObject({ start: 4, end: 9, sourceClipIds: [1], sceneId: 0 });
-    expect(segments[3]).toMatchObject({ start: 9, end: 12, sourceClipIds: [2], sceneId: null });
   });
 
   test("buildBeatSegments derives music-sized segments from bpm and bars", () => {
@@ -69,5 +68,50 @@ describe("sourceTimeline", () => {
     expect(segments.length).toBeGreaterThan(1);
     expect(segments[0]?.start).toBe(0);
     expect(segments.every((segment) => segment.duration > 0)).toBe(true);
+  });
+
+  test("buildUnifiedSplitSegments returns explicit scene cuts without standard fallback", () => {
+    const sources = makeVideoSources();
+    const sourceClips = buildSourceClipSpans(sources);
+    const segments = buildUnifiedSplitSegments({
+      sources,
+      sourceClips,
+      analysis: null,
+      mode: "scene",
+      targetEvents: 2,
+      density: 0.8,
+    });
+
+    expect(segments).toHaveLength(0);
+  });
+
+  test("buildUnifiedSplitSegments intersects scene cuts with onset boundaries for hybrid mode", () => {
+    const [source] = makeVideoSources();
+    const sources = [
+      {
+        ...source!,
+        scenes: [
+          { id: 0, sourceClipId: 0, label: "A1", start: 0, end: 4, duration: 4, thumbnailUrl: "thumb-a", detector: "pyscenedetect-adaptive" as const },
+        ],
+      },
+    ];
+    const sourceClips = buildSourceClipSpans(sources);
+    const segments = buildUnifiedSplitSegments({
+      sources,
+      sourceClips,
+      analysis: {
+        ...makeBeatJoinAnalysis(),
+        duration: 4,
+        onsets: [0.4, 1.2, 2.4, 3.2],
+      },
+      mode: "scene-onset",
+      targetEvents: 1,
+      density: 1,
+    });
+
+    expect(segments.length).toBeGreaterThan(1);
+    expect(segments.every((segment) => segment.sceneId === 0)).toBe(true);
+    expect(segments.every((segment) => segment.thumbnailUrl === "thumb-a")).toBe(true);
+    expect((segments.at(-1)?.end ?? 0) <= 4).toBe(true);
   });
 });

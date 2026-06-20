@@ -45,12 +45,12 @@ export function deriveEffectiveClipOrder(params: {
   manifestSegmentCount: number;
   segmentPreviewCount: number;
   rankedOrder: number[];
-  fallbackOrder: number[];
+  defaultOrder: number[];
 }) {
-  const { manifestSegmentCount, segmentPreviewCount, rankedOrder, fallbackOrder } = params;
+  const { manifestSegmentCount, segmentPreviewCount, rankedOrder, defaultOrder } = params;
   return manifestSegmentCount === segmentPreviewCount && rankedOrder.length === segmentPreviewCount
     ? rankedOrder
-    : fallbackOrder;
+    : defaultOrder;
 }
 
 export function deriveActionDisabledState(params: {

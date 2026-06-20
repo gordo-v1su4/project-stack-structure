@@ -1,6 +1,7 @@
 import type { DeepgramTranscriptSummary } from "./deepgramUtils";
-import type { MusicVideoProject, StorySectionDraft } from "./musicVideoProject";
-import type { BeatJoinAnalysis, UploadedVideoSource } from "./types";
+import type { MusicVideoProject, StoryEditSettings, StorySectionDraft } from "./musicVideoProject";
+import { hydrateReferenceAssets, sanitizeReferenceAssetForStorage, type ReferenceAsset } from "./referenceAssets";
+import type { BeatJoinAnalysis, SceneCaptionSettings, UploadedVideoSource } from "./types";
 
 export const STUDIO_PROJECT_STORAGE_KEY = "project-stack-structure:studio-project:v1";
 const MEDIA_DB_NAME = "project-stack-structure-studio-media";
@@ -12,6 +13,7 @@ export type PersistedStoryState = {
   storyBeats: Array<StorySectionDraft & { id: string; label: string; prompt: string }>;
   activeBeatId: string;
   storyGenerated: boolean;
+  editSettings?: StoryEditSettings;
 };
 
 export type PersistedVideoSource = Omit<UploadedVideoSource, "videoUrl"> & {
@@ -29,6 +31,8 @@ export interface PersistedStudioProjectDraft {
   videoSources: PersistedVideoSource[];
   storyState: PersistedStoryState;
   musicVideoProject: MusicVideoProject | null;
+  referenceAssets?: ReferenceAsset[];
+  captionSettings?: SceneCaptionSettings;
 }
 
 export interface RuntimeStudioProjectDraft {
@@ -36,6 +40,8 @@ export interface RuntimeStudioProjectDraft {
   videoSources: UploadedVideoSource[];
   storyState: PersistedStoryState;
   musicVideoProject: MusicVideoProject | null;
+  referenceAssets: ReferenceAsset[];
+  captionSettings?: SceneCaptionSettings;
 }
 
 export function createPersistableStudioProjectDraft(params: {
@@ -43,6 +49,8 @@ export function createPersistableStudioProjectDraft(params: {
   videoSources: UploadedVideoSource[];
   storyState: PersistedStoryState;
   musicVideoProject: MusicVideoProject | null;
+  referenceAssets?: ReferenceAsset[];
+  captionSettings?: SceneCaptionSettings;
   savedAt?: string;
 }): PersistedStudioProjectDraft {
   return {
@@ -75,6 +83,10 @@ export function createPersistableStudioProjectDraft(params: {
       scenes: source.scenes?.map((scene) => ({
         ...scene,
         thumbnailUrl: stripRuntimeUrl(scene.thumbnailUrl),
+        firstFrameUrl: stripRuntimeUrl(scene.firstFrameUrl),
+        middleFrameUrl: stripRuntimeUrl(scene.middleFrameUrl),
+        lastFrameUrl: stripRuntimeUrl(scene.lastFrameUrl),
+        storyboardUrl: stripRuntimeUrl(scene.storyboardUrl),
         clipUrl: stripRuntimeUrl(scene.clipUrl),
       })),
       sceneStatus: source.sceneStatus,
@@ -88,6 +100,8 @@ export function createPersistableStudioProjectDraft(params: {
     })),
     storyState: params.storyState,
     musicVideoProject: params.musicVideoProject ? sanitizeMusicVideoProjectForStorage(params.musicVideoProject) : null,
+    referenceAssets: (params.referenceAssets ?? []).map(sanitizeReferenceAssetForStorage),
+    captionSettings: sanitizeCaptionSettings(params.captionSettings),
   };
 }
 
@@ -118,6 +132,8 @@ export function hydrateStudioProjectDraft(params: {
       .filter((source) => source.videoUrl),
     storyState: params.draft.storyState,
     musicVideoProject: params.draft.musicVideoProject,
+    referenceAssets: hydrateReferenceAssets(params.draft.referenceAssets ?? []),
+    captionSettings: sanitizeCaptionSettings(params.draft.captionSettings),
   };
 }
 
@@ -192,6 +208,10 @@ function sanitizeMusicVideoProjectForStorage(project: MusicVideoProject): MusicV
     videoMoments: project.videoMoments.map((moment) => ({
       ...moment,
       thumbnailUrl: stripRuntimeUrl(moment.thumbnailUrl),
+      firstFrameUrl: stripRuntimeUrl(moment.firstFrameUrl),
+      middleFrameUrl: stripRuntimeUrl(moment.middleFrameUrl),
+      lastFrameUrl: stripRuntimeUrl(moment.lastFrameUrl),
+      storyboardUrl: stripRuntimeUrl(moment.storyboardUrl),
     })),
   };
 }
@@ -209,6 +229,13 @@ function parsePersistedDraft(raw: string): PersistedStudioProjectDraft | null {
   } catch {
     return null;
   }
+}
+
+function sanitizeCaptionSettings(settings: SceneCaptionSettings | undefined): SceneCaptionSettings {
+  return {
+    mode: settings?.mode === "smart" ? "smart" : "fast",
+    context: settings?.context,
+  };
 }
 
 function hasBrowserStorage() {

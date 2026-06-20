@@ -2,22 +2,24 @@
 
 import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import { buildLocalAudioAnalysis, extractWaveformData, fetchEssentiaAnalysis, parseEssentiaPayload } from "./studio/audioAnalysis";
+import { extractWaveformData, fetchEssentiaAnalysis, parseEssentiaPayload } from "./studio/audioAnalysis";
 import { buildArrangementSegments } from "./studio/arrangementBuilder";
 import type { ArrangementSegment } from "./studio/arrangementBuilder";
 import { NAV } from "./studio/constants";
 import { mergeUploadedVideoSourceUpdate, prepareVideoSources, revokePreparedVideoSources } from "./studio/mediaUpload";
-import { buildEditPlanPreviewSegments, type MusicVideoProject } from "./studio/musicVideoProject";
+import { buildEditPlanPreviewSegments, normalizeStoryEditSettings, type EditPlanPreviewSegment, type MusicVideoProject } from "./studio/musicVideoProject";
+import { buildAutoShaderCues, describeMusicVideoShaderPreset, MUSIC_VIDEO_SHADER_PRESETS, type ShaderEffectCue } from "./studio/shaderEffectPlan";
 import { buildVideoMediaKey, loadStudioProjectDraft, saveStudioProjectDraft } from "./studio/projectPersistence";
+import { createLocalReferenceAsset, uploadReferenceAssetToRustFs, type ReferenceAsset, type ReferenceAssetRole } from "./studio/referenceAssets";
 import { BrowserPreviewPlayer, createPreviewPlayerState, type PreviewPlayerState, type PreviewSegment } from "./studio/previewPlayer";
 import { ProcessActionBar } from "./studio/ProcessActionBar";
 import { buildReadout } from "./studio/readout";
-import { BeatJoinTab } from "./studio/panels/BeatJoinTab";
-import { BeatSplitTab } from "./studio/panels/BeatSplitTab";
+import { ComposeTab } from "./studio/panels/ComposeTab";
+import { IngestTab } from "./studio/panels/IngestTab";
+import { GenerateTab } from "./studio/panels/GenerateTab";
 import { JoinTab } from "./studio/panels/JoinTab";
 import { RampTab } from "./studio/panels/RampTab";
-import { ReviewTab } from "./studio/panels/ReviewTab";
-import { ShuffleTab } from "./studio/panels/ShuffleTab";
+import { MatchTab, type MatchMode } from "./studio/panels/MatchTab";
 import { SplitTab } from "./studio/panels/SplitTab";
 import { createDefaultStoryTabState, StoryTab } from "./studio/panels/StoryTab";
 import { StudioHeader } from "./studio/StudioHeader";
@@ -47,13 +49,14 @@ import {
   derivePreviewWindow,
   normalizeColorScore,
 } from "./studio/studioUiState";
-import { buildAudioDrivenSegments, buildBeatSegments, buildSceneSplitSegments, buildSourceClipSpans, buildStandardSegments, getSourceClipTimeOffset } from "./studio/sourceTimeline";
-import type { SourceClipSpan, SourceTimelineSegment } from "./studio/sourceTimeline";
+import { buildAudioDrivenSegments, buildBeatSegments, buildSourceClipSpans, buildUnifiedSplitSegments, getSourceClipTimeOffset } from "./studio/sourceTimeline";
+import type { SourceClipSpan, SourceTimelineSegment, SplitMode } from "./studio/sourceTimeline";
 import type {
   BeatJoinAnalysis,
   ColorGradient,
   JoinClip,
   RampPreset,
+  SceneCaptionMode,
   SegmentPreview,
   ShuffleMode,
   Tab,
@@ -62,9 +65,10 @@ import type {
 
 export default function StudioApp() {
   const videoSourcesRef = useRef<UploadedVideoSource[]>([]);
+  const referenceAssetsRef = useRef<ReferenceAsset[]>([]);
   const [tab, setTab] = useState<Tab>("review");
   const [playhead] = useState(0.08);
-  const [audioPreviewPlayhead, setAudioPreviewPlayhead] = useState(0);
+  const [, setAudioPreviewPlayhead] = useState(0);
   const [activeClip, setActiveClip] = useState(2);
 
   const [gpu, setGpu] = useState(24);
@@ -72,10 +76,11 @@ export default function StudioApp() {
   const [vram, setVram] = useState(7.8);
 
   const [clipDur, setClipDur] = useState(5);
-  const [barsPerSeg, setBarsPerSeg] = useState(4);
+  const [barsPerSeg] = useState(4);
   const [bpm] = useState(130);
-  const [sensitivity, setSensitivity] = useState(20);
-  const [beatSplitMode, setBeatSplitMode] = useState<"beats" | "onsets">("onsets");
+  const [sensitivity] = useState(20);
+  const [beatSplitMode] = useState<"beats" | "onsets">("onsets");
+  const [splitMode, setSplitMode] = useState<SplitMode>("scene");
   const [videoSources, setVideoSources] = useState<UploadedVideoSource[]>([]);
   const [videoStatus, setVideoStatus] = useState("Upload one or more video clips to begin.");
   const [videoError, setVideoError] = useState<string | null>(null);
@@ -85,22 +90,26 @@ export default function StudioApp() {
   const [isPreparingAudio, setIsPreparingAudio] = useState(false);
   const [audioProgress, setAudioProgress] = useState(0);
 
-  const [shuffleMode, setShuffleMode] = useState<ShuffleMode>("motion");
-  const [minScore, setMinScore] = useState(0.5);
-  const [lookahead, setLookahead] = useState(3);
-  const [keepPct, setKeepPct] = useState(70);
+  const [shuffleMode] = useState<ShuffleMode>("motion");
+  const [minScore] = useState(0.5);
+  const [lookahead] = useState(3);
+  const [keepPct] = useState(70);
   const [colorGradient, setColorGradient] = useState<ColorGradient>("Sunset");
+  const [matchMode, setMatchMode] = useState<MatchMode>("semantic");
+  const [matchOnsetDensity, setMatchOnsetDensity] = useState(65);
+  const [matchLyricCueBlend, setMatchLyricCueBlend] = useState(60);
+  const [matchLyricMergeWindow, setMatchLyricMergeWindow] = useState(3.0);
 
   const [joinClipStates, setJoinClipStates] = useState<Record<number, boolean>>({});
 
-  const [minDur, setMinDur] = useState(0.12);
-  const [maxDur, setMaxDur] = useState(0.8);
-  const [energyResp, setEnergyResp] = useState(1.5);
-  const [chaos, setChaos] = useState(0.35);
-  const [onsetBoost, setOnsetBoost] = useState(0.6);
-  const [energyReactive, setEnergyReactive] = useState(true);
-  const [lowEnergyRange, setLowEnergyRange] = useState(0.36);
-  const [highEnergyRange, setHighEnergyRange] = useState(0.68);
+  const [minDur] = useState(0.12);
+  const [maxDur] = useState(0.8);
+  const [energyResp] = useState(1.5);
+  const [chaos] = useState(0.35);
+  const [onsetBoost] = useState(0.6);
+  const [energyReactive] = useState(true);
+  const [lowEnergyRange] = useState(0.36);
+  const [highEnergyRange] = useState(0.68);
   const [beatJoinAnalysis, setBeatJoinAnalysis] = useState<BeatJoinAnalysis | null>(null);
 
   const [rampPreset, setRampPreset] = useState<RampPreset>("dynamic");
@@ -122,6 +131,16 @@ export default function StudioApp() {
   } | null>(null);
   const [storyState, setStoryState] = useState(createDefaultStoryTabState);
   const [musicVideoProject, setMusicVideoProject] = useState<MusicVideoProject | null>(null);
+  const [captionMode, setCaptionMode] = useState<SceneCaptionMode>("fast");
+  const [referenceAssets, setReferenceAssets] = useState<ReferenceAsset[]>([]);
+  const [shaderPresetId, setShaderPresetId] = useState(MUSIC_VIDEO_SHADER_PRESETS[0].id);
+  const [finalExportStatus, setFinalExportStatus] = useState("Final export waits for a generated story preview and master audio.");
+  const [finalExportError, setFinalExportError] = useState<string | null>(null);
+  const [finalExportUrl, setFinalExportUrl] = useState<string | null>(null);
+  const [finalExportName, setFinalExportName] = useState<string | null>(null);
+  const [finalExportCueCount, setFinalExportCueCount] = useState(0);
+  const [isFinalExporting, setIsFinalExporting] = useState(false);
+  const [isShaderCaptureExporting, setIsShaderCaptureExporting] = useState(false);
   const [draftStatus, setDraftStatus] = useState("Project draft will autosave after media or story changes.");
   const [draftRestored, setDraftRestored] = useState(false);
 
@@ -130,6 +149,24 @@ export default function StudioApp() {
   const previewPlayerRef = useRef(new BrowserPreviewPlayer({ warmSourceLimit: 4, warmAheadSegments: 8 }));
   const [browserPreviewState, setBrowserPreviewState] = useState<PreviewPlayerState>(createPreviewPlayerState);
   const [isBrowserPreviewActive, setIsBrowserPreviewActive] = useState(false);
+  const [isPreviewExpanded, setIsPreviewExpanded] = useState(false);
+  const [useSourceAudio, setUseSourceAudio] = useState(false);
+  const [retainedBrowserPreviewSegments, setRetainedBrowserPreviewSegments] = useState<PreviewSegment[]>([]);
+  const [retainedPreviewEffectCues, setRetainedPreviewEffectCues] = useState<ShaderEffectCue[]>([]);
+  const lastPreviewEffectCuesRef = useRef<ShaderEffectCue[]>([]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const savedTab = window.localStorage.getItem("svs.studio.activeTab");
+    if (savedTab && NAV.some((item) => item.key === savedTab)) {
+      setTab(savedTab as Tab);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("svs.studio.activeTab", tab);
+  }, [tab]);
 
   useEffect(() => {
     const player = previewPlayerRef.current;
@@ -171,8 +208,16 @@ export default function StudioApp() {
           setVideoSources(draft.videoSources);
           setVideoStatus(`Restored ${draft.videoSources.length} clip${draft.videoSources.length === 1 ? "" : "s"} from the local draft.`);
         }
-        setStoryState(draft.storyState);
+        setStoryState({
+          ...createDefaultStoryTabState(),
+          ...draft.storyState,
+          editSettings: normalizeStoryEditSettings(draft.storyState.editSettings),
+        });
+        if (draft.captionSettings?.mode) {
+          setCaptionMode(draft.captionSettings.mode);
+        }
         setMusicVideoProject(draft.musicVideoProject);
+        setReferenceAssets(draft.referenceAssets ?? []);
         setDraftStatus(`Restored local draft saved from this browser.`);
         setDraftRestored(true);
       })
@@ -199,6 +244,8 @@ export default function StudioApp() {
           videoSources,
           storyState,
           musicVideoProject,
+          referenceAssets,
+          captionSettings: buildSceneCaptionSettings(captionMode, beatJoinAnalysis, storyState),
         },
         {
           audioFile: audioFileRef.current,
@@ -215,11 +262,18 @@ export default function StudioApp() {
     }, 650);
 
     return () => window.clearTimeout(saveTimer);
-  }, [beatJoinAnalysis, draftRestored, musicVideoProject, storyState, videoSources]);
+  }, [beatJoinAnalysis, captionMode, draftRestored, musicVideoProject, referenceAssets, storyState, videoSources]);
+
+  useEffect(() => {
+    referenceAssetsRef.current = referenceAssets;
+  }, [referenceAssets]);
 
   useEffect(() => {
     return () => {
       revokePreparedVideoSources(videoSourcesRef.current);
+      for (const asset of referenceAssetsRef.current) {
+        if (asset.previewUrl.startsWith("blob:")) URL.revokeObjectURL(asset.previewUrl);
+      }
     };
   }, []);
 
@@ -233,10 +287,17 @@ export default function StudioApp() {
   }, []);
 
   const sourceClips = useMemo(() => buildSourceClipSpans(videoSources), [videoSources]);
-  const sceneSplitSegments = useMemo(() => buildSceneSplitSegments(videoSources), [videoSources]);
   const splitSegments = useMemo(
-    () => sceneSplitSegments.length ? sceneSplitSegments : buildStandardSegments(sourceClips, clipDur),
-    [sceneSplitSegments, sourceClips, clipDur],
+    () =>
+      buildUnifiedSplitSegments({
+        sources: videoSources,
+        sourceClips,
+        analysis: beatJoinAnalysis,
+        mode: splitMode,
+        targetEvents: Math.max(1, Math.round(clipDur / 2)),
+        density: sensitivity / 100,
+      }),
+    [beatJoinAnalysis, clipDur, sensitivity, sourceClips, splitMode, videoSources],
   );
   const beatSplitSegments = useMemo(() => {
     if (beatJoinAnalysis) {
@@ -251,6 +312,18 @@ export default function StudioApp() {
 
     return buildBeatSegments(sourceClips, bpm, barsPerSeg);
   }, [sourceClips, beatJoinAnalysis, beatSplitMode, barsPerSeg, sensitivity, bpm]);
+  const splitSignature = useMemo(
+    () =>
+      JSON.stringify({
+        mode: splitMode,
+        targetEvents: Math.max(1, Math.round(clipDur / 2)),
+        density: Math.round(sensitivity),
+        sourceCount: sourceClips.length,
+        sourceDuration: sourceClips[sourceClips.length - 1]?.end ?? 0,
+        audioSource: beatJoinAnalysis?.sourceLabel ?? null,
+      }),
+    [beatJoinAnalysis?.sourceLabel, clipDur, sensitivity, sourceClips, splitMode],
+  );
   const beatSplitSignature = useMemo(
     () =>
       JSON.stringify({
@@ -275,7 +348,6 @@ export default function StudioApp() {
     [beatSplitClipCount, joinClipStates]
   );
   const splitActiveClip = Math.min(activeClip, Math.max(0, splitSegments.length - 1));
-  const beatSplitPreviewActiveClip = Math.min(activeClip, Math.max(0, beatSplitSegments.length - 1));
   const beatActiveClip = Math.min(activeClip, Math.max(0, beatSplitClipCount - 1));
   const segmentPreviews = useMemo<SegmentPreview[]>(
     () =>
@@ -346,7 +418,12 @@ export default function StudioApp() {
         });
       };
 
-      const prepared = await prepareVideoSources(files, mergePreparedSourceUpdate, mergePreparedSourceUpdate);
+      const prepared = await prepareVideoSources(
+        files,
+        mergePreparedSourceUpdate,
+        mergePreparedSourceUpdate,
+        buildSceneCaptionSettings(captionMode, beatJoinAnalysis, storyState),
+      );
       if (!prepared.length) {
         throw new Error("No readable video files were selected.");
       }
@@ -439,22 +516,39 @@ export default function StudioApp() {
     });
   }
 
-  // Approved clips from the Review tab feed the shared editor source list.
-  function handleApprovedSources(approved: UploadedVideoSource[]) {
-    setVideoSources((current) => {
-      const currentKeys = new Set(current.map(buildVideoSourceKey));
-      const additions = approved.filter(
-        (source) => !currentKeys.has(buildVideoSourceKey(source)),
-      );
-      if (!additions.length) return current;
-      const next = [...current, ...additions].map((source, index) => ({
-        ...source,
-        id: index,
-      }));
-      setVideoStatus(
-        `Review approved ${additions.length} clip${additions.length === 1 ? "" : "s"} · ${next.length} total ready.`,
-      );
-      return next;
+  async function handleReferenceAssetUpload(role: ReferenceAssetRole, files: File[]) {
+    const file = files.find((candidate) => candidate.type.startsWith("image/"));
+    if (!file) return;
+
+    const previewUrl = URL.createObjectURL(file);
+    const localAsset = createLocalReferenceAsset({ role, file, previewUrl });
+
+    setReferenceAssets((currentAssets) => {
+      for (const current of currentAssets.filter((asset) => asset.role === role && asset.previewUrl.startsWith("blob:"))) {
+        URL.revokeObjectURL(current.previewUrl);
+      }
+      return [...currentAssets.filter((asset) => asset.role !== role), localAsset];
+    });
+
+    try {
+      const storage = await uploadReferenceAssetToRustFs(file, role);
+      setReferenceAssets((currentAssets) => currentAssets.map((asset) => asset.id === localAsset.id ? { ...asset, ...storage, previewUrl: storage.storageUrl ?? asset.previewUrl } : asset));
+      if (previewUrl.startsWith("blob:")) URL.revokeObjectURL(previewUrl);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Reference upload failed";
+      setReferenceAssets((currentAssets) => currentAssets.map((asset) => asset.id === localAsset.id ? { ...asset, storageStatus: "failed", storageError: message } : asset));
+    }
+  }
+
+  function handleReferenceAssetUpdate(assetId: string, patch: Partial<Pick<ReferenceAsset, "displayName" | "promptHint" | "kind">>) {
+    setReferenceAssets((currentAssets) => currentAssets.map((asset) => asset.id === assetId ? { ...asset, ...patch } : asset));
+  }
+
+  function handleReferenceAssetRemove(assetId: string) {
+    setReferenceAssets((currentAssets) => {
+      const asset = currentAssets.find((candidate) => candidate.id === assetId);
+      if (asset?.previewUrl.startsWith("blob:")) URL.revokeObjectURL(asset.previewUrl);
+      return currentAssets.filter((candidate) => candidate.id !== assetId);
     });
   }
 
@@ -480,24 +574,9 @@ export default function StudioApp() {
 
     try {
       const { waveform, duration } = await extractWaveformData(file);
-      let parsed = null;
-      let fallbackReason: string | null = null;
-
-      try {
-        const response = await fetchEssentiaAnalysis(file);
-        parsed = parseEssentiaPayload({
-          payload: response,
-          fileName: file.name,
-          waveform,
-          waveformDuration: duration,
-          audioUrl: nextAudioUrl,
-        });
-      } catch (error) {
-        fallbackReason = error instanceof Error ? error.message : "Essentia analysis failed";
-        console.warn("[Audio] Essentia unavailable; using local beat/onset fallback", error);
-      }
-
-      parsed ??= buildLocalAudioAnalysis({
+      const response = await fetchEssentiaAnalysis(file);
+      const parsed = parseEssentiaPayload({
+        payload: response,
         fileName: file.name,
         waveform,
         waveformDuration: duration,
@@ -505,7 +584,7 @@ export default function StudioApp() {
       });
 
       if (!parsed) {
-        throw new Error(fallbackReason ?? "The upload finished, but no usable beats/onsets/sections came back.");
+        throw new Error("Essentia returned no usable beats/onsets/sections.");
       }
 
       audioFileRef.current = file;
@@ -514,8 +593,8 @@ export default function StudioApp() {
         setBeatJoinAnalysis(parsed);
         setCommittedBeatSplit(null);
         setAudioProgress(100);
-        setAudioStatus(fallbackReason ? `Ready · ${parsed.sourceLabel} · local markers` : `Ready · ${parsed.sourceLabel}`);
-        setAudioError(fallbackReason ? `Essentia unreachable; showing local waveform/beat/onset markers. ${fallbackReason}` : null);
+        setAudioStatus(`Ready · ${parsed.sourceLabel}`);
+        setAudioError(null);
       });
 
       if (previousAudioUrl) {
@@ -524,7 +603,7 @@ export default function StudioApp() {
     } catch (error) {
       URL.revokeObjectURL(nextAudioUrl);
       const message = error instanceof Error ? error.message : "Unknown analysis error";
-      setAudioError(message);
+      setAudioError(`Essentia has errored: ${message}`);
       setAudioProgress(0);
       setAudioStatus(beatJoinAnalysis ? `Ready · ${beatJoinAnalysis.sourceLabel}` : "Upload a song to unlock beat sync.");
       if (!beatJoinAnalysis) {
@@ -542,7 +621,7 @@ export default function StudioApp() {
   async function runProcess() {
     if (isRunning || previewState.activeRequestKey) return;
 
-    if ((tab === "story" || tab === "shuffle" || tab === "join" || tab === "beatjoin") && browserPreviewSegments.length > 0) {
+    if ((tab === "story" || tab === "compose" || tab === "shuffle" || tab === "generate" || tab === "join" || tab === "beatjoin") && browserPreviewSegments.length > 0) {
       runBrowserPreview();
       return;
     }
@@ -608,7 +687,230 @@ export default function StudioApp() {
     }
   }
 
+  async function runFinalExport() {
+    if (isFinalExporting || isShaderCaptureExporting || previewState.activeRequestKey) return;
+    if (!beatJoinAnalysis) {
+      setFinalExportError("Upload and analyze the master song before final export.");
+      return;
+    }
+    if (!storyState.storyGenerated || storyPreviewSegments.length === 0 || !musicVideoProject) {
+      setFinalExportError("Generate the Story layout and preview segments before final export.");
+      return;
+    }
+
+    const requestKey = `final-export-${Date.now()}`;
+    setIsFinalExporting(true);
+    setDone(false);
+    setProgress(5);
+    setFinalExportError(null);
+    setFinalExportStatus("Collecting master audio, source clips, beats, lyrics, and shader cues...");
+    setPreviewState((current) =>
+      startSectionRecompute(current, {
+        requestKey,
+        sectionId: "story:final-export",
+        continuityMode: shuffleMode,
+        paramsHash: `final-export:${shaderPresetId}:${storyPreviewSegments.length}`,
+        startedAt: new Date().toISOString(),
+        progress: 5,
+      }),
+    );
+    setPreviewState((current) => markSectionRecomputeRunning(current, requestKey));
+
+    try {
+      const audioFile = await resolveMasterAudioFile(beatJoinAnalysis, audioFileRef.current);
+      const uniqueVideoUrls = [...new Set(storyPreviewSegments.map((segment) => segment.videoUrl))];
+      const videoUrlIndex = new Map(uniqueVideoUrls.map((url, index) => [url, index]));
+
+      setProgress(20);
+      setPreviewState((current) => updateSectionRecomputeProgress(current, { requestKey, progress: 20 }));
+
+      const sourceFiles = await Promise.all(uniqueVideoUrls.map((url, index) => fetchMediaUrlAsFile(url, `source${index}.mp4`, "video/mp4")));
+      const timelineItemsBySectionId = new Map(musicVideoProject.editPlan.timelineItems.map((item) => [item.sectionId, item]));
+      const segments = storyPreviewSegments.map((segment) => {
+        const item = timelineItemsBySectionId.get(segment.sectionId);
+        return {
+          sourceIndex: videoUrlIndex.get(segment.videoUrl) ?? 0,
+          startTime: segment.startTime,
+          endTime: segment.endTime,
+          musicStart: segment.musicStart,
+          musicEnd: segment.musicEnd,
+          label: item?.label ?? segment.label,
+        };
+      });
+
+      const form = new FormData();
+      form.set("audio", audioFile);
+      sourceFiles.forEach((file, index) => form.set(`file:${index}`, file));
+      form.set("segments", JSON.stringify(segments));
+      form.set("beats", JSON.stringify(beatJoinAnalysis.beats));
+      form.set("lyricChunks", JSON.stringify(musicVideoProject.lyricChunks));
+      form.set("shaderPresetId", shaderPresetId);
+      form.set("requestKey", requestKey);
+
+      setProgress(45);
+      setFinalExportStatus(`Rendering MP4 with ${MUSIC_VIDEO_SHADER_PRESETS.find((preset) => preset.id === shaderPresetId)?.label ?? shaderPresetId} shader cues...`);
+      setPreviewState((current) => updateSectionRecomputeProgress(current, { requestKey, progress: 45 }));
+
+      const response = await fetch("/api/export/final", { method: "POST", body: form });
+      const payload = (await response.json()) as {
+        success?: boolean;
+        error?: string;
+        asset?: {
+          requestKey: string;
+          assetKey: string;
+          duration: number;
+          generatedAt: string;
+          videoUrl?: string;
+          downloadFileName?: string;
+          effectCues?: unknown[];
+        };
+      };
+
+      if (!response.ok || !payload.success || !payload.asset) {
+        throw new Error(payload.error ?? "Final export failed.");
+      }
+
+      setProgress(90);
+      setPreviewState((current) => updateSectionRecomputeProgress(current, { requestKey, progress: 90 }));
+      setPreviewState((current) => markSectionReady(current, payload.asset!));
+      setPreviewState((current) => swapReadySection(current, requestKey));
+      setFinalExportUrl(payload.asset.videoUrl ?? null);
+      setFinalExportName(payload.asset.downloadFileName ?? "stack-structure-final.mp4");
+      setFinalExportCueCount(payload.asset.effectCues?.length ?? 0);
+      setFinalExportStatus(`Final MP4 ready · ${(payload.asset.duration || 0).toFixed(1)}s · ${payload.asset.effectCues?.length ?? 0} synced shader cues.`);
+      setProgress(100);
+      setDone(true);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown final export error.";
+      setFinalExportError(message);
+      setFinalExportStatus("Final export failed.");
+      setPreviewState((current) => failSectionRecompute(current, { requestKey, message }));
+    } finally {
+      setIsFinalExporting(false);
+    }
+  }
+
+  async function runWebGpuShaderCaptureExport() {
+    if (isFinalExporting || isShaderCaptureExporting || previewState.activeRequestKey) return;
+    if (!beatJoinAnalysis) {
+      setFinalExportError("Upload and analyze the master song before WebGPU export.");
+      return;
+    }
+    if (!storyState.storyGenerated || storyPreviewSegments.length === 0 || !musicVideoProject) {
+      setFinalExportError("Generate the Story layout and preview segments before WebGPU export.");
+      return;
+    }
+
+    const canvas = document.querySelector<HTMLCanvasElement>("[data-stutter-shader-preview]");
+    if (!canvas || typeof canvas.captureStream !== "function") {
+      setFinalExportError("Open the instant preview in a browser that supports canvas capture before WebGPU export.");
+      return;
+    }
+
+    const requestKey = `webgpu-final-export-${Date.now()}`;
+    setIsShaderCaptureExporting(true);
+    setDone(false);
+    setProgress(5);
+    setFinalExportError(null);
+    setFinalExportStatus("Recording live WebGPU shader preview in real time...");
+    setPreviewState((current) =>
+      startSectionRecompute(current, {
+        requestKey,
+        sectionId: "story:webgpu-final-export",
+        continuityMode: shuffleMode,
+        paramsHash: `webgpu-final-export:${shaderPresetId}:${storyPreviewSegments.length}`,
+        startedAt: new Date().toISOString(),
+        progress: 5,
+      }),
+    );
+    setPreviewState((current) => markSectionRecomputeRunning(current, requestKey));
+
+    try {
+      const audioFile = await resolveMasterAudioFile(beatJoinAnalysis, audioFileRef.current);
+      const mimeType = getBestMediaRecorderMimeType();
+      canvas.dataset.stutterCaptureResolution = "720p";
+      const stream = canvas.captureStream(24);
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      const chunks: BlobPart[] = [];
+      recorder.addEventListener("dataavailable", (event) => {
+        if (event.data.size > 0) chunks.push(event.data);
+      });
+
+      setProgress(10);
+      setPreviewState((current) => updateSectionRecomputeProgress(current, { requestKey, progress: 10 }));
+
+      const stopped = new Promise<void>((resolve) => recorder.addEventListener("stop", () => resolve(), { once: true }));
+      recorder.start(1000);
+      previewPlayerRef.current.stop();
+      await waitMs(80);
+      await previewPlayerRef.current.play();
+
+      setProgress(20);
+      setFinalExportStatus("Capturing the actual WebGPU shader canvas; this runs in real time for the song duration.");
+      setPreviewState((current) => updateSectionRecomputeProgress(current, { requestKey, progress: 20 }));
+
+      await waitForPreviewPlayerToEnd(previewPlayerRef.current, Math.max(30, browserPreviewState.totalDuration + 90));
+      if (recorder.state !== "inactive") recorder.stop();
+      await stopped;
+      stream.getTracks().forEach((track) => track.stop());
+
+      const captureBlob = new Blob(chunks, { type: mimeType || "video/webm" });
+      if (captureBlob.size === 0) {
+        throw new Error("WebGPU shader capture produced an empty recording.");
+      }
+
+      setProgress(70);
+      setFinalExportStatus("Muxing WebGPU shader capture with master audio into MP4...");
+      setPreviewState((current) => updateSectionRecomputeProgress(current, { requestKey, progress: 70 }));
+
+      const form = new FormData();
+      form.set("audio", audioFile);
+      form.set("shaderCapture", new File([captureBlob], `${requestKey}.webm`, { type: captureBlob.type || "video/webm" }));
+      form.set("requestKey", requestKey);
+
+      const response = await fetch("/api/export/shader-capture", { method: "POST", body: form });
+      const payload = (await response.json()) as {
+        success?: boolean;
+        error?: string;
+        asset?: {
+          requestKey: string;
+          assetKey: string;
+          duration: number;
+          generatedAt: string;
+          videoUrl?: string;
+          downloadFileName?: string;
+          shaderRenderSource?: string;
+        };
+      };
+
+      if (!response.ok || !payload.success || !payload.asset) {
+        throw new Error(payload.error ?? "WebGPU shader capture export failed.");
+      }
+
+      setProgress(95);
+      setPreviewState((current) => updateSectionRecomputeProgress(current, { requestKey, progress: 95 }));
+      setPreviewState((current) => markSectionReady(current, payload.asset!));
+      setPreviewState((current) => swapReadySection(current, requestKey));
+      setFinalExportUrl(payload.asset.videoUrl ?? null);
+      setFinalExportName(payload.asset.downloadFileName ?? "stack-structure-webgpu-final.mp4");
+      setFinalExportCueCount(browserPreviewEffectCues.length);
+      setFinalExportStatus(`WebGPU MP4 ready · ${(payload.asset.duration || 0).toFixed(1)}s · ${browserPreviewEffectCues.length} live shader cues captured.`);
+      setProgress(100);
+      setDone(true);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown WebGPU shader capture export error.";
+      setFinalExportError(message);
+      setFinalExportStatus("WebGPU shader capture export failed.");
+      setPreviewState((current) => failSectionRecompute(current, { requestKey, message }));
+    } finally {
+      canvas.dataset.stutterCaptureResolution = "";
+      setIsShaderCaptureExporting(false);
+    }
+  }
+
   async function runBrowserPreview() {
+    setRetainedBrowserPreviewSegments(browserPreviewSegments);
+    setRetainedPreviewEffectCues(browserPreviewEffectCues);
     setIsRunning(true);
     setDone(false);
     setProgress(5);
@@ -701,6 +1003,19 @@ export default function StudioApp() {
     }
   }
 
+  async function resolveMasterAudioFile(analysis: BeatJoinAnalysis, currentFile: File | null) {
+    if (currentFile) return currentFile;
+    if (!analysis.audioUrl) throw new Error("Master audio blob is not available in this browser session.");
+    return fetchMediaUrlAsFile(analysis.audioUrl, `${analysis.sourceLabel || "master-audio"}.wav`, "audio/wav");
+  }
+
+  async function fetchMediaUrlAsFile(url: string, fileName: string, fallbackType: string) {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`Could not read media URL for export: ${response.status}`);
+    const blob = await response.blob();
+    return new File([blob], fileName, { type: blob.type || fallbackType });
+  }
+
   function handleCommitBeatSplit() {
     if (!beatSplitSegments.length) return;
 
@@ -713,6 +1028,23 @@ export default function StudioApp() {
       committedAt: new Date().toISOString(),
     });
     setJoinClipStates(Object.fromEntries(beatSplitSegments.map((_, index) => [index, true])) as Record<number, boolean>);
+    setActiveClip(0);
+    setDone(true);
+    setProgress(100);
+  }
+
+  function handleCommitSplit() {
+    if (!splitSegments.length) return;
+
+    setCommittedBeatSplit({
+      segments: splitSegments.map((segment) => ({
+        ...segment,
+        sourceClipIds: [...segment.sourceClipIds],
+      })),
+      signature: splitSignature,
+      committedAt: new Date().toISOString(),
+    });
+    setJoinClipStates(Object.fromEntries(splitSegments.map((_, index) => [index, true])) as Record<number, boolean>);
     setActiveClip(0);
     setDone(true);
     setProgress(100);
@@ -777,21 +1109,27 @@ export default function StudioApp() {
   const audioPreviewSubtitle = useMemo(() => {
     switch (tab) {
       case "beatsplit":
-        return `Master Audio Track · ${beatSplitMode === "beats" ? "Beat Split" : "Onset Split"}`;
+        return `Master Audio Track · ${beatSplitMode === "beats" ? "Legacy Beat Mode" : "Legacy Onset Mode"}`;
       case "story":
         return "Master Audio Track · Story/Edit Plan";
+      case "compose":
+        return "Master Audio Track · Preview / Export";
       case "beatjoin":
-        return "Master Audio Track · Beat Join";
+        return "Master Audio Track · Legacy Reactive Join";
       case "shuffle":
-        return `Master Audio Track · Shuffle ${shuffleMode}`;
+        return `Master Audio Track · Match ${shuffleMode}`;
+      case "generate":
+        return "Master Audio Track · Fill gaps with generated footage";
+      case "split":
+        return `Master Audio Track · Split ${formatSplitModeLabel(splitMode)}`;
       case "join":
-        return "Master Audio Track · Standard Join";
+        return "Master Audio Track · Join Timeline";
       case "ramp":
-        return "Master Audio Track · Speed Ramp";
+        return "Master Audio Track · Transitions / Effects";
       default:
         return "Master Audio Track · Studio Timeline";
     }
-  }, [beatSplitMode, shuffleMode, tab]);
+  }, [beatSplitMode, shuffleMode, splitMode, tab]);
   const shuffleQueue = useMemo(
     () =>
       buildShuffleQueue({
@@ -853,7 +1191,7 @@ export default function StudioApp() {
     manifestSegmentCount: manifestSegments.length,
     segmentPreviewCount: segmentPreviews.length,
     rankedOrder: manifestRankingPreview.order,
-    fallbackOrder: shuffleQueue,
+    defaultOrder: shuffleQueue,
   });
   const previewAssetUrl = buildPreviewAssetUrl(previewState.currentAssetKey);
 
@@ -873,19 +1211,21 @@ export default function StudioApp() {
     });
   }, [tab, beatJoinAnalysis, effectiveClipOrder, minDur, maxDur, energyResp, energyReactive, lowEnergyRange, highEnergyRange, onsetBoost, chaos]);
 
-  const storyPreviewSegments = useMemo<PreviewSegment[]>(
+  const storyPreviewSegments = useMemo<EditPlanPreviewSegment[]>(
     () =>
       storyState.storyGenerated
         ? buildEditPlanPreviewSegments({
             project: musicVideoProject,
             videoSources,
+            editSettings: storyState.editSettings,
           })
         : [],
-    [musicVideoProject, storyState.storyGenerated, videoSources],
+    [musicVideoProject, storyState.editSettings, storyState.storyGenerated, videoSources],
   );
+  const shaderPresetSummary = useMemo(() => describeMusicVideoShaderPreset(shaderPresetId), [shaderPresetId]);
 
   const browserPreviewSegments = useMemo<PreviewSegment[]>(() => {
-    if (tab === "story") {
+    if (tab === "story" || tab === "compose" || tab === "generate") {
       return storyPreviewSegments;
     }
 
@@ -927,7 +1267,62 @@ export default function StudioApp() {
     return [];
   }, [tab, storyPreviewSegments, effectiveClipOrder, workingBeatSplitSegments, videoSources, sourceClips, arrangementSegments]);
 
+  const browserPreviewEffectCues = useMemo(
+    () =>
+      (tab === "story" || tab === "compose") && beatJoinAnalysis && musicVideoProject && storyPreviewSegments.length > 0
+        ? buildAutoShaderCues({
+            segments: storyPreviewSegments,
+            beats: beatJoinAnalysis.beats,
+            lyricChunks: musicVideoProject.lyricChunks,
+            presetId: shaderPresetId,
+          })
+        : [],
+    [beatJoinAnalysis, musicVideoProject, shaderPresetId, storyPreviewSegments, tab],
+  );
+
+  useEffect(() => {
+    if (browserPreviewEffectCues.length > 0) {
+      lastPreviewEffectCuesRef.current = browserPreviewEffectCues;
+    }
+  }, [browserPreviewEffectCues]);
+
+  useEffect(() => {
+    if ((tab !== "story" && tab !== "compose") || browserPreviewSegments.length === 0) return;
+    setRetainedBrowserPreviewSegments(browserPreviewSegments);
+    setRetainedPreviewEffectCues(browserPreviewEffectCues);
+  }, [browserPreviewEffectCues, browserPreviewSegments, tab]);
+
+  const displayedBrowserPreviewSegments = (tab === "story" || tab === "compose") && browserPreviewSegments.length > 0
+    ? browserPreviewSegments
+    : retainedBrowserPreviewSegments.length > 0
+      ? retainedBrowserPreviewSegments
+      : browserPreviewSegments.length > 0
+        ? browserPreviewSegments
+        : previewPlayerRef.current.getSegments();
+  const displayedPreviewEffectCues = (tab === "story" || tab === "compose") && browserPreviewEffectCues.length > 0
+    ? browserPreviewEffectCues
+    : retainedPreviewEffectCues.length > 0
+      ? retainedPreviewEffectCues
+      : browserPreviewEffectCues.length > 0
+        ? browserPreviewEffectCues
+        : lastPreviewEffectCuesRef.current;
+
+  const ingestStats = useMemo(() => {
+    const sceneCount = videoSources.reduce((total, source) => total + (source.scenes?.length ?? 0), 0);
+    const captionReady = videoSources.reduce((total, source) => total + (source.scenes?.filter((scene) => Boolean(scene.caption)).length ?? 0), 0);
+    const captionTotal = sceneCount;
+    return { sceneCount, captionReady, captionTotal };
+  }, [videoSources]);
+
   const pipelineStages = [
+    {
+      label: "Ingest",
+      status: beatJoinAnalysis && storyState.transcriptSummary && videoSources.length
+        ? `${videoSources.length} videos · ${ingestStats.captionReady}/${ingestStats.captionTotal} captions`
+        : "Loading media",
+      active: tab === "review",
+      ready: Boolean(beatJoinAnalysis && storyState.transcriptSummary && videoSources.length),
+    },
     {
       label: "Story",
       status: storyState.storyGenerated ? `${musicVideoProject?.editPlan.timelineItems.length ?? 0} edit slots` : "Draft",
@@ -936,31 +1331,43 @@ export default function StudioApp() {
     },
     {
       label: "Split",
-      status: committedBeatSplit
-        ? isCommittedBeatSplitCurrent
-          ? `Committed · ${committedBeatSplit.segments.length}`
-          : "Stale preview"
-        : "Draft",
-      active: tab === "beatsplit",
-      ready: Boolean(committedBeatSplit && isCommittedBeatSplitCurrent),
+      status: ingestStats.sceneCount ? `${ingestStats.sceneCount} cuts` : videoSources.length ? "Detecting" : "Waiting",
+      active: tab === "split",
+      ready: ingestStats.sceneCount > 0,
     },
     {
-      label: "Shuffle",
-      status: committedBeatSplit ? shuffleMode : "Waiting for split",
+      label: "Match",
+      status: storyState.storyGenerated && ingestStats.captionReady > 0 ? "Lyrics + captions" : "Waiting",
       active: tab === "shuffle",
-      ready: Boolean(committedBeatSplit),
+      ready: Boolean(storyState.storyGenerated && ingestStats.captionReady > 0),
+    },
+    {
+      label: "Generate",
+      status: musicVideoProject?.editPlan.timelineItems.some((item) => !item.videoMomentId || (item.semanticMatch?.score ?? 0) < 0.45)
+        ? "Fill gaps"
+        : storyPreviewSegments.length
+          ? "Optional B-roll"
+          : "Waiting for match",
+      active: tab === "generate",
+      ready: Boolean(storyState.storyGenerated && musicVideoProject?.editPlan.timelineItems.length),
     },
     {
       label: "Join",
-      status: committedBeatSplit ? `${joinClips.filter((clip) => clip.on).length} active` : "Waiting for split",
+      status: storyPreviewSegments.length ? `${storyPreviewSegments.length} cuts` : "Waiting for generate",
       active: tab === "join",
-      ready: Boolean(committedBeatSplit),
+      ready: storyPreviewSegments.length > 0,
     },
     {
-      label: "Beat Join",
-      status: committedBeatSplit && beatJoinAnalysis ? "Ready" : committedBeatSplit ? "Waiting for song" : "Waiting for split",
-      active: tab === "beatjoin",
-      ready: Boolean(committedBeatSplit && beatJoinAnalysis),
+      label: "Effects",
+      status: shaderPresetSummary.preset.label,
+      active: tab === "ramp",
+      ready: storyPreviewSegments.length > 0 || Boolean(committedBeatSplit),
+    },
+    {
+      label: "Export",
+      status: finalExportUrl ? "MP4 ready" : storyPreviewSegments.length ? "Preview ready" : "Waiting",
+      active: tab === "compose",
+      ready: Boolean(finalExportUrl || storyPreviewSegments.length),
     },
   ];
 
@@ -970,20 +1377,22 @@ export default function StudioApp() {
     }
   }, [committedBeatSplit, isCommittedBeatSplitCurrent, tab]);
 
-  function resetPreparedPreview() {
+  function resetPreparedPreview(options: { preserveBrowserPreview?: boolean } = {}) {
     setDone(false);
     setProgress(0);
     setPreviewState(createSectionRecomputeState());
-    previewPlayerRef.current.stop();
-    setIsBrowserPreviewActive(false);
+    if (!options.preserveBrowserPreview) {
+      previewPlayerRef.current.stop();
+      setIsBrowserPreviewActive(false);
+    }
   }
 
   function handleSelectTab(t: Tab) {
     setTab(t);
-    resetPreparedPreview();
+    resetPreparedPreview({ preserveBrowserPreview: true });
   }
 
-  const needsVideoSource = tab !== "beatjoin" && tab !== "story";
+  const needsVideoSource = tab !== "beatjoin" && tab !== "story" && tab !== "compose";
   const actionState = deriveActionDisabledState({
     needsVideoSource,
     videoSourceCount: videoSources.length,
@@ -998,12 +1407,37 @@ export default function StudioApp() {
       : previewState.activeRequestKey
         ? "Preview already running."
         : null;
-  const actionDisabled = tab === "story" ? Boolean(storyActionReason) : actionState.disabled;
-  const actionDisabledReason = tab === "story" ? storyActionReason ?? "Unavailable" : actionState.reason ?? "Unavailable";
+  const finalExportDisabledReason = !beatJoinAnalysis
+    ? "Upload master audio first."
+    : !storyState.storyGenerated || storyPreviewSegments.length === 0
+      ? "Generate story preview first."
+      : isFinalExporting
+        ? "Final export running."
+        : isShaderCaptureExporting
+          ? "WebGPU export running."
+        : previewState.activeRequestKey
+          ? "Preview/export already running."
+          : null;
+  const splitActionReason = tab === "split" && videoSources.length > 0 && splitSegments.length === 0
+    ? getSplitModeLockedReason(splitMode, {
+      hasAnalysis: Boolean(beatJoinAnalysis),
+      sceneCount: ingestStats.sceneCount,
+    })
+    : null;
+  const actionDisabled = tab === "story" || tab === "compose"
+    ? Boolean(storyActionReason)
+    : tab === "split"
+      ? Boolean(actionState.disabled || splitActionReason)
+      : actionState.disabled;
+  const actionDisabledReason = tab === "story" || tab === "compose"
+    ? storyActionReason ?? "Unavailable"
+    : tab === "split"
+      ? splitActionReason ?? actionState.reason ?? "Unavailable"
+      : actionState.reason ?? "Unavailable";
 
   const previewStatusLabel = derivePreviewStatusLabel(previewState);
-  const completedLabel = tab === "story"
-    ? `Story Preview Ready${previewState.currentAssetKey ? ` — ${previewState.currentAssetKey.split(/[\\/]/).pop()}` : ""}`
+  const completedLabel = tab === "story" || tab === "compose"
+    ? `${tab === "compose" ? "Compose Preview Ready" : "Story Preview Ready"}${previewState.currentAssetKey ? ` — ${previewState.currentAssetKey.split(/[\\/]/).pop()}` : ""}`
     : deriveCompletedLabel(previewState.currentAssetKey);
 
   return (
@@ -1016,10 +1450,7 @@ export default function StudioApp() {
       <div className="flex flex-1 flex-col overflow-hidden">
         <StudioHeader tabLabel={tabLabel} tabSub={tabSub} playhead={playhead} bpm={bpm} />
 
-        <div className="flex flex-1 overflow-hidden">
-          {tab === "review" ? (
-            <ReviewTab onApprovedSourcesChange={handleApprovedSources} />
-          ) : (
+        <div className="flex flex-1 flex-col overflow-hidden">
           <>
           <main className="flex-1 overflow-y-auto p-4 space-y-3">
             <StudioAudioLane
@@ -1034,34 +1465,67 @@ export default function StudioApp() {
               onPlayheadChange={setAudioPreviewPlayhead}
             />
 
-            <div className="grid gap-2 md:grid-cols-4">
-              {pipelineStages.map((stage) => (
-                <div
-                  key={stage.label}
-                  className={`rounded-[2px] border px-3 py-2 ${
-                    stage.active
-                      ? "border-[#e05c00] bg-[#120b06]"
-                      : stage.ready
-                        ? "border-[#1f1f1f] bg-[#0b0b0b]"
-                        : "border-[#171717] bg-[#090909]"
-                  }`}
-                >
-                  <div className={`text-[9px] uppercase tracking-[0.18em] ${stage.active ? "text-[#e05c00]" : "text-[#505050]"}`}>
-                    {stage.label}
-                  </div>
-                  <div className="mt-1 font-mono text-[10px] text-[#9a9a9a]">{stage.status}</div>
-                </div>
-              ))}
+            <div className="rounded-[2px] border border-[#171717] bg-[#080808] px-2 py-2">
+              <div className="flex flex-wrap items-center gap-1.5">
+                {pipelineStages.map((stage, index) => (
+                  <button
+                    key={stage.label}
+                    type="button"
+                    onClick={() => handleSelectTab(NAV[index]?.key ?? tab)}
+                    className={`min-w-[92px] flex-1 rounded-[2px] border px-2 py-1.5 text-left transition-colors ${
+                      stage.active
+                        ? "border-[#e05c00] bg-[#120b06]"
+                        : stage.ready
+                          ? "border-[#202020] bg-[#0a0a0a] hover:border-[#333]"
+                          : "border-[#151515] bg-[#070707] hover:border-[#242424]"
+                    }`}
+                    title={`${stage.label}: ${stage.status}`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className={`text-[8px] uppercase tracking-[0.16em] ${stage.active ? "text-[#e05c00]" : "text-[#555]"}`}>{stage.label}</span>
+                      <span className={`h-1.5 w-1.5 rounded-full ${stage.ready ? "bg-[#3a8a3a]" : "bg-[#3d3d3d]"}`} />
+                    </div>
+                    <div className="mt-[2px] truncate font-mono text-[9px] text-[#777]">{stage.status}</div>
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div className="rounded-[2px] border border-[#171717] bg-[#080808] px-3 py-2 text-[10px] text-[#666]">
               Local project draft: <span className="font-mono text-[#8a8a8a]">{draftStatus}</span>
             </div>
 
+            {tab === "review" && (
+              <IngestTab
+                analysis={beatJoinAnalysis}
+                audioStatus={audioStatus}
+                audioError={audioError}
+                isPreparingAudio={isPreparingAudio}
+                vocalStemName={storyState.vocalStemName}
+                transcriptSummary={storyState.transcriptSummary}
+                videoSources={videoSources}
+                videoStatus={videoStatus}
+                videoError={videoError}
+                isPreparingVideos={isPreparingVideos}
+                captionMode={captionMode}
+                onCaptionModeChange={setCaptionMode}
+                onVideoUpload={handleVideoUpload}
+                onAppendVideos={handleAppendVideos}
+                onRemoveVideo={handleRemoveVideo}
+                referenceAssets={referenceAssets}
+                onReferenceAssetUpload={(role, files) => void handleReferenceAssetUpload(role, files)}
+                onReferenceAssetUpdate={handleReferenceAssetUpdate}
+                onReferenceAssetRemove={handleReferenceAssetRemove}
+                onSelectStory={() => handleSelectTab("story")}
+              />
+            )}
+
             {tab === "split" && (
               <SplitTab
                 playhead={playhead}
                 clipDur={clipDur}
+                mode={splitMode}
+                analysis={beatJoinAnalysis}
                 videoSources={videoSources}
                 videoStatus={videoStatus}
                 videoError={videoError}
@@ -1073,35 +1537,7 @@ export default function StudioApp() {
                 onAppendVideos={handleAppendVideos}
                 onRemoveVideo={handleRemoveVideo}
                 onClipDur={setClipDur}
-                onActiveClip={setActiveClip}
-              />
-            )}
-
-            {tab === "beatsplit" && (
-              <BeatSplitTab
-                playhead={playhead}
-                bpm={bpm}
-                barsPerSeg={barsPerSeg}
-                splitMode={beatSplitMode}
-                analysis={beatJoinAnalysis}
-                audioStatus={audioStatus}
-                audioError={audioError}
-                videoSources={videoSources}
-                videoStatus={videoStatus}
-                videoError={videoError}
-                isPreparingVideos={isPreparingVideos}
-                sourceClips={sourceClips}
-                segments={beatSplitSegments}
-                sensitivity={sensitivity}
-                activeClip={beatSplitPreviewActiveClip}
-                committedSegmentCount={committedBeatSplit?.segments.length ?? 0}
-                isCommittedCurrent={isCommittedBeatSplitCurrent}
-                onVideoUpload={handleVideoUpload}
-                onAppendVideos={handleAppendVideos}
-                onRemoveVideo={handleRemoveVideo}
-                onBarsPerSeg={setBarsPerSeg}
-                onSensitivity={setSensitivity}
-                onSplitMode={setBeatSplitMode}
+                onModeChange={setSplitMode}
                 onActiveClip={setActiveClip}
               />
             )}
@@ -1118,33 +1554,67 @@ export default function StudioApp() {
               />
             )}
 
+            {tab === "compose" && (
+              <ComposeTab
+                analysis={beatJoinAnalysis}
+                storyGenerated={storyState.storyGenerated}
+                editSlotCount={musicVideoProject?.editPlan.timelineItems.length ?? 0}
+                storySegmentCount={storyPreviewSegments.length}
+                lyricChunkCount={musicVideoProject?.lyricChunks.length ?? 0}
+                videoSourceCount={videoSources.length}
+                shaderPresetId={shaderPresetId}
+                shaderPresetSummary={shaderPresetSummary}
+                finalExportStatus={finalExportStatus}
+                finalExportError={finalExportError}
+                finalExportUrl={finalExportUrl}
+                finalExportName={finalExportName}
+                finalExportCueCount={finalExportCueCount}
+                finalExportDisabledReason={finalExportDisabledReason}
+                isFinalExporting={isFinalExporting}
+                isShaderCaptureExporting={isShaderCaptureExporting}
+                onShaderPresetId={(id) => setShaderPresetId(id as typeof shaderPresetId)}
+                onFinalExport={() => void runFinalExport()}
+                onWebGpuExport={() => void runWebGpuShaderCaptureExport()}
+                onSelectStory={() => handleSelectTab("story")}
+              />
+            )}
+
             {tab === "shuffle" && (
-              <ShuffleTab
-                playhead={playhead}
-                bpm={bpm}
-                clipCount={joinClips.length}
-                clipOrder={effectiveClipOrder}
-                segmentPreviews={segmentPreviews}
-                shuffleMode={shuffleMode}
-                isUsingCommittedSplit={Boolean(committedBeatSplit)}
-                minScore={minScore}
-                lookahead={lookahead}
-                keepPct={keepPct}
+              <MatchTab
+                project={musicVideoProject}
+                analysis={beatJoinAnalysis}
+                storyGenerated={storyState.storyGenerated}
+                matchMode={matchMode}
+                onsetDensity={matchOnsetDensity}
+                lyricCueBlend={matchLyricCueBlend}
+                lyricMergeWindow={matchLyricMergeWindow}
                 colorGradient={colorGradient}
-                activeClip={beatActiveClip}
-                onShuffleMode={setShuffleMode}
-                onMinScore={setMinScore}
-                onLookahead={setLookahead}
-                onKeepPct={setKeepPct}
+                onMatchMode={setMatchMode}
+                onOnsetDensity={setMatchOnsetDensity}
+                onLyricCueBlend={setMatchLyricCueBlend}
+                onLyricMergeWindow={setMatchLyricMergeWindow}
                 onColorGradient={setColorGradient}
-                onActiveClip={setActiveClip}
+                onSelectStory={() => handleSelectTab("story")}
+                onSelectSplit={() => handleSelectTab("split")}
+              />
+            )}
+
+            {tab === "generate" && (
+              <GenerateTab
+                project={musicVideoProject}
+                analysis={beatJoinAnalysis}
+                storyGenerated={storyState.storyGenerated}
+                onsetDensity={matchOnsetDensity}
+                lyricCueBlend={matchLyricCueBlend}
+                lyricMergeWindow={matchLyricMergeWindow}
+                referenceAssets={referenceAssets}
+                onSelectMatch={() => handleSelectTab("shuffle")}
+                onSelectJoin={() => handleSelectTab("join")}
               />
             )}
 
             {tab === "join" && (
               <JoinTab
-                playhead={playhead}
-                bpm={bpm}
                 joinClips={joinClips}
                 clipOrder={effectiveClipOrder}
                 segmentPreviews={segmentPreviews}
@@ -1152,39 +1622,6 @@ export default function StudioApp() {
                 isUsingCommittedSplit={Boolean(committedBeatSplit)}
                 activeClip={beatActiveClip}
                 onJoinClips={handleJoinClips}
-                onActiveClip={setActiveClip}
-              />
-            )}
-
-            {tab === "beatjoin" && (
-              <BeatJoinTab
-                playhead={playhead}
-                minDur={minDur}
-                maxDur={maxDur}
-                energyResp={energyResp}
-                chaos={chaos}
-                onsetBoost={onsetBoost}
-                energyReactive={energyReactive}
-                lowEnergyRange={lowEnergyRange}
-                highEnergyRange={highEnergyRange}
-                analysis={beatJoinAnalysis}
-                audioPlayhead={audioPreviewPlayhead}
-                analysisStatus={audioStatus}
-                analysisError={audioError}
-                isAnalyzing={isPreparingAudio}
-                clipOrder={effectiveClipOrder}
-                shuffleMode={shuffleMode}
-                isUsingCommittedSplit={Boolean(committedBeatSplit)}
-                arrangementSegments={arrangementSegments}
-                activeClip={beatActiveClip}
-                onMinDur={setMinDur}
-                onMaxDur={setMaxDur}
-                onEnergyResp={setEnergyResp}
-                onChaos={setChaos}
-                onOnsetBoost={setOnsetBoost}
-                onEnergyReactive={setEnergyReactive}
-                onLowEnergyRange={(value) => setLowEnergyRange(Math.min(value, highEnergyRange - 0.05))}
-                onHighEnergyRange={(value) => setHighEnergyRange(Math.max(value, lowEnergyRange + 0.05))}
                 onActiveClip={setActiveClip}
               />
             )}
@@ -1213,22 +1650,27 @@ export default function StudioApp() {
               />
             )}
 
-            <ProcessActionBar
+            {tab !== "review" ? (
+              <ProcessActionBar
                 tab={tab}
                 done={done}
-                isRunning={isRunning}
+                isRunning={isRunning || isFinalExporting || isShaderCaptureExporting}
                 progress={progress}
                 disabled={actionDisabled}
                 disabledReason={actionDisabledReason}
-                processingLabel={`Preparing Preview · ${previewState.stage}`}
+                processingLabel={isFinalExporting ? "Rendering Final MP4" : `Preparing Preview · ${previewState.stage}`}
                 completedLabel={
-                  tab === "beatsplit"
-                    ? `Beat Split Committed — ${committedBeatSplit?.segments.length ?? beatSplitSegments.length} segments`
+                  tab === "split"
+                    ? `Split Committed — ${committedBeatSplit?.segments.length ?? splitSegments.length} cuts`
+                    : tab === "beatsplit"
+                    ? `Legacy Split Committed — ${committedBeatSplit?.segments.length ?? beatSplitSegments.length} segments`
                     : completedLabel
                 }
-                onRun={tab === "beatsplit" ? handleCommitBeatSplit : () => void runProcess()}
+                onRun={tab === "split" ? handleCommitSplit : tab === "beatsplit" ? handleCommitBeatSplit : () => void runProcess()}
                 onResetDone={resetPreparedPreview}
               />
+            ) : null}
+
           </main>
 
           <StudioRightPanel
@@ -1240,12 +1682,26 @@ export default function StudioApp() {
             previewAssetKey={previewState.currentAssetKey}
             previewAssetUrl={previewAssetUrl}
             previewPlayer={previewPlayerRef.current}
-            browserPreviewSegments={browserPreviewSegments}
+            browserPreviewSegments={displayedBrowserPreviewSegments}
             browserPreviewState={browserPreviewState}
             isBrowserPreviewActive={isBrowserPreviewActive}
+            previewEffectCues={displayedPreviewEffectCues}
+            audioTimeline={beatJoinAnalysis}
+            isPreviewExpanded={isPreviewExpanded}
+            onTogglePreviewExpanded={() => setIsPreviewExpanded((current) => !current)}
+            useSourceAudio={useSourceAudio}
+            onUseSourceAudioChange={setUseSourceAudio}
+            finalExportStatus={finalExportStatus}
+            finalExportUrl={finalExportUrl}
+            finalExportName={finalExportName}
+            finalExportCueCount={finalExportCueCount}
+            finalExportDisabledReason={finalExportDisabledReason}
+            isFinalExporting={isFinalExporting}
+            isShaderCaptureExporting={isShaderCaptureExporting}
+            onFinalExport={() => void runFinalExport()}
+            onWebGpuExport={() => void runWebGpuShaderCaptureExport()}
           />
           </>
-          )}
         </div>
 
         <StudioStatusBar
@@ -1261,8 +1717,78 @@ export default function StudioApp() {
 }
 
 
+function getBestMediaRecorderMimeType() {
+  if (typeof MediaRecorder === "undefined") return "";
+  const candidates = [
+    "video/webm;codecs=vp9",
+    "video/webm;codecs=vp8",
+    "video/webm",
+  ];
+  return candidates.find((candidate) => MediaRecorder.isTypeSupported(candidate)) ?? "";
+}
+
+function waitMs(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function waitForPreviewPlayerToEnd(player: BrowserPreviewPlayer, timeoutSeconds: number) {
+  return new Promise<void>((resolve, reject) => {
+    const deadline = Date.now() + timeoutSeconds * 1000;
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+    let unsubscribe: (() => void) | null = null;
+
+    const cleanup = () => {
+      if (intervalId) clearInterval(intervalId);
+      unsubscribe?.();
+    };
+
+    const check = (state = player.getState()) => {
+      if (state.status === "ended") {
+        cleanup();
+        resolve();
+        return;
+      }
+      if (state.status === "error") {
+        cleanup();
+        reject(new Error(state.errorMessage ?? "Preview playback failed during WebGPU capture."));
+        return;
+      }
+      if (Date.now() > deadline) {
+        cleanup();
+        reject(new Error("Timed out while recording the WebGPU shader preview."));
+      }
+    };
+
+    unsubscribe = player.subscribe(check);
+    intervalId = setInterval(() => check(), 1000);
+    check();
+  });
+}
+
 function buildVideoSourceKey(source: Pick<UploadedVideoSource, "name" | "size" | "duration">) {
   return `${source.name}::${source.size}::${source.duration.toFixed(3)}`;
+}
+
+function buildSceneCaptionSettings(
+  mode: SceneCaptionMode,
+  analysis: BeatJoinAnalysis | null,
+  storyState: ReturnType<typeof createDefaultStoryTabState>,
+) {
+  const transcript = storyState.transcriptSummary?.transcript ?? "";
+  return {
+    mode,
+    context: {
+      songTitle: analysis?.sourceLabel,
+      vocalStemName: storyState.vocalStemName || undefined,
+      lyricExcerpt: transcript ? transcript.slice(0, 900) : undefined,
+      storySummary: storyState.transcriptSummary?.summary || undefined,
+      storyPrompts: storyState.storyBeats
+        .map((beat) => beat.prompt)
+        .filter(Boolean)
+        .slice(0, 10),
+      projectIntent: "Music-video source footage captioning for later semantic matching against lyrics, story sections, action, mood, and setting.",
+    },
+  };
 }
 
 function remapVideoSourceId(source: UploadedVideoSource, id: number): UploadedVideoSource {
@@ -1273,6 +1799,34 @@ function remapVideoSourceId(source: UploadedVideoSource, id: number): UploadedVi
   };
 }
 
+function formatSplitModeLabel(mode: SplitMode) {
+  switch (mode) {
+    case "scene":
+      return "Scene";
+    case "beat":
+      return "Beat";
+    case "onset":
+      return "Onset";
+    case "scene-beat":
+      return "Scene + Beat";
+    case "scene-onset":
+      return "Scene + Onset";
+  }
+}
+
+function getSplitModeLockedReason(mode: SplitMode, state: { hasAnalysis: boolean; sceneCount: number }) {
+  const needsScenes = mode === "scene" || mode === "scene-beat" || mode === "scene-onset";
+  const needsAnalysis = mode === "beat" || mode === "onset" || mode === "scene-beat" || mode === "scene-onset";
+
+  if (needsScenes && state.sceneCount === 0) {
+    return "Scene detection must return cuts before this split mode can build.";
+  }
+  if (needsAnalysis && !state.hasAnalysis) {
+    return "Upload and analyze the master song before beat/onset split modes.";
+  }
+  return "No split cuts are ready for this mode.";
+}
+
 function formatVideoStatus(
   mode: "replace" | "append",
   changedCount: number,
@@ -1280,12 +1834,12 @@ function formatVideoStatus(
   sources: UploadedVideoSource[],
 ) {
   const sceneCount = sources.reduce((total, source) => total + (source.scenes?.length ?? 0), 0);
-  const fallbackCount = sources.filter((source) => source.sceneStatus === "fallback").length;
-  const sceneLabel = sceneCount
-    ? fallbackCount
-      ? `${sceneCount} fallback scene${sceneCount === 1 ? "" : "s"}`
-      : `${sceneCount} PySceneDetect scene${sceneCount === 1 ? "" : "s"}`
-    : "scene detection pending";
+  const failedCount = sources.filter((source) => source.sceneStatus === "failed").length;
+  const sceneLabel = failedCount
+    ? `${failedCount} scene detection error${failedCount === 1 ? "" : "s"}`
+    : sceneCount
+      ? `${sceneCount} PySceneDetect scene${sceneCount === 1 ? "" : "s"}`
+      : "scene detection pending";
 
   if (mode === "append") {
     if (!changedCount) {

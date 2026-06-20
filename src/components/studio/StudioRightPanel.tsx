@@ -4,8 +4,9 @@ import { LOG } from "./constants";
 import { PreviewPlayer } from "./PreviewPlayerComponent";
 import type { BrowserPreviewPlayer } from "./previewPlayer";
 import type { PreviewPlayerState, PreviewSegment } from "./previewPlayer";
+import type { ShaderEffectCue } from "./shaderEffectPlan";
 import { getPreviewAssetFileName } from "./studioUiState";
-import type { ShuffleMode, Tab } from "./types";
+import type { BeatJoinAnalysis, ShuffleMode, Tab } from "./types";
 
 type StudioRightPanelProps = {
   readout: [string, string | number][];
@@ -19,6 +20,21 @@ type StudioRightPanelProps = {
   browserPreviewSegments?: PreviewSegment[];
   browserPreviewState?: PreviewPlayerState;
   isBrowserPreviewActive?: boolean;
+  previewEffectCues?: ShaderEffectCue[];
+  audioTimeline?: Pick<BeatJoinAnalysis, "waveform" | "beats" | "onsets" | "duration"> | null;
+  isPreviewExpanded?: boolean;
+  onTogglePreviewExpanded?: () => void;
+  useSourceAudio?: boolean;
+  onUseSourceAudioChange?: (enabled: boolean) => void;
+  finalExportStatus?: string;
+  finalExportUrl?: string | null;
+  finalExportName?: string | null;
+  finalExportCueCount?: number;
+  finalExportDisabledReason?: string | null;
+  isFinalExporting?: boolean;
+  isShaderCaptureExporting?: boolean;
+  onFinalExport?: () => void;
+  onWebGpuExport?: () => void;
 };
 
 export function StudioRightPanel({
@@ -33,19 +49,35 @@ export function StudioRightPanel({
   browserPreviewSegments = [],
   browserPreviewState,
   isBrowserPreviewActive = false,
+  previewEffectCues = [],
+  audioTimeline = null,
+  isPreviewExpanded = false,
+  onTogglePreviewExpanded,
+  useSourceAudio = false,
+  onUseSourceAudioChange,
+  finalExportStatus = "Final export waits for a generated story preview and master audio.",
+  finalExportUrl = null,
+  finalExportName = null,
+  finalExportCueCount = 0,
+  finalExportDisabledReason = null,
+  isFinalExporting = false,
+  isShaderCaptureExporting = false,
+  onFinalExport,
+  onWebGpuExport,
 }: StudioRightPanelProps) {
   const previewAssetFileName = getPreviewAssetFileName(previewAssetKey);
-  const supportsInstantPreview = tab === "story" || tab === "shuffle" || tab === "join" || tab === "beatjoin";
-  const showBrowserPreview = supportsInstantPreview && browserPreviewSegments.length > 0 && previewPlayer;
+  const showBrowserPreview = browserPreviewSegments.length > 0 && previewPlayer;
   const showFfmpegPreview = !showBrowserPreview && !isBrowserPreviewActive && previewAssetUrl;
   const segmentCountLabel = browserPreviewSegments.length > 0
     ? `${browserPreviewSegments.length} segments · ${browserPreviewState?.totalDuration.toFixed(1) ?? "0"}s`
     : null;
 
   return (
-    <aside className="w-52 shrink-0 border-l border-[#181818] bg-[#0c0c0c] flex flex-col overflow-y-auto">
-      <div className="border-b border-[#181818] p-3">
-        <div className="mb-2 text-[9px] uppercase tracking-[0.22em] text-[#343434]">Live Readout</div>
+    <aside
+      className={`${isPreviewExpanded ? "h-[min(68vh,760px)]" : "h-[145px]"} w-full shrink-0 border-t border-[#181818] bg-[#0c0c0c] grid grid-cols-[minmax(150px,0.6fr)_minmax(170px,0.65fr)_minmax(190px,0.75fr)_minmax(420px,2.35fr)_minmax(190px,0.7fr)_minmax(160px,0.55fr)] overflow-x-hidden overflow-y-auto transition-[height] duration-200`}
+    >
+      <div className="min-w-0 border-r border-[#181818] p-2.5">
+        <div className="mb-1.5 text-[8px] uppercase tracking-[0.22em] text-[#343434]">Live Readout</div>
         <div className="space-y-[5px]">
           {readout.map(([k, v]) => (
             <div key={String(k)} className="flex justify-between items-center">
@@ -56,8 +88,8 @@ export function StudioRightPanel({
         </div>
       </div>
 
-      <div className="border-b border-[#181818] p-3">
-        <div className="mb-2 text-[9px] uppercase tracking-[0.22em] text-[#343434]">Output Pipeline</div>
+      <div className="min-w-0 border-r border-[#181818] p-2.5">
+        <div className="mb-1.5 text-[8px] uppercase tracking-[0.22em] text-[#343434]">Output Pipeline</div>
         <div className="border border-[#181818] bg-[#080808] rounded-[2px] px-2 py-[5px] font-mono text-[10px] text-[#484848] mb-2">
           /output/processed_v1/
         </div>
@@ -74,8 +106,8 @@ export function StudioRightPanel({
         </div>
       </div>
 
-      <div className="border-b border-[#181818] p-3">
-        <div className="mb-2 text-[9px] uppercase tracking-[0.22em] text-[#343434]">Ranking Preview</div>
+      <div className="min-w-0 border-r border-[#181818] p-2.5">
+        <div className="mb-1.5 text-[8px] uppercase tracking-[0.22em] text-[#343434]">Ranking Preview</div>
         <div className="space-y-[5px] text-[10px]">
           <div className="flex justify-between items-center">
             <span className="text-[#434343]">Manifest Segments</span>
@@ -101,16 +133,89 @@ export function StudioRightPanel({
         </div>
       </div>
 
-      <div className="border-b border-[#181818] p-3">
-        <div className="mb-2 text-[9px] uppercase tracking-[0.22em] text-[#343434]">
-          {showBrowserPreview ? "Instant Preview" : "Prepared Preview"}
+      <div className={`min-w-0 border-r border-[#181818] ${isPreviewExpanded ? "order-first col-span-3 p-3" : "p-2.5"}`}>
+        <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+          <div className="text-[9px] uppercase tracking-[0.22em] text-[#343434]">
+            {showBrowserPreview ? "Instant Preview" : "Prepared Preview"}
+          </div>
+          {showBrowserPreview ? (
+            <button
+              type="button"
+              onClick={onTogglePreviewExpanded}
+              className="rounded-[2px] border border-[#242424] px-2 py-1 text-[8px] uppercase tracking-[0.12em] text-[#777] hover:border-[#e05c00] hover:text-[#e05c00]"
+            >
+              {isPreviewExpanded ? "Dock Preview" : "Focus Preview"}
+            </button>
+          ) : null}
         </div>
         {showBrowserPreview && browserPreviewState ? (
-          <PreviewPlayer
-            player={previewPlayer}
-            segments={browserPreviewSegments}
-            state={browserPreviewState}
-          />
+          <div className={isPreviewExpanded ? "space-y-2" : "space-y-1.5"}>
+            <div className={`${isPreviewExpanded ? "flex" : "hidden"} flex-wrap items-center gap-2 rounded-[2px] border border-[#151515] bg-[#070707] px-2 py-1`}>
+              <button
+                type="button"
+                onClick={() => onUseSourceAudioChange?.(!useSourceAudio)}
+                className={`rounded-[2px] border px-2 py-1 text-[8px] uppercase tracking-[0.12em] ${
+                  useSourceAudio
+                    ? "border-[#e05c00] text-[#e05c00]"
+                    : "border-[#242424] text-[#777] hover:border-[#444] hover:text-[#aaa]"
+                }`}
+              >
+                Source audio {useSourceAudio ? "on" : "off"}
+              </button>
+              <span className="font-mono text-[8px] uppercase tracking-[0.1em] text-[#4d4d4d]">Master track leads sync</span>
+            </div>
+            <div className={`${isPreviewExpanded ? "block" : "hidden"} rounded-[2px] border border-[#151515] bg-[#060606] p-2`}>
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={onFinalExport}
+                  disabled={Boolean(finalExportDisabledReason) || !onFinalExport}
+                  title={finalExportDisabledReason ?? undefined}
+                  className={`rounded-[2px] px-2 py-1 text-[8px] font-semibold uppercase tracking-[0.12em] ${
+                    finalExportDisabledReason || !onFinalExport
+                      ? "bg-[#252525] text-[#646464] cursor-not-allowed"
+                      : "bg-[#3a8a3a] text-white hover:bg-[#327832]"
+                  }`}
+                >
+                  {isFinalExporting ? "Exporting..." : "Export MP4"}
+                </button>
+                <button
+                  type="button"
+                  onClick={onWebGpuExport}
+                  disabled={Boolean(finalExportDisabledReason) || !onWebGpuExport}
+                  title={finalExportDisabledReason ?? "Records the live WebGPU shader canvas, then muxes master audio to MP4."}
+                  className={`rounded-[2px] px-2 py-1 text-[8px] font-semibold uppercase tracking-[0.12em] ${
+                    finalExportDisabledReason || !onWebGpuExport
+                      ? "bg-[#252525] text-[#646464] cursor-not-allowed"
+                      : "bg-[#e05c00] text-white hover:bg-[#c94f00]"
+                  }`}
+                >
+                  {isShaderCaptureExporting ? "Capturing WebGPU..." : "Export WebGPU"}
+                </button>
+                {finalExportUrl ? (
+                  <a
+                    href={finalExportUrl}
+                    download={finalExportName ?? "stack-structure-final.mp4"}
+                    className="rounded-[2px] border border-[#3a8a3a] px-2 py-1 text-[8px] font-semibold uppercase tracking-[0.12em] text-[#79c779] hover:bg-[#123512]"
+                  >
+                    Download {finalExportName ?? "MP4"}
+                  </a>
+                ) : null}
+              </div>
+              <div className="font-mono text-[8px] uppercase tracking-[0.1em] text-[#555]">
+                {finalExportStatus}{finalExportCueCount ? ` · ${finalExportCueCount} cues` : ""}
+              </div>
+            </div>
+            <PreviewPlayer
+              player={previewPlayer}
+              segments={browserPreviewSegments}
+              state={browserPreviewState}
+              effectCues={previewEffectCues}
+              audioTimeline={audioTimeline}
+              isExpanded={isPreviewExpanded}
+              useSourceAudio={useSourceAudio}
+            />
+          </div>
         ) : showFfmpegPreview ? (
           <div className="space-y-2">
             <video
@@ -134,8 +239,8 @@ export function StudioRightPanel({
         ) : null}
       </div>
 
-      <div className="border-b border-[#181818] p-3 flex-1">
-        <div className="mb-2 text-[9px] uppercase tracking-[0.22em] text-[#343434]">Terminal</div>
+      <div className="min-w-0 border-r border-[#181818] p-2.5">
+        <div className="mb-1.5 text-[8px] uppercase tracking-[0.22em] text-[#343434]">Terminal</div>
         <div className="space-y-[4px]">
           {LOG.map((l, i) => (
             <div key={i} className="font-mono text-[9px] leading-tight">
@@ -146,8 +251,8 @@ export function StudioRightPanel({
         </div>
       </div>
 
-      <div className="p-3">
-        <div className="mb-1 text-[9px] uppercase tracking-[0.22em] text-[#343434]">Tip</div>
+      <div className="min-w-0 p-2.5">
+        <div className="mb-1 text-[8px] uppercase tracking-[0.22em] text-[#343434]">Tip</div>
         <p className="text-[10px] leading-relaxed text-[#383838]">
           {tab === "shuffle" && shuffleMode === "motion" ? (
             <>

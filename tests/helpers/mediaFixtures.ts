@@ -20,11 +20,7 @@ export function listMediaFixtures(dir = getMediaFixturesDir()): MediaFixtureInve
     return { rootDir: dir, audio: [], video: [], other: [] };
   }
 
-  const entries = readdirSync(dir)
-    .filter((name) => !name.startsWith("."))
-    .map((name) => path.join(dir, name))
-    .filter((entry) => statSync(entry).isFile())
-    .sort((a, b) => a.localeCompare(b));
+  const entries = collectMediaFixtureFiles(dir);
 
   const audio: string[] = [];
   const video: string[] = [];
@@ -43,5 +39,28 @@ export function listMediaFixtures(dir = getMediaFixturesDir()): MediaFixtureInve
     other.push(entry);
   }
 
-  return { rootDir: dir, audio, video, other };
+  return { rootDir: dir, audio: sortMediaEntries(audio), video: sortMediaEntries(video), other: sortMediaEntries(other) };
+}
+
+function collectMediaFixtureFiles(dir: string): string[] {
+  return readdirSync(dir)
+    .filter((name) => !name.startsWith("."))
+    .flatMap((name) => {
+      const entry = path.join(dir, name);
+      const stats = statSync(entry);
+      if (stats.isDirectory()) return collectMediaFixtureFiles(entry);
+      return stats.isFile() ? [entry] : [];
+    })
+    .sort((left, right) => left.localeCompare(right));
+}
+
+function sortMediaEntries(entries: string[]): string[] {
+  return entries.sort((left, right) => mediaPriority(left) - mediaPriority(right) || left.localeCompare(right));
+}
+
+function mediaPriority(filePath: string) {
+  const name = path.basename(filePath).toLowerCase();
+  if (name.includes("fullsong") || name.includes("full song") || name.includes("master")) return 0;
+  if (name.includes("stem") || name.includes("vocal")) return 20;
+  return 10;
 }

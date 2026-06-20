@@ -1,8 +1,9 @@
 "use client";
 
-import { captionFrame } from "@/review/lib/analysis/caption-client";
+import { LFM_SCENE_CAPTION_PROMPT } from "@/review/lib/analysis/scene-caption-format";
 import { createAnalysisVideo, grabBitmap } from "@/review/lib/video/frame-grab";
-import type { DetectedSceneSegment, UploadedVideoSource } from "./types";
+import { normalizeServerCaptionAvailability, normalizeServerCaptionPayload } from "./sceneCaptioningServer";
+import type { DetectedSceneSegment, SceneCaptionSettings, UploadedVideoSource } from "./types";
 
 export type SceneCaptionProgress = {
   completed: number;
@@ -10,9 +11,12 @@ export type SceneCaptionProgress = {
   sceneId: number;
 };
 
+let serverCaptionAvailablePromise: Promise<boolean> | null = null;
+
 export async function captionDetectedScenes(
   source: UploadedVideoSource,
   scenes: DetectedSceneSegment[],
+  settings: SceneCaptionSettings = { mode: "fast" },
   onProgress?: (progress: SceneCaptionProgress, scenes: DetectedSceneSegment[]) => void,
 ): Promise<DetectedSceneSegment[]> {
   if (!scenes.length) return scenes;
@@ -36,13 +40,14 @@ export async function captionDetectedScenes(
       );
 
       try {
-        const bitmap = await grabBitmap(video, sampleTime);
-        const result = await captionFrame(bitmap);
+        const result = await captionSceneFrame(video, source, scene, sampleTime, settings);
         captioned[index] = {
           ...scene,
           caption: result.text,
           captionMeta: result.meta,
-          captionSource: "lfm-webgpu",
+          captionSource: result.captionSource,
+          captionMode: settings.mode,
+          captionModel: result.model,
           captionError: null,
         };
       } catch (error) {
@@ -66,4 +71,108 @@ export async function captionDetectedScenes(
 
 export function countSceneCaptions(scenes: DetectedSceneSegment[] | undefined) {
   return scenes?.filter((scene) => Boolean(scene.caption)).length ?? 0;
+}
+
+async function captionSceneFrame(
+  video: HTMLVideoElement,
+  source: UploadedVideoSource,
+  scene: DetectedSceneSegment,
+  sampleTime: number,
+  settings: SceneCaptionSettings,
+) {
+  const serverAvailable = await isServerCaptioningAvailable();
+  if (!serverAvailable) {
+    throw new Error("Server scene caption gateway is not configured.");
+  }
+
+  return await captionSceneFrameViaServer(video, source, scene, sampleTime, settings);
+}
+
+async function isServerCaptioningAvailable() {
+  serverCaptionAvailablePromise ??= fetch("/api/caption/scene", { cache: "no-store" })
+    .then(async (response) => {
+      if (!response.ok) return false;
+      const payload = normalizeServerCaptionAvailability(await response.json());
+      return payload.configured;
+    })
+    .catch((error) => {
+      throw new Error(error instanceof Error ? error.message : "Could not check scene caption gateway availability.");
+    });
+  return serverCaptionAvailablePromise;
+}
+
+async function captionSceneFrameViaServer(
+  video: HTMLVideoElement,
+  source: UploadedVideoSource,
+  scene: DetectedSceneSegment,
+  sampleTime: number,
+  settings: SceneCaptionSettings,
+) {
+  const bitmap = await grabBitmap(video, sampleTime);
+  try {
+    const image = await bitmapToJpegBlob(bitmap);
+    const form = new FormData();
+    form.set("image", image, `${source.id}-${scene.id}.jpg`);
+    form.set("prompt", buildCaptionPrompt(settings));
+    form.set("mode", settings.mode);
+    form.set("sourceName", source.name);
+    form.set("sceneId", String(scene.id));
+    form.set("sampleTime", sampleTime.toFixed(3));
+    form.set("sceneStart", scene.start.toFixed(3));
+    form.set("sceneEnd", scene.end.toFixed(3));
+    form.set("sceneDuration", scene.duration.toFixed(3));
+    const context = buildCaptionContextPayload(source, scene, settings);
+    if (context) form.set("captionContext", context);
+
+    const response = await fetch("/api/caption/scene", {
+      method: "POST",
+      body: form,
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(readServerCaptionError(payload) || `${response.status} ${response.statusText}`);
+    }
+    return normalizeServerCaptionPayload(payload);
+  } finally {
+    bitmap.close();
+  }
+}
+
+function buildCaptionPrompt(settings: SceneCaptionSettings) {
+  if (settings.mode === "fast") return LFM_SCENE_CAPTION_PROMPT;
+  return `${LFM_SCENE_CAPTION_PROMPT}
+
+Additional smart-caption rules:
+- Prefer concrete, searchable words that can later match music-video lyrics, themes, actions, and moods.
+- Do not force the caption to match the song; describe the visible video truth first.
+- Include action verbs, subject nouns, mood words, and setting details when visible.
+- Use the supplied project context only as disambiguating context, never as a substitute for what is visible.`;
+}
+
+function buildCaptionContextPayload(source: UploadedVideoSource, scene: DetectedSceneSegment, settings: SceneCaptionSettings) {
+  const payload = {
+    sourceName: source.name,
+    sourceDuration: source.duration,
+    sceneId: scene.id,
+    sceneLabel: scene.label,
+    sceneStart: scene.start,
+    sceneEnd: scene.end,
+    sceneDuration: scene.duration,
+    projectContext: settings.context ?? {},
+  };
+  return JSON.stringify(payload);
+}
+
+async function bitmapToJpegBlob(bitmap: ImageBitmap) {
+  const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Could not create caption frame canvas.");
+  ctx.drawImage(bitmap, 0, 0);
+  return canvas.convertToBlob({ type: "image/jpeg", quality: 0.85 });
+}
+
+function readServerCaptionError(payload: unknown) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return undefined;
+  const error = (payload as Record<string, unknown>).error;
+  return typeof error === "string" && error.trim() ? error.trim() : undefined;
 }

@@ -63,12 +63,28 @@ export async function uploadSceneCaptionManifestToRustFs(source: UploadedVideoSo
       text: scene.caption ?? "",
       sceneData: scene.captionMeta,
       captionSource: scene.captionSource ?? "lfm-webgpu",
+      captionMode: scene.captionMode ?? "fast",
+      captionModel: scene.captionModel,
       thumbnailUrl: scene.thumbnailUrl,
+      firstFrameUrl: scene.firstFrameUrl,
+      middleFrameUrl: scene.middleFrameUrl,
+      lastFrameUrl: scene.lastFrameUrl,
+      storyboardUrl: scene.storyboardUrl,
+      sampleTimes: scene.sampleTimes,
+      captionSampleStrategy: scene.captionSampleStrategy,
+      visualAnalysis: scene.visualAnalysis,
+      motionDescriptor: scene.motionDescriptor ?? scene.visualAnalysis?.motion,
+      contentHash: scene.contentHash ?? scene.visualAnalysis?.contentHash,
+      keyframeTimestamps: scene.keyframeTimestamps ?? scene.visualAnalysis?.keyframeTimestamps,
+      splitKind: scene.splitKind,
+      parentSceneId: scene.parentSceneId,
     }));
+  const captionProvider = pickCaptionProvider(captions.map((caption) => caption.captionSource));
 
   const manifest = {
     schema: "stack-structure.scene-captions.v1",
     generatedAt: new Date().toISOString(),
+    captionProvider,
     source: {
       name: source.name,
       duration: source.duration,
@@ -84,7 +100,7 @@ export async function uploadSceneCaptionManifestToRustFs(source: UploadedVideoSo
     "captions.json",
     { type: "application/json" },
   );
-  const folder = `${source.storagePath}.analysis/client-captions`;
+  const folder = `${source.storagePath}.analysis/${captionManifestFolder(captionProvider)}`;
   const formData = new FormData();
   formData.append("file", file, file.name);
   formData.append("folder", folder);
@@ -106,6 +122,27 @@ export async function uploadSceneCaptionManifestToRustFs(source: UploadedVideoSo
   }
 
   return { captionManifestPath, captionManifestUrl };
+}
+
+function pickCaptionProvider(sources: Array<string | undefined>) {
+  if (sources.some((source) => source === "qwen3-vl-server")) return "qwen3-vl-server";
+  if (sources.some((source) => source === "lfm-server")) return "lfm-server";
+  if (sources.some((source) => source === "lfm-webgpu")) return "lfm-webgpu";
+  if (sources.some((source) => source === "imported")) return "imported";
+  return "unknown";
+}
+
+function captionManifestFolder(provider: string) {
+  switch (provider) {
+    case "qwen3-vl-server":
+      return "smart-captions";
+    case "lfm-server":
+      return "server-captions";
+    case "lfm-webgpu":
+      return "client-captions";
+    default:
+      return "scene-captions";
+  }
 }
 
 async function readJson(response: Response): Promise<StorageUploadResponse> {

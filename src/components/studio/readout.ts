@@ -100,6 +100,20 @@ export function buildReadout(params: {
       ["Lookahead", lookahead],
     ];
   }
+  if (tab === "generate") {
+    return [
+      ...(hasVideoSource
+        ? []
+        : ([
+            ["Source", "Awaiting video"],
+            ["State", "Locked"],
+          ] as [string, string | number][])),
+      ["Mode", "fill gaps"],
+      ["Frames", "first/mid/last"],
+      ["Queue", "pending"],
+      ["Tracks", "A/B/C/D"],
+    ];
+  }
   if (tab === "join") {
     if (!hasVideoSource) {
       return [
@@ -134,6 +148,20 @@ export function buildReadout(params: {
       ["High Eng", highEnergyRange.toFixed(2)],
       ["Onset", onsetBoost.toFixed(2)],
       ["Chaos", chaos.toFixed(2)],
+    ];
+  }
+  if (tab === "story" || tab === "compose") {
+    return [
+      ...(hasVideoSource
+        ? []
+        : ([
+            ["Source", "Awaiting video"],
+            ["State", "Locked"],
+          ] as [string, string | number][])),
+      ["Story", tab === "compose" ? "Compose" : "Draft"],
+      ["Lyrics", beatJoinReady ? "Timed" : "Waiting"],
+      ["Preview", "Instant"],
+      ["Export", "MP4/WebGPU"],
     ];
   }
   return [

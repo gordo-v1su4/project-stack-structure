@@ -1,7 +1,7 @@
 import { uploadSceneCaptionManifestToRustFs, uploadVideoFileToRustFs } from "./mediaStorage";
 import { captionDetectedScenes } from "./sceneCaptioning";
-import { buildFallbackSceneSegments, detectScenesFromStoredVideo, detectScenesWithSplitter } from "./sceneSplit";
-import type { DetectedSceneSegment, UploadedVideoSource } from "./types";
+import { detectScenesFromStoredVideo, detectScenesWithSplitter } from "./sceneSplit";
+import type { DetectedSceneSegment, SceneCaptionSettings, UploadedVideoSource } from "./types";
 
 export type VideoSceneUpdate = {
   key: string;
@@ -17,6 +17,7 @@ export async function prepareVideoSources(
   files: File[],
   onSceneUpdate?: (update: VideoSceneUpdate) => void,
   onStorageUpdate?: (update: VideoStorageUpdate) => void,
+  captionSettings: SceneCaptionSettings = { mode: "fast" },
 ) {
   const videoFiles = files.filter((file) => file.type.startsWith("video/"));
 
@@ -75,24 +76,38 @@ export async function prepareVideoSources(
                       source: readySource,
                     });
 
-                    const captionedSource = await captionAndPersistSourceScenes(readySource, key, onSceneUpdate);
+                    const captionedSource = await captionAndPersistSourceScenes(readySource, key, captionSettings, onSceneUpdate);
                     onSceneUpdate({ key, source: captionedSource });
                   })
                   .catch((error) => {
-                    console.warn("[RustFS] Stored-object scene job unavailable; keeping Splitter/browser scene result", error);
+                    const sceneError = error instanceof Error ? error.message : "Stored-object scene detection failed";
+                    onSceneUpdate({
+                      key,
+                      source: {
+                        ...storedSource,
+                        scenes: [],
+                        sceneStatus: "failed" as const,
+                        sceneError,
+                        captionStatus: "failed" as const,
+                        captionError: "Captioning requires successful PySceneDetect scene output.",
+                      },
+                    });
                   });
               }
               return undefined;
             })
             .catch((error) => {
               const storageError = error instanceof Error ? error.message : "RustFS upload failed";
-              console.warn("[RustFS] Durable media upload unavailable; keeping local browser media", error);
               onStorageUpdate?.({
                 key,
                 source: {
                   ...source,
                   storageStatus: "failed" as const,
                   storageError,
+                  sceneStatus: "failed" as const,
+                  sceneError: "RustFS upload is required before server-side scene detection.",
+                  captionStatus: "failed" as const,
+                  captionError: "Captioning requires durable RustFS media upload.",
                 },
               });
             });
@@ -113,28 +128,22 @@ export async function prepareVideoSources(
                 key,
                 source: readySource,
               });
-              const captionedSource = await captionAndPersistSourceScenes(readySource, key, onSceneUpdate);
+              const captionedSource = await captionAndPersistSourceScenes(readySource, key, captionSettings, onSceneUpdate);
               onSceneUpdate({ key, source: captionedSource });
             })
             .catch((error) => {
               const sceneError = error instanceof Error ? error.message : "Scene detection failed";
-              const fallbackScenes = buildFallbackSceneSegments(source);
-              const fallbackSource = {
-                ...source,
-                scenes: fallbackScenes,
-                sceneStatus: "fallback" as const,
-                sceneError,
-                captionStatus: "captioning" as const,
-                captionError: null,
-              };
-              console.warn("[Splitter] Scene detection unavailable; using browser fallback scenes", error);
               onSceneUpdate({
                 key,
-                source: fallbackSource,
+                source: {
+                  ...source,
+                  scenes: [],
+                  sceneStatus: "failed" as const,
+                  sceneError,
+                  captionStatus: "failed" as const,
+                  captionError: "Captioning requires successful PySceneDetect scene output.",
+                },
               });
-              void captionAndPersistSourceScenes(fallbackSource, key, onSceneUpdate)
-                .then((captionedSource) => onSceneUpdate({ key, source: captionedSource }))
-                .catch(() => undefined);
             });
         }
 
@@ -156,6 +165,7 @@ export function revokePreparedVideoSources(sources: UploadedVideoSource[]) {
 async function captionAndPersistSourceScenes(
   source: UploadedVideoSource,
   key: string,
+  captionSettings: SceneCaptionSettings,
   onSceneUpdate?: (update: VideoSceneUpdate) => void,
 ): Promise<UploadedVideoSource> {
   const scenes = source.scenes ?? [];
@@ -168,7 +178,7 @@ async function captionAndPersistSourceScenes(
   }
 
   try {
-    const captionedScenes = await captionDetectedScenes(source, scenes, (_progress, partialScenes) => {
+    const captionedScenes = await captionDetectedScenes(source, scenes, captionSettings, (_progress, partialScenes) => {
       onSceneUpdate?.({
         key,
         source: {
@@ -201,16 +211,16 @@ async function captionAndPersistSourceScenes(
   } catch (error) {
     return {
       ...source,
-      scenes: markCaptionError(scenes, error),
+      scenes: markCaptionError(scenes, error, captionSettings),
       captionStatus: "failed",
       captionError: error instanceof Error ? error.message : "Scene captioning failed",
     };
   }
 }
 
-function markCaptionError(scenes: DetectedSceneSegment[], error: unknown) {
+function markCaptionError(scenes: DetectedSceneSegment[], error: unknown, captionSettings: SceneCaptionSettings) {
   const message = error instanceof Error ? error.message : "Scene captioning failed";
-  return scenes.map((scene) => scene.caption ? scene : { ...scene, captionError: message });
+  return scenes.map((scene) => scene.caption ? scene : { ...scene, captionMode: captionSettings.mode, captionError: message });
 }
 
 function buildPreparedSourceKey(source: Pick<UploadedVideoSource, "name" | "size" | "duration">) {

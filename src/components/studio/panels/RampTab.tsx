@@ -75,13 +75,13 @@ export function RampTab({
     <>
       {!isUsingCommittedSplit ? (
         <div className="rounded-[2px] border border-[#3a220c] bg-[#120b06] px-3 py-2 text-[10px] uppercase tracking-[0.14em] text-[#d5a56a]">
-          Commit Beat Split first so Speed Ramp derives anchors from the finalized arrangement.
+          Build the Join timeline first so Transitions / Effects can derive anchors from the approved arrangement.
         </div>
       ) : null}
 
       <div className="border border-[#1a1a1a] rounded-[2px] bg-[#080808] overflow-hidden">
         <div className="flex items-center justify-between px-3 py-2 border-b border-[#181818]">
-          <span className="text-[10px] uppercase tracking-[0.18em] text-[#404040]">Ramp Source Layout</span>
+          <span className="text-[10px] uppercase tracking-[0.18em] text-[#404040]">Effects Source Layout</span>
           <span className="font-mono text-[10px] text-[#666]">{segmentPreviews.length} committed segments</span>
         </div>
         <div className="relative h-16 flex bg-[#070707]">
@@ -108,7 +108,7 @@ export function RampTab({
 
       <div className="border border-[#1a1a1a] rounded-[2px] bg-[#0c0c0c]">
         <div className="flex items-center justify-between px-3 py-2 border-b border-[#181818]">
-          <span className="text-[10px] uppercase tracking-[0.2em] text-[#6f8287]">Timing Remap Curve — drag anchors</span>
+          <span className="text-[10px] uppercase tracking-[0.2em] text-[#6f8287]">Transitions / Effects Curve — drag anchors</span>
           <span className="text-[10px] font-mono text-[#e05c00] uppercase">{selectedPreset.label}</span>
         </div>
         <div className="p-2">
@@ -118,7 +118,7 @@ export function RampTab({
 
       <div className="grid grid-cols-2 gap-3">
         <div className="border border-[#1a1a1a] rounded-[2px] bg-[#0c0c0c] p-3">
-          <div className="mb-1 text-[10px] uppercase tracking-[0.2em] text-[#404040]">Parameters</div>
+          <div className="mb-1 text-[10px] uppercase tracking-[0.2em] text-[#404040]">Timing Parameters</div>
           <ParamSlider label="Min Speed" value={minSpeed} min={0.1} max={1} step={0.05} unit="×" onChange={onMinSpeed} />
           <ParamSlider label="Max Speed" value={maxSpeed} min={1} max={8} step={0.1} unit="×" onChange={onMaxSpeed} />
           <ParamSlider label="Ramp Duration" value={rampDur} min={0.1} max={2} step={0.05} unit="s" onChange={onRampDur} />
@@ -128,7 +128,7 @@ export function RampTab({
         </div>
         <div className="border border-[#1a1a1a] rounded-[2px] bg-[#0c0c0c] p-3">
           <div className="mb-2 flex items-center justify-between">
-            <div className="text-[10px] uppercase tracking-[0.2em] text-[#6f8287]">Remap Preset Bank</div>
+            <div className="text-[10px] uppercase tracking-[0.2em] text-[#6f8287]">Transition Preset Bank</div>
             <div className="font-mono text-[9px] text-[#40545a]">{RAMP_PRESETS.length} curves</div>
           </div>
           <div className="grid gap-1">

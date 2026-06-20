@@ -3,7 +3,7 @@ import path from "node:path";
 
 export const runtime = "nodejs";
 
-const DEFAULT_LOCAL_FALLBACK_ENV_FILES = [
+const DEFAULT_LOCAL_ENV_FILES = [
   "stutter-blaster/.env.local",
   "stutter-blaster/apps/web/.env.local",
   "essentia-endpoint/.env.local",
@@ -51,7 +51,7 @@ export async function POST(request: Request) {
       return Response.json(
         {
           error:
-            "Missing Essentia API key. Set ESSENTIA_API_KEY or VITE_ESSENTIA_API_KEY. For local development, you can also set ESSENTIA_ENV_FALLBACK_FILES to one or more .env paths.",
+            "Missing Essentia API key. Set ESSENTIA_API_KEY or VITE_ESSENTIA_API_KEY. For local development, you can also set ESSENTIA_ENV_FILES to one or more .env paths.",
         },
         { status: 500 }
       );
@@ -123,7 +123,7 @@ async function loadEssentiaConfig() {
     };
   }
 
-  for (const absolutePath of getFallbackEnvFiles()) {
+  for (const absolutePath of getCandidateEnvFiles()) {
     try {
       const raw = await readFile(absolutePath, "utf8");
       const parsed = parseEnvFile(raw);
@@ -190,17 +190,17 @@ function parseEnvFile(source: string) {
   return values;
 }
 
-function getFallbackEnvFiles() {
-  const configured = splitEnvPathList(process.env.ESSENTIA_ENV_FALLBACK_FILES);
+function getCandidateEnvFiles() {
+  const configured = splitEnvPathList(process.env.ESSENTIA_ENV_FILES);
   if (configured.length) {
-    return configured.map(resolveFallbackPath);
+    return configured.map(resolveEnvPath);
   }
 
   if (process.env.NODE_ENV === "production") {
     return [];
   }
 
-  return DEFAULT_LOCAL_FALLBACK_ENV_FILES.map((relativePath) =>
+  return DEFAULT_LOCAL_ENV_FILES.map((relativePath) =>
     path.join(/* turbopackIgnore: true */ process.cwd(), "..", relativePath)
   );
 }
@@ -213,7 +213,7 @@ function splitEnvPathList(value: string | undefined) {
     .filter(Boolean);
 }
 
-function resolveFallbackPath(candidate: string) {
+function resolveEnvPath(candidate: string) {
   if (path.isAbsolute(candidate)) return candidate;
   return path.resolve(/* turbopackIgnore: true */ process.cwd(), candidate);
 }

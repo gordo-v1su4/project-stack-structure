@@ -20,9 +20,7 @@ export async function POST(request: Request) {
   const requestKey = payload.requestKey ?? `preview-${Date.now()}`;
 
   if (FFMPEG_GATEWAY_URL) {
-    const gatewayResponse = await gatewayPreview(payload, requestKey);
-    if (gatewayResponse.ok || gatewayResponse.status < 500) return gatewayResponse;
-    console.warn("[PreviewSection] Remote gateway failed; falling back to local FFmpeg preview.");
+    return gatewayPreview(payload, requestKey);
   }
 
   return localPreview(payload, requestKey);

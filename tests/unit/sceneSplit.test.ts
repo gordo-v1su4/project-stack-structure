@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildFallbackSceneSegments, normalizeSplitterManifest } from "../../src/components/studio/sceneSplit";
-import { makeVideoSources } from "../helpers/studioFixtures";
+import { normalizeSplitterManifest } from "../../src/components/studio/sceneSplit";
 
 const splitterManifest = {
   job_id: "job-123",
@@ -61,17 +60,5 @@ describe("sceneSplit.normalizeSplitterManifest", () => {
 
     expect(scenes).toHaveLength(2);
     expect(scenes[1]?.start).toBe(5);
-  });
-});
-
-describe("sceneSplit.buildFallbackSceneSegments", () => {
-  test("creates honest browser fallback scene chunks for an uploaded source", () => {
-    const [source] = makeVideoSources();
-    const scenes = buildFallbackSceneSegments(source!);
-
-    expect(scenes.length).toBeGreaterThan(0);
-    expect(scenes[0]?.detector).toBe("browser-fallback");
-    expect(scenes[0]?.thumbnailUrl).toBe(source?.thumbnailUrl);
-    expect(scenes.at(-1)?.end).toBe(source?.duration);
   });
 });

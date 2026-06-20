@@ -34,12 +34,13 @@ export function ParamSlider({
         />
         <input
           type="range"
+          aria-label={label}
           min={min}
           max={max}
           step={step}
           value={value}
           onChange={(e) => onChange(Number(e.target.value))}
-          className="absolute inset-0 w-full opacity-0 cursor-pointer"
+          className="studio-range-input absolute inset-0 w-full opacity-0 cursor-pointer"
           style={{ height: 24, top: -11 }}
         />
       </div>

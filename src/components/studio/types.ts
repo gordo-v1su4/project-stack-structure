@@ -1,4 +1,4 @@
-export type Tab = "review" | "story" | "split" | "beatsplit" | "shuffle" | "join" | "beatjoin" | "ramp";
+export type Tab = "review" | "story" | "compose" | "split" | "beatsplit" | "shuffle" | "generate" | "join" | "beatjoin" | "ramp";
 
 export type ShuffleMode = "simple" | "size" | "color" | "motion";
 
@@ -73,9 +73,51 @@ export interface MotionDescriptor {
   provenance: MotionProvenance;
 }
 
-export type SceneSplitStatus = "idle" | "uploading" | "detecting" | "ready" | "failed" | "fallback";
+export interface ColorPaletteSwatch {
+  hex?: string;
+  l?: number;
+  a?: number;
+  b?: number;
+  weight: number;
+}
+
+export interface SceneColorAnalysis {
+  palette: ColorPaletteSwatch[];
+  firstPalette?: ColorPaletteSwatch[];
+  middlePalette?: ColorPaletteSwatch[];
+  lastPalette?: ColorPaletteSwatch[];
+  paletteDistanceStartEnd?: number | null;
+}
+
+export interface SceneVisualAnalysis {
+  schema?: string;
+  analyzerVersion?: string;
+  contentHash?: string;
+  keyframeTimestamps?: number[];
+  color?: SceneColorAnalysis;
+  motion?: MotionDescriptor | null;
+  generatedAt?: string;
+}
+
+export type SceneSplitStatus = "idle" | "uploading" | "detecting" | "ready" | "failed";
 export type MediaStorageStatus = "local" | "uploading" | "uploaded" | "failed";
 export type SceneCaptionStatus = "idle" | "captioning" | "ready" | "failed";
+export type SceneCaptionMode = "fast" | "smart";
+export type SceneCaptionSource = "lfm-webgpu" | "lfm-server" | "qwen3-vl-server" | "manual" | "imported";
+
+export interface SceneCaptionContext {
+  songTitle?: string;
+  vocalStemName?: string;
+  lyricExcerpt?: string;
+  storySummary?: string;
+  storyPrompts?: string[];
+  projectIntent?: string;
+}
+
+export interface SceneCaptionSettings {
+  mode: SceneCaptionMode;
+  context?: SceneCaptionContext;
+}
 
 export interface SceneCaptionData {
   caption?: string;
@@ -96,14 +138,32 @@ export interface DetectedSceneSegment {
   end: number;
   duration: number;
   thumbnailUrl?: string;
+  firstFrameUrl?: string;
+  middleFrameUrl?: string;
+  lastFrameUrl?: string;
+  storyboardUrl?: string;
+  sampleTimes?: {
+    first?: number;
+    middle?: number;
+    last?: number;
+  };
   clipUrl?: string;
   assetPath?: string;
-  detector: "pyscenedetect-adaptive" | "browser-fallback";
+  detector: "pyscenedetect-adaptive";
   confidence?: number | null;
   caption?: string;
   captionMeta?: SceneCaptionData;
-  captionSource?: "lfm-webgpu" | "manual" | "imported";
+  captionSource?: SceneCaptionSource;
+  captionMode?: SceneCaptionMode;
+  captionModel?: string;
+  captionSampleStrategy?: string;
   captionError?: string | null;
+  visualAnalysis?: SceneVisualAnalysis;
+  motionDescriptor?: MotionDescriptor | null;
+  contentHash?: string;
+  keyframeTimestamps?: number[];
+  splitKind?: "scene" | "micro-shot";
+  parentSceneId?: number | null;
 }
 
 export interface UploadedVideoSource {

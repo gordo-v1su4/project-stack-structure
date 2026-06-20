@@ -360,13 +360,12 @@ function formatSourceRefs(sourceClipIds: number[]) {
 
 function buildSourceLabel(sources: UploadedVideoSource[], sourceClipCount: number, totalDuration: number) {
   const sceneCount = sources.reduce((total, source) => total + (source.scenes?.length ?? 0), 0);
-  const hasFallback = sources.some((source) => source.sceneStatus === "fallback");
-  const hasDetected = sources.some((source) => source.sceneStatus === "ready");
-  const provenance = sceneCount > 0
-    ? hasDetected && !hasFallback
+  const hasFailed = sources.some((source) => source.sceneStatus === "failed");
+  const provenance = hasFailed
+    ? "SCENE DETECTION ERROR"
+    : sceneCount > 0
       ? `PYSCENEDETECT · ${sceneCount} DETECTED SCENE${sceneCount === 1 ? "" : "S"}`
-      : `FALLBACK SCENES · ${sceneCount} SCENE${sceneCount === 1 ? "" : "S"}`
-    : "SCENE DETECTION PENDING";
+      : "SCENE DETECTION PENDING";
 
   return `A/V SOURCE · ${sourceClipCount} CLIP${sourceClipCount === 1 ? "" : "S"} STITCHED · ${provenance} · ${fmt(totalDuration)}`;
 }

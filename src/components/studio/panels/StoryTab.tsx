@@ -5,10 +5,14 @@ import { transcribeAudioWithDeepgram, type DeepgramTranscriptSummary } from "../
 import { fmt } from "../math";
 import {
   createMusicVideoProject,
+  DEFAULT_STORY_EDIT_SETTINGS,
   getDefaultStorySectionDrafts,
+  normalizeStoryEditSettings,
   type MusicVideoProject,
+  type StoryEditSettings,
   type StorySectionDraft,
 } from "../musicVideoProject";
+import { ParamSlider } from "../ParamSlider";
 import { UploadControl } from "../UploadControl";
 import type { BeatJoinAnalysis, SegmentPreview, UploadedVideoSource } from "../types";
 
@@ -24,6 +28,7 @@ export type StoryTabState = {
   storyBeats: StoryBeatDraft[];
   activeBeatId: string;
   storyGenerated: boolean;
+  editSettings: StoryEditSettings;
 };
 
 type StoryTabProps = {
@@ -51,14 +56,16 @@ export function createDefaultStoryTabState(): StoryTabState {
     storyBeats: DEFAULT_STORY_BEATS,
     activeBeatId: DEFAULT_STORY_BEATS[0].id,
     storyGenerated: false,
+    editSettings: DEFAULT_STORY_EDIT_SETTINGS,
   };
 }
 
 export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews, state, onStateChange, onProjectChange }: StoryTabProps) {
   const { vocalStemName, transcriptSummary, storyBeats, activeBeatId, storyGenerated } = state;
+  const editSettings = normalizeStoryEditSettings(state.editSettings);
   const [isTranscribingAudio, setIsTranscribingAudio] = useState(false);
   const [transcriptProgress, setTranscriptProgress] = useState(0);
-  const [transcriptStatus, setTranscriptStatus] = useState("Deepgram SRT extraction ready when DEEPGRAM_API_KEY is configured");
+  const [transcriptStatus, setTranscriptStatus] = useState(() => formatTranscriptStatus(state.transcriptSummary));
   const [transcriptError, setTranscriptError] = useState<string | null>(null);
   const progressTimer = useRef<number | null>(null);
 
@@ -76,6 +83,10 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews,
 
   function setTranscriptSummary(transcriptSummary: DeepgramTranscriptSummary | null) {
     updateState({ transcriptSummary });
+  }
+
+  function updateEditSettings(patch: Partial<StoryEditSettings>) {
+    updateState({ editSettings: normalizeStoryEditSettings({ ...editSettings, ...patch }) });
   }
 
   const transcriptDuration = transcriptSummary?.duration && transcriptSummary.duration > 0 ? transcriptSummary.duration : null;
@@ -101,6 +112,12 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews,
   const activeBeat = storyRail.find((beat) => beat.id === activeBeatId) ?? storyRail[0];
 
   useEffect(() => {
+    if (!isTranscribingAudio && !transcriptError) {
+      setTranscriptStatus(formatTranscriptStatus(transcriptSummary));
+    }
+  }, [isTranscribingAudio, transcriptError, transcriptSummary]);
+
+  useEffect(() => {
     onProjectChange?.(musicVideoProject);
   }, [musicVideoProject, onProjectChange]);
 
@@ -118,12 +135,10 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews,
     setIsTranscribingAudio(true);
     setTranscriptProgress(8);
     setTranscriptStatus(`Vocal stem loaded: ${file.name}. Sending stem to Deepgram for lyrics/SRT...`);
-    console.info("[StoryTab][Deepgram] Vocal stem selected", { name: file.name, size: file.size, type: file.type });
 
     progressTimer.current = window.setInterval(() => {
       setTranscriptProgress((current) => {
         const next = Math.min(88, current + (current < 35 ? 7 : current < 65 ? 4 : 2));
-        console.info("[StoryTab][Deepgram] transcription progress", { progress: next, file: file.name });
         return next;
       });
     }, 900);
@@ -132,21 +147,12 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews,
       const summary = await transcribeAudioWithDeepgram(file, { duration: totalDuration || undefined });
       setTranscriptSummary(summary);
       setTranscriptProgress(100);
-      setTranscriptStatus(
-        `Deepgram extracted ${summary.wordCount} words into ${summary.chunks.length} timed SRT chunks${summary.topics.length || summary.intents.length ? ` · ${summary.topics.length + summary.intents.length} topics/intents` : ""}.`,
-      );
-      console.info("[StoryTab][Deepgram] transcript ready", {
-        file: file.name,
-        wordCount: summary.wordCount,
-        chunkCount: summary.chunks.length,
-        transcriptPreview: summary.transcript.slice(0, 240),
-      });
+      setTranscriptStatus(formatTranscriptStatus(summary));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Deepgram transcription unavailable; paste lyrics or SRT to continue.";
       setTranscriptError(message);
       setTranscriptProgress(0);
       setTranscriptStatus(message);
-      console.error("[StoryTab][Deepgram] transcription failed", error);
     } finally {
       if (progressTimer.current) {
         window.clearInterval(progressTimer.current);
@@ -181,15 +187,6 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews,
 
   function generateStoryLayout() {
     setStoryGenerated(true);
-    console.info("[StoryTab][Story] Generated draft story layout", {
-      sections: storyRail.length,
-      editPlanItems: musicVideoProject.editPlan.timelineItems.length,
-      reviewFindings: musicVideoProject.reviewFindings.length,
-      srtChunks: srtChunkCount,
-      transcriptWords: transcriptSummary?.wordCount ?? 0,
-      sourceVideos: videoSources.length,
-      videoMoments: musicVideoProject.videoMoments.length,
-    });
   }
 
   return (
@@ -268,6 +265,40 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews,
             <Metric label="Vocal Stem" value={vocalStemName || "Not uploaded"} />
             <Metric label="Timed SRT" value={`${srtChunkCount} chunks`} />
             <Metric label="Source Moments" value={`${musicVideoProject.videoMoments.length} clips/segments`} />
+          </div>
+
+          <div className="mt-3 rounded-[2px] border border-[#171717] bg-[#070707] p-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div>
+                <div className="text-[8px] uppercase tracking-[0.16em] text-[#e05c00]">Live edit density</div>
+                <div className="mt-1 text-[10px] text-[#666]">
+                  Drives Story preview/export cut windows from sparse section cuts to fast onset cuts.
+                </div>
+              </div>
+              <div className="font-mono text-[10px] text-[#bdbdbd]">{Math.round(editSettings.cutDensity * 100)}%</div>
+            </div>
+            <ParamSlider
+              label="Density"
+              value={Math.round(editSettings.cutDensity * 100)}
+              min={15}
+              max={100}
+              step={5}
+              unit="%"
+              onChange={(value) => updateEditSettings({ cutDensity: value / 100 })}
+            />
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[9px] uppercase tracking-[0.12em] text-[#5f5f5f]">
+              <span>Sparser phrases</span>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={editSettings.preferOnsets}
+                  onChange={(event) => updateEditSettings({ preferOnsets: event.target.checked })}
+                  className="accent-[#e05c00]"
+                />
+                Prefer onsets
+              </label>
+              <span>Fast music cuts</span>
+            </div>
           </div>
 
           <div className="mt-3 grid gap-2 lg:grid-cols-[0.9fr_1.1fr]">
@@ -349,6 +380,8 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews,
             {storyRail.map((beat, index) => {
               const relatedChunks = musicVideoProject.lyricChunks.filter((chunk) => beat.lyricChunkIds.includes(chunk.id));
               const sourceMoment = musicVideoProject.videoMoments.find((moment) => moment.id === beat.videoMomentIds[0]) ?? musicVideoProject.videoMoments[index % Math.max(1, musicVideoProject.videoMoments.length)];
+              const timelineItem = musicVideoProject.editPlan.timelineItems.find((item) => item.sectionId === beat.id);
+              const semanticMatch = timelineItem?.semanticMatch ?? beat.semanticMatch;
               return (
                 <div key={beat.id} className="overflow-hidden rounded-[2px] border border-[#171717] bg-[#070707]">
                   <div className="aspect-video bg-[linear-gradient(135deg,#161616,#050505)]">
@@ -371,6 +404,34 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews,
                     <div className="rounded-[2px] border border-[#191919] bg-[#030303] p-2 text-[8px] uppercase tracking-[0.12em] text-[#666]">
                       Source: {sourceMoment ? `${sourceMoment.sourceRefLabel ?? `S${sourceMoment.sourceClipId + 1}`} · ${sourceMoment.label}` : "No source clip yet"}
                     </div>
+                    {semanticMatch ? (
+                      <div className="rounded-[2px] border border-[#191919] bg-[#030303] p-2">
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <span className="text-[8px] uppercase tracking-[0.14em] text-[#e05c00]">Semantic edit choice</span>
+                          <span className="font-mono text-[9px] text-[#bdbdbd]">{Math.round(semanticMatch.score * 100)}%</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-1 font-mono text-[8px] uppercase tracking-[0.08em] text-[#747474]">
+                          <ScorePill label="caption" value={semanticMatch.semanticScore} />
+                          <ScorePill label="lyrics" value={semanticMatch.lyricCaptionScore} />
+                          <ScorePill label="action" value={semanticMatch.actionIntentScore} />
+                          <ScorePill label="energy" value={semanticMatch.motionEnergyScore} />
+                          <ScorePill label="duration" value={semanticMatch.durationFitScore} />
+                          <ScorePill label="motion" value={semanticMatch.motionContinuityScore} />
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {semanticMatch.reasons.map((reason) => (
+                            <span key={reason} className="rounded-[2px] border border-[#202020] px-1.5 py-1 text-[8px] uppercase tracking-[0.1em] text-[#8f8f8f]">
+                              {reason}
+                            </span>
+                          ))}
+                          {semanticMatch.repetitionPenalty > 0 ? (
+                            <span className="rounded-[2px] border border-[#2a160f] px-1.5 py-1 text-[8px] uppercase tracking-[0.1em] text-[#b96c43]">
+                              repeat -{Math.round(semanticMatch.repetitionPenalty * 100)}%
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+                    ) : null}
                     <div className="grid grid-cols-3 gap-1 text-center text-[8px] uppercase tracking-[0.12em] text-[#666]">
                       <div className="rounded-[2px] border border-[#202020] py-1">Image prompt</div>
                       <div className="rounded-[2px] border border-[#202020] py-1">Video prompt</div>
@@ -397,6 +458,23 @@ function Metric({ label, value }: { label: string; value: string }) {
     <div className="rounded-[2px] border border-[#171717] bg-[#070707] px-2 py-2">
       <div className="text-[8px] uppercase tracking-[0.16em] text-[#494949]">{label}</div>
       <div className="mt-1 truncate font-mono text-[10px] text-[#a5a5a5]" title={value}>{value}</div>
+    </div>
+  );
+}
+
+function formatTranscriptStatus(summary: DeepgramTranscriptSummary | null) {
+  if (!summary) return "Deepgram SRT extraction ready when DEEPGRAM_API_KEY is configured";
+
+  return `Deepgram extracted ${summary.wordCount} words into ${summary.chunks.length} timed SRT chunks${
+    summary.topics.length || summary.intents.length ? ` · ${summary.topics.length + summary.intents.length} topics/intents` : ""
+  }.`;
+}
+
+function ScorePill({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="flex items-center justify-between rounded-[2px] border border-[#151515] bg-[#050505] px-1.5 py-1">
+      <span>{label}</span>
+      <span className="text-[#a5a5a5]">{Math.round(value * 100)}</span>
     </div>
   );
 }

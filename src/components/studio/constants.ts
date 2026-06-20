@@ -1,14 +1,14 @@
 import type { Tab } from "./types";
 
 export const NAV: { key: Tab; label: string; sub: string }[] = [
-  { key: "review", label: "Review", sub: "Scene tag · approve" },
-  { key: "story", label: "Story", sub: "SRT · cards" },
-  { key: "split", label: "Standard Split", sub: "GPU / CUDA" },
-  { key: "beatsplit", label: "Beat Split", sub: "BPM sync" },
-  { key: "shuffle", label: "Shuffle Modes", sub: "5 algorithms" },
-  { key: "join", label: "Standard Join", sub: "Concat" },
-  { key: "beatjoin", label: "Beat Join", sub: "Energy reactive" },
-  { key: "ramp", label: "Speed Ramp", sub: "Envelope curve" },
+  { key: "review", label: "Ingest", sub: "media ready" },
+  { key: "story", label: "Story", sub: "SRT · sections" },
+  { key: "split", label: "Split", sub: "scene · beat" },
+  { key: "shuffle", label: "Match", sub: "lyrics · clips" },
+  { key: "generate", label: "Generate", sub: "fill gaps" },
+  { key: "join", label: "Join", sub: "assemble" },
+  { key: "ramp", label: "Transitions / Effects", sub: "GLSL · ramps" },
+  { key: "compose", label: "Preview / Export", sub: "MP4 · WebGPU" },
 ];
 
 export const LOG = [

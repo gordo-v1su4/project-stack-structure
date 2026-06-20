@@ -37,10 +37,10 @@ describe("studioUiState", () => {
 
   test("prefers ranked order only when it matches the segment preview count", () => {
     expect(
-      deriveEffectiveClipOrder({ manifestSegmentCount: 3, segmentPreviewCount: 3, rankedOrder: [2, 1, 0], fallbackOrder: [0, 1, 2] }),
+      deriveEffectiveClipOrder({ manifestSegmentCount: 3, segmentPreviewCount: 3, rankedOrder: [2, 1, 0], defaultOrder: [0, 1, 2] }),
     ).toEqual([2, 1, 0]);
     expect(
-      deriveEffectiveClipOrder({ manifestSegmentCount: 2, segmentPreviewCount: 3, rankedOrder: [1, 0], fallbackOrder: [0, 1, 2] }),
+      deriveEffectiveClipOrder({ manifestSegmentCount: 2, segmentPreviewCount: 3, rankedOrder: [1, 0], defaultOrder: [0, 1, 2] }),
     ).toEqual([0, 1, 2]);
   });
 

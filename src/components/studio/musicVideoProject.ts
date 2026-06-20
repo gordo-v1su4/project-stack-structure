@@ -1,5 +1,6 @@
+import { rankMomentsForSection, type SemanticEditAssignment, type SemanticSectionInput, type SemanticVideoMomentInput } from "./semanticEditPlanner";
 import type { SrtChunk } from "./srtUtils";
-import type { BeatJoinAnalysis, BeatJoinSection, SegmentPreview, UploadedVideoSource } from "./types";
+import type { BeatJoinAnalysis, BeatJoinSection, DetectedSceneSegment, SceneVisualAnalysis, SegmentPreview, UploadedVideoSource } from "./types";
 
 export interface StorySectionDraft {
   id?: string;
@@ -10,9 +11,10 @@ export interface StorySectionDraft {
 export interface StorySection extends BeatJoinSection {
   id: string;
   prompt: string;
-  source: "analysis" | "fallback";
+  source: "analysis" | "missing-analysis";
   lyricChunkIds: string[];
   videoMomentIds: string[];
+  semanticMatch?: SemanticClipMatch;
 }
 
 export interface LyricChunk extends SrtChunk {
@@ -30,7 +32,31 @@ export interface VideoMoment {
   end: number;
   duration: number;
   thumbnailUrl?: string;
+  firstFrameUrl?: string;
+  middleFrameUrl?: string;
+  lastFrameUrl?: string;
+  storyboardUrl?: string;
   sourceRefLabel?: string;
+  caption?: string;
+  captionMeta?: DetectedSceneSegment["captionMeta"];
+  motionDescriptor?: SegmentPreview["motionDescriptor"];
+  visualAnalysis?: SceneVisualAnalysis;
+  contentHash?: string;
+  keyframeTimestamps?: number[];
+  splitKind?: DetectedSceneSegment["splitKind"];
+}
+
+export interface SemanticClipMatch {
+  momentId: string;
+  score: number;
+  semanticScore: number;
+  lyricCaptionScore: number;
+  actionIntentScore: number;
+  durationFitScore: number;
+  motionContinuityScore: number;
+  motionEnergyScore: number;
+  repetitionPenalty: number;
+  reasons: string[];
 }
 
 export interface EditPlanPreviewSegment {
@@ -38,6 +64,9 @@ export interface EditPlanPreviewSegment {
   startTime: number;
   endTime: number;
   label: string;
+  sectionId: string;
+  musicStart: number;
+  musicEnd: number;
 }
 
 export interface TimelineItem {
@@ -49,7 +78,24 @@ export interface TimelineItem {
   end: number;
   label: string;
   prompt: string;
+  semanticMatch?: SemanticClipMatch;
 }
+
+interface MusicCueWindow {
+  start: number;
+  end: number;
+  cue: "section" | "beat" | "onset";
+}
+
+export interface StoryEditSettings {
+  cutDensity: number;
+  preferOnsets: boolean;
+}
+
+export const DEFAULT_STORY_EDIT_SETTINGS: StoryEditSettings = {
+  cutDensity: 0.65,
+  preferOnsets: true,
+};
 
 export interface EditPlan {
   id: string;
@@ -98,8 +144,8 @@ export function normalizeLyricChunks(chunks: SrtChunk[] = []): LyricChunk[] {
   return chunks
     .map((chunk, index) => {
       const start = roundTime(Math.max(0, Number(chunk.start) || 0));
-      const fallbackEnd = start + 0.25;
-      const end = roundTime(Math.max(fallbackEnd, Number(chunk.end) || fallbackEnd));
+      const minimumEnd = start + 0.25;
+      const end = roundTime(Math.max(minimumEnd, Number(chunk.end) || minimumEnd));
       const text = cleanText(chunk.text ?? chunk.lyrics ?? "");
       return {
         ...chunk,
@@ -125,9 +171,9 @@ export function buildStorySections(params: {
 
   return drafts.map((draft, index) => {
     const analysisSection = analysisSections[index];
-    const fallback = fallbackSectionWindow(index, drafts.length, duration);
-    const start = analysisSection?.start ?? fallback.start;
-    const end = analysisSection?.end ?? fallback.end;
+    const hasAnalysisWindow = Boolean(analysisSection);
+    const start = hasAnalysisWindow ? analysisSection!.start : 0;
+    const end = hasAnalysisWindow ? analysisSection!.end : 0;
 
     return {
       id: draft.id || slugify(draft.label, index),
@@ -136,7 +182,7 @@ export function buildStorySections(params: {
       start,
       end,
       energy: analysisSection?.energy,
-      source: analysisSection ? "analysis" : "fallback",
+      source: hasAnalysisWindow ? "analysis" : "missing-analysis",
       lyricChunkIds: [],
       videoMomentIds: [],
     } satisfies StorySection;
@@ -147,6 +193,34 @@ export function buildVideoMomentsFromStudioSources(params: {
   videoSources: UploadedVideoSource[];
   segmentPreviews?: SegmentPreview[];
 }): VideoMoment[] {
+  const sceneMoments = params.videoSources.flatMap((source) =>
+    (source.scenes ?? [])
+      .filter((scene) => scene.duration > 0 && scene.end > scene.start)
+      .map((scene) => ({
+        id: `scene-moment-${source.id}-${scene.id}`,
+        sourceClipId: source.id,
+        label: scene.caption || scene.label || source.name,
+        start: roundTime(scene.start),
+        end: roundTime(scene.end),
+        duration: roundTime(scene.end - scene.start),
+        thumbnailUrl: scene.thumbnailUrl ?? source.thumbnailUrl,
+        firstFrameUrl: scene.firstFrameUrl,
+        middleFrameUrl: scene.middleFrameUrl,
+        lastFrameUrl: scene.lastFrameUrl,
+        storyboardUrl: scene.storyboardUrl,
+        sourceRefLabel: `S${source.id + 1} · ${scene.label}`,
+        caption: scene.captionMeta?.caption ?? extractCaptionText(scene.caption),
+        captionMeta: scene.captionMeta,
+        motionDescriptor: scene.motionDescriptor ?? scene.visualAnalysis?.motion ?? undefined,
+        visualAnalysis: scene.visualAnalysis,
+        contentHash: scene.contentHash ?? scene.visualAnalysis?.contentHash,
+        keyframeTimestamps: scene.keyframeTimestamps ?? scene.visualAnalysis?.keyframeTimestamps,
+        splitKind: scene.splitKind,
+      } satisfies VideoMoment)),
+  );
+
+  if (sceneMoments.length) return sceneMoments;
+
   const segmentMoments = (params.segmentPreviews ?? [])
     .filter((segment) => segment.duration > 0)
     .map((segment) => ({
@@ -158,22 +232,26 @@ export function buildVideoMomentsFromStudioSources(params: {
       duration: roundTime((segment.sourceEnd ?? segment.duration) - (segment.sourceStart ?? 0)),
       thumbnailUrl: segment.thumbnailUrl,
       sourceRefLabel: segment.sourceRefLabel,
+      caption: segment.sourceRefLabel,
+      motionDescriptor: segment.motionDescriptor,
     } satisfies VideoMoment));
 
   if (segmentMoments.length) return segmentMoments;
 
-  return params.videoSources
-    .filter((source) => source.duration > 0)
-    .map((source) => ({
-      id: `source-moment-${source.id}`,
-      sourceClipId: source.id,
-      label: source.name,
-      start: 0,
-      end: roundTime(source.duration),
-      duration: roundTime(source.duration),
-      thumbnailUrl: source.thumbnailUrl,
-      sourceRefLabel: `S${source.id + 1}`,
-    } satisfies VideoMoment));
+  return [];
+}
+
+
+function extractCaptionText(value: string | undefined) {
+  if (!value) return value;
+  const trimmed = value.trim();
+  if (!trimmed.startsWith("{")) return value;
+  try {
+    const parsed = JSON.parse(trimmed) as { caption?: unknown };
+    return typeof parsed.caption === "string" && parsed.caption.trim() ? parsed.caption : value;
+  } catch {
+    return value;
+  }
 }
 
 export function mapLyricsToStorySections(sections: StorySection[], lyricChunks: LyricChunk[]): StorySection[] {
@@ -185,13 +263,42 @@ export function mapLyricsToStorySections(sections: StorySection[], lyricChunks: 
   }));
 }
 
-export function mapVideoMomentsToStorySections(sections: StorySection[], moments: VideoMoment[]): StorySection[] {
-  return sections.map((section, index) => {
+export function mapVideoMomentsToStorySections(sections: StorySection[], moments: VideoMoment[], lyricChunks: LyricChunk[] = []): StorySection[] {
+  const lyricsById = new Map(lyricChunks.map((chunk) => [chunk.id, chunk]));
+  const semanticSections = sections.map((section) => ({
+      id: section.id,
+      label: section.label,
+      prompt: section.prompt,
+      start: section.start,
+      end: section.end,
+      energy: section.energy,
+      lyricTexts: section.lyricChunkIds.map((id) => lyricsById.get(id)?.text ?? "").filter(Boolean),
+    }) satisfies SemanticSectionInput);
+  const semanticMoments = moments.map((moment) => ({
+      id: moment.id,
+      sourceClipId: moment.sourceClipId,
+      label: moment.label,
+      start: moment.start,
+      end: moment.end,
+      duration: moment.duration,
+      caption: moment.caption,
+      subjects: moment.captionMeta?.subjects,
+      action: moment.captionMeta?.action,
+      setting: moment.captionMeta?.setting,
+      shotType: moment.captionMeta?.shotType,
+      motionDescriptor: moment.motionDescriptor ?? null,
+    }) satisfies SemanticVideoMomentInput);
+  const rankedBySection = rankSectionsWithContinuity(semanticSections, semanticMoments);
+
+  return sections.map((section) => {
+    const ranked = rankedBySection.get(section.id) ?? [];
+    const assigned = ranked[0];
     const overlapping = moments.filter((moment) => overlaps(section.start, section.end, moment.start, moment.end));
-    const fallback = moments.length ? [moments[index % moments.length]!.id] : [];
+    const rankedMomentIds = pickDiverseSectionMomentIds(ranked, section.end - section.start);
     return {
       ...section,
-      videoMomentIds: overlapping.length ? overlapping.map((moment) => moment.id) : fallback,
+      videoMomentIds: rankedMomentIds.length ? rankedMomentIds : overlapping.map((moment) => moment.id),
+      semanticMatch: assigned ? toSemanticClipMatch(assigned) : undefined,
     };
   });
 }
@@ -202,8 +309,8 @@ export function buildDraftEditPlan(params: {
   createdAt?: string;
 }): EditPlan {
   const createdAt = params.createdAt ?? new Date().toISOString();
-  const timelineItems = params.sections.map((section, index) => {
-    const videoMomentId = section.videoMomentIds[0] ?? params.videoMoments[index % Math.max(1, params.videoMoments.length)]?.id ?? null;
+  const timelineItems = params.sections.map((section) => {
+    const videoMomentId = section.videoMomentIds[0] ?? null;
     return {
       id: `timeline-${section.id}`,
       sectionId: section.id,
@@ -213,6 +320,7 @@ export function buildDraftEditPlan(params: {
       end: section.end,
       label: section.label,
       prompt: section.prompt,
+      semanticMatch: section.semanticMatch,
     } satisfies TimelineItem;
   });
 
@@ -243,7 +351,7 @@ export function createMusicVideoProject(params: {
     buildStorySections({ analysis: params.analysis, duration, drafts: params.storyDrafts }),
     lyricChunks,
   );
-  const storySections = mapVideoMomentsToStorySections(sectionsWithLyrics, videoMoments);
+  const storySections = mapVideoMomentsToStorySections(sectionsWithLyrics, videoMoments, lyricChunks);
   const editPlan = buildDraftEditPlan({
     sections: storySections,
     videoMoments,
@@ -270,30 +378,42 @@ export function createMusicVideoProject(params: {
 export function buildEditPlanPreviewSegments(params: {
   project: MusicVideoProject | null;
   videoSources: UploadedVideoSource[];
+  editSettings?: Partial<StoryEditSettings>;
 }): EditPlanPreviewSegment[] {
   if (!params.project) return [];
 
-  const momentsById = new Map(params.project.videoMoments.map((moment) => [moment.id, moment]));
+  const project = params.project;
+  const editSettings = normalizeStoryEditSettings(params.editSettings);
+  const momentsById = new Map(project.videoMoments.map((moment) => [moment.id, moment]));
+  const sectionsById = new Map(project.storySections.map((section) => [section.id, section]));
 
-  return params.project.editPlan.timelineItems
-    .map((item) => {
-      const moment = item.videoMomentId ? momentsById.get(item.videoMomentId) : null;
-      if (!moment) return null;
+  return project.editPlan.timelineItems
+    .flatMap((item) => {
+      const section = sectionsById.get(item.sectionId);
+      const candidateIds = uniqueStrings([
+        ...(section?.videoMomentIds ?? []),
+        ...(item.videoMomentId ? [item.videoMomentId] : []),
+      ]);
+      const candidates = candidateIds
+        .map((momentId) => {
+          const moment = momentsById.get(momentId);
+          if (!moment) return null;
+          const source = params.videoSources.find((candidate) => candidate.id === moment.sourceClipId);
+          if (!source?.videoUrl) return null;
+          return { moment, source };
+        })
+        .filter((candidate): candidate is { moment: VideoMoment; source: UploadedVideoSource } => candidate !== null);
 
-      const source = params.videoSources.find((candidate) => candidate.id === moment.sourceClipId);
-      if (!source?.videoUrl) return null;
-
-      const startTime = roundTime(Math.max(0, Math.min(source.duration, moment.start)));
-      const fallbackEnd = startTime + Math.max(0.1, Math.min(item.end - item.start, moment.duration));
-      const endTime = roundTime(Math.max(startTime + 0.05, Math.min(source.duration, moment.end || fallbackEnd)));
-      if (endTime <= startTime) return null;
-
-      return {
-        videoUrl: source.videoUrl,
-        startTime,
-        endTime,
-        label: `${item.label} · ${moment.label}`,
-      } satisfies EditPlanPreviewSegment;
+      return expandMomentsToSectionPreviewSegments({
+        item,
+        candidates,
+        cutWindows: buildMusicCueWindows({
+          item,
+          analysis: project.song,
+          section: section ?? null,
+          editSettings,
+        }),
+      });
     })
     .filter((segment): segment is EditPlanPreviewSegment => segment !== null);
 }
@@ -302,7 +422,19 @@ export function validateMusicVideoProject(project: MusicVideoProject): ReviewFin
   const findings: ReviewFinding[] = [];
 
   if (project.duration <= 0) {
-    findings.push(buildFinding("warning", "missing-duration", "Project duration is unknown; section timing is provisional."));
+    findings.push(buildFinding("error", "missing-duration", "Project duration is unknown; run Essentia before building a music-video plan."));
+  }
+
+  if (!project.song) {
+    findings.push(buildFinding("error", "missing-song-analysis", "Missing Essentia song analysis; music-video planning is blocked."));
+  }
+
+  if (!project.song?.sections?.length) {
+    findings.push(buildFinding("error", "missing-analysis-sections", "Essentia returned no section windows; refusing to synthesize fallback timing."));
+  }
+
+  if (!project.videoMoments.length) {
+    findings.push(buildFinding("error", "missing-source-moments", "No detected scenes or segment previews are available; refusing to use whole-source fallback clips."));
   }
 
   for (const section of project.storySections) {
@@ -312,8 +444,11 @@ export function validateMusicVideoProject(project: MusicVideoProject): ReviewFin
     if (!section.lyricChunkIds.length && project.lyricChunks.length > 0) {
       findings.push(buildFinding("info", "section-has-no-lyrics", `Section ${section.label} has no overlapping lyric chunk.`, section.id));
     }
-    if (!section.videoMomentIds.length && project.videoMoments.length > 0) {
-      findings.push(buildFinding("warning", "section-has-no-video-moment", `Section ${section.label} has no assigned video moment.`, section.id));
+    if (section.source === "missing-analysis") {
+      findings.push(buildFinding("error", "section-missing-analysis-window", `Section ${section.label} has no Essentia analysis time window.`, section.id));
+    }
+    if (!section.videoMomentIds.length) {
+      findings.push(buildFinding("error", "section-has-no-video-moment", `Section ${section.label} has no assigned detected video moment.`, section.id));
     }
   }
 
@@ -336,14 +471,6 @@ function normalizeAnalysisSections(sections: BeatJoinSection[], duration: number
     .sort((left, right) => left.start - right.start);
 }
 
-function fallbackSectionWindow(index: number, count: number, duration: number) {
-  if (duration <= 0) return { start: 0, end: 0 };
-  const safeCount = Math.max(1, count);
-  const start = roundTime((duration / safeCount) * index);
-  const end = roundTime(index === safeCount - 1 ? duration : (duration / safeCount) * (index + 1));
-  return { start, end: Math.max(start + 0.25, end) };
-}
-
 function buildFinding(severity: ReviewFindingSeverity, code: string, message: string, sectionId?: string): ReviewFinding {
   return {
     id: sectionId ? `${code}:${sectionId}` : code,
@@ -351,6 +478,21 @@ function buildFinding(severity: ReviewFindingSeverity, code: string, message: st
     code,
     message,
     sectionId,
+  };
+}
+
+function toSemanticClipMatch(assignment: SemanticEditAssignment): SemanticClipMatch {
+  return {
+    momentId: assignment.momentId,
+    score: assignment.score,
+    semanticScore: assignment.semanticScore,
+    lyricCaptionScore: assignment.lyricCaptionScore,
+    actionIntentScore: assignment.actionIntentScore,
+    durationFitScore: assignment.durationFitScore,
+    motionContinuityScore: assignment.motionContinuityScore,
+    motionEnergyScore: assignment.motionEnergyScore,
+    repetitionPenalty: assignment.repetitionPenalty,
+    reasons: assignment.reasons,
   };
 }
 
@@ -369,4 +511,249 @@ function slugify(label: string, index: number) {
 
 function roundTime(value: number) {
   return Math.round(value * 1000) / 1000;
+}
+
+function rankSectionsWithContinuity(sections: SemanticSectionInput[], moments: SemanticVideoMomentInput[]) {
+  const rankedBySection = new Map<string, SemanticEditAssignment[]>();
+  const useCounts = new Map<string, number>();
+  let previous: SemanticVideoMomentInput | null = null;
+
+  for (const section of sections) {
+    const ranked = rankMomentsForSection({ section, moments, previous, useCounts });
+    rankedBySection.set(section.id, ranked);
+
+    const best = ranked[0];
+    if (best) {
+      useCounts.set(best.moment.id, (useCounts.get(best.moment.id) ?? 0) + 1);
+      previous = best.moment;
+    }
+  }
+
+  return rankedBySection;
+}
+
+function pickDiverseSectionMomentIds(ranked: SemanticEditAssignment[], sectionDuration: number) {
+  if (!ranked.length) return [];
+
+  const targetCount = Math.min(ranked.length, Math.max(1, Math.min(8, Math.ceil(Math.max(0.05, sectionDuration) / 3))));
+  const selected: SemanticEditAssignment[] = [ranked[0]!];
+  const selectedIds = new Set([ranked[0]!.momentId]);
+  const sourceCounts = new Map<number, number>([[ranked[0]!.moment.sourceClipId, 1]]);
+
+  for (const candidate of ranked.slice(1)) {
+    if (selected.length >= targetCount) break;
+    if (selectedIds.has(candidate.momentId)) continue;
+    if ((sourceCounts.get(candidate.moment.sourceClipId) ?? 0) > 0 && hasUnusedSource(ranked, sourceCounts, selectedIds)) continue;
+    selected.push(candidate);
+    selectedIds.add(candidate.momentId);
+    sourceCounts.set(candidate.moment.sourceClipId, (sourceCounts.get(candidate.moment.sourceClipId) ?? 0) + 1);
+  }
+
+  for (const candidate of ranked.slice(1)) {
+    if (selected.length >= targetCount) break;
+    if (selectedIds.has(candidate.momentId)) continue;
+    selected.push(candidate);
+    selectedIds.add(candidate.momentId);
+  }
+
+  return selected.map((candidate) => candidate.momentId);
+}
+
+function hasUnusedSource(ranked: SemanticEditAssignment[], sourceCounts: Map<number, number>, selectedIds: Set<string>) {
+  return ranked.some((candidate) => !selectedIds.has(candidate.momentId) && (sourceCounts.get(candidate.moment.sourceClipId) ?? 0) === 0);
+}
+
+function uniqueStrings(values: string[]) {
+  return [...new Set(values.filter(Boolean))];
+}
+
+function buildMusicCueWindows(params: {
+  item: TimelineItem;
+  analysis: BeatJoinAnalysis | null;
+  section: StorySection | null;
+  editSettings: StoryEditSettings;
+}): MusicCueWindow[] {
+  const { item, analysis, section, editSettings } = params;
+  const start = roundTime(Math.max(0, item.start));
+  const end = roundTime(Math.max(start, item.end));
+  const duration = roundTime(end - start);
+  if (duration <= 0.05) return [];
+
+  if (!analysis) return [];
+
+  const energy = clamp01(section?.energy ?? sampleSeries(analysis.energy, analysis.duration, start + duration / 2) ?? 0.5);
+  const beatInterval = medianInterval(uniqueSortedTimes(analysis.beats, Math.max(analysis.duration, end))) ?? Math.max(0.35, duration / 8);
+  const density = clamp01(editSettings.cutDensity);
+  const densityTargetDuration = lerp(4.2, 0.85, density);
+  const energyMultiplier = lerp(1.2, 0.72, energy);
+  const targetDuration = roundTime(Math.max(beatInterval, densityTargetDuration * energyMultiplier));
+  const minDuration = roundTime(Math.max(0.42, Math.min(beatInterval * 0.9, targetDuration * 0.52)));
+  const maxDuration = roundTime(Math.max(targetDuration * 1.45, minDuration + 0.25));
+
+  const onsets = uniqueSortedTimes(analysis.onsets, Math.max(analysis.duration, end))
+    .filter((time) => time > start + minDuration && time < end - minDuration);
+  const beats = uniqueSortedTimes(analysis.beats, Math.max(analysis.duration, end))
+    .filter((time) => time > start + minDuration && time < end - minDuration);
+  const cueSource = editSettings.preferOnsets && onsets.length >= Math.max(2, Math.floor(duration / Math.max(targetDuration, 0.5)) - 1) ? onsets : beats;
+  const cueKind: MusicCueWindow["cue"] = cueSource === onsets && onsets.length ? "onset" : cueSource.length ? "beat" : "section";
+
+  if (!cueSource.length) return [{ start, end, cue: "section" }];
+
+  const cutTimes = [start];
+  let cursor = start;
+
+  for (const cueTime of cueSource) {
+    const elapsed = cueTime - cursor;
+    if (elapsed < minDuration) continue;
+    if (elapsed >= targetDuration || elapsed >= maxDuration) {
+      cutTimes.push(roundTime(cueTime));
+      cursor = cueTime;
+    }
+  }
+
+  if (end - cursor < minDuration && cutTimes.length > 1) {
+    cutTimes.pop();
+  }
+  cutTimes.push(end);
+
+  return cutTimes
+    .map((time, index, all) => {
+      if (index === 0) return null;
+      const previous = all[index - 1] ?? start;
+      if (time - previous <= 0.05) return null;
+      return { start: roundTime(previous), end: roundTime(time), cue: cueKind } satisfies MusicCueWindow;
+    })
+    .filter((window): window is MusicCueWindow => window !== null);
+}
+
+export function normalizeStoryEditSettings(settings?: Partial<StoryEditSettings>): StoryEditSettings {
+  return {
+    cutDensity: clamp01(Number.isFinite(settings?.cutDensity) ? Number(settings?.cutDensity) : DEFAULT_STORY_EDIT_SETTINGS.cutDensity),
+    preferOnsets: settings?.preferOnsets ?? DEFAULT_STORY_EDIT_SETTINGS.preferOnsets,
+  };
+}
+
+function expandMomentsToSectionPreviewSegments(params: {
+  item: TimelineItem;
+  candidates: Array<{ moment: VideoMoment; source: UploadedVideoSource }>;
+  cutWindows?: MusicCueWindow[];
+}): EditPlanPreviewSegment[] {
+  const { item } = params;
+  const sectionDuration = Math.max(0, item.end - item.start);
+  if (sectionDuration <= 0.05) return [];
+
+  const candidates = params.candidates
+    .map(({ moment, source }) => {
+      const sourceDuration = Math.max(0, Number(source.duration) || 0);
+      const momentStart = roundTime(Math.max(0, Math.min(sourceDuration, moment.start)));
+      const momentEnd = roundTime(Math.max(momentStart, Math.min(sourceDuration, moment.end || momentStart + moment.duration)));
+      const momentDuration = roundTime(momentEnd - momentStart);
+      if (!source.videoUrl || momentDuration <= 0.05) return null;
+      return { moment, source, momentStart, momentEnd, momentDuration };
+    })
+    .filter((candidate): candidate is {
+      moment: VideoMoment;
+      source: UploadedVideoSource;
+      momentStart: number;
+      momentEnd: number;
+      momentDuration: number;
+    } => candidate !== null);
+
+  if (!candidates.length) return [];
+
+  const segments: EditPlanPreviewSegment[] = [];
+  let candidateIndex = 0;
+  const labelCounts = new Map<string, number>();
+
+  const cutWindows = params.cutWindows?.length
+    ? params.cutWindows
+    : [{ start: item.start, end: item.end, cue: "section" } satisfies MusicCueWindow];
+  const minCandidateDuration = Math.max(0.05, Math.min(...candidates.map((candidate) => candidate.momentDuration)));
+  const maxSegmentsPerWindow = Math.max(1, Math.ceil(Math.max(...cutWindows.map((window) => window.end - window.start)) / minCandidateDuration) + candidates.length + 1);
+
+  for (const window of cutWindows) {
+    let musicCursor = window.start;
+    let localLoopCount = 0;
+
+    while (musicCursor < window.end - 0.025 && localLoopCount < maxSegmentsPerWindow) {
+      const candidate = candidates[candidateIndex % candidates.length]!;
+      const remaining = window.end - musicCursor;
+      const sliceDuration = roundTime(Math.min(candidate.momentDuration, remaining));
+      const startTime = candidate.momentStart;
+      const endTime = roundTime(Math.min(candidate.momentEnd, startTime + sliceDuration));
+      if (endTime <= startTime) break;
+
+      const musicStart = roundTime(musicCursor);
+      const musicEnd = roundTime(Math.min(window.end, musicStart + (endTime - startTime)));
+      if (musicEnd <= musicStart) break;
+
+      const useCount = (labelCounts.get(candidate.moment.id) ?? 0) + 1;
+      labelCounts.set(candidate.moment.id, useCount);
+
+      segments.push({
+        videoUrl: candidate.source.videoUrl,
+        startTime,
+        endTime,
+        sectionId: item.sectionId,
+        musicStart,
+        musicEnd,
+        label: buildPreviewSegmentLabel({
+          sectionLabel: item.label,
+          momentLabel: candidate.moment.label,
+          cue: window.cue,
+          useCount,
+        }),
+      });
+
+      musicCursor = roundTime(musicEnd);
+      candidateIndex += 1;
+      localLoopCount += 1;
+    }
+  }
+
+  return segments;
+}
+
+function buildPreviewSegmentLabel(params: {
+  sectionLabel: string;
+  momentLabel: string;
+  cue: MusicCueWindow["cue"];
+  useCount: number;
+}) {
+  const cueLabel = params.cue === "section" ? "" : ` · ${params.cue}`;
+  const loopLabel = params.useCount === 1 ? "" : ` · loop ${params.useCount}`;
+  return `${params.sectionLabel} · ${params.momentLabel}${cueLabel}${loopLabel}`;
+}
+
+function uniqueSortedTimes(values: number[] = [], duration: number) {
+  return values
+    .filter((value) => Number.isFinite(value) && value >= 0 && value <= duration)
+    .sort((left, right) => left - right)
+    .filter((time, index, all) => index === 0 || Math.abs(time - all[index - 1]) > 0.015);
+}
+
+function medianInterval(values: number[]) {
+  if (values.length < 2) return null;
+  const intervals = values
+    .slice(1)
+    .map((time, index) => time - values[index])
+    .filter((interval) => interval > 0.02);
+  if (!intervals.length) return null;
+  const sorted = [...intervals].sort((left, right) => left - right);
+  return sorted[Math.floor(sorted.length / 2)] ?? null;
+}
+
+function sampleSeries(values: number[], duration: number, time: number) {
+  if (!values.length || duration <= 0) return 0.5;
+  const index = Math.min(values.length - 1, Math.max(0, Math.floor((time / duration) * (values.length - 1))));
+  return clamp01(values[index] ?? 0.5);
+}
+
+function lerp(start: number, end: number, amount: number) {
+  return start + (end - start) * amount;
+}
+
+function clamp01(value: number) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(1, Math.max(0, value));
 }

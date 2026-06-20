@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { rm } from "node:fs/promises";
 
 import { detectHardwareLane, runLatencyBenchmark } from "../../src/components/studio/latencyBenchmark";
+import { listMediaFixtures } from "../helpers/mediaFixtures";
 
 describe("latencyBenchmark integration", () => {
   test("detects the local hardware lane", () => {
@@ -74,11 +75,11 @@ describe("latencyBenchmark integration", () => {
   });
 
   test("reports structured failure for audio-only input", async () => {
-    const probe = await runLatencyBenchmark({ requestKey: "bench-audio-seed", startTime: 0, endTime: 1 });
-    const fixtureRoot = probe.fixtureRootDir;
-    const inputPath = `${fixtureRoot}/new-Redline (Remastered).wav`;
+    const inventory = listMediaFixtures();
+    const inputPath = inventory.audio.find((candidate) => /stem|vocal/i.test(candidate)) ?? inventory.audio[0];
+    expect(Boolean(inputPath)).toBe(true);
     const result = await runLatencyBenchmark({
-      inputPath,
+      inputPath: inputPath!,
       requestKey: "bench-audio-only",
       startTime: 0,
       endTime: 1,

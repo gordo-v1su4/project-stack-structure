@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import {
-  buildLocalAudioAnalysis,
   getEssentiaErrorMessage,
   parseEssentiaPayload,
   resolveEssentiaRequestTarget,
@@ -48,26 +47,6 @@ describe("audioAnalysis.parseEssentiaPayload", () => {
   });
 });
 
-describe("audioAnalysis.buildLocalAudioAnalysis", () => {
-  test("creates usable beat and onset markers from locally decoded waveform peaks", () => {
-    const waveform = [0.05, 0.1, 0.9, 0.15, 0.08, 0.2, 0.85, 0.14, 0.06, 0.3, 0.95, 0.2];
-    const parsed = buildLocalAudioAnalysis({
-      fileName: "fallback.wav",
-      waveform,
-      waveformDuration: 6,
-      audioUrl: "blob:fallback",
-    });
-
-    expect(parsed?.sourceLabel).toBe("fallback.wav");
-    expect(parsed?.duration).toBe(6);
-    expect(parsed?.audioUrl).toBe("blob:fallback");
-    expect(parsed?.waveform.length).toBe(waveform.length);
-    expect(parsed?.beats.length).toBeGreaterThan(0);
-    expect(parsed?.onsets.length).toBeGreaterThan(0);
-    expect(parsed?.sections.length).toBeGreaterThan(0);
-  });
-});
-
 describe("audioAnalysis.resolveEssentiaRequestTarget", () => {
   test("prefers direct browser uploads when public Essentia credentials are available", () => {
     const previousUrl = process.env.NEXT_PUBLIC_ESSENTIA_API_BASE_URL;
@@ -91,7 +70,7 @@ describe("audioAnalysis.resolveEssentiaRequestTarget", () => {
     }
   });
 
-  test("falls back to the local proxy when public Essentia credentials are missing", () => {
+  test("uses the local proxy transport when public Essentia credentials are missing", () => {
     const previousUrl = process.env.NEXT_PUBLIC_ESSENTIA_API_BASE_URL;
     const previousKey = process.env.NEXT_PUBLIC_ESSENTIA_API_KEY;
 

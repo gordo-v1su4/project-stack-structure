@@ -39,17 +39,20 @@ export async function POST(request: Request) {
     const inputFiles = await readInputFiles(formData, file);
 
     if (FFMPEG_GATEWAY_URL && inputFiles.length === 1) {
-      const gatewayResponse = await gatewayConcatPreview({
+      return gatewayConcatPreview({
         fileBuffer: inputFiles[0].buffer,
         fileName: inputFiles[0].name,
         fileType: inputFiles[0].type,
         requestKey,
         segments,
       });
-      if (gatewayResponse.ok) return gatewayResponse;
-      console.warn("[PreviewGateway] Remote gateway failed; falling back to local FFmpeg preview.");
-    } else if (FFMPEG_GATEWAY_URL) {
-      console.warn("[PreviewGateway] Multi-source preview requested; using local FFmpeg concat.");
+    }
+
+    if (FFMPEG_GATEWAY_URL && inputFiles.length > 1) {
+      return Response.json({
+        success: false,
+        error: "Configured FFmpeg gateway does not support multi-source preview from this route; disable FFMPEG_GATEWAY_URL or use an explicit multi-source gateway endpoint.",
+      }, { status: 501 });
     }
 
     return localConcatPreview({
@@ -63,7 +66,7 @@ export async function POST(request: Request) {
   }
 }
 
-async function readInputFiles(formData: FormData, fallbackFile: File): Promise<GatewayInputFile[]> {
+async function readInputFiles(formData: FormData, primaryFile: File): Promise<GatewayInputFile[]> {
   const indexedFiles = [...formData.entries()]
     .map(([key, value]) => {
       const match = key.match(/^file:(\d+)$/);
@@ -73,7 +76,7 @@ async function readInputFiles(formData: FormData, fallbackFile: File): Promise<G
     .filter((entry): entry is { index: number; file: File } => entry !== null)
     .sort((a, b) => a.index - b.index);
 
-  const files = indexedFiles.length > 0 ? indexedFiles.map((entry) => entry.file) : [fallbackFile];
+  const files = indexedFiles.length > 0 ? indexedFiles.map((entry) => entry.file) : [primaryFile];
   return Promise.all(
     files.map(async (inputFile) => ({
       buffer: await inputFile.arrayBuffer(),

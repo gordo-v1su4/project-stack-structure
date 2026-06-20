@@ -1,7 +1,6 @@
 "use client";
 
 import { fmt } from "./math";
-import { buildFallbackSceneSegments } from "./sceneSplit";
 import { UploadControl } from "./UploadControl";
 import type { UploadedVideoSource } from "./types";
 
@@ -57,8 +56,8 @@ export function SourceVideoLibrary({
           const captionCount = countSceneCaptions(source);
           const statusLabel = source.sceneStatus === "ready"
             ? `PYSCENEDETECT · ${sceneCount} SCENE${sceneCount === 1 ? "" : "S"}`
-            : source.sceneStatus === "fallback"
-              ? `FALLBACK · ${sceneCount || buildFallbackSceneSegments(source).length} SCENE${(sceneCount || buildFallbackSceneSegments(source).length) === 1 ? "" : "S"}`
+            : source.sceneStatus === "failed"
+              ? "SCENE DETECTION ERROR"
               : source.sceneStatus === "detecting"
                 ? "DETECTING SCENES"
                 : "SCENES PENDING";
@@ -99,7 +98,7 @@ export function SourceVideoLibrary({
             </div>
             <div className="border-t border-[#141414] px-2 py-[5px]">
               <div className="truncate text-[9px] font-mono text-[#8b8b8b]">{source.name}</div>
-              <div className={`mt-1 text-[8px] font-mono uppercase tracking-[0.12em] ${source.sceneStatus === "fallback" ? "text-[#b96c43]" : "text-[#e05c00]"}`}>
+              <div className={`mt-1 text-[8px] font-mono uppercase tracking-[0.12em] ${source.sceneStatus === "failed" ? "text-[#d24b3f]" : "text-[#e05c00]"}`}>
                 {statusLabel}
               </div>
               <div className={`mt-1 text-[8px] font-mono uppercase tracking-[0.12em] ${source.captionStatus === "failed" ? "text-[#7b5b48]" : "text-[#6f6f6f]"}`}>

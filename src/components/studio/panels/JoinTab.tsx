@@ -2,14 +2,10 @@
 
 import type { Dispatch, SetStateAction } from "react";
 import { fmt } from "../math";
-import { SolidWaveform } from "../SolidWaveform";
 import { VideoClip } from "../VideoClip";
-import { WAVE_MAIN } from "../waveData";
 import type { JoinClip, SegmentPreview, ShuffleMode } from "../types";
 
 type JoinTabProps = {
-  playhead: number;
-  bpm: number;
   joinClips: JoinClip[];
   clipOrder: number[];
   segmentPreviews: SegmentPreview[];
@@ -21,8 +17,6 @@ type JoinTabProps = {
 };
 
 export function JoinTab({
-  playhead,
-  bpm,
   joinClips,
   clipOrder,
   segmentPreviews,
@@ -55,19 +49,9 @@ export function JoinTab({
     <>
       {!isUsingCommittedSplit ? (
         <div className="rounded-[2px] border border-[#3a220c] bg-[#120b06] px-3 py-2 text-[10px] uppercase tracking-[0.14em] text-[#d5a56a]">
-          Commit Beat Split first so Join uses the same working segment set as Shuffle.
+          Build Split and Match first so Join assembles the same approved working segment set.
         </div>
       ) : null}
-
-      <SolidWaveform
-        points={WAVE_MAIN}
-        playhead={playhead}
-        bpm={bpm}
-        totalBars={8}
-        beatsPerBar={4}
-        label={`OUTPUT TIMELINE — ${shuffleMode.toUpperCase()} JOIN`}
-        height={100}
-      />
 
       <div className="border border-[#1a1a1a] rounded-[2px] bg-[#080808] overflow-hidden">
         <div className="flex items-center gap-3 px-3 py-2 border-b border-[#181818] text-[10px]">
@@ -98,7 +82,6 @@ export function JoinTab({
               </div>
             );
           })}
-          <div className="absolute inset-y-0 w-[1px] bg-[#e05c00]" style={{ left: `${playhead * 100}%` }} />
         </div>
       </div>
 

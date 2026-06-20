@@ -212,45 +212,6 @@ export function parseEssentiaPayload(params: {
   return parsedAnalysis;
 }
 
-export function buildLocalAudioAnalysis(params: {
-  fileName: string;
-  waveform: number[];
-  waveformDuration: number;
-  audioUrl: string;
-}): BeatJoinAnalysis | null {
-  const duration = Math.max(0, params.waveformDuration);
-  const waveform = params.waveform.map((point) => clamp(Number(point) || 0, 0, 1));
-
-  if (!duration || !waveform.length) return null;
-
-  const energy = smoothSeries(waveform, 4);
-  const onsets = pickLocalOnsets(energy, duration);
-  const bpm = estimateBpm(onsets) ?? 120;
-  const beatStep = 60 / bpm;
-  const beats = Array.from({ length: Math.max(1, Math.floor(duration / beatStep)) }, (_, index) =>
-    Number((index * beatStep).toFixed(3)),
-  ).filter((time) => time < duration);
-  const sectionCount = Math.min(6, Math.max(1, Math.ceil(duration / 12)));
-  const sectionDuration = duration / sectionCount;
-  const sections: BeatJoinSection[] = Array.from({ length: sectionCount }, (_, index) => ({
-    label: index === 0 ? "Intro" : index === sectionCount - 1 ? "Outro" : `Section ${index + 1}`,
-    start: Number((index * sectionDuration).toFixed(3)),
-    end: Number((index === sectionCount - 1 ? duration : (index + 1) * sectionDuration).toFixed(3)),
-    energy: averageRange(energy, index / sectionCount, (index + 1) / sectionCount),
-  }));
-
-  return {
-    sourceLabel: params.fileName,
-    audioUrl: params.audioUrl,
-    waveform,
-    energy,
-    beats,
-    onsets,
-    sections,
-    duration,
-  };
-}
-
 function normalizeSeries(value: unknown) {
   if (!Array.isArray(value)) return [];
 
@@ -347,76 +308,6 @@ function extractErrorText(payload: unknown) {
 
 function lastValue(values: number[]) {
   return values.length ? values[values.length - 1] ?? 0 : 0;
-}
-
-function smoothSeries(series: number[], radius: number) {
-  return series.map((_, index) => {
-    const start = Math.max(0, index - radius);
-    const end = Math.min(series.length, index + radius + 1);
-    let total = 0;
-    for (let cursor = start; cursor < end; cursor += 1) total += series[cursor] ?? 0;
-    return clamp(total / Math.max(1, end - start), 0, 1);
-  });
-}
-
-function pickLocalOnsets(energy: number[], duration: number) {
-  if (energy.length < 3 || duration <= 0) return [];
-
-  const candidates: Array<{ time: number; score: number }> = [];
-  const average = energy.reduce((sum, value) => sum + value, 0) / energy.length;
-  const minGapSeconds = 0.12;
-
-  for (let index = 1; index < energy.length - 1; index += 1) {
-    const previous = energy[index - 1] ?? 0;
-    const current = energy[index] ?? 0;
-    const next = energy[index + 1] ?? 0;
-    const rise = current - previous;
-    const isPeak = current >= next && current > average * 0.72;
-    if (!isPeak || rise < 0.015) continue;
-    candidates.push({
-      time: Number(((index / (energy.length - 1)) * duration).toFixed(3)),
-      score: rise + current * 0.25,
-    });
-  }
-
-  const selected = candidates
-    .sort((left, right) => right.score - left.score)
-    .reduce<number[]>((times, candidate) => {
-      if (times.every((time) => Math.abs(time - candidate.time) >= minGapSeconds)) {
-        times.push(candidate.time);
-      }
-      return times;
-    }, [])
-    .sort((left, right) => left - right);
-
-  if (selected.length) return selected;
-
-  const fallbackStep = Math.max(0.25, duration / 16);
-  return Array.from({ length: Math.max(1, Math.floor(duration / fallbackStep)) }, (_, index) =>
-    Number((index * fallbackStep).toFixed(3)),
-  ).filter((time) => time < duration);
-}
-
-function estimateBpm(onsets: number[]) {
-  const intervals = onsets
-    .slice(1)
-    .map((time, index) => time - (onsets[index] ?? 0))
-    .filter((interval) => interval >= 0.18 && interval <= 2)
-    .sort((left, right) => left - right);
-  const median = intervals[Math.floor(intervals.length / 2)];
-  if (!median) return null;
-  let bpm = 60 / median;
-  while (bpm < 80) bpm *= 2;
-  while (bpm > 180) bpm /= 2;
-  return Math.round(bpm);
-}
-
-function averageRange(series: number[], startRatio: number, endRatio: number) {
-  const start = Math.max(0, Math.floor(series.length * startRatio));
-  const end = Math.min(series.length, Math.max(start + 1, Math.ceil(series.length * endRatio)));
-  let total = 0;
-  for (let index = start; index < end; index += 1) total += series[index] ?? 0;
-  return clamp(total / Math.max(1, end - start), 0, 1);
 }
 
 function clamp(value: number, min: number, max: number) {

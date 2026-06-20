@@ -6,6 +6,7 @@ import {
   hydrateStudioProjectDraft,
 } from "@/components/studio/projectPersistence";
 import type { MusicVideoProject } from "@/components/studio/musicVideoProject";
+import type { ReferenceAsset } from "@/components/studio/referenceAssets";
 import type { UploadedVideoSource } from "@/components/studio/types";
 
 const source: UploadedVideoSource = {
@@ -29,6 +30,23 @@ const storyState = {
   storyBeats: [{ id: "intro", label: "Intro", prompt: "Open" }],
   activeBeatId: "intro",
   storyGenerated: true,
+};
+
+const referenceAsset: ReferenceAsset = {
+  id: "character-1-ref",
+  role: "character-1",
+  kind: "character",
+  displayName: "Milo",
+  fileName: "milo.png",
+  previewUrl: "blob:reference-preview",
+  promptHint: "Preserve exact likeness.",
+  storageProvider: "rustfs",
+  storageBucket: "stack-structure",
+  storagePath: "reference-assets/character-1/2026/06_20/milo.png",
+  storageUrl: "https://s3.v1su4.dev/stack-structure/reference-assets/character-1/2026/06_20/milo.png",
+  storageStatus: "uploaded",
+  storageError: null,
+  createdAt: "2026-06-20T00:00:00.000Z",
 };
 
 const musicVideoProject: MusicVideoProject = {
@@ -75,6 +93,14 @@ describe("projectPersistence", () => {
       videoSources: [source],
       storyState,
       musicVideoProject,
+      referenceAssets: [referenceAsset],
+      captionSettings: {
+        mode: "smart",
+        context: {
+          lyricExcerpt: "love me tonight",
+          projectIntent: "music video semantic matching",
+        },
+      },
       savedAt: "2026-06-18T00:00:00.000Z",
     });
 
@@ -89,7 +115,11 @@ describe("projectPersistence", () => {
     expect(draft.musicVideoProject?.song?.audioUrl).toBe("");
     expect(draft.musicVideoProject?.videoMoments[0].thumbnailUrl).toBe("");
     expect(draft.videoSources[0].mediaKey).toBe(buildVideoMediaKey(source));
+    expect(draft.referenceAssets?.[0].previewUrl).toBe(referenceAsset.storageUrl);
+    expect(draft.referenceAssets?.[0].displayName).toBe("Milo");
     expect(draft.analysis?.mediaKey).toBe("audio:song.wav");
+    expect(draft.captionSettings?.mode).toBe("smart");
+    expect(draft.captionSettings?.context?.lyricExcerpt).toBe("love me tonight");
   });
 
   test("hydrates a persisted draft with restored media URLs", () => {
@@ -109,6 +139,7 @@ describe("projectPersistence", () => {
     expect(hydrated.videoSources).toHaveLength(1);
     expect(hydrated.videoSources[0].videoUrl).toBe("blob:restored-video");
     expect(hydrated.storyState.storyGenerated).toBe(true);
+    expect(hydrated.captionSettings?.mode).toBe("fast");
   });
 
   test("hydrates a persisted draft from durable RustFS URL when local media cache is absent", () => {
@@ -126,4 +157,22 @@ describe("projectPersistence", () => {
     expect(hydrated.videoSources[0].videoUrl).toBe(source.storageUrl);
     expect(hydrated.videoSources[0].storageProvider).toBe("rustfs");
   });
+
+  test("hydrates persisted reference assets from durable RustFS URLs", () => {
+    const draft = createPersistableStudioProjectDraft({
+      analysis: null,
+      videoSources: [],
+      storyState,
+      musicVideoProject: null,
+      referenceAssets: [{ ...referenceAsset, previewUrl: "" }],
+      savedAt: "2026-06-20T00:00:00.000Z",
+    });
+
+    const hydrated = hydrateStudioProjectDraft({ draft });
+
+    expect(hydrated.referenceAssets).toHaveLength(1);
+    expect(hydrated.referenceAssets[0].previewUrl).toBe(referenceAsset.storageUrl);
+    expect(hydrated.referenceAssets[0].storageStatus).toBe("uploaded");
+  });
+
 });

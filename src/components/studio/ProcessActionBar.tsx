@@ -17,20 +17,26 @@ type ProcessActionBarProps = {
 
 function actionLabel(tab: Tab): string {
   switch (tab) {
+    case "review":
+      return "Ingest Media";
     case "split":
-      return "Initialize Segments";
+      return "Build Split";
     case "beatsplit":
       return "Commit Beat Split";
     case "story":
       return "Generate Story Package";
     case "shuffle":
-      return "Execute Shuffle";
+      return "Confirm Match Set";
+    case "generate":
+      return "Plan Generated Shots";
     case "join":
-      return "Concatenate Clips";
+      return "Build Join Timeline";
     case "beatjoin":
       return "Render Beat Join";
+    case "compose":
+      return "Prepare Preview";
     default:
-      return "Render Speed Ramp";
+      return "Apply Effects";
   }
 }
 
