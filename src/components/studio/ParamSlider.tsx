@@ -21,8 +21,9 @@ export function ParamSlider({
   accent = "#e05c00",
   onChange,
 }: ParamSliderProps) {
-  const pct = ((value - min) / (max - min)) * 100;
-  const dv = Math.abs(max - min) >= 10 ? value.toFixed(step < 1 ? 1 : 0) : value.toFixed(2);
+  const normalizedValue = normalizeSliderValue(value, min, max, step);
+  const pct = ((normalizedValue - min) / (max - min)) * 100;
+  const dv = Math.abs(max - min) >= 10 ? normalizedValue.toFixed(step < 1 ? 1 : 0) : normalizedValue.toFixed(2);
   return (
     <div className="flex items-center gap-3 py-[5px] border-b border-[#141414] last:border-0">
       <span className="w-28 shrink-0 text-[10px] uppercase tracking-[0.12em] text-[#555]">{label}</span>
@@ -38,8 +39,8 @@ export function ParamSlider({
           min={min}
           max={max}
           step={step}
-          value={value}
-          onChange={(e) => onChange(Number(e.target.value))}
+          value={normalizedValue}
+          onChange={(e) => onChange(normalizeSliderValue(Number(e.target.value), min, max, step))}
           className="studio-range-input absolute inset-0 w-full opacity-0 cursor-pointer"
           style={{ height: 24, top: -11 }}
         />
@@ -50,4 +51,12 @@ export function ParamSlider({
       </span>
     </div>
   );
+}
+
+function normalizeSliderValue(value: number, min: number, max: number, step: number) {
+  const clamped = Math.min(max, Math.max(min, Number.isFinite(value) ? value : min));
+  if (!Number.isFinite(step) || step <= 0) return clamped;
+  const snapped = min + Math.round((clamped - min) / step) * step;
+  const decimals = Math.max(0, `${step}`.split(".")[1]?.length ?? 0);
+  return Number(Math.min(max, Math.max(min, snapped)).toFixed(decimals));
 }

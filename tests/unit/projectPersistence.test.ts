@@ -175,4 +175,42 @@ describe("projectPersistence", () => {
     expect(hydrated.referenceAssets[0].storageStatus).toBe("uploaded");
   });
 
+
+  test("persists workflow UI settings needed to resume the same screen", () => {
+    const draft = createPersistableStudioProjectDraft({
+      analysis: null,
+      videoSources: [],
+      storyState,
+      musicVideoProject: null,
+      workflowUiSettings: {
+        activeTab: "generate",
+        splitMode: "scene-onset",
+        matchMode: "energy",
+        matchOnsetDensity: 65,
+        matchLyricCueBlend: 60,
+        matchLyricMergeWindow: 3,
+        colorGradient: "Ocean",
+        shaderPresetId: "balanced-music-video",
+        useSourceAudio: true,
+        isPreviewExpanded: true,
+      },
+      savedAt: "2026-06-21T00:00:00.000Z",
+    });
+
+    const hydrated = hydrateStudioProjectDraft({ draft });
+
+    expect(hydrated.workflowUiSettings).toEqual({
+      activeTab: "generate",
+      splitMode: "scene-onset",
+      matchMode: "energy",
+      matchOnsetDensity: 65,
+      matchLyricCueBlend: 60,
+      matchLyricMergeWindow: 3,
+      colorGradient: "Ocean",
+      shaderPresetId: "balanced-music-video",
+      useSourceAudio: true,
+      isPreviewExpanded: true,
+    });
+  });
+
 });

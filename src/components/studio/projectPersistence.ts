@@ -1,7 +1,8 @@
 import type { DeepgramTranscriptSummary } from "./deepgramUtils";
 import type { MusicVideoProject, StoryEditSettings, StorySectionDraft } from "./musicVideoProject";
 import { hydrateReferenceAssets, sanitizeReferenceAssetForStorage, type ReferenceAsset } from "./referenceAssets";
-import type { BeatJoinAnalysis, SceneCaptionSettings, UploadedVideoSource } from "./types";
+import type { BeatJoinAnalysis, ColorGradient, SceneCaptionSettings, Tab, UploadedVideoSource } from "./types";
+import type { SplitMode } from "./sourceTimeline";
 
 export const STUDIO_PROJECT_STORAGE_KEY = "project-stack-structure:studio-project:v1";
 const MEDIA_DB_NAME = "project-stack-structure-studio-media";
@@ -24,6 +25,19 @@ export type PersistedBeatJoinAnalysis = Omit<BeatJoinAnalysis, "audioUrl"> & {
   mediaKey: string | null;
 };
 
+export type PersistedWorkflowUiSettings = {
+  activeTab?: Tab;
+  splitMode?: SplitMode;
+  matchMode?: string;
+  matchOnsetDensity?: number;
+  matchLyricCueBlend?: number;
+  matchLyricMergeWindow?: number;
+  colorGradient?: ColorGradient;
+  shaderPresetId?: string;
+  useSourceAudio?: boolean;
+  isPreviewExpanded?: boolean;
+};
+
 export interface PersistedStudioProjectDraft {
   version: 1;
   savedAt: string;
@@ -33,6 +47,7 @@ export interface PersistedStudioProjectDraft {
   musicVideoProject: MusicVideoProject | null;
   referenceAssets?: ReferenceAsset[];
   captionSettings?: SceneCaptionSettings;
+  workflowUiSettings?: PersistedWorkflowUiSettings;
 }
 
 export interface RuntimeStudioProjectDraft {
@@ -42,6 +57,7 @@ export interface RuntimeStudioProjectDraft {
   musicVideoProject: MusicVideoProject | null;
   referenceAssets: ReferenceAsset[];
   captionSettings?: SceneCaptionSettings;
+  workflowUiSettings?: PersistedWorkflowUiSettings;
 }
 
 export function createPersistableStudioProjectDraft(params: {
@@ -51,6 +67,7 @@ export function createPersistableStudioProjectDraft(params: {
   musicVideoProject: MusicVideoProject | null;
   referenceAssets?: ReferenceAsset[];
   captionSettings?: SceneCaptionSettings;
+  workflowUiSettings?: PersistedWorkflowUiSettings;
   savedAt?: string;
 }): PersistedStudioProjectDraft {
   return {
@@ -102,6 +119,7 @@ export function createPersistableStudioProjectDraft(params: {
     musicVideoProject: params.musicVideoProject ? sanitizeMusicVideoProjectForStorage(params.musicVideoProject) : null,
     referenceAssets: (params.referenceAssets ?? []).map(sanitizeReferenceAssetForStorage),
     captionSettings: sanitizeCaptionSettings(params.captionSettings),
+    workflowUiSettings: sanitizeWorkflowUiSettings(params.workflowUiSettings),
   };
 }
 
@@ -134,6 +152,7 @@ export function hydrateStudioProjectDraft(params: {
     musicVideoProject: params.draft.musicVideoProject,
     referenceAssets: hydrateReferenceAssets(params.draft.referenceAssets ?? []),
     captionSettings: sanitizeCaptionSettings(params.draft.captionSettings),
+    workflowUiSettings: sanitizeWorkflowUiSettings(params.draft.workflowUiSettings),
   };
 }
 
@@ -229,6 +248,37 @@ function parsePersistedDraft(raw: string): PersistedStudioProjectDraft | null {
   } catch {
     return null;
   }
+}
+
+function sanitizeWorkflowUiSettings(settings: PersistedWorkflowUiSettings | undefined): PersistedWorkflowUiSettings {
+  const next: PersistedWorkflowUiSettings = {};
+  if (isKnownTab(settings?.activeTab)) next.activeTab = settings.activeTab;
+  if (isKnownSplitMode(settings?.splitMode)) next.splitMode = settings.splitMode;
+  if (typeof settings?.matchMode === "string" && settings.matchMode.trim()) next.matchMode = settings.matchMode;
+  const matchOnsetDensity = settings?.matchOnsetDensity;
+  const matchLyricCueBlend = settings?.matchLyricCueBlend;
+  const matchLyricMergeWindow = settings?.matchLyricMergeWindow;
+  if (Number.isFinite(matchOnsetDensity)) next.matchOnsetDensity = clampNumber(matchOnsetDensity, 5, 100);
+  if (Number.isFinite(matchLyricCueBlend)) next.matchLyricCueBlend = clampNumber(matchLyricCueBlend, 0, 100);
+  if (Number.isFinite(matchLyricMergeWindow)) next.matchLyricMergeWindow = clampNumber(matchLyricMergeWindow, 0, 5);
+  if (settings?.colorGradient === "Rainbow" || settings?.colorGradient === "Sunset" || settings?.colorGradient === "Ocean") next.colorGradient = settings.colorGradient;
+  if (typeof settings?.shaderPresetId === "string" && settings.shaderPresetId.trim()) next.shaderPresetId = settings.shaderPresetId;
+  if (typeof settings?.useSourceAudio === "boolean") next.useSourceAudio = settings.useSourceAudio;
+  if (typeof settings?.isPreviewExpanded === "boolean") next.isPreviewExpanded = settings.isPreviewExpanded;
+  return next;
+}
+
+function isKnownTab(value: unknown): value is Tab {
+  return typeof value === "string" && ["review", "story", "compose", "split", "beatsplit", "shuffle", "generate", "join", "beatjoin", "ramp"].includes(value);
+}
+
+function isKnownSplitMode(value: unknown): value is SplitMode {
+  return typeof value === "string" && ["scene", "beat", "onset", "scene-beat", "scene-onset"].includes(value);
+}
+
+function clampNumber(value: number | undefined, min: number, max: number) {
+  const numeric = Number.isFinite(value) ? Number(value) : min;
+  return Math.min(max, Math.max(min, numeric));
 }
 
 function sanitizeCaptionSettings(settings: SceneCaptionSettings | undefined): SceneCaptionSettings {

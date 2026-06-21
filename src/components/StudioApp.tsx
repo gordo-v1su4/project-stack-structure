@@ -218,6 +218,19 @@ export default function StudioApp() {
         }
         setMusicVideoProject(draft.musicVideoProject);
         setReferenceAssets(draft.referenceAssets ?? []);
+        const workflowUi = draft.workflowUiSettings;
+        if (workflowUi?.activeTab && NAV.some((item) => item.key === workflowUi.activeTab)) setTab(workflowUi.activeTab);
+        if (workflowUi?.splitMode) setSplitMode(workflowUi.splitMode);
+        if (isMatchMode(workflowUi?.matchMode)) setMatchMode(workflowUi.matchMode);
+        if (workflowUi?.colorGradient) setColorGradient(workflowUi.colorGradient);
+        if (workflowUi?.matchOnsetDensity !== undefined) setMatchOnsetDensity(workflowUi.matchOnsetDensity);
+        if (workflowUi?.matchLyricCueBlend !== undefined) setMatchLyricCueBlend(workflowUi.matchLyricCueBlend);
+        if (workflowUi?.matchLyricMergeWindow !== undefined) setMatchLyricMergeWindow(workflowUi.matchLyricMergeWindow);
+        if (workflowUi?.shaderPresetId && MUSIC_VIDEO_SHADER_PRESETS.some((preset) => preset.id === workflowUi.shaderPresetId)) {
+          setShaderPresetId(workflowUi.shaderPresetId as (typeof MUSIC_VIDEO_SHADER_PRESETS)[number]["id"]);
+        }
+        if (workflowUi?.useSourceAudio !== undefined) setUseSourceAudio(workflowUi.useSourceAudio);
+        if (workflowUi?.isPreviewExpanded !== undefined) setIsPreviewExpanded(workflowUi.isPreviewExpanded);
         setDraftStatus(`Restored local draft saved from this browser.`);
         setDraftRestored(true);
       })
@@ -246,6 +259,18 @@ export default function StudioApp() {
           musicVideoProject,
           referenceAssets,
           captionSettings: buildSceneCaptionSettings(captionMode, beatJoinAnalysis, storyState),
+          workflowUiSettings: {
+            activeTab: tab,
+            splitMode,
+            matchMode,
+            matchOnsetDensity,
+            matchLyricCueBlend,
+            matchLyricMergeWindow,
+            colorGradient,
+            shaderPresetId,
+            useSourceAudio,
+            isPreviewExpanded,
+          },
         },
         {
           audioFile: audioFileRef.current,
@@ -262,7 +287,7 @@ export default function StudioApp() {
     }, 650);
 
     return () => window.clearTimeout(saveTimer);
-  }, [beatJoinAnalysis, captionMode, draftRestored, musicVideoProject, referenceAssets, storyState, videoSources]);
+  }, [beatJoinAnalysis, captionMode, colorGradient, draftRestored, isPreviewExpanded, matchLyricCueBlend, matchLyricMergeWindow, matchMode, matchOnsetDensity, musicVideoProject, referenceAssets, shaderPresetId, splitMode, storyState, tab, useSourceAudio, videoSources]);
 
   useEffect(() => {
     referenceAssetsRef.current = referenceAssets;
@@ -1767,6 +1792,10 @@ function waitForPreviewPlayerToEnd(player: BrowserPreviewPlayer, timeoutSeconds:
 
 function buildVideoSourceKey(source: Pick<UploadedVideoSource, "name" | "size" | "duration">) {
   return `${source.name}::${source.size}::${source.duration.toFixed(3)}`;
+}
+
+function isMatchMode(value: unknown): value is MatchMode {
+  return value === "semantic" || value === "story" || value === "motion" || value === "energy" || value === "color";
 }
 
 function buildSceneCaptionSettings(
