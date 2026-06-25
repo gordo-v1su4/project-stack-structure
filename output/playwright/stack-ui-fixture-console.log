@@ -1,0 +1,81 @@
+[requestfailed] GET http://localhost:3005/_next/static/chunks/node_modules_next_dist_compiled_react-dom_058-ah~._.js net::ERR_ABORTED
+[requestfailed] GET http://localhost:3005/_next/static/chunks/turbopack-_0p44nws._.js net::ERR_ABORTED
+[requestfailed] GET http://localhost:3005/_next/static/chunks/src_review_084wk-i._.js net::ERR_ABORTED
+[requestfailed] GET http://localhost:3005/_next/static/chunks/src_components_0oo_dub._.js net::ERR_ABORTED
+[requestfailed] GET http://localhost:3005/_next/static/chunks/node_modules_next_dist_compiled_next-devtools_index_0553esy.js net::ERR_ABORTED
+[requestfailed] GET http://localhost:3005/_next/static/chunks/src_app_layout_tsx_004glpo._.js net::ERR_ABORTED
+[requestfailed] GET http://localhost:3005/_next/static/chunks/node_modules_0348z99._.js net::ERR_ABORTED
+[requestfailed] GET http://localhost:3005/_next/static/chunks/node_modules_next_dist_client_components_builtin_global-error_002ye8~.js net::ERR_ABORTED
+[requestfailed] GET http://localhost:3005/_next/static/chunks/node_modules_next_dist_0tt2wve._.js net::ERR_ABORTED
+[requestfailed] GET http://localhost:3005/_next/static/chunks/node_modules_next_dist_client_0fhqo1d._.js net::ERR_ABORTED
+[requestfailed] GET http://localhost:3005/_next/static/chunks/src_app_page_tsx_002ye8~._.js net::ERR_ABORTED
+[browser:info] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[browser:log] [HMR] connected
+[browser:info] [Essentia] Waveform decoded {fileName: Love me tonight (fullsong).wav, decodedDuration: 246.69997916666668, waveformPoints: 1200}
+[browser:startGroupCollapsed] [Essentia] Upload analysis
+[browser:info] [Essentia] Request started {fileName: Love me tonight (fullsong).wav, fileSize: 47366552, mimeType: audio/wav, transport: proxy, url: /api/essentia/full?mode=fast}
+[browser:info] [Essentia] Response received {ok: true, status: 200, elapsedMs: 9664, duration: 246.69995464852607, bpm: 131.94125366210938}
+[browser:info] [Essentia] Raw upstream payload {bpm: 131.94125366210938, duration: 246.69995464852607, beats: Array(525), onsets: Array(1344), energy: Object}
+[browser:endGroup] console.groupEnd
+[browser:info] [Essentia] Parsed analysis {sourceLabel: Love me tonight (fullsong).wav, duration: 246.69997916666668, waveformPoints: 1200, energyPoints: 21250, beats: Array(525)}
+[requestfailed] GET blob:http://localhost:3005/763e6fd9-1917-4b05-9450-de2f06998a48 net::ERR_ABORTED
+[browser:info] [Deepgram] POST /deepgram-transcribe {file: Love me tonight - stem-only-Lead Vocal.wav, size: 47323200, type: audio/wav}
+[browser:info] [Deepgram] response 200 {metadata: Object, results: Object}
+[requestfailed] GET blob:http://localhost:3005/795d50b8-abaf-45b0-ba0c-62da2c4e9ed2 net::ERR_ABORTED
+[requestfailed] GET blob:http://localhost:3005/39328625-9bed-4364-9a04-17f3351158a5 net::ERR_ABORTED
+[requestfailed] GET blob:http://localhost:3005/5fda063f-e4ed-4b9e-bcf2-b04db881e1cc net::ERR_ABORTED
+[requestfailed] GET blob:http://localhost:3005/994943ac-5a90-4f11-816a-26d519be0832 net::ERR_ABORTED
+[requestfailed] GET blob:http://localhost:3005/7c9d8830-c5dd-4696-8ea8-e94007b1c9d9 net::ERR_ABORTED
+[requestfailed] GET blob:http://localhost:3005/e6592668-c71f-4967-8480-3a8569fa4145 net::ERR_ABORTED
+[requestfailed] GET blob:http://localhost:3005/52ba2495-d91d-4e10-ad86-4579242298ea net::ERR_ABORTED
+[requestfailed] GET blob:http://localhost:3005/b3552509-b023-488a-b117-4cbfd4280e89 net::ERR_ABORTED
+[requestfailed] GET blob:http://localhost:3005/b3552509-b023-488a-b117-4cbfd4280e89 net::ERR_ABORTED
+[requestfailed] GET blob:http://localhost:3005/e6592668-c71f-4967-8480-3a8569fa4145 net::ERR_ABORTED
+[requestfailed] GET blob:http://localhost:3005/52ba2495-d91d-4e10-ad86-4579242298ea net::ERR_ABORTED
+[requestfailed] GET blob:http://localhost:3005/994943ac-5a90-4f11-816a-26d519be0832 net::ERR_ABORTED
+[requestfailed] GET blob:http://localhost:3005/7c9d8830-c5dd-4696-8ea8-e94007b1c9d9 net::ERR_ABORTED
+[requestfailed] GET blob:http://localhost:3005/795d50b8-abaf-45b0-ba0c-62da2c4e9ed2 net::ERR_ABORTED
+[requestfailed] GET blob:http://localhost:3005/5fda063f-e4ed-4b9e-bcf2-b04db881e1cc net::ERR_ABORTED
+[requestfailed] GET blob:http://localhost:3005/39328625-9bed-4364-9a04-17f3351158a5 net::ERR_ABORTED
+[requestfailed] GET blob:http://localhost:3005/b3552509-b023-488a-b117-4cbfd4280e89 net::ERR_ABORTED
+[requestfailed] GET blob:http://localhost:3005/7c9d8830-c5dd-4696-8ea8-e94007b1c9d9 net::ERR_ABORTED
+[requestfailed] GET blob:http://localhost:3005/994943ac-5a90-4f11-816a-26d519be0832 net::ERR_ABORTED
+[requestfailed] GET blob:http://localhost:3005/39328625-9bed-4364-9a04-17f3351158a5 net::ERR_ABORTED
+[requestfailed] GET blob:http://localhost:3005/795d50b8-abaf-45b0-ba0c-62da2c4e9ed2 net::ERR_ABORTED
+[requestfailed] GET blob:http://localhost:3005/5fda063f-e4ed-4b9e-bcf2-b04db881e1cc net::ERR_ABORTED
+[requestfailed] GET blob:http://localhost:3005/39328625-9bed-4364-9a04-17f3351158a5 net::ERR_ABORTED
+[browser:log] [Fast Refresh] rebuilding
+[browser:log] [Fast Refresh] done in 202ms
+[requestfailed] GET blob:http://localhost:3005/5fda063f-e4ed-4b9e-bcf2-b04db881e1cc net::ERR_ABORTED
+[requestfailed] GET blob:http://localhost:3005/994943ac-5a90-4f11-816a-26d519be0832 net::ERR_ABORTED
+[requestfailed] GET blob:http://localhost:3005/52ba2495-d91d-4e10-ad86-4579242298ea net::ERR_ABORTED
+[browser:log] [Fast Refresh] rebuilding
+[browser:log] [Fast Refresh] done in 116ms
+[browser:log] [Fast Refresh] rebuilding
+[browser:log] [Fast Refresh] done in 167ms
+[browser:log] [Fast Refresh] rebuilding
+[browser:log] [Fast Refresh] done in 138ms
+[browser:log] [Fast Refresh] rebuilding
+[browser:log] [Fast Refresh] done in 189ms
+[browser:log] [Fast Refresh] rebuilding
+[browser:log] [Fast Refresh] done in 184ms
+[browser:log] [Fast Refresh] rebuilding
+[browser:log] [Fast Refresh] done in 328ms
+[requestfailed] GET blob:http://localhost:3005/7c9d8830-c5dd-4696-8ea8-e94007b1c9d9 net::ERR_ABORTED
+[requestfailed] GET blob:http://localhost:3005/39328625-9bed-4364-9a04-17f3351158a5 net::ERR_ABORTED
+[requestfailed] GET blob:http://localhost:3005/795d50b8-abaf-45b0-ba0c-62da2c4e9ed2 net::ERR_ABORTED
+[requestfailed] GET blob:http://localhost:3005/e6592668-c71f-4967-8480-3a8569fa4145 net::ERR_ABORTED
+[requestfailed] GET blob:http://localhost:3005/b3552509-b023-488a-b117-4cbfd4280e89 net::ERR_ABORTED
+[browser:log] [Fast Refresh] rebuilding
+[browser:log] [Fast Refresh] done in 117ms
+[requestfailed] GET blob:http://localhost:3005/7c9d8830-c5dd-4696-8ea8-e94007b1c9d9 net::ERR_ABORTED
+[requestfailed] GET blob:http://localhost:3005/39328625-9bed-4364-9a04-17f3351158a5 net::ERR_ABORTED
+[requestfailed] GET blob:http://localhost:3005/52ba2495-d91d-4e10-ad86-4579242298ea net::ERR_ABORTED
+[requestfailed] GET blob:http://localhost:3005/e6592668-c71f-4967-8480-3a8569fa4145 net::ERR_ABORTED
+[requestfailed] GET blob:http://localhost:3005/7c9d8830-c5dd-4696-8ea8-e94007b1c9d9 net::ERR_ABORTED
+[requestfailed] GET blob:http://localhost:3005/39328625-9bed-4364-9a04-17f3351158a5 net::ERR_ABORTED
+[requestfailed] GET blob:http://localhost:3005/39328625-9bed-4364-9a04-17f3351158a5 net::ERR_ABORTED
+[requestfailed] GET blob:http://localhost:3005/7c9d8830-c5dd-4696-8ea8-e94007b1c9d9 net::ERR_ABORTED
+[requestfailed] GET blob:http://localhost:3005/994943ac-5a90-4f11-816a-26d519be0832 net::ERR_ABORTED
+[requestfailed] GET blob:http://localhost:3005/52ba2495-d91d-4e10-ad86-4579242298ea net::ERR_ABORTED
+[requestfailed] GET blob:http://localhost:3005/39328625-9bed-4364-9a04-17f3351158a5 net::ERR_ABORTED

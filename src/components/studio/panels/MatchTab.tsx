@@ -107,10 +107,10 @@ export function MatchTab({
             <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Adaptive music + lyric cut blocks</div>
             <div className="mt-1 text-[11px] text-[#6d6d6d]">Orange markers are music onsets. Cyan markers are SRT phrase boundaries. Density and blend snap in 5% steps. The merge window snaps in 0.5s steps so lyric cuts can lock to nearby music cuts without double-counting.</div>
           </div>
-          <div className="grid min-w-[320px] gap-1 md:min-w-[520px] md:grid-cols-3 md:gap-3">
-            <ParamSlider label="Cut Density" value={onsetDensity} min={5} max={100} step={5} unit="%" onChange={onOnsetDensity} />
-            <ParamSlider label="SRT Blend" value={lyricCueBlend} min={0} max={100} step={5} unit="%" accent="#32c7d7" onChange={onLyricCueBlend} />
-            <ParamSlider label="Merge Window" value={lyricMergeWindow} min={0} max={5} step={0.5} unit="s" accent="#75d767" onChange={onLyricMergeWindow} />
+          <div className="grid min-w-[320px] flex-1 gap-2 md:min-w-[640px] md:grid-cols-3 md:gap-3">
+            <ParamSlider label="Cut Density" value={onsetDensity} min={5} max={100} step={5} unit="%" layout="stack" onChange={onOnsetDensity} />
+            <ParamSlider label="SRT Blend" value={lyricCueBlend} min={0} max={100} step={5} unit="%" accent="#32c7d7" layout="stack" onChange={onLyricCueBlend} />
+            <ParamSlider label="Merge Window" value={lyricMergeWindow} min={0} max={5} step={0.5} unit="s" accent="#75d767" layout="stack" onChange={onLyricMergeWindow} />
           </div>
         </div>
         <MusicCueTimeline cueMap={cueMap} project={project} />
