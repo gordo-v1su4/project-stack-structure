@@ -126,6 +126,7 @@ See [tests/README.md](tests/README.md).
 - [Media pipeline](docs/architecture/media-pipeline.md) — segmentation, ranking, recompute
 - [Creative production brief](docs/product/creative-production-brief.md)
 - [UI workflow overhaul](docs/product/music-video-ui-workflow-overhaul.md)
+- [Local SwarmUI / ComfyUI generation](docs/local-generation.md)
 - [Roadmap](docs/roadmap.md)
 
 ### Protocols and benchmarks
