@@ -1,145 +1,147 @@
 # Project Stack Structure
 
-Smart auto music-video editor foundation built on a Next.js studio prototype.
+Smart auto music-video editor: **upload your song and footage**, get a **musically aligned rough cut**, then **optionally fill gaps** with AI-generated shots.
 
-## Current product direction
+## What it does
 
-The app is being shaped around a few non-negotiable rules:
+1. Analyze the **master track** (beats, sections, waveform) on a GPU-backed Essentia service.
+2. Ingest **your clips** — scene detection and vision captions (LFM / Qwen VL on server GPU).
+3. **Match** real footage to song sections and lyrics with motion continuity.
+4. **Generate** (optional) filler shots, extensions, and bridges only where coverage is missing — via hosted APIs or local ComfyUI (integration in progress).
+5. **Join** approved clips into section previews and export.
 
-- **musical alignment first**
-- **motion continuity as the default visual mode**
-- **accurate segment analysis over shallow quick-scan tagging**
-- **explicit recompute states over laggy pseudo-live playback**
+**Upload-first:** most of the edit comes from footage you already shot. AI generation is a gap-fill lane, not a replacement for your clips.
+
+## Design rules
+
+- **Musical alignment first** — Essentia beats and sections drive cuts.
+- **Motion continuity** as the default visual mode.
+- **Prepared previews** — explicit recompute states, not laggy pseudo-live playback.
+- **Human approval** — Match and Join gate what enters the timeline; Generate does not silently invent shots.
+
+## How it fits together
+
+| Layer | Where it runs |
+| --- | --- |
+| Studio UI | Browser (Next.js) |
+| Song analysis | Essentia API (server GPU) |
+| Clip storage and scene detect | RustFS + media gateway |
+| Semantic clip tagging | Vision caption gateways — LFM fast, Qwen3-VL GGUF smart (server GPU) |
+| Lyrics | Deepgram (proxied) |
+| Preview / export | FFmpeg gateway or local FFmpeg |
+| Gap-fill video | Planned: API and/or ComfyUI sidecar |
+
+Full detail: **[Product infrastructure](docs/architecture/product-infrastructure.md)** — workflow, hybrid model, data authority, planned clip-to-master audio sync.
 
 ## System architecture
 
 ```mermaid
 graph TB
-    subgraph Client["Browser — Next.js Studio"]
-        UI[StudioApp.tsx]
-        WF[Waveform + Preview UI]
+    subgraph Client["Browser studio"]
+        UI[StudioApp]
     end
 
-    subgraph NextJS["Next.js App — this repo"]
-        API_E[<b>/api/essentia/full</b><br/>proxy route]
-        API_F[<b>/api/ffglitch</b><br/>proxy route]
+    subgraph NextJS["Next.js app"]
+        API_E["/api/essentia/full"]
+        API_F["/api/ffglitch"]
+        API_C["/api/caption/scene"]
+        API_M["/api/media/video/jobs"]
+        API_P["preview and export routes"]
     end
 
-    subgraph Cloud["Cloud Services — Docker containers"]
-        ESSENIA[<b>Essentia API</b><br/>essentia.v1su4.dev<br/><i>github.com/gordo-v1su4/essentia-endpoint</i>]
-        FFGATE[<b>FFmpeg + FFglitch Gateway</b><br/>ffmpeg.v1su4.dev<br/><i>github.com/gordo-v1su4/ffmpeg-gateway</i>]
-        BOT[<b>Discord Bot</b><br/><i>github.com/gordo-v1su4/discord-bot</i>]
+    subgraph Cloud["Hosted services"]
+        ESS["Essentia API GPU"]
+        FFG["FFmpeg gateway"]
+        MG["Media gateway and scene detect"]
+        VL["Vision caption gateways"]
     end
 
-    TRAEFIK((Traefik<br/>reverse proxy<br/>+ Let's Encrypt))
-
-    UI -->|audio upload| API_E
-    UI -->|glitch/preview| API_F
-    API_E -->|proxy| TRAEFIK
-    API_F -->|proxy| TRAEFIK
-    TRAEFIK --> ESSENIA
-    TRAEFIK --> FFGATE
-    TRAEFIK --> BOT
-
-    ESSENIA -.->|rhythm/structure/tonal<br/>classification/vocals| API_E
-    FFGATE -.->|preview/concat/split<br/>thumbnail/glitch/MV| API_F
+    UI --> API_E
+    UI --> API_F
+    UI --> API_C
+    UI --> API_M
+    UI --> API_P
+    API_E --> ESS
+    API_F --> FFG
+    API_C --> VL
+    API_M --> MG
+    API_P --> FFG
 ```
 
 ### External services
 
-| Service | URL | Repo | Stack |
+| Service | URL | Repo | Role |
 | --- | --- | --- | --- |
-| Essentia API | `essentia.v1su4.dev` | [essentia-endpoint](https://github.com/gordo-v1su4/essentia-endpoint) | FastAPI + Essentia C++ + GPU |
-| FFmpeg Gateway | `ffmpeg.v1su4.dev` | [ffmpeg-gateway](https://github.com/gordo-v1su4/ffmpeg-gateway) | FastAPI + FFmpeg + FFglitch |
-| Discord Bot | — | [discord-bot](https://github.com/gordo-v1su4/discord-bot) | Bun + Express |
+| Essentia API | `essentia.v1su4.dev` | [essentia-endpoint](https://github.com/gordo-v1su4/essentia-endpoint) | Beats, sections, onsets, waveform |
+| FFmpeg Gateway | `ffmpeg.v1su4.dev` | [ffmpeg-gateway](https://github.com/gordo-v1su4/ffmpeg-gateway) | Preview, concat, extract-audio, FFglitch |
+| Media gateway | env `MEDIA_GATEWAY_URL` | — | RustFS uploads, PySceneDetect jobs |
+| Vision captions | env `SCENE_CAPTION_*_GATEWAY_*` | — | LFM and Qwen3-VL scene tagging |
+| Discord Bot | — | [discord-bot](https://github.com/gordo-v1su4/discord-bot) | Ops / notifications |
 
-### FFmpeg Gateway endpoints
+FFmpeg gateway API: `https://ffmpeg.v1su4.dev/docs`
 
-| Method | Path | Description |
-| --- | --- | --- |
-| POST | `/ffmpeg/preview` | Section preview clip |
-| POST | `/ffmpeg/concat` | Concatenate segments |
-| POST | `/ffmpeg/split` | Split at time boundaries |
-| POST | `/ffmpeg/thumbnail` | Extract thumbnails |
-| POST | `/ffmpeg/extract-audio` | Extract audio track |
-| POST | `/ffmpeg/convert` | Format conversion |
-| POST | `/ffglitch/glitch` | Motion vector glitch effect |
-| POST | `/ffglitch/export-mv` | Export motion vectors as JSON |
-| POST | `/ffglitch/replicate` | Re-encode with ffgac |
-| POST | `/probe` | ffprobe media metadata |
-| GET | `/health` | Service health + tool availability |
-| GET | `/docs` | Swagger UI |
+## Codebase entry points
 
-Full API docs: `https://ffmpeg.v1su4.dev/docs`
-
-## Current codebase anchors
-
-- `src/components/StudioApp.tsx` — main studio UI
-- `src/components/studio/audioAnalysis.ts` — hosted audio analysis + waveform normalization
-- `src/components/studio/mediaUpload.ts` — current browser-side video metadata/thumbnail preparation
-- `src/components/studio/ffglitchApi.ts` — FFglitch motion vector glitch integration
-- `src/components/studio/previewGeneration.ts` — FFmpeg preview + concat generation
-- `src/app/api/essentia/full/route.ts` — hosted audio-analysis proxy
-- `src/app/api/ffglitch/route.ts` — FFglitch capability detection + glitch proxy
+| Path | Role |
+| --- | --- |
+| `src/components/StudioApp.tsx` | Main studio shell |
+| `src/components/studio/audioAnalysis.ts` | Essentia fetch and waveform |
+| `src/components/studio/mediaUpload.ts` | Clip ingest, scene detect, captions |
+| `src/components/studio/semanticEditPlanner.ts` | Lyric and story matching |
+| `src/components/studio/panels/GenerateTab.tsx` | Coverage gaps and filler prompts |
+| `src/app/api/essentia/full/route.ts` | Audio analysis proxy |
+| `src/app/api/caption/scene/route.ts` | Vision caption proxy |
 
 ## Getting started
 
-Run the local development:
+```bash
+bun install
+bun run dev
+```
 
 ```bash
 bun run build
-bun run start
-bun run lint
 bun run test
+bun run lint
 bun run check
 bun run probe:media
 bun run preview:section
 bun run bench:latency
-bun run bench:compare -- <local-json> <remote-json>
 ```
 
-## Test fixtures
-
-Local, non-committed media fixtures live in:
-
-```text
-.local-fixtures/media/
-```
-
-The test suite and media probe script will use that directory by default. To point them somewhere else:
+Local media fixtures (gitignored): `.local-fixtures/media/`
 
 ```bash
 TEST_MEDIA_DIR=/absolute/path/to/media bun run test
 ```
 
-For more detail, see `tests/README.md`.
+See [tests/README.md](tests/README.md).
 
-## Canonical planning and architecture docs
+## Documentation
 
+### Architecture and product
+
+- [Product infrastructure](docs/architecture/product-infrastructure.md) — **start here** for how services and workflow connect
+- [Clip audio sync](docs/architecture/clip-audio-sync.md) — align muxed clips to master timeline, lanes, phasing
+- [Media pipeline](docs/architecture/media-pipeline.md) — segmentation, ranking, recompute
 - [Creative production brief](docs/product/creative-production-brief.md)
+- [UI workflow overhaul](docs/product/music-video-ui-workflow-overhaul.md)
 - [Roadmap](docs/roadmap.md)
-- [Media pipeline architecture](docs/architecture/media-pipeline.md)
-- [Spec workflow protocol](docs/protocols/spec-workflow.md)
-- [Latency and correctness budget](docs/protocols/latency-budget.md)
-- [Implementation checklist](docs/checklists/implementation-checklist.md)
+
+### Protocols and benchmarks
+
+- [Latency budget](docs/protocols/latency-budget.md)
 - [Local latency checkpoint](docs/benchmarks/local-latency.md)
 - [Remote latency status](docs/benchmarks/remote-latency-status.md)
 
-## Planning artifacts
-
-- Deep interview spec: `.omx/specs/deep-interview-roadmap-spec-workflow-docs.md`
-- PRD: `.omx/plans/prd-roadmap-spec-workflow-docs.md`
-- Test spec: `.omx/plans/test-spec-roadmap-spec-workflow-docs.md`
-
 ## Near-term roadmap
 
-1. Lock the confirmed donor map and source-of-truth docs
-2. Lock canonical song / lyric / video-moment contracts
-3. Define deterministic section preview behavior
-4. Build ranking and fit rules around music-first joins
-5. Add the low-latency engine path without making React the playback clock
-6. Measure whether web-first remains viable before any desktop pivot
+1. Lock song / lyric / video-moment contracts
+2. Harden Match and section preview
+3. Wire Generate gap-fill to API or ComfyUI backends
+4. Explore clip-to-master audio sync on ingest
+5. Measure web-first latency before any desktop pivot
 
 ## Notes
 
-This repo intentionally emphasizes documentation and planning right now. The approved architecture stays **web-first** for now, while preserving a **Tauri + sidecar** contingency if browser scheduling and media constraints cannot maintain musically correct preview playback.
+Architecture stays **web-first** for the studio UI, with **server GPU** for analysis and tagging. A **Tauri + sidecar** path remains a contingency if browser media limits block musically correct preview.
