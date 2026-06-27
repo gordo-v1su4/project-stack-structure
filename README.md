@@ -2,6 +2,8 @@
 
 Smart auto music-video editor: **upload your song and footage**, get a **musically aligned rough cut**, then **optionally fill gaps** with AI-generated shots.
 
+**Next steps:** [NEXT_STEPS.md](NEXT_STEPS.md)
+
 ## What it does
 
 1. Analyze the **master track** (beats, sections, waveform) on a GPU-backed Essentia service.
