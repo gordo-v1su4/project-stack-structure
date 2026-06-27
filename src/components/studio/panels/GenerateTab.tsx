@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { fmt } from "../math";
 import { buildGenerationReferenceInputs, type GenerationReferenceSelection, type ReferenceAsset } from "../referenceAssets";
 import type { BeatJoinAnalysis, ColorPaletteSwatch, MotionDescriptor } from "../types";
+import type { GeneratedStudioAsset } from "../generatedAssets";
 import { buildAdaptiveCueMap } from "../adaptiveCueMap";
 import type { MusicVideoProject, TimelineItem, VideoMoment } from "../musicVideoProject";
 
@@ -17,11 +18,82 @@ type GenerateTabProps = {
   lyricCueBlend: number;
   lyricMergeWindow: number;
   referenceAssets: ReferenceAsset[];
+  persistedGeneratedAssets: GeneratedStudioAsset[];
+  onGeneratedAsset: (asset: GeneratedStudioAsset) => void;
 };
 
 type SlotStatus = "filled" | "weak" | "short" | "missing";
 type GenerationNeed = "b-roll" | "alt-angle" | "extend-start" | "extend-end" | "bridge" | "reroll-match";
 type TimelineZoomMode = "fit" | "section" | "selected";
+
+type GeneratedLocalAsset = { provider: "swarmui"; kind: "image" | "video"; url: string; filename?: string; path?: string };
+
+type HiggsfieldGenerationFormState = {
+  title: string;
+  characterName: string;
+  prompt: string;
+  resolution: "1k" | "2k" | "4k";
+  splitRows: number;
+  splitCols: number;
+  extraReferenceUrls: string;
+};
+
+type LocalSwarmPreset = {
+  title: string;
+  label: string;
+  description: string;
+  model?: string;
+  width: number;
+  height: number;
+  steps: number;
+  cfg: number;
+  swarmParams?: Record<string, string | number | boolean | Array<string | number | boolean>>;
+};
+
+const LOCAL_SWARM_PRESETS: LocalSwarmPreset[] = [
+  {
+    title: "SwarmUI default 16:9",
+    label: "Default 16:9",
+    description: "Uses the currently selected/default SwarmUI model with 1280x720 framing.",
+    width: 1280,
+    height: 720,
+    steps: 24,
+    cfg: 6,
+  },
+  {
+    title: "Krea2 Turbo Realism - 260625",
+    label: "Krea2 Turbo",
+    description: "Safe cinematic realism preset mirrored from hermes_presets.json.",
+    model: "krea2_turbo_fp8_scaled",
+    width: 1280,
+    height: 720,
+    steps: 12,
+    cfg: 1,
+    swarmParams: { sampler: "euler", scheduler: "simple", preferreddtype: "default" },
+  },
+  {
+    title: "Z Image Turbo Quality 2",
+    label: "ZIT Quality 2",
+    description: "Fast Z-Image Turbo preset with the IMAX 1570 Z-Image LoRA from /models/loras/zimage. Use trigger words like CINEMATIC FILM STYLE, IMAX70MM STYLE, FILMSTRIP STYLE, 65MM FILM STYLE, or POLAROID in the prompt.",
+    model: "Z_Image_Turbo_BF16",
+    width: 1280,
+    height: 720,
+    steps: 12,
+    cfg: 1,
+    swarmParams: { sampler: "euler", scheduler: "beta", sigmashift: "7", preferreddtype: "default", loras: ["zimage/IMAX 1570 Film stlyle v1.2.safetensors"], loraweights: [1] },
+  },
+  {
+    title: "FLUX 2 Klein Distilled 8 Steps - 260422",
+    label: "Flux Klein 9B",
+    description: "Flux 2 Klein distilled 9B turbo preset from hermes_presets.json.",
+    model: "FLUX-2-Klein-Distilled-9b-Quant-FP8-Scaled",
+    width: 1280,
+    height: 720,
+    steps: 8,
+    cfg: 1,
+    swarmParams: { sampler: "seeds_2", scheduler: "bong_tangent", preferreddtype: "default" },
+  },
+];
 
 type CoverageSlot = {
   item: TimelineItem;
@@ -57,10 +129,16 @@ const NEED_LABELS: Record<GenerationNeed, string> = {
   "reroll-match": "Reroll Match",
 };
 
-export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, onSelectJoin, onsetDensity, lyricCueBlend, lyricMergeWindow, referenceAssets }: GenerateTabProps) {
+export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, onSelectJoin, onsetDensity, lyricCueBlend, lyricMergeWindow, referenceAssets, persistedGeneratedAssets, onGeneratedAsset }: GenerateTabProps) {
   const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
   const [timelineZoomMode, setTimelineZoomMode] = useState<TimelineZoomMode>("fit");
   const [referenceSelection, setReferenceSelection] = useState<GenerationReferenceSelection>({});
+  const [generationStatus, setGenerationStatus] = useState("Local generator not checked yet.");
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generatedAssets, setGeneratedAssets] = useState<GeneratedLocalAsset[]>([]);
+  const [selectedPresetTitle, setSelectedPresetTitle] = useState(LOCAL_SWARM_PRESETS[0].title);
+  const [higgsfieldStatus, setHiggsfieldStatus] = useState("Higgsfield not checked yet.");
+  const [isHiggsfieldGenerating, setIsHiggsfieldGenerating] = useState(false);
   const cueMap = useMemo(() => buildAdaptiveCueMap({
     analysis,
     project,
@@ -71,6 +149,7 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
   const slots = useMemo(() => buildCoverageSlots(project, cueMap.chunks), [cueMap.chunks, project]);
   const coverage = useMemo(() => summarizeCoverage(slots, cueMap.duration), [cueMap.duration, slots]);
   const focusSlot = slots.find((slot) => slot.item.id === selectedSlotId) ?? slots.find((slot) => slot.status !== "filled") ?? slots[0];
+  const selectedPreset = LOCAL_SWARM_PRESETS.find((preset) => preset.title === selectedPresetTitle) ?? LOCAL_SWARM_PRESETS[0];
   const frameMoment = focusSlot?.moment ?? project?.videoMoments.find((moment) => moment.firstFrameUrl || moment.thumbnailUrl);
   const effectiveReferenceSelection = useMemo(() => fillDefaultReferenceSelection(referenceSelection, referenceAssets), [referenceAssets, referenceSelection]);
   const hasRequiredInputs = storyGenerated && Boolean(project?.editPlan.timelineItems.length);
@@ -78,6 +157,91 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
   const weakSlots = slots.filter((slot) => slot.status === "weak");
   const shortSlots = slots.filter((slot) => slot.status === "short");
 
+  const checkLocalGenerator = async () => {
+    setGenerationStatus("Checking SwarmUI gateway...");
+    try {
+      const response = await fetch("/api/generate/local");
+      const payload = await response.json() as { providers?: Array<{ provider: string; reachable: boolean; baseUrl: string; message: string }> };
+      const status = payload.providers?.find((providerStatus) => providerStatus.provider === "swarmui") ?? payload.providers?.[0];
+      setGenerationStatus(status ? `${status.reachable ? "Ready" : "Offline"}: ${status.message} (${status.baseUrl})` : "No SwarmUI status returned.");
+    } catch (error) {
+      setGenerationStatus(error instanceof Error ? error.message : "Provider check failed.");
+    }
+  };
+
+
+  const runHiggsfieldGeneration = async (params: HiggsfieldGenerationFormState) => {
+    const inputImages = buildHiggsfieldInputImages(referenceAssets, effectiveReferenceSelection, params.extraReferenceUrls);
+    if (!inputImages.length) {
+      setHiggsfieldStatus("Add at least one RustFS reference image before running Nano Banana Pro.");
+      return;
+    }
+    setIsHiggsfieldGenerating(true);
+    setHiggsfieldStatus(`Sending ${params.resolution.toUpperCase()} Nano Banana Pro grid to Higgsfield...`);
+    try {
+      const response = await fetch("/api/generate/higgsfield", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: params.title,
+          characterName: params.characterName,
+          prompt: params.prompt,
+          aspectRatio: "16:9",
+          resolution: params.resolution,
+          inputImages,
+          splitRows: params.splitRows,
+          splitCols: params.splitCols,
+        }),
+      });
+      const payload = await response.json() as { success?: boolean; error?: string; asset?: GeneratedStudioAsset };
+      if (!response.ok || payload.error || !payload.asset) throw new Error(payload.error ?? `Higgsfield failed with HTTP ${response.status}`);
+      onGeneratedAsset(payload.asset);
+      setHiggsfieldStatus(`Completed ${payload.asset.jobId}. Full grid and ${payload.asset.split?.panels.length ?? 0} panels uploaded to RustFS.`);
+    } catch (error) {
+      setHiggsfieldStatus(error instanceof Error ? error.message : "Higgsfield generation failed.");
+    } finally {
+      setIsHiggsfieldGenerating(false);
+    }
+  };
+
+  const runLocalGeneration = async (kind: "image" | "video") => {
+    if (!focusSlot) return;
+    const prompt = buildSuggestedPrompt(focusSlot, frameMoment, buildGenerationReferenceInputs({
+      anchorUrl: frameMoment?.firstFrameUrl ?? frameMoment?.thumbnailUrl,
+      anchorLabel: focusSlot.item.label,
+      assets: referenceAssets,
+      selection: effectiveReferenceSelection,
+    }).instructions);
+    setIsGenerating(true);
+    setGenerationStatus(`Sending ${kind} request to SwarmUI...`);
+    try {
+      const response = await fetch("/api/generate/local", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider: "swarmui",
+          kind,
+          prompt,
+          action: focusSlot.needs[0] ?? "alt-angle",
+          model: selectedPreset.model,
+          width: selectedPreset.width,
+          height: selectedPreset.height,
+          steps: kind === "video" ? Math.max(selectedPreset.steps, 28) : selectedPreset.steps,
+          cfg: selectedPreset.cfg,
+          swarmParams: selectedPreset.swarmParams,
+          batchSize: 1,
+        }),
+      });
+      const payload = await response.json() as { success?: boolean; error?: string; job?: { status?: string; message?: string; promptId?: string; assets?: GeneratedLocalAsset[] } };
+      if (!response.ok || payload.error) throw new Error(payload.error ?? payload.job?.message ?? `Generation failed with HTTP ${response.status}`);
+      setGenerationStatus(payload.job?.promptId ? `${payload.job.message ?? "Generation queued."} prompt=${payload.job.promptId}` : payload.job?.message ?? "Generation request sent.");
+      if (payload.job?.assets?.length) setGeneratedAssets((current) => [...payload.job!.assets!, ...current]);
+    } catch (error) {
+      setGenerationStatus(error instanceof Error ? error.message : "Generation request failed.");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
 
   return (
     <div className="space-y-3">
@@ -178,6 +342,19 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
             referenceAssets={referenceAssets}
             referenceSelection={effectiveReferenceSelection}
             onReferenceSelection={setReferenceSelection}
+            higgsfieldStatus={higgsfieldStatus}
+            isHiggsfieldGenerating={isHiggsfieldGenerating}
+            persistedGeneratedAssets={persistedGeneratedAssets}
+            onRunHiggsfield={runHiggsfieldGeneration}
+            providerStatus={generationStatus}
+            isGenerating={isGenerating}
+            generatedAssets={generatedAssets}
+            presets={LOCAL_SWARM_PRESETS}
+            selectedPresetTitle={selectedPreset.title}
+            onPresetChange={setSelectedPresetTitle}
+            onCheckProvider={checkLocalGenerator}
+            onGenerateImage={() => runLocalGeneration("image")}
+            onGenerateVideo={() => runLocalGeneration("video")}
           />
         </section>
       </div>
@@ -186,9 +363,9 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Generated shot bank / approval queue</div>
-            <div className="mt-1 text-[11px] text-[#6d6d6d]">This is the UI shell for the upcoming image/video endpoints. Nothing is faked: generated assets stay pending until a real endpoint returns frames, clips, storage paths, and captions.</div>
+            <div className="mt-1 text-[11px] text-[#6d6d6d]">Generated assets from the local SwarmUI gateway appear in the source-frame lab first; approval and timeline replacement remain explicit so nothing silently enters Join.</div>
           </div>
-          <span className="rounded-[2px] border border-[#6e3425] bg-[#160905] px-2 py-1 font-mono text-[9px] uppercase tracking-[0.12em] text-[#d26c42]">API not connected yet</span>
+          <span className="rounded-[2px] border border-[#6e3425] bg-[#160905] px-2 py-1 font-mono text-[9px] uppercase tracking-[0.12em] text-[#d26c42]">local bridge ready</span>
         </div>
         <GeneratedShotBank slots={slots} />
       </section>
@@ -500,12 +677,38 @@ function FrameExtensionPanel({
   referenceAssets,
   referenceSelection,
   onReferenceSelection,
+  higgsfieldStatus,
+  isHiggsfieldGenerating,
+  persistedGeneratedAssets,
+  onRunHiggsfield,
+  providerStatus,
+  isGenerating,
+  generatedAssets,
+  presets,
+  selectedPresetTitle,
+  onPresetChange,
+  onCheckProvider,
+  onGenerateImage,
+  onGenerateVideo,
 }: {
   slot?: CoverageSlot;
   moment?: VideoMoment;
   referenceAssets: ReferenceAsset[];
   referenceSelection: GenerationReferenceSelection;
   onReferenceSelection: (selection: GenerationReferenceSelection) => void;
+  higgsfieldStatus: string;
+  isHiggsfieldGenerating: boolean;
+  persistedGeneratedAssets: GeneratedStudioAsset[];
+  onRunHiggsfield: (params: HiggsfieldGenerationFormState) => void;
+  providerStatus: string;
+  isGenerating: boolean;
+  generatedAssets: GeneratedLocalAsset[];
+  presets: LocalSwarmPreset[];
+  selectedPresetTitle: string;
+  onPresetChange: (title: string) => void;
+  onCheckProvider: () => void;
+  onGenerateImage: () => void;
+  onGenerateVideo: () => void;
 }) {
   const frames = [
     { label: "First / start anchor", url: moment?.firstFrameUrl ?? moment?.thumbnailUrl, action: "Extend From First Frame" },
@@ -520,6 +723,17 @@ function FrameExtensionPanel({
     selection: referenceSelection,
   });
   const prompt = buildSuggestedPrompt(slot, moment, referencePlan.instructions);
+  const selectedPreset = presets.find((preset) => preset.title === selectedPresetTitle) ?? presets[0];
+  const [higgsfieldForm, setHiggsfieldForm] = useState<HiggsfieldGenerationFormState>(() => ({
+    title: "Feng vampire night grid",
+    characterName: "Feng",
+    resolution: "2k",
+    splitRows: 3,
+    splitCols: 3,
+    extraReferenceUrls: "",
+    prompt: buildDefaultHiggsfieldPrompt("Feng"),
+  }));
+  const higgsfieldInputCount = buildHiggsfieldInputImages(referenceAssets, referenceSelection, higgsfieldForm.extraReferenceUrls).length;
 
   return (
     <div className="space-y-3">
@@ -564,15 +778,181 @@ function FrameExtensionPanel({
           {!referencePlan.inputs.length ? <div>No source frame or references selected.</div> : null}
         </div>
       </div>
-      <div className="grid gap-2 sm:grid-cols-3">
-        {["Create 3×3 image grid", "Split returned grid", "Send approved frames to video"].map((label, index) => (
-          <div key={label} className="rounded-[2px] border border-[#202020] bg-[#080808] px-2 py-2">
-            <div className="font-mono text-[9px] text-[#e05c00]">0{index + 1}</div>
-            <div className="mt-1 text-[9px] uppercase tracking-[0.12em] text-[#777]">{label}</div>
-            <div className="mt-1 text-[8px] uppercase tracking-[0.12em] text-[#444]">pending endpoint</div>
+
+      <div className="rounded-[2px] border border-[#352012] bg-[#090604] p-2">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <div className="text-[8px] uppercase tracking-[0.16em] text-[#e05c00]">Higgsfield / Nano Banana Pro storyboard grid</div>
+            <div className="mt-1 text-[9px] leading-4 text-[#777]">Creates the full grid, uploads that full grid to RustFS, splits fixed panels, then uploads the panels to RustFS too.</div>
           </div>
-        ))}
+          <div className="font-mono text-[8px] uppercase tracking-[0.12em] text-[#9a9a9a]">{higgsfieldInputCount} refs · 16:9</div>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-[1fr_130px_90px]">
+          <label className="block">
+            <span className="mb-1 block text-[8px] uppercase tracking-[0.14em] text-[#666]">Character name</span>
+            <input value={higgsfieldForm.characterName} onChange={(event) => setHiggsfieldForm((current) => ({ ...current, characterName: event.target.value }))} className="w-full rounded-[2px] border border-[#202020] bg-[#050505] px-2 py-1.5 font-mono text-[9px] text-[#9a9a9a] outline-none focus:border-[#e05c00]" />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-[8px] uppercase tracking-[0.14em] text-[#666]">Resolution</span>
+            <select value={higgsfieldForm.resolution} onChange={(event) => setHiggsfieldForm((current) => ({ ...current, resolution: event.target.value as HiggsfieldGenerationFormState["resolution"] }))} className="w-full rounded-[2px] border border-[#202020] bg-[#050505] px-2 py-1.5 font-mono text-[9px] text-[#9a9a9a] outline-none focus:border-[#e05c00]">
+              <option value="1k">1k</option>
+              <option value="2k">2k</option>
+              <option value="4k">4k</option>
+            </select>
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-[8px] uppercase tracking-[0.14em] text-[#666]">Grid</span>
+            <select value={`${higgsfieldForm.splitRows}x${higgsfieldForm.splitCols}`} onChange={(event) => {
+              const [rows, cols] = event.target.value.split("x").map(Number);
+              setHiggsfieldForm((current) => ({ ...current, splitRows: rows, splitCols: cols }));
+            }} className="w-full rounded-[2px] border border-[#202020] bg-[#050505] px-2 py-1.5 font-mono text-[9px] text-[#9a9a9a] outline-none focus:border-[#e05c00]">
+              <option value="3x3">3x3</option>
+              <option value="2x2">2x2</option>
+            </select>
+          </label>
+        </div>
+        <label className="mt-2 block">
+          <span className="mb-1 block text-[8px] uppercase tracking-[0.14em] text-[#666]">Title / storage slug</span>
+          <input value={higgsfieldForm.title} onChange={(event) => setHiggsfieldForm((current) => ({ ...current, title: event.target.value }))} className="w-full rounded-[2px] border border-[#202020] bg-[#050505] px-2 py-1.5 font-mono text-[9px] text-[#9a9a9a] outline-none focus:border-[#e05c00]" />
+        </label>
+        <label className="mt-2 block">
+          <span className="mb-1 block text-[8px] uppercase tracking-[0.14em] text-[#666]">Extra reference URLs, one per line, appended after selected refs</span>
+          <textarea value={higgsfieldForm.extraReferenceUrls} onChange={(event) => setHiggsfieldForm((current) => ({ ...current, extraReferenceUrls: event.target.value }))} rows={2} className="w-full resize-y rounded-[2px] border border-[#202020] bg-[#050505] px-2 py-1.5 font-mono text-[9px] leading-4 text-[#9a9a9a] outline-none focus:border-[#e05c00]" />
+        </label>
+        <label className="mt-2 block">
+          <span className="mb-1 block text-[8px] uppercase tracking-[0.14em] text-[#666]">Prompt</span>
+          <textarea value={higgsfieldForm.prompt} onChange={(event) => setHiggsfieldForm((current) => ({ ...current, prompt: event.target.value }))} rows={10} className="w-full resize-y rounded-[2px] border border-[#202020] bg-[#050505] px-2 py-1.5 font-mono text-[9px] leading-4 text-[#c0c0c0] outline-none focus:border-[#e05c00]" />
+        </label>
+        <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_auto]">
+          <div className="rounded-[2px] border border-[#151515] bg-[#050505] p-2 font-mono text-[8px] leading-4 text-[#777]">{higgsfieldStatus}</div>
+          <button type="button" disabled={isHiggsfieldGenerating || !higgsfieldInputCount} onClick={() => onRunHiggsfield(higgsfieldForm)} className="rounded-[2px] border border-[#6e3425] bg-[#160905] px-3 py-2 text-[8px] uppercase tracking-[0.12em] text-[#d26c42] disabled:cursor-not-allowed disabled:opacity-45">Run + split</button>
+        </div>
+        {persistedGeneratedAssets.length ? <GeneratedHiggsfieldAssetGrid assets={persistedGeneratedAssets} /> : null}
       </div>
+
+      <div className="rounded-[2px] border border-[#1f1f1f] bg-[#070707] p-2">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <div className="text-[8px] uppercase tracking-[0.16em] text-[#555]">Local SwarmUI gateway</div>
+            <div className="mt-1 text-[9px] leading-4 text-[#777]">Server-side route uses SWARMUI_URL. Raw Comfy calls go through SwarmUI /ComfyBackendDirect, so the Mac does not need direct Comfy port access.</div>
+          </div>
+<div className="rounded-[2px] border border-[#202020] bg-[#050505] px-2 py-1.5 font-mono text-[9px] uppercase tracking-[0.12em] text-[#9a9a9a]">SwarmUI API</div>
+        </div>
+        <div className="rounded-[2px] border border-[#151515] bg-[#050505] p-2 font-mono text-[8px] leading-4 text-[#777]">{providerStatus}</div>
+        <label className="mt-2 block">
+          <span className="mb-1 block text-[8px] uppercase tracking-[0.14em] text-[#666]">Local image preset</span>
+          <select
+            value={selectedPresetTitle}
+            onChange={(event) => onPresetChange(event.target.value)}
+            className="w-full rounded-[2px] border border-[#202020] bg-[#050505] px-2 py-1.5 font-mono text-[9px] text-[#9a9a9a] outline-none focus:border-[#e05c00]"
+          >
+            {presets.map((preset) => (
+              <option key={preset.title} value={preset.title}>
+                {preset.label} · {preset.width}x{preset.height}
+              </option>
+            ))}
+          </select>
+          <span className="mt-1 block text-[9px] leading-4 text-[#666]">{selectedPreset.description}</span>
+        </label>
+        <div className="mt-2 grid gap-2 sm:grid-cols-3">
+          <button type="button" onClick={onCheckProvider} className="rounded-[2px] border border-[#2a2a2a] px-2 py-2 text-[8px] uppercase tracking-[0.12em] text-[#aaa] hover:border-[#e05c00] hover:text-[#e05c00]">Check SwarmUI</button>
+          <button type="button" disabled={isGenerating || !slot} onClick={onGenerateImage} className="rounded-[2px] border border-[#6e3425] bg-[#160905] px-2 py-2 text-[8px] uppercase tracking-[0.12em] text-[#d26c42] disabled:cursor-not-allowed disabled:opacity-45">Generate image</button>
+          <button type="button" disabled={isGenerating || !slot} onClick={onGenerateVideo} className="rounded-[2px] border border-[#24476f] bg-[#050b16] px-2 py-2 text-[8px] uppercase tracking-[0.12em] text-[#6ca6d2] disabled:cursor-not-allowed disabled:opacity-45">Queue video</button>
+        </div>
+        {generatedAssets.length ? (
+          <div className="mt-2 grid gap-2 sm:grid-cols-3">
+            {generatedAssets.slice(0, 6).map((asset, index) => (
+              <a key={`${asset.url}-${index}`} href={asset.url} target="_blank" rel="noreferrer" className="overflow-hidden rounded-[2px] border border-[#202020] bg-[#050505]">
+                <div className="flex aspect-video items-center justify-center text-[8px] uppercase tracking-[0.12em] text-[#777]">
+                  {asset.kind === "image" ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={asset.url} alt={asset.filename ?? asset.path ?? "generated image"} className="h-full w-full object-cover" loading="lazy" decoding="async" />
+                  ) : "Generated video"}
+                </div>
+                <div className="truncate border-t border-[#151515] px-2 py-1 font-mono text-[7px] text-[#666]">{asset.filename ?? asset.path ?? asset.provider}</div>
+              </a>
+            ))}
+          </div>
+        ) : null}
+        <div className="mt-2 rounded-[2px] border border-[#151515] bg-[#050505] p-2 text-[8px] leading-4 text-[#777]">
+          Grid splitting is reserved for Higgsfield / Nano Banana contact-sheet outputs. SwarmUI still generations stay as normal single images here.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function buildHiggsfieldInputImages(assets: ReferenceAsset[], selection: GenerationReferenceSelection, extraReferenceUrls: string) {
+  const selectedIds = [selection.character1Id, selection.character2Id, selection.environmentId, selection.customId].filter(Boolean) as string[];
+  const selected = selectedIds.flatMap((id) => {
+    const asset = assets.find((candidate) => candidate.id === id);
+    const url = asset?.storageUrl || asset?.previewUrl;
+    return asset && url ? [{ url, label: asset.displayName }] : [];
+  });
+  const extra = extraReferenceUrls
+    .split(/\r?\n/)
+    .map((url) => url.trim())
+    .filter(Boolean)
+    .map((url, index) => ({ url, label: `Extra reference ${index + 1}` }));
+  return [...selected, ...extra];
+}
+
+function buildDefaultHiggsfieldPrompt(characterName: string) {
+  return `Character: ${characterName}.
+
+Use image 1 and image 2 as character references for ${characterName}.
+Use image 3 as the detail reference for ${characterName}.
+Use image 4 as the cinematic style reference.
+
+Create a photorealistic 3x3 cinematic image grid showing one secret vampire night in ${characterName}'s life as a normal college kid. The story happens over the course of one night: campus, dorm corridors, party rooms, stairwells, rooftop, and dawn. Nobody around ${characterName} knows ${characterName} is a vampire. Keep ${characterName} grounded and believable, dressed like a college student, with the vampire truth mostly hidden except for subtle gold fang teeth, predatory stillness, and strange moments in the lighting. 16:9 widescreen panels, no labels, no numbers, no text.
+
+Panel beats:
+1. ${characterName} crosses a wet college courtyard at dusk, backpack on one shoulder, students blurred around ${characterName}, low tracking angle, first red party lights glowing in the distance.
+2. ${characterName} stands under fluorescent dorm hallway lights while friends laugh nearby, ${characterName}'s expression calm and unreadable, handheld medium shot with motion behind ${characterName}.
+3. ${characterName} enters a packed red-lit apartment party, the camera pushing through bodies toward ${characterName}, saturated practical lights and kinetic motion.
+4. ${characterName} pauses in a bathroom mirror with gold fang teeth barely visible for one instant, extreme close-up, condensation and red light reflections.
+5. ${characterName} moves through a stairwell faster than everyone else, dynamic tilted angle, motion blur, one student turning as if sensing something impossible.
+6. ${characterName} leans close to a partygoer in conversation, charming and normal on the surface, but ${characterName}'s eyes catch a strange glint from the red light.
+7. ${characterName} bursts onto a rooftop after midnight, city lights and campus buildings below, wind pulling at ${characterName}'s hoodie, wide anamorphic shot.
+8. ${characterName} crouches beside a glowing vending machine in an empty corridor at 3 a.m., gold teeth catching the light, secret hunger implied but not shown.
+9. ${characterName} walks alone at dawn past silent dorm windows, the night behind ${characterName}, face calm, secret still hidden, final cinematic wide close-up.
+
+Keep the grid very dynamic: low angles, push-ins, tilted handheld frames, over-the-shoulder shots, macro details, motion blur, shallow depth of field. Cohesive red practical light, teal-black shadows, warm skin highlights, deep crushed blacks, 35mm film grain, subtle anamorphic flares, oval bokeh, realistic college-night atmosphere.`;
+}
+
+function GeneratedHiggsfieldAssetGrid({ assets }: { assets: GeneratedStudioAsset[] }) {
+  return (
+    <div className="mt-3 space-y-3">
+      {assets.slice(0, 4).map((asset) => (
+        <article key={asset.id} className="rounded-[2px] border border-[#202020] bg-[#050505] p-2">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-[#d0d0d0]">{asset.characterName ?? "Character"} · {asset.resolution ?? "?"} · {asset.aspectRatio ?? "16:9"}</div>
+              <div className="mt-1 font-mono text-[8px] text-[#666]">job {asset.jobId} · full grid + {asset.split?.panels.length ?? 0} panels persisted</div>
+            </div>
+            <a href={asset.fullStorage?.mediaUrl ?? asset.fullStorage?.publicUrl ?? asset.resultUrl} target="_blank" rel="noreferrer" className="rounded-[2px] border border-[#6e3425] px-2 py-1 text-[8px] uppercase tracking-[0.12em] text-[#d26c42]">Open full</a>
+          </div>
+          <div className="grid gap-2 lg:grid-cols-[180px_1fr]">
+            <a href={asset.fullStorage?.mediaUrl ?? asset.fullStorage?.publicUrl ?? asset.resultUrl} target="_blank" rel="noreferrer" className="overflow-hidden rounded-[2px] border border-[#181818] bg-[#030303]">
+              {asset.fullStorage?.mediaUrl || asset.fullStorage?.publicUrl || asset.resultUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={asset.fullStorage?.mediaUrl ?? asset.fullStorage?.publicUrl ?? asset.resultUrl} alt={asset.title ?? asset.jobId ?? "generated grid"} className="aspect-video w-full object-cover" loading="lazy" decoding="async" />
+              ) : <div className="flex aspect-video items-center justify-center text-[8px] uppercase tracking-[0.12em] text-[#444]">No preview</div>}
+            </a>
+            <div className="grid grid-cols-3 gap-1">
+              {(asset.split?.panels ?? []).slice(0, 9).map((panel) => (
+                <a key={panel.index} href={panel.storage?.mediaUrl ?? panel.storage?.publicUrl ?? panel.url} target="_blank" rel="noreferrer" className="overflow-hidden rounded-[1px] border border-[#181818] bg-[#030303]" title={`${panel.label} · ${panel.storage?.storagePath ?? panel.assetPath}`}>
+                  {panel.storage?.mediaUrl || panel.storage?.publicUrl || panel.url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={panel.storage?.mediaUrl ?? panel.storage?.publicUrl ?? panel.url} alt={panel.label} className="aspect-video w-full object-cover" loading="lazy" decoding="async" />
+                  ) : <div className="flex aspect-video items-center justify-center text-[7px] text-[#444]">{panel.label}</div>}
+                </a>
+              ))}
+            </div>
+          </div>
+          <div className="mt-2 truncate font-mono text-[7px] text-[#555]" title={asset.fullStorage?.storagePath}>full: {asset.fullStorage?.storagePath ?? "not uploaded"}</div>
+        </article>
+      ))}
     </div>
   );
 }

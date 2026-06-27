@@ -1,5 +1,6 @@
 import type { DeepgramTranscriptSummary } from "./deepgramUtils";
 import type { MusicVideoProject, StoryEditSettings, StorySectionDraft } from "./musicVideoProject";
+import { hydrateGeneratedStudioAssets, sanitizeGeneratedStudioAssetForStorage, type GeneratedStudioAsset } from "./generatedAssets";
 import { hydrateReferenceAssets, sanitizeReferenceAssetForStorage, type ReferenceAsset } from "./referenceAssets";
 import type { BeatJoinAnalysis, ColorGradient, SceneCaptionSettings, Tab, UploadedVideoSource } from "./types";
 import type { SplitMode } from "./sourceTimeline";
@@ -46,6 +47,7 @@ export interface PersistedStudioProjectDraft {
   storyState: PersistedStoryState;
   musicVideoProject: MusicVideoProject | null;
   referenceAssets?: ReferenceAsset[];
+  generatedAssets?: GeneratedStudioAsset[];
   captionSettings?: SceneCaptionSettings;
   workflowUiSettings?: PersistedWorkflowUiSettings;
 }
@@ -56,6 +58,7 @@ export interface RuntimeStudioProjectDraft {
   storyState: PersistedStoryState;
   musicVideoProject: MusicVideoProject | null;
   referenceAssets: ReferenceAsset[];
+  generatedAssets: GeneratedStudioAsset[];
   captionSettings?: SceneCaptionSettings;
   workflowUiSettings?: PersistedWorkflowUiSettings;
 }
@@ -66,6 +69,7 @@ export function createPersistableStudioProjectDraft(params: {
   storyState: PersistedStoryState;
   musicVideoProject: MusicVideoProject | null;
   referenceAssets?: ReferenceAsset[];
+  generatedAssets?: GeneratedStudioAsset[];
   captionSettings?: SceneCaptionSettings;
   workflowUiSettings?: PersistedWorkflowUiSettings;
   savedAt?: string;
@@ -82,6 +86,12 @@ export function createPersistableStudioProjectDraft(params: {
           onsets: params.analysis.onsets,
           sections: params.analysis.sections,
           duration: params.analysis.duration,
+          storageProvider: params.analysis.storageProvider,
+          storageBucket: params.analysis.storageBucket,
+          storagePath: params.analysis.storagePath,
+          storageUrl: stripRuntimeUrl(params.analysis.storageUrl),
+          storageStatus: params.analysis.storageStatus,
+          storageError: params.analysis.storageError,
           mediaKey: buildAudioMediaKey(params.analysis.sourceLabel),
         }
       : null,
@@ -118,6 +128,7 @@ export function createPersistableStudioProjectDraft(params: {
     storyState: params.storyState,
     musicVideoProject: params.musicVideoProject ? sanitizeMusicVideoProjectForStorage(params.musicVideoProject) : null,
     referenceAssets: (params.referenceAssets ?? []).map(sanitizeReferenceAssetForStorage),
+    generatedAssets: (params.generatedAssets ?? []).map(sanitizeGeneratedStudioAssetForStorage),
     captionSettings: sanitizeCaptionSettings(params.captionSettings),
     workflowUiSettings: sanitizeWorkflowUiSettings(params.workflowUiSettings),
   };
@@ -133,13 +144,19 @@ export function hydrateStudioProjectDraft(params: {
     analysis: params.draft.analysis
       ? {
           sourceLabel: params.draft.analysis.sourceLabel,
-          audioUrl: params.audioUrl ?? "",
+          audioUrl: params.audioUrl ?? params.draft.analysis.storageUrl ?? "",
           waveform: params.draft.analysis.waveform,
           energy: params.draft.analysis.energy,
           beats: params.draft.analysis.beats,
           onsets: params.draft.analysis.onsets,
           sections: params.draft.analysis.sections,
           duration: params.draft.analysis.duration,
+          storageProvider: params.draft.analysis.storageProvider,
+          storageBucket: params.draft.analysis.storageBucket,
+          storagePath: params.draft.analysis.storagePath,
+          storageUrl: params.draft.analysis.storageUrl,
+          storageStatus: params.draft.analysis.storageStatus,
+          storageError: params.draft.analysis.storageError,
         }
       : null,
     videoSources: params.draft.videoSources
@@ -151,6 +168,7 @@ export function hydrateStudioProjectDraft(params: {
     storyState: params.draft.storyState,
     musicVideoProject: params.draft.musicVideoProject,
     referenceAssets: hydrateReferenceAssets(params.draft.referenceAssets ?? []),
+    generatedAssets: hydrateGeneratedStudioAssets(params.draft.generatedAssets ?? []),
     captionSettings: sanitizeCaptionSettings(params.draft.captionSettings),
     workflowUiSettings: sanitizeWorkflowUiSettings(params.draft.workflowUiSettings),
   };
@@ -167,6 +185,9 @@ export async function saveStudioProjectDraft(
 
   const draft = createPersistableStudioProjectDraft(params);
   window.localStorage.setItem(STUDIO_PROJECT_STORAGE_KEY, JSON.stringify(draft));
+  void saveServerStudioProjectDraft(draft).catch((error) => {
+    console.warn("[Studio] Could not autosave server studio draft", error);
+  });
 
   const writes: Promise<void>[] = [];
   if (draft.analysis?.mediaKey && media.audioFile) {
@@ -181,6 +202,15 @@ export async function saveStudioProjectDraft(
 
 export async function loadStudioProjectDraft(): Promise<RuntimeStudioProjectDraft | null> {
   if (!hasBrowserStorage()) return null;
+
+  const serverDraft = await loadServerStudioProjectDraft().catch((error) => {
+    console.warn("[Studio] Could not restore server studio draft", error);
+    return null;
+  });
+  if (serverDraft) {
+    window.localStorage.setItem(STUDIO_PROJECT_STORAGE_KEY, JSON.stringify(serverDraft));
+    return hydrateStudioProjectDraft({ draft: serverDraft });
+  }
 
   const raw = window.localStorage.getItem(STUDIO_PROJECT_STORAGE_KEY);
   if (!raw) return null;
@@ -205,6 +235,34 @@ export async function loadStudioProjectDraft(): Promise<RuntimeStudioProjectDraf
 export function clearStudioProjectDraft() {
   if (!hasBrowserStorage()) return;
   window.localStorage.removeItem(STUDIO_PROJECT_STORAGE_KEY);
+}
+
+export async function saveServerStudioProjectDraft(draft: PersistedStudioProjectDraft): Promise<PersistedStudioProjectDraft | null> {
+  if (typeof fetch !== "function") return null;
+
+  const response = await fetch("/api/studio/draft", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ draft }),
+  });
+  const payload = await readDraftApiResponse(response);
+  if (!response.ok || !payload.success) {
+    throw new Error(payload.error || `Studio draft save failed (${response.status})`);
+  }
+
+  return payload.draft ?? draft;
+}
+
+export async function loadServerStudioProjectDraft(): Promise<PersistedStudioProjectDraft | null> {
+  if (typeof fetch !== "function") return null;
+
+  const response = await fetch("/api/studio/draft", { cache: "no-store" });
+  const payload = await readDraftApiResponse(response);
+  if (!response.ok || !payload.success) {
+    throw new Error(payload.error || `Studio draft load failed (${response.status})`);
+  }
+
+  return payload.draft ?? null;
 }
 
 export function buildAudioMediaKey(sourceLabel: string) {
@@ -247,6 +305,16 @@ function parsePersistedDraft(raw: string): PersistedStudioProjectDraft | null {
     return parsed;
   } catch {
     return null;
+  }
+}
+
+async function readDraftApiResponse(response: Response): Promise<{ success?: boolean; draft?: PersistedStudioProjectDraft | null; error?: string }> {
+  const text = await response.text();
+  if (!text.trim()) return {};
+  try {
+    return JSON.parse(text) as { success?: boolean; draft?: PersistedStudioProjectDraft | null; error?: string };
+  } catch {
+    return { error: text.slice(0, 300) };
   }
 }
 

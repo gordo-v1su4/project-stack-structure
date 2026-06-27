@@ -3,6 +3,7 @@
 import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { extractWaveformData, fetchEssentiaAnalysis, parseEssentiaPayload } from "./studio/audioAnalysis";
+import { uploadAudioFileToRustFs } from "./studio/audioStorage";
 import { buildArrangementSegments } from "./studio/arrangementBuilder";
 import type { ArrangementSegment } from "./studio/arrangementBuilder";
 import { NAV } from "./studio/constants";
@@ -10,6 +11,7 @@ import { mergeUploadedVideoSourceUpdate, prepareVideoSources, revokePreparedVide
 import { buildEditPlanPreviewSegments, normalizeStoryEditSettings, type EditPlanPreviewSegment, type MusicVideoProject } from "./studio/musicVideoProject";
 import { buildAutoShaderCues, describeMusicVideoShaderPreset, MUSIC_VIDEO_SHADER_PRESETS, type ShaderEffectCue } from "./studio/shaderEffectPlan";
 import { buildVideoMediaKey, loadStudioProjectDraft, saveStudioProjectDraft } from "./studio/projectPersistence";
+import type { GeneratedStudioAsset } from "./studio/generatedAssets";
 import { createLocalReferenceAsset, uploadReferenceAssetToRustFs, type ReferenceAsset, type ReferenceAssetRole } from "./studio/referenceAssets";
 import { BrowserPreviewPlayer, createPreviewPlayerState, type PreviewPlayerState, type PreviewSegment } from "./studio/previewPlayer";
 import { ProcessActionBar } from "./studio/ProcessActionBar";
@@ -133,6 +135,7 @@ export default function StudioApp() {
   const [musicVideoProject, setMusicVideoProject] = useState<MusicVideoProject | null>(null);
   const [captionMode, setCaptionMode] = useState<SceneCaptionMode>("fast");
   const [referenceAssets, setReferenceAssets] = useState<ReferenceAsset[]>([]);
+  const [generatedAssets, setGeneratedAssets] = useState<GeneratedStudioAsset[]>([]);
   const [shaderPresetId, setShaderPresetId] = useState(MUSIC_VIDEO_SHADER_PRESETS[0].id);
   const [finalExportStatus, setFinalExportStatus] = useState("Final export waits for a generated story preview and master audio.");
   const [finalExportError, setFinalExportError] = useState<string | null>(null);
@@ -218,6 +221,7 @@ export default function StudioApp() {
         }
         setMusicVideoProject(draft.musicVideoProject);
         setReferenceAssets(draft.referenceAssets ?? []);
+        setGeneratedAssets(draft.generatedAssets ?? []);
         const workflowUi = draft.workflowUiSettings;
         if (workflowUi?.activeTab && NAV.some((item) => item.key === workflowUi.activeTab)) setTab(workflowUi.activeTab);
         if (workflowUi?.splitMode) setSplitMode(workflowUi.splitMode);
@@ -258,6 +262,7 @@ export default function StudioApp() {
           storyState,
           musicVideoProject,
           referenceAssets,
+          generatedAssets,
           captionSettings: buildSceneCaptionSettings(captionMode, beatJoinAnalysis, storyState),
           workflowUiSettings: {
             activeTab: tab,
@@ -287,7 +292,7 @@ export default function StudioApp() {
     }, 650);
 
     return () => window.clearTimeout(saveTimer);
-  }, [beatJoinAnalysis, captionMode, colorGradient, draftRestored, isPreviewExpanded, matchLyricCueBlend, matchLyricMergeWindow, matchMode, matchOnsetDensity, musicVideoProject, referenceAssets, shaderPresetId, splitMode, storyState, tab, useSourceAudio, videoSources]);
+  }, [beatJoinAnalysis, captionMode, colorGradient, draftRestored, generatedAssets, isPreviewExpanded, matchLyricCueBlend, matchLyricMergeWindow, matchMode, matchOnsetDensity, musicVideoProject, referenceAssets, shaderPresetId, splitMode, storyState, tab, useSourceAudio, videoSources]);
 
   useEffect(() => {
     referenceAssetsRef.current = referenceAssets;
@@ -612,13 +617,32 @@ export default function StudioApp() {
         throw new Error("Essentia returned no usable beats/onsets/sections.");
       }
 
+      setAudioStatus(`Uploading ${file.name} to RustFS...`);
+      let parsedWithStorage: BeatJoinAnalysis = parsed;
+      try {
+        const storage = await uploadAudioFileToRustFs(file);
+        parsedWithStorage = {
+          ...parsed,
+          ...storage,
+          audioUrl: storage.storageUrl ?? parsed.audioUrl,
+        };
+      } catch (storageError) {
+        const message = storageError instanceof Error ? storageError.message : "RustFS audio upload failed";
+        parsedWithStorage = {
+          ...parsed,
+          storageProvider: "local",
+          storageStatus: "failed",
+          storageError: message,
+        };
+      }
+
       audioFileRef.current = file;
 
       startTransition(() => {
-        setBeatJoinAnalysis(parsed);
+        setBeatJoinAnalysis(parsedWithStorage);
         setCommittedBeatSplit(null);
         setAudioProgress(100);
-        setAudioStatus(`Ready · ${parsed.sourceLabel}`);
+        setAudioStatus(`Ready · ${parsedWithStorage.sourceLabel}${parsedWithStorage.storageStatus === "uploaded" ? " · RustFS" : ""}`);
         setAudioError(null);
       });
 
@@ -1633,6 +1657,8 @@ export default function StudioApp() {
                 lyricCueBlend={matchLyricCueBlend}
                 lyricMergeWindow={matchLyricMergeWindow}
                 referenceAssets={referenceAssets}
+                persistedGeneratedAssets={generatedAssets}
+                onGeneratedAsset={(asset) => setGeneratedAssets((current) => [asset, ...current.filter((candidate) => candidate.id !== asset.id)])}
                 onSelectMatch={() => handleSelectTab("shuffle")}
                 onSelectJoin={() => handleSelectTab("join")}
               />

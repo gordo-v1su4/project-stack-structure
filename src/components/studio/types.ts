@@ -218,4 +218,10 @@ export interface BeatJoinAnalysis {
   onsets: number[];
   sections: BeatJoinSection[];
   duration: number;
+  storageProvider?: "local" | "rustfs";
+  storageBucket?: string;
+  storagePath?: string;
+  storageUrl?: string;
+  storageStatus?: MediaStorageStatus;
+  storageError?: string | null;
 }

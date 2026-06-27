@@ -40,3 +40,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local Higgsfield dedicated account credentials
+.higgsfield-stack-structure.json
+
+.higgsfield-stack-structure.json.lock
+.tmp/

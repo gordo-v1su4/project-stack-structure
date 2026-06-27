@@ -117,6 +117,7 @@ For more detail, see `tests/README.md`.
 ## Canonical planning and architecture docs
 
 - [Creative production brief](docs/product/creative-production-brief.md)
+- [Local SwarmUI / ComfyUI generation](docs/local-generation.md)
 - [Roadmap](docs/roadmap.md)
 - [Media pipeline architecture](docs/architecture/media-pipeline.md)
 - [Spec workflow protocol](docs/protocols/spec-workflow.md)

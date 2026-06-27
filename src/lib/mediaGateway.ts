@@ -15,6 +15,12 @@ export type MediaGatewayUploadResult = {
   mime: string;
 };
 
+export function buildMediaGatewayFileUrl(config: Pick<MediaGatewayConfig, "url">, bucket: string, objectKey: string) {
+  const safeBucket = encodeURIComponent(bucket);
+  const safeKey = normalizeMediaPath(objectKey).split("/").map(encodeURIComponent).join("/");
+  return `${config.url}/files/${safeBucket}/${safeKey}`;
+}
+
 export function normalizeMediaPath(value: string) {
   return value
     .split("/")
@@ -86,6 +92,27 @@ export async function uploadFileToMediaGateway(args: {
 
   const parsed = text.trim() ? JSON.parse(text) as Record<string, unknown> : {};
   return normalizeMediaGatewayUploadResult(parsed, config.bucket, args.file.type || "application/octet-stream");
+}
+
+export async function uploadJsonToMediaGateway(args: {
+  data: unknown;
+  fileName: string;
+  folder?: string;
+  env?: Record<string, string | undefined>;
+  fetchImpl?: typeof fetch;
+}): Promise<MediaGatewayUploadResult> {
+  const file = new File(
+    [JSON.stringify(args.data, null, 2)],
+    args.fileName,
+    { type: "application/json" },
+  );
+
+  return uploadFileToMediaGateway({
+    file,
+    folder: args.folder,
+    env: args.env,
+    fetchImpl: args.fetchImpl,
+  });
 }
 
 export function normalizeMediaGatewayUploadResult(

@@ -24,6 +24,7 @@ const serverFfmpegGatewayApiKey = (
 ).trim();
 
 const nextConfig: NextConfig = {
+  allowedDevOrigins: ["127.0.0.1"],
   env: {
     NEXT_PUBLIC_ESSENTIA_API_BASE_URL: publicEssentiaApiBaseUrl,
     NEXT_PUBLIC_ESSENTIA_API_URL: publicEssentiaApiBaseUrl,
