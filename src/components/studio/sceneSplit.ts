@@ -1,25 +1,9 @@
 import type { ColorPaletteSwatch, DetectedSceneSegment, MotionDescriptor, SceneColorAnalysis, SceneVisualAnalysis } from "./types";
 
-export const SPLITTER_API_BASE_URL = "";
-const SPLITTER_PROXY_URL = "/api/splitter/scene";
 const DEFAULT_POLL_INTERVAL_MS = 2500;
 const DEFAULT_TIMEOUT_MS = 120_000;
 
-type SplitterJobStatus = "queued" | "processing" | "completed" | "failed";
-
-interface SplitterJobState {
-  job_id: string;
-  status: SplitterJobStatus;
-  stage: string;
-  error?: string | null;
-  segment_count?: number;
-  progress_completed?: number;
-  progress_total?: number;
-}
-
-interface SplitterJobCreatedResponse {
-  job?: SplitterJobState;
-}
+type MediaVideoJobStatus = "queued" | "processing" | "completed" | "failed";
 
 interface StoredVideoSceneReference {
   bucket?: string;
@@ -29,7 +13,7 @@ interface StoredVideoSceneReference {
 
 interface MediaVideoJobState {
   job_id: string;
-  status: SplitterJobStatus;
+  status: MediaVideoJobStatus;
   stage?: string;
   error?: string | null;
 }
@@ -64,7 +48,7 @@ function joinAssetUrl(baseUrl: string, jobId: string | undefined, assetPath: str
 export function normalizeSplitterManifest(
   payload: unknown,
   sourceClipId: number,
-  baseUrl = SPLITTER_API_BASE_URL,
+  baseUrl = "",
 ): DetectedSceneSegment[] {
   const root = asRecord(payload);
   const manifest = asRecord(root?.manifest) ?? root;
@@ -273,60 +257,6 @@ async function readJsonResponse(response: Response) {
 async function sleep(ms: number) {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
-
-export async function detectScenesWithSplitter(
-  file: File,
-  sourceClipId: number,
-  options: { baseUrl?: string; timeoutMs?: number; pollIntervalMs?: number } = {},
-): Promise<DetectedSceneSegment[]> {
-  const baseUrl = options.baseUrl ?? SPLITTER_PROXY_URL;
-  const formData = new FormData();
-  formData.append("file", file, file.name);
-
-  if (baseUrl.startsWith("/")) {
-    const result = await readJsonResponse(await fetch(baseUrl, {
-      method: "POST",
-      body: formData,
-    }));
-    const resultRecord = asRecord(result);
-    const assetBaseUrl = readString(resultRecord?.splitterBaseUrl) ?? SPLITTER_API_BASE_URL;
-    const scenes = normalizeSplitterManifest(result, sourceClipId, assetBaseUrl);
-    if (!scenes.length) throw new Error("Splitter completed but returned no scene segments.");
-    return scenes;
-  }
-
-  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
-
-  const created = await readJsonResponse(await fetch(`${baseUrl.replace(/\/+$/, "")}/api/jobs`, {
-    method: "POST",
-    body: formData,
-  })) as SplitterJobCreatedResponse;
-
-  const jobId = created.job?.job_id;
-  if (!jobId || !created.job) throw new Error("Splitter did not return a job id.");
-
-  const startedAt = Date.now();
-  let state: SplitterJobState = created.job;
-
-  while (state.status !== "completed") {
-    if (state.status === "failed") {
-      throw new Error(state.error ?? `Splitter failed during ${state.stage || "processing"}.`);
-    }
-    if (Date.now() - startedAt > timeoutMs) {
-      throw new Error(`Splitter scene detection timed out after ${Math.round(timeoutMs / 1000)}s.`);
-    }
-
-    await sleep(pollIntervalMs);
-    state = await readJsonResponse(await fetch(`${baseUrl.replace(/\/+$/, "")}/api/jobs/${encodeURIComponent(jobId)}`)) as SplitterJobState;
-  }
-
-  const result = await readJsonResponse(await fetch(`${baseUrl.replace(/\/+$/, "")}/api/jobs/${encodeURIComponent(jobId)}/result`));
-  const scenes = normalizeSplitterManifest(result, sourceClipId, baseUrl);
-  if (!scenes.length) throw new Error("Splitter completed but returned no scene segments.");
-  return scenes;
-}
-
 
 export async function detectScenesFromStoredVideo(
   storage: StoredVideoSceneReference,

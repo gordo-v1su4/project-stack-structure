@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { normalizeSplitterManifest } from "../../src/components/studio/sceneSplit";
+import { detectScenesFromStoredVideo, normalizeSplitterManifest } from "../../src/components/studio/sceneSplit";
 
-const splitterManifest = {
+const mediaSceneManifest = {
   job_id: "job-123",
   source_video: "clip-1.mp4",
   duration_seconds: 15.093,
@@ -37,8 +37,8 @@ const splitterManifest = {
 };
 
 describe("sceneSplit.normalizeSplitterManifest", () => {
-  test("normalizes Splitter Pro 2 manifest segments into scene records with asset URLs", () => {
-    const scenes = normalizeSplitterManifest(splitterManifest, 3, "https://splitter.serving.cloud");
+  test("normalizes media gateway scene job manifests into scene records with asset URLs", () => {
+    const scenes = normalizeSplitterManifest(mediaSceneManifest, 3, "https://media.v1su4.dev");
 
     expect(scenes).toHaveLength(2);
     expect(scenes[0]).toMatchObject({
@@ -51,14 +51,63 @@ describe("sceneSplit.normalizeSplitterManifest", () => {
       detector: "pyscenedetect-adaptive",
       assetPath: "clips/segment-001.mp4",
     });
-    expect(scenes[0]?.clipUrl).toBe("https://splitter.serving.cloud/api/jobs/job-123/assets/clips/segment-001.mp4");
-    expect(scenes[0]?.thumbnailUrl).toBe("https://splitter.serving.cloud/api/jobs/job-123/assets/thumbnails/segment-001.jpg");
+    expect(scenes[0]?.clipUrl).toBe("https://media.v1su4.dev/api/jobs/job-123/assets/clips/segment-001.mp4");
+    expect(scenes[0]?.thumbnailUrl).toBe("https://media.v1su4.dev/api/jobs/job-123/assets/thumbnails/segment-001.jpg");
   });
 
-  test("accepts full result wrapper returned by /api/jobs/{job_id}/result", () => {
-    const scenes = normalizeSplitterManifest({ manifest: splitterManifest }, 1, "https://splitter.serving.cloud");
+  test("accepts full result wrapper returned by media video job result routes", () => {
+    const scenes = normalizeSplitterManifest({ manifest: mediaSceneManifest }, 1, "https://media.v1su4.dev");
 
     expect(scenes).toHaveLength(2);
     expect(scenes[1]?.start).toBe(5);
+  });
+});
+
+describe("sceneSplit.detectScenesFromStoredVideo", () => {
+  test("queues media gateway jobs from stored RustFS object references only", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const previousFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      const href = String(url);
+      calls.push({ url: href, init });
+
+      if (href === "/api/media/video/jobs") {
+        return Response.json({
+          job: {
+            job_id: "video-job-123",
+            status: "completed",
+            stage: "completed",
+          },
+        });
+      }
+
+      if (href === "/api/media/video/jobs/video-job-123/result") {
+        return Response.json({ manifest: mediaSceneManifest });
+      }
+
+      return Response.json({ error: `unexpected ${href}` }, { status: 500 });
+    }) as typeof fetch;
+
+    try {
+      const scenes = await detectScenesFromStoredVideo({
+        bucket: "stack-structure",
+        objectKey: "media-uploads/2026/clip.mp4",
+      }, 4, { pollIntervalMs: 0 });
+
+      expect(scenes).toHaveLength(2);
+      expect(calls.map((call) => call.url)).toEqual([
+        "/api/media/video/jobs",
+        "/api/media/video/jobs/video-job-123/result",
+      ]);
+      expect(calls.some((call) => call.url === "/api/splitter/scene")).toBe(false);
+      expect(JSON.parse(String(calls[0].init?.body))).toEqual({
+        bucket: "stack-structure",
+        objectKey: "media-uploads/2026/clip.mp4",
+        mode: "scene-detect",
+        profile: "pyscenedetect-adaptive",
+      });
+    } finally {
+      globalThis.fetch = previousFetch;
+    }
   });
 });

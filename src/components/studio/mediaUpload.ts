@@ -1,6 +1,6 @@
 import { uploadSceneCaptionManifestToRustFs, uploadVideoFileToRustFs } from "./mediaStorage";
 import { captionDetectedScenes } from "./sceneCaptioning";
-import { detectScenesFromStoredVideo, detectScenesWithSplitter } from "./sceneSplit";
+import { detectScenesFromStoredVideo } from "./sceneSplit";
 import type { DetectedSceneSegment, SceneCaptionSettings, UploadedVideoSource } from "./types";
 
 export type VideoSceneUpdate = {
@@ -57,44 +57,57 @@ export async function prepareVideoSources(
                 source: storedSource,
               });
 
-              if (onSceneUpdate && storage.storageBucket && storage.storagePath) {
-                return detectScenesFromStoredVideo({
-                  bucket: storage.storageBucket,
-                  objectKey: storage.storagePath,
-                }, index)
-                  .then(async (scenes) => {
-                    const readySource = {
-                      ...storedSource,
-                      scenes,
-                      sceneStatus: "ready" as const,
-                      sceneError: null,
-                      captionStatus: "captioning" as const,
-                      captionError: null,
-                    };
-                    onSceneUpdate({
-                      key,
-                      source: readySource,
-                    });
-
-                    const captionedSource = await captionAndPersistSourceScenes(readySource, key, captionSettings, onSceneUpdate);
-                    onSceneUpdate({ key, source: captionedSource });
-                  })
-                  .catch((error) => {
-                    const sceneError = error instanceof Error ? error.message : "Stored-object scene detection failed";
-                    onSceneUpdate({
-                      key,
-                      source: {
-                        ...storedSource,
-                        scenes: [],
-                        sceneStatus: "failed" as const,
-                        sceneError,
-                        captionStatus: "failed" as const,
-                        captionError: "Captioning requires successful PySceneDetect scene output.",
-                      },
-                    });
-                  });
+              if (!onSceneUpdate) return undefined;
+              if (!storage.storageBucket || !storage.storagePath) {
+                onSceneUpdate({
+                  key,
+                  source: {
+                    ...storedSource,
+                    scenes: [],
+                    sceneStatus: "failed" as const,
+                    sceneError: "RustFS upload did not return a bucket and object key for scene detection.",
+                    captionStatus: "failed" as const,
+                    captionError: "Captioning requires successful PySceneDetect scene output.",
+                  },
+                });
+                return undefined;
               }
-              return undefined;
+
+              return detectScenesFromStoredVideo({
+                bucket: storage.storageBucket,
+                objectKey: storage.storagePath,
+              }, index)
+                .then(async (scenes) => {
+                  const readySource = {
+                    ...storedSource,
+                    scenes,
+                    sceneStatus: "ready" as const,
+                    sceneError: null,
+                    captionStatus: "captioning" as const,
+                    captionError: null,
+                  };
+                  onSceneUpdate({
+                    key,
+                    source: readySource,
+                  });
+
+                  const captionedSource = await captionAndPersistSourceScenes(readySource, key, captionSettings, onSceneUpdate);
+                  onSceneUpdate({ key, source: captionedSource });
+                })
+                .catch((error) => {
+                  const sceneError = error instanceof Error ? error.message : "Stored-object scene detection failed";
+                  onSceneUpdate({
+                    key,
+                    source: {
+                      ...storedSource,
+                      scenes: [],
+                      sceneStatus: "failed" as const,
+                      sceneError,
+                      captionStatus: "failed" as const,
+                      captionError: "Captioning requires successful PySceneDetect scene output.",
+                    },
+                  });
+                });
             })
             .catch((error) => {
               const storageError = error instanceof Error ? error.message : "RustFS upload failed";
@@ -108,40 +121,6 @@ export async function prepareVideoSources(
                   sceneError: "RustFS upload is required before server-side scene detection.",
                   captionStatus: "failed" as const,
                   captionError: "Captioning requires durable RustFS media upload.",
-                },
-              });
-            });
-        }
-
-        if (onSceneUpdate) {
-          void detectScenesWithSplitter(file, index)
-            .then(async (scenes) => {
-              const readySource = {
-                ...source,
-                scenes,
-                sceneStatus: "ready" as const,
-                sceneError: null,
-                captionStatus: "captioning" as const,
-                captionError: null,
-              };
-              onSceneUpdate({
-                key,
-                source: readySource,
-              });
-              const captionedSource = await captionAndPersistSourceScenes(readySource, key, captionSettings, onSceneUpdate);
-              onSceneUpdate({ key, source: captionedSource });
-            })
-            .catch((error) => {
-              const sceneError = error instanceof Error ? error.message : "Scene detection failed";
-              onSceneUpdate({
-                key,
-                source: {
-                  ...source,
-                  scenes: [],
-                  sceneStatus: "failed" as const,
-                  sceneError,
-                  captionStatus: "failed" as const,
-                  captionError: "Captioning requires successful PySceneDetect scene output.",
                 },
               });
             });
@@ -295,7 +274,7 @@ export function mergeUploadedVideoSourceUpdate(
     ...update,
     videoUrl: currentSource.videoUrl,
     thumbnailUrl: currentSource.thumbnailUrl,
-    scenes: update.scenes?.length ? update.scenes : currentSource.scenes,
+    scenes: mergeScenes(currentSource, update),
     sceneStatus: update.sceneStatus ?? currentSource.sceneStatus,
     sceneError: update.sceneError ?? currentSource.sceneError,
     captionStatus: update.captionStatus ?? currentSource.captionStatus,
@@ -309,6 +288,12 @@ export function mergeUploadedVideoSourceUpdate(
     storageStatus: mergeStorageStatus(currentSource, update),
     storageError: update.storageError ?? currentSource.storageError,
   };
+}
+
+function mergeScenes(currentSource: UploadedVideoSource, update: UploadedVideoSource) {
+  if (update.sceneStatus === "failed") return update.scenes ?? [];
+  if (update.scenes !== undefined) return update.scenes;
+  return currentSource.scenes;
 }
 
 function mergeStorageProvider(currentSource: UploadedVideoSource, update: UploadedVideoSource) {

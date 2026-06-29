@@ -45,7 +45,7 @@ Keep this as the main app. Do not restart greenfield.
 - `src/components/studio/musicVideoProject.ts` — music/lyrics/story/edit-plan model
 - `src/components/studio/panels/StoryTab.tsx` — story page / song-section workflow
 - `src/app/api/essentia/full/route.ts` — audio-analysis proxy
-- `src/app/api/splitter/scene/route.ts` — scene split integration
+- `src/app/api/media/video/jobs/route.ts` — RustFS-backed scene split integration
 - `src/app/api/ffglitch/route.ts` — FFglitch capability/proxy route
 
 ## Existing product principles

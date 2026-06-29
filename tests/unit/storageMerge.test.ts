@@ -46,6 +46,34 @@ describe("storage metadata merge", () => {
     expect(merged.scenes).toHaveLength(1);
   });
 
+  test("failed scene updates clear stale scenes and keep the real media job error", () => {
+    const merged = mergeUploadedVideoSourceUpdate({
+      ...base,
+      scenes: [{
+        id: 0,
+        sourceClipId: 0,
+        label: "Scene 01",
+        start: 0,
+        end: 5,
+        duration: 5,
+        detector: "pyscenedetect-adaptive",
+      }],
+      sceneStatus: "ready",
+    }, {
+      ...base,
+      scenes: [],
+      sceneStatus: "failed",
+      sceneError: "Media video job failed during scene-detect.",
+      captionStatus: "failed",
+      captionError: "Captioning requires successful PySceneDetect scene output.",
+    });
+
+    expect(merged.sceneStatus).toBe("failed");
+    expect(merged.sceneError).toBe("Media video job failed during scene-detect.");
+    expect(merged.scenes).toEqual([]);
+    expect(merged.captionStatus).toBe("failed");
+  });
+
   test("caption sidecar updates preserve uploaded storage and attach manifest location", () => {
     const merged = mergeUploadedVideoSourceUpdate(base, {
       ...base,
