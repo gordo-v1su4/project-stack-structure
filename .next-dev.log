@@ -1,0 +1,15 @@
+▲ Next.js 16.2.1 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://100.73.126.36:3000
+- Environments: .env
+✓ Ready in 217ms
+
+ GET / 200 in 220ms (next.js: 82ms, application-code: 138ms)
+ GET / 200 in 221ms (next.js: 175ms, application-code: 45ms)
+ GET /api/studio/draft 200 in 40ms (next.js: 27ms, application-code: 13ms)
+ PUT /api/studio/draft 200 in 37ms (next.js: 2ms, application-code: 35ms)
+ GET / 200 in 28ms (next.js: 4ms, application-code: 25ms)
+ POST /api/essentia/full?mode=fast 200 in 379ms (next.js: 17ms, application-code: 362ms)
+ GET / 200 in 32ms (next.js: 3ms, application-code: 29ms)
+ GET /api/studio/draft 200 in 8ms (next.js: 3ms, application-code: 5ms)
+ PUT /api/studio/draft 200 in 27ms (next.js: 3ms, application-code: 24ms)

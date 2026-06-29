@@ -1,9 +1,12 @@
 "use client";
 
 import { LFM_SCENE_CAPTION_PROMPT } from "@/review/lib/analysis/scene-caption-format";
+import { captionFrame as captionFrameWithLfm } from "@/review/lib/analysis/caption-client";
 import { createAnalysisVideo, grabBitmap } from "@/review/lib/video/frame-grab";
 import { normalizeServerCaptionAvailability, normalizeServerCaptionPayload } from "./sceneCaptioningServer";
 import type { DetectedSceneSegment, SceneCaptionSettings, UploadedVideoSource } from "./types";
+
+const LFM_WEBGPU_MODEL_ID = "LiquidAI/LFM2.5-VL-450M-ONNX";
 
 export type SceneCaptionProgress = {
   completed: number;
@@ -80,9 +83,20 @@ async function captionSceneFrame(
   sampleTime: number,
   settings: SceneCaptionSettings,
 ) {
+  if (settings.mode === "fast") {
+    const bitmap = await grabBitmap(video, sampleTime);
+    const result = await captionFrameWithLfm(bitmap);
+    return {
+      text: result.text,
+      meta: result.meta,
+      captionSource: "lfm-webgpu" as const,
+      model: LFM_WEBGPU_MODEL_ID,
+    };
+  }
+
   const serverAvailable = await isServerCaptioningAvailable();
   if (!serverAvailable) {
-    throw new Error("Server scene caption gateway is not configured.");
+    throw new Error("Smart Qwen3-VL scene caption gateway is not configured.");
   }
 
   return await captionSceneFrameViaServer(video, source, scene, sampleTime, settings);

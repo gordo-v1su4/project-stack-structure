@@ -30,7 +30,7 @@ export function normalizeServerCaptionPayload(payload: unknown): ServerCaptionRe
   return {
     text,
     meta,
-    captionSource: readCaptionSource(payload.captionSource) ?? "lfm-server",
+    captionSource: readCaptionSource(payload.captionSource) ?? "qwen3-vl-server",
     model: readString(payload.model),
   };
 }
