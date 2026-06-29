@@ -269,59 +269,80 @@ function ReferenceSlotCard({
   const toneText = failed ? "text-[#d24b3f]" : ready ? "text-[#78c878]" : uploading ? "text-[#d6a13a]" : "text-[#777]";
 
   return (
-    <div className={`rounded-[2px] border ${border} bg-[#070707] p-2`}>
-      <div className="mb-2 flex items-start justify-between gap-2">
-        <div>
+    <div className={`flex min-h-[424px] flex-col rounded-[2px] border ${border} bg-[#070707] p-2`}>
+      <div className="mb-2 grid min-h-[58px] grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
+        <div className="min-w-0">
           <div className="text-[9px] uppercase tracking-[0.16em] text-[#d0d0d0]">{REFERENCE_ASSET_SLOT_LABELS[role]}</div>
-          <div className="mt-1 text-[9px] leading-4 text-[#555]">{REFERENCE_ASSET_SLOT_DETAILS[role]}</div>
+          <div className="mt-1 line-clamp-2 text-[9px] leading-4 text-[#555]">{REFERENCE_ASSET_SLOT_DETAILS[role]}</div>
         </div>
-        <span className={`font-mono text-[8px] uppercase tracking-[0.12em] ${toneText}`}>{asset ? asset.storageStatus : "empty"}</span>
+        <span className={`pt-[1px] text-right font-mono text-[8px] uppercase tracking-[0.12em] ${toneText}`}>{asset ? asset.storageStatus : "empty"}</span>
       </div>
 
       {asset ? (
-        <div className="space-y-2">
-          <div className="relative aspect-video overflow-hidden rounded-[2px] border border-[#181818] bg-[#030303]">
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="relative h-[168px] overflow-hidden rounded-[2px] border border-[#181818] bg-[#030303]">
             {asset.previewUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={asset.previewUrl} alt={asset.displayName} className="h-full w-full object-cover" loading="lazy" decoding="async" />
             ) : <div className="flex h-full items-center justify-center text-[8px] uppercase tracking-[0.12em] text-[#444]">No preview</div>}
             <div className="absolute bottom-1 left-1 rounded-[1px] bg-[#000000b8] px-1.5 py-0.5 font-mono text-[7px] text-[#aaa]">{asset.fileName}</div>
           </div>
-          <input
-            value={asset.displayName}
-            onChange={(event) => onUpdate(asset.id, { displayName: event.target.value })}
-            className="w-full rounded-[2px] border border-[#202020] bg-[#050505] px-2 py-1.5 font-mono text-[10px] text-[#d0d0d0] outline-none focus:border-[#e05c00]"
-            placeholder="Reference name"
-          />
-          <select
-            value={asset.kind}
-            onChange={(event) => onUpdate(asset.id, { kind: event.target.value as ReferenceAssetKind })}
-            className="w-full rounded-[2px] border border-[#202020] bg-[#050505] px-2 py-1.5 font-mono text-[10px] text-[#9a9a9a] outline-none focus:border-[#e05c00]"
-          >
-            {(["character", "environment", "prop", "vehicle", "wardrobe", "custom"] as const).map((kind) => <option key={kind} value={kind}>{kind}</option>)}
-          </select>
-          <textarea
-            value={asset.promptHint}
-            onChange={(event) => onUpdate(asset.id, { promptHint: event.target.value })}
-            rows={2}
-            className="w-full resize-none rounded-[2px] border border-[#202020] bg-[#050505] px-2 py-1.5 text-[10px] leading-4 text-[#9a9a9a] outline-none focus:border-[#e05c00]"
-            placeholder="Prompt lock / reference instruction"
-          />
-          {asset.storageError ? <div className="rounded-[2px] border border-[#743029] bg-[#160706] p-2 text-[9px] leading-4 text-[#d24b3f]">{asset.storageError}</div> : null}
-          {asset.storageUrl ? <div className="truncate font-mono text-[8px] text-[#555]" title={asset.storagePath}>{asset.storagePath}</div> : null}
-          <div className="flex gap-1.5">
+          <div className="mt-2 grid gap-2">
+            <input
+              value={asset.displayName}
+              onChange={(event) => onUpdate(asset.id, { displayName: event.target.value })}
+              className="h-[30px] w-full rounded-[2px] border border-[#202020] bg-[#050505] px-2 font-mono text-[10px] text-[#d0d0d0] outline-none focus:border-[#e05c00]"
+              placeholder="Reference name"
+            />
+            <select
+              value={asset.kind}
+              onChange={(event) => onUpdate(asset.id, { kind: event.target.value as ReferenceAssetKind })}
+              className="h-[30px] w-full rounded-[2px] border border-[#202020] bg-[#050505] px-2 font-mono text-[10px] text-[#9a9a9a] outline-none focus:border-[#e05c00]"
+            >
+              {(["character", "environment", "prop", "vehicle", "wardrobe", "custom"] as const).map((kind) => <option key={kind} value={kind}>{kind}</option>)}
+            </select>
+            <textarea
+              value={asset.promptHint}
+              onChange={(event) => onUpdate(asset.id, { promptHint: event.target.value })}
+              rows={2}
+              className="h-[54px] w-full resize-none rounded-[2px] border border-[#202020] bg-[#050505] px-2 py-1.5 text-[10px] leading-4 text-[#9a9a9a] outline-none focus:border-[#e05c00]"
+              placeholder="Prompt lock / reference instruction"
+            />
+          </div>
+          <div className="mt-2 min-h-[28px]">
+            {asset.storageError ? <div className="rounded-[2px] border border-[#743029] bg-[#160706] p-2 text-[9px] leading-4 text-[#d24b3f]">{asset.storageError}</div> : null}
+            {asset.storageUrl ? <div className="truncate font-mono text-[8px] leading-4 text-[#555]" title={asset.storagePath}>{asset.storagePath}</div> : null}
+          </div>
+          <div className="mt-auto flex gap-1.5 pt-2">
             <UploadControl accept="image/*" title="Replace reference" detail="Upload a new reference image." actionLabel="Replace" variant="button" onFiles={onUpload} />
             <button type="button" onClick={() => onRemove(asset.id)} className="rounded-[2px] border border-[#242424] px-2 py-[2px] text-[10px] uppercase tracking-[0.12em] text-[#777] hover:border-[#743029] hover:text-[#d24b3f]">Remove</button>
           </div>
         </div>
       ) : (
-        <UploadControl
-          accept="image/*"
-          title={`Upload ${REFERENCE_ASSET_SLOT_LABELS[role]}`}
-          detail="Stored to RustFS before Generate can use it."
-          actionLabel="Add Reference"
-          onFiles={onUpload}
-        />
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="flex h-[168px] items-center justify-center rounded-[2px] border border-dashed border-[#252525] bg-[#050505] px-5 text-center">
+            <div>
+              <div className="text-[12px] text-[#b0b0b0]">Upload {REFERENCE_ASSET_SLOT_LABELS[role]}</div>
+              <div className="mt-3 text-[9px] uppercase tracking-[0.16em] text-[#555]">Stored to RustFS before Generate can use it.</div>
+            </div>
+          </div>
+          <div className="mt-2 grid gap-2 opacity-45">
+            <div className="h-[30px] rounded-[2px] border border-[#1b1b1b] bg-[#050505]" />
+            <div className="h-[30px] rounded-[2px] border border-[#1b1b1b] bg-[#050505]" />
+            <div className="h-[54px] rounded-[2px] border border-[#1b1b1b] bg-[#050505]" />
+          </div>
+          <div className="mt-2 min-h-[28px]" />
+          <div className="mt-auto pt-2">
+            <UploadControl
+              accept="image/*"
+              title=""
+              detail=""
+              actionLabel="Add Reference"
+              variant="button"
+              onFiles={onUpload}
+            />
+          </div>
+        </div>
       )}
     </div>
   );
