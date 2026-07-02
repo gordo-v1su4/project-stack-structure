@@ -58,6 +58,40 @@ Responsibilities:
 - compute motion descriptors,
 - prepare continuity scores for rejoin ranking.
 
+### 5. Scene caption / vision model plane
+Responsibilities:
+- send selected scene frames to the server caption route,
+- proxy those frames to the configured vision caption gateway,
+- normalize text plus structured scene metadata back into the studio scene
+  manifest.
+
+Current code path:
+- App route: `src/app/api/caption/scene/route.ts`
+- Client normalizer: `src/components/studio/sceneCaptioningServer.ts`
+- Contract tests: `tests/unit/sceneCaptionServer.test.ts`
+
+Runtime contract:
+- The app calls `/api/caption/scene` with a frame image and scene context.
+- The route forwards the frame to a configured gateway URL, default endpoint
+  `/caption/scene`.
+- Fast/default mode uses the LFM caption gateway configuration:
+  `SCENE_CAPTION_FAST_GATEWAY_URL`, `LFM_CAPTION_GATEWAY_URL`, or the shared
+  `SCENE_CAPTION_GATEWAY_URL` / `VISION_CAPTION_GATEWAY_URL`.
+- The default fast model id is `LiquidAI/LFM2.5-VL-450M-ONNX`.
+- Smart mode, if enabled, is also an HTTP gateway call through
+  `SCENE_CAPTION_SMART_GATEWAY_URL` or `QWEN_CAPTION_GATEWAY_URL`.
+- Ollama is not part of the active `project-stack-structure` service stack.
+  If a future vision model service is introduced, document its gateway URL,
+  model id, health check, warm-load behavior, and deployment owner explicitly.
+
+Readiness rules:
+- A configured gateway is required before server captioning can run.
+- A successful caption response must include caption text.
+- The runtime should be verified by sending real image frames through
+  `/api/caption/scene`, not by checking whether a local model process exists.
+- VM/GPU readiness belongs to the gateway host runbook; this repo owns the app
+  route contract and response normalization.
+
 ## Motion Analysis Strategy
 ### Do not rely on coarse direction tags as the core engine
 Tags like `N`, `SE`, or `W` may be useful as UI summaries, but they are too coarse for primary ranking.

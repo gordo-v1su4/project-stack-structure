@@ -93,6 +93,7 @@ FFmpeg gateway API: `https://ffmpeg.v1su4.dev/docs`
 | `src/components/studio/panels/GenerateTab.tsx` | Coverage gaps and filler prompts |
 | `src/app/api/essentia/full/route.ts` | Audio analysis proxy |
 | `src/app/api/caption/scene/route.ts` | Vision caption proxy |
+| `src/app/api/ffglitch/route.ts` | FFglitch capability/proxy route |
 
 ## Getting started
 
