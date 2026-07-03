@@ -1,6 +1,0 @@
-{
-  "last_turn_at": "2026-04-10T13:09:35.172Z",
-  "last_progress_at": "2026-04-10T13:09:35.172Z",
-  "turn_count": 5,
-  "last_agent_output": "Implemented locally.\n\nChanged files:\n- `src/components/studio/remapPresets.ts` — new preset bank:\n  "
-}
