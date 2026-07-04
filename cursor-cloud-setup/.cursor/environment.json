@@ -1,4 +1,4 @@
 {
-  "install": "curl -fsSL https://bun.sh/install | bash && export PATH=\"$HOME/.bun/bin:$PATH\" && bun install && curl -fsSL https://tailscale.com/install.sh | sh && curl -fsSL https://github.com/bitwarden/sdk-sm/releases/download/bws-v2.0.0/bws-x86_64-unknown-linux-gnu-2.0.0.zip -o /tmp/bws.zip && unzip -o /tmp/bws.zip -d /usr/local/bin && chmod +x /usr/local/bin/bws",
+  "install": "curl -fsSL https://bun.sh/install | bash && export PATH=\"$HOME/.bun/bin:$PATH\" && bun install && curl -fsSL https://tailscale.com/install.sh | sh && curl -fsSL https://github.com/bitwarden/sdk-sm/releases/download/bws-v2.0.0/bws-x86_64-unknown-linux-gnu-2.0.0.zip -o /tmp/bws.zip && unzip -o /tmp/bws.zip -d $HOME/.bun/bin && chmod +x $HOME/.bun/bin/bws",
   "start": "bash scripts/cloud-agent-start.sh"
 }

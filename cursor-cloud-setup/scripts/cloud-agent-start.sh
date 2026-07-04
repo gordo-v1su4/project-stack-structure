@@ -13,30 +13,32 @@ require_env BWS_ACCESS_TOKEN
 require_env BWS_SERVER_URL
 require_env BWS_PROJECT_ID
 
-echo "[cloud-agent] Starting Tailscale (userspace networking)..."
-sudo tailscaled \
-  --tun=userspace-networking \
-  --outbound-http-proxy-listen=localhost:1054 \
-  --socks5-server=localhost:1055 &
-TAILSCALED_PID=$!
+TAILSCALED_PID=""
 
 cleanup() {
-  if kill -0 "$TAILSCALED_PID" 2>/dev/null; then
+  if [[ -n "$TAILSCALED_PID" ]] && kill -0 "$TAILSCALED_PID" 2>/dev/null; then
     sudo kill "$TAILSCALED_PID" 2>/dev/null || true
   fi
 }
 trap cleanup EXIT
 
-sleep 3
-
-export ALL_PROXY="socks5h://localhost:1055/"
-export HTTP_PROXY="http://localhost:1054/"
-export HTTPS_PROXY="http://localhost:1054/"
-
 if [[ -n "${TS_AUTHKEY:-}" ]]; then
-  tailscale up --authkey="$TS_AUTHKEY" --accept-routes --hostname=cursor-stack-structure
+  echo "[cloud-agent] Starting Tailscale (userspace networking)..."
+  sudo tailscaled \
+    --tun=userspace-networking \
+    --outbound-http-proxy-listen=localhost:1054 \
+    --socks5-server=localhost:1055 &
+  TAILSCALED_PID=$!
+
+  sleep 3
+
+  export ALL_PROXY="socks5h://localhost:1055/"
+  export HTTP_PROXY="http://localhost:1054/"
+  export HTTPS_PROXY="http://localhost:1054/"
+
+  sudo tailscale up --authkey="$TS_AUTHKEY" --accept-routes --hostname=cursor-stack-structure
 else
-  echo "[cloud-agent] TS_AUTHKEY not set — skipping tailscale up (My Machines path?)" >&2
+  echo "[cloud-agent] TS_AUTHKEY not set — skipping Tailscale userspace setup (My Machines path?)" >&2
 fi
 
 echo "[cloud-agent] Waiting for BWS at $BWS_SERVER_URL ..."
