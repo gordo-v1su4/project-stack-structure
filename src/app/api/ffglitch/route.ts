@@ -22,7 +22,7 @@ export async function GET() {
     const headers: Record<string, string> = {};
     if (config.apiKey) headers["X-API-Key"] = config.apiKey;
 
-    const response = await fetch(`${config.url}/ffglitch/detect`, { headers });
+    const response = await fetch(`${config.url}/ffglitch/detect`, { method: "POST", headers });
     const payload = await response.json();
 
     return Response.json(payload, { status: response.status });

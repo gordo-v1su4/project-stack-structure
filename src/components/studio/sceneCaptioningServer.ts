@@ -2,9 +2,11 @@ import type { SceneCaptionData, SceneCaptionSource } from "./types";
 
 export type ServerCaptionAvailability = {
   configured: boolean;
+  reachable: boolean;
   provider?: string;
   model?: string;
   captionSource?: SceneCaptionSource;
+  error?: string;
 };
 
 export type ServerCaptionResult = {
@@ -36,12 +38,14 @@ export function normalizeServerCaptionPayload(payload: unknown): ServerCaptionRe
 }
 
 export function normalizeServerCaptionAvailability(payload: unknown): ServerCaptionAvailability {
-  if (!isRecord(payload)) return { configured: false };
+  if (!isRecord(payload)) return { configured: false, reachable: false };
   return {
     configured: payload.configured === true,
+    reachable: payload.reachable === true,
     provider: readString(payload.provider),
     model: readString(payload.model),
     captionSource: readCaptionSource(payload.captionSource),
+    error: readString(payload.error),
   };
 }
 

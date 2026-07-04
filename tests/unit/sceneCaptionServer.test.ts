@@ -28,15 +28,99 @@ describe("scene caption server seam", () => {
       const response = await GET();
       const payload = await response.json() as {
         configured?: boolean;
+        reachable?: boolean;
         captionSource?: string;
-        providers?: { smart?: { model?: string; captionSource?: string } };
+        providers?: {
+          fast?: { serverGateway?: { configured?: boolean; reachable?: boolean } };
+          smart?: { configured?: boolean; reachable?: boolean; model?: string; captionSource?: string };
+        };
       };
 
       expect(response.status).toBe(200);
       expect(payload.configured).toBe(false);
-      expect(payload.captionSource).toBe("lfm-server");
+      expect(payload.reachable).toBe(false);
+      expect(payload.captionSource).toBe("qwen3-vl-server");
+      expect(payload.providers?.fast?.serverGateway?.configured).toBe(false);
+      expect(payload.providers?.fast?.serverGateway?.reachable).toBe(false);
+      expect(payload.providers?.smart?.configured).toBe(false);
+      expect(payload.providers?.smart?.reachable).toBe(false);
       expect(payload.providers?.smart?.captionSource).toBe("qwen3-vl-server");
       expect(payload.providers?.smart?.model).toBe("Qwen/Qwen3-VL-4B-Instruct-GGUF:Q4_K_M");
+    } finally {
+      restoreGlobals();
+    }
+  });
+
+  test("does not report smart captioning available from a generic fast gateway env var", async () => {
+    try {
+      delete process.env.SCENE_CAPTION_FAST_GATEWAY_URL;
+      delete process.env.LFM_CAPTION_GATEWAY_URL;
+      delete process.env.VISION_CAPTION_GATEWAY_URL;
+      delete process.env.SCENE_CAPTION_FAST_GATEWAY_TOKEN;
+      delete process.env.LFM_CAPTION_GATEWAY_TOKEN;
+      delete process.env.VISION_CAPTION_GATEWAY_TOKEN;
+      process.env.SCENE_CAPTION_GATEWAY_URL = "https://caption-gateway.local";
+      delete process.env.SCENE_CAPTION_SMART_GATEWAY_URL;
+      delete process.env.QWEN_CAPTION_GATEWAY_URL;
+
+      globalThis.fetch = (async (_url: string | URL | Request) => {
+        expect(String(_url)).toBe("https://caption-gateway.local/health");
+        return Response.json({ ok: true });
+      }) as unknown as typeof fetch;
+
+      const response = await GET();
+      const payload = await response.json() as {
+        configured?: boolean;
+        reachable?: boolean;
+        providers?: {
+          fast?: { serverGateway?: { configured?: boolean; reachable?: boolean; captionSource?: string } };
+          smart?: { configured?: boolean; reachable?: boolean };
+        };
+      };
+
+      expect(response.status).toBe(200);
+      expect(payload.configured).toBe(false);
+      expect(payload.reachable).toBe(false);
+      expect(payload.providers?.fast?.serverGateway?.configured).toBe(true);
+      expect(payload.providers?.fast?.serverGateway?.reachable).toBe(true);
+      expect(payload.providers?.fast?.serverGateway?.captionSource).toBe("lfm-server");
+      expect(payload.providers?.smart?.configured).toBe(false);
+      expect(payload.providers?.smart?.reachable).toBe(false);
+    } finally {
+      restoreGlobals();
+    }
+  });
+
+  test("does not report smart captioning available when the configured smart gateway is unhealthy", async () => {
+    try {
+      delete process.env.SCENE_CAPTION_GATEWAY_URL;
+      delete process.env.SCENE_CAPTION_FAST_GATEWAY_URL;
+      delete process.env.LFM_CAPTION_GATEWAY_URL;
+      delete process.env.VISION_CAPTION_GATEWAY_URL;
+      process.env.SCENE_CAPTION_SMART_GATEWAY_URL = "https://qwen-caption.local";
+      delete process.env.QWEN_CAPTION_GATEWAY_URL;
+
+      globalThis.fetch = (async (_url: string | URL | Request) => {
+        expect(String(_url)).toBe("https://qwen-caption.local/health");
+        return Response.json({ ok: false }, { status: 502, statusText: "Bad Gateway" });
+      }) as unknown as typeof fetch;
+
+      const response = await GET();
+      const payload = await response.json() as {
+        configured?: boolean;
+        reachable?: boolean;
+        providers?: {
+          smart?: { configured?: boolean; reachable?: boolean; status?: number; error?: string };
+        };
+      };
+
+      expect(response.status).toBe(200);
+      expect(payload.configured).toBe(false);
+      expect(payload.reachable).toBe(false);
+      expect(payload.providers?.smart?.configured).toBe(true);
+      expect(payload.providers?.smart?.reachable).toBe(false);
+      expect(payload.providers?.smart?.status).toBe(502);
+      expect(payload.providers?.smart?.error).toBe("502 Bad Gateway");
     } finally {
       restoreGlobals();
     }
@@ -45,9 +129,17 @@ describe("scene caption server seam", () => {
   test("proxies a frame to the configured self-hosted caption gateway without exposing browser secrets", async () => {
     const calls: FetchCall[] = [];
     try {
+      delete process.env.SCENE_CAPTION_FAST_GATEWAY_URL;
+      delete process.env.LFM_CAPTION_GATEWAY_URL;
+      delete process.env.VISION_CAPTION_GATEWAY_URL;
+      delete process.env.SCENE_CAPTION_FAST_GATEWAY_TOKEN;
+      delete process.env.LFM_CAPTION_GATEWAY_TOKEN;
+      delete process.env.VISION_CAPTION_GATEWAY_TOKEN;
       process.env.SCENE_CAPTION_GATEWAY_URL = "https://caption-gateway.local";
       process.env.SCENE_CAPTION_GATEWAY_TOKEN = "test-token";
       process.env.SCENE_CAPTION_MODEL_ID = "LiquidAI/LFM2.5-VL-450M-ONNX";
+      delete process.env.SCENE_CAPTION_SMART_GATEWAY_URL;
+      delete process.env.QWEN_CAPTION_GATEWAY_URL;
 
       globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
         calls.push({ url: String(_url), init });
@@ -141,10 +233,10 @@ describe("scene caption server seam", () => {
       text: "Wide shot of dancers moving through rain.",
       meta: { subjects: ["dancers"], weather: "rain" },
       model: "lfm-local",
-    })).toEqual({
+    })).toMatchObject({
       text: "Wide shot of dancers moving through rain.",
       meta: { subjects: ["dancers"], weather: "rain" },
-      captionSource: "lfm-server",
+      captionSource: "qwen3-vl-server",
       model: "lfm-local",
     });
   });

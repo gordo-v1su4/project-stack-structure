@@ -5,6 +5,18 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const DEFAULT_SMART_MODEL_ID = "Qwen/Qwen3-VL-4B-Instruct-GGUF:Q4_K_M";
+const DEFAULT_FAST_MODEL_ID = "LiquidAI/LFM2.5-VL-450M-ONNX";
+const HEALTH_TIMEOUT_MS = 2_500;
+
+type CaptionGatewayConfig = {
+  configured: boolean;
+  mode: SceneCaptionMode;
+  url: string;
+  token: string;
+  model: string;
+  endpoint: string;
+  captionSource: SceneCaptionSource;
+};
 
 type CaptionGatewayPayload = {
   ok?: boolean;
@@ -17,59 +29,82 @@ type CaptionGatewayPayload = {
   error?: unknown;
 };
 
-function getCaptionGatewayConfig(env: Record<string, string | undefined> = process.env) {
-  const url = (
-    env.SCENE_CAPTION_SMART_GATEWAY_URL ||
-    env.QWEN_CAPTION_GATEWAY_URL ||
-    env.SCENE_CAPTION_GATEWAY_URL ||
-    env.VISION_CAPTION_GATEWAY_URL ||
-    ""
-  ).trim().replace(/\/+$/, "");
-  const token = (
-    env.SCENE_CAPTION_SMART_GATEWAY_TOKEN ||
-    env.QWEN_CAPTION_GATEWAY_TOKEN ||
-    env.SCENE_CAPTION_GATEWAY_TOKEN ||
-    env.VISION_CAPTION_GATEWAY_TOKEN ||
-    ""
-  ).trim();
-  const model = (
-    env.SCENE_CAPTION_SMART_MODEL_ID ||
-    env.QWEN_CAPTION_MODEL_ID ||
-    env.SCENE_CAPTION_MODEL_ID ||
-    DEFAULT_SMART_MODEL_ID
-  ).trim();
-  const endpoint = (
-    env.SCENE_CAPTION_SMART_GATEWAY_ENDPOINT ||
-    env.SCENE_CAPTION_GATEWAY_ENDPOINT ||
-    "/caption/scene"
-  ).trim();
+type CaptionGatewayHealth = {
+  reachable: boolean;
+  status?: number;
+  error?: string;
+};
+
+function getCaptionGatewayConfig(
+  mode: SceneCaptionMode,
+  env: Record<string, string | undefined> = process.env,
+): CaptionGatewayConfig {
+  if (mode === "smart") {
+    const url = cleanUrl(env.SCENE_CAPTION_SMART_GATEWAY_URL || env.QWEN_CAPTION_GATEWAY_URL || "");
+    const token = cleanString(env.SCENE_CAPTION_SMART_GATEWAY_TOKEN || env.QWEN_CAPTION_GATEWAY_TOKEN || "");
+    const model = cleanString(env.SCENE_CAPTION_SMART_MODEL_ID || env.QWEN_CAPTION_MODEL_ID || DEFAULT_SMART_MODEL_ID);
+    const endpoint = cleanString(env.SCENE_CAPTION_SMART_GATEWAY_ENDPOINT || env.QWEN_CAPTION_GATEWAY_ENDPOINT || "/caption/scene");
+
+    return {
+      configured: Boolean(url),
+      mode,
+      url,
+      token,
+      model,
+      endpoint: normalizeEndpoint(endpoint),
+      captionSource: "qwen3-vl-server",
+    };
+  }
+
+  const url = cleanUrl(env.SCENE_CAPTION_FAST_GATEWAY_URL || env.LFM_CAPTION_GATEWAY_URL || env.SCENE_CAPTION_GATEWAY_URL || env.VISION_CAPTION_GATEWAY_URL || "");
+  const token = cleanString(env.SCENE_CAPTION_FAST_GATEWAY_TOKEN || env.LFM_CAPTION_GATEWAY_TOKEN || env.SCENE_CAPTION_GATEWAY_TOKEN || env.VISION_CAPTION_GATEWAY_TOKEN || "");
+  const model = cleanString(env.SCENE_CAPTION_FAST_MODEL_ID || env.LFM_CAPTION_MODEL_ID || env.SCENE_CAPTION_MODEL_ID || DEFAULT_FAST_MODEL_ID);
+  const endpoint = cleanString(env.SCENE_CAPTION_FAST_GATEWAY_ENDPOINT || env.LFM_CAPTION_GATEWAY_ENDPOINT || env.SCENE_CAPTION_GATEWAY_ENDPOINT || "/caption/scene");
 
   return {
     configured: Boolean(url),
-    mode: "smart" as const,
+    mode,
     url,
     token,
     model,
-    endpoint: endpoint.startsWith("/") ? endpoint : `/${endpoint}`,
-    captionSource: "qwen3-vl-server" satisfies SceneCaptionSource,
+    endpoint: normalizeEndpoint(endpoint),
+    captionSource: "lfm-server",
   };
 }
 
 export async function GET() {
-  const smart = getCaptionGatewayConfig();
+  const fastServer = getCaptionGatewayConfig("fast");
+  const smart = getCaptionGatewayConfig("smart");
+  const [fastHealth, smartHealth] = await Promise.all([
+    checkCaptionGatewayHealth(fastServer),
+    checkCaptionGatewayHealth(smart),
+  ]);
+
   return Response.json({
     provider: "scene-caption-gateway",
-    configured: smart.configured,
+    configured: smart.configured && smartHealth.reachable,
+    reachable: smartHealth.reachable,
     defaultMode: "smart",
     providers: {
       fast: {
         configured: true,
-        model: "LiquidAI/LFM2.5-VL-450M-ONNX",
+        model: DEFAULT_FAST_MODEL_ID,
         captionSource: "lfm-webgpu" satisfies SceneCaptionSource,
         runtime: "browser-webgpu",
+        serverGateway: {
+          configured: fastServer.configured,
+          reachable: fastHealth.reachable,
+          status: fastHealth.status,
+          error: fastHealth.error,
+          model: fastServer.model,
+          captionSource: fastServer.captionSource,
+        },
       },
       smart: {
         configured: smart.configured,
+        reachable: smartHealth.reachable,
+        status: smartHealth.status,
+        error: smartHealth.error,
         model: smart.model,
         captionSource: smart.captionSource,
       },
@@ -83,22 +118,15 @@ export async function POST(request: Request) {
   try {
     const formData = await request.formData();
     const mode = readCaptionMode(formData.get("mode"));
-    if (mode !== "smart") {
-      return Response.json({
-        ok: false,
-        configured: true,
-        mode,
-        error: "Fast scene captions run in the browser through LiquidAI/LFM WebGPU; the server gateway only handles smart Qwen3-VL GGUF captions.",
-      }, { status: 400 });
-    }
-
-    const config = getCaptionGatewayConfig();
+    const config = getCaptionGatewayConfig(mode);
     if (!config.configured) {
       return Response.json({
         ok: false,
         configured: false,
         mode,
-        error: "Smart Qwen3-VL scene caption gateway is not configured; captioning is blocked until SCENE_CAPTION_SMART_GATEWAY_URL or SCENE_CAPTION_GATEWAY_URL is set.",
+        error: mode === "smart"
+          ? "Smart Qwen3-VL scene caption gateway is not configured; set SCENE_CAPTION_SMART_GATEWAY_URL or QWEN_CAPTION_GATEWAY_URL."
+          : "Fast server scene caption gateway is not configured; set SCENE_CAPTION_FAST_GATEWAY_URL, LFM_CAPTION_GATEWAY_URL, or SCENE_CAPTION_GATEWAY_URL.",
       }, { status: 503 });
     }
 
@@ -163,6 +191,31 @@ function readCaptionMode(value: FormDataEntryValue | null): SceneCaptionMode {
   return value === "smart" ? "smart" : "fast";
 }
 
+async function checkCaptionGatewayHealth(config: CaptionGatewayConfig): Promise<CaptionGatewayHealth> {
+  if (!config.configured) return { reachable: false };
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), HEALTH_TIMEOUT_MS);
+  try {
+    const headers: Record<string, string> = {};
+    if (config.token) headers.Authorization = `Bearer ${config.token}`;
+    const response = await fetch(`${config.url}/health`, {
+      cache: "no-store",
+      headers,
+      signal: controller.signal,
+    });
+    return {
+      reachable: response.ok,
+      status: response.status,
+      error: response.ok ? undefined : `${response.status} ${response.statusText}`,
+    };
+  } catch (error) {
+    return { reachable: false, error: error instanceof Error ? error.message : "Caption gateway health check failed." };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 function normalizeGatewayCaption(payload: CaptionGatewayPayload, rawText: string) {
   const directText = readString(payload.text) || readString(payload.caption);
   const directMeta = isRecord(payload.meta) ? payload.meta : isRecord(payload.sceneData) ? payload.sceneData : undefined;
@@ -196,6 +249,18 @@ function copyString(from: FormData, to: FormData, key: string) {
 
 function readString(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function cleanString(value: string | undefined) {
+  return value?.trim() ?? "";
+}
+
+function cleanUrl(value: string | undefined) {
+  return cleanString(value).replace(/\/+$/, "");
+}
+
+function normalizeEndpoint(value: string) {
+  return value.startsWith("/") ? value : `/${value}`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

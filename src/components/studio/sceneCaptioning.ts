@@ -96,7 +96,7 @@ async function captionSceneFrame(
 
   const serverAvailable = await isServerCaptioningAvailable();
   if (!serverAvailable) {
-    throw new Error("Smart Qwen3-VL scene caption gateway is not configured.");
+    throw new Error("Smart Qwen3-VL scene caption gateway is not configured or reachable.");
   }
 
   return await captionSceneFrameViaServer(video, source, scene, sampleTime, settings);
@@ -107,7 +107,7 @@ async function isServerCaptioningAvailable() {
     .then(async (response) => {
       if (!response.ok) return false;
       const payload = normalizeServerCaptionAvailability(await response.json());
-      return payload.configured;
+      return payload.configured && payload.reachable;
     })
     .catch((error) => {
       throw new Error(error instanceof Error ? error.message : "Could not check scene caption gateway availability.");
