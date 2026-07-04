@@ -277,6 +277,10 @@ describe("musicVideoProject source moments and review contract", () => {
     const chorus = project.storySections.find((section) => section.id === "chorus");
     expect(chorus?.semanticMatch?.momentId).toBe("scene-moment-0-1");
     expect(chorus?.videoMomentIds.length).toBeGreaterThan(1);
+    expect(chorus?.candidateMatches?.length).toBeGreaterThan(1);
+    expect(chorus?.candidateMatches?.[0]).toEqual(chorus?.semanticMatch);
+    expect(chorus?.candidateMatches?.[0]?.score ?? 0).toBeGreaterThanOrEqual(chorus?.candidateMatches?.[1]?.score ?? 1);
+    expect(chorus?.candidateMatches?.[1]?.reasons.length).toBeGreaterThan(0);
 
     const segments = buildEditPlanPreviewSegments({
       project,

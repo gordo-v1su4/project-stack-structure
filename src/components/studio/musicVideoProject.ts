@@ -15,6 +15,7 @@ export interface StorySection extends BeatJoinSection {
   lyricChunkIds: string[];
   videoMomentIds: string[];
   semanticMatch?: SemanticClipMatch;
+  candidateMatches?: SemanticClipMatch[];
 }
 
 export interface LyricChunk extends SrtChunk {
@@ -96,6 +97,8 @@ export const DEFAULT_STORY_EDIT_SETTINGS: StoryEditSettings = {
   cutDensity: 0.65,
   preferOnsets: true,
 };
+
+const MAX_SECTION_CANDIDATE_MATCHES = 6;
 
 export interface EditPlan {
   id: string;
@@ -185,6 +188,7 @@ export function buildStorySections(params: {
       source: hasAnalysisWindow ? "analysis" : "missing-analysis",
       lyricChunkIds: [],
       videoMomentIds: [],
+      candidateMatches: [],
     } satisfies StorySection;
   });
 }
@@ -295,10 +299,12 @@ export function mapVideoMomentsToStorySections(sections: StorySection[], moments
     const assigned = ranked[0];
     const overlapping = moments.filter((moment) => overlaps(section.start, section.end, moment.start, moment.end));
     const rankedMomentIds = pickDiverseSectionMomentIds(ranked, section.end - section.start);
+    const candidateMatches = ranked.slice(0, MAX_SECTION_CANDIDATE_MATCHES).map(toSemanticClipMatch);
     return {
       ...section,
       videoMomentIds: rankedMomentIds.length ? rankedMomentIds : overlapping.map((moment) => moment.id),
       semanticMatch: assigned ? toSemanticClipMatch(assigned) : undefined,
+      candidateMatches,
     };
   });
 }

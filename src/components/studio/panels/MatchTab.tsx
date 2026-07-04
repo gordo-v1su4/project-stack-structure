@@ -6,24 +6,11 @@ import { ParamSlider } from "../ParamSlider";
 import type { BeatJoinAnalysis, ColorGradient, ColorPaletteSwatch, MotionDescriptor } from "../types";
 import { buildAdaptiveCueMap, type AdaptiveCueMap } from "../adaptiveCueMap";
 import type { MusicVideoProject, SemanticClipMatch, VideoMoment } from "../musicVideoProject";
+import { MatchCandidateRail } from "./MatchCandidateRail";
+import { getDisplayCaption } from "./matchCaptions";
+import { MATCH_MODE_DETAILS, MATCH_MODE_LABELS, getMatchModeLabel, getMatchModeScore, type MatchMode } from "./matchModes";
 
-export type MatchMode = "semantic" | "story" | "motion" | "energy" | "color";
-
-const MATCH_MODE_LABELS: Record<MatchMode, string> = {
-  semantic: "Semantic",
-  story: "Story Intent",
-  motion: "Motion",
-  energy: "Energy",
-  color: "Color",
-};
-
-const MATCH_MODE_DETAILS: Record<MatchMode, string> = {
-  semantic: "Caption/theme meaning fits the lyric and section prompt.",
-  story: "Beginning/middle/end story intent gets stronger weight.",
-  motion: "Clip edge direction and action continuity are favored.",
-  energy: "Per-section onset blocks get denser where the song is stronger.",
-  color: "Clip edges favor palette continuity between last and first frames.",
-};
+export type { MatchMode } from "./matchModes";
 
 type MatchTabProps = {
   project: MusicVideoProject | null;
@@ -65,6 +52,7 @@ export function MatchTab({
   const hasCaptions = Boolean(project?.videoMoments.some((moment) => moment.caption));
   const ready = storyGenerated && hasLyrics && hasCaptions;
   const momentsById = new Map((project?.videoMoments ?? []).map((moment) => [moment.id, moment]));
+  const sectionsById = new Map((project?.storySections ?? []).map((section) => [section.id, section]));
   const cueMap = useMemo(() => buildAdaptiveCueMap({
     analysis,
     project,
@@ -193,9 +181,24 @@ export function MatchTab({
           <div className={boardView === "thumbs" ? "grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5" : "grid gap-2 xl:grid-cols-2"}>
             {matchedItems.map((item) => {
               const moment = item.videoMomentId ? momentsById.get(item.videoMomentId) : undefined;
+              const section = sectionsById.get(item.sectionId);
+              const candidateMatches = section?.candidateMatches?.length ? section.candidateMatches : item.semanticMatch ? [item.semanticMatch] : [];
               return boardView === "thumbs"
                 ? <ThumbMatchCard key={item.id} label={item.label} start={item.start} end={item.end} match={item.semanticMatch} moment={moment} mode={matchMode} />
-                : <MatchCard key={item.id} label={item.label} start={item.start} end={item.end} prompt={item.prompt} match={item.semanticMatch} moment={moment} mode={matchMode} />;
+                : (
+                  <MatchCard
+                    key={item.id}
+                    label={item.label}
+                    start={item.start}
+                    end={item.end}
+                    prompt={item.prompt}
+                    match={item.semanticMatch}
+                    moment={moment}
+                    mode={matchMode}
+                    candidateMatches={candidateMatches}
+                    momentsById={momentsById}
+                  />
+                );
             })}
           </div>
         ) : (
@@ -230,7 +233,7 @@ function ThumbMatchCard({ label, start, end, match, moment, mode }: { label: str
       </div>
       <div className="flex items-center justify-between gap-2 border-t border-[#141414] px-2 py-2 font-mono text-[8px] uppercase tracking-[0.1em] text-[#666]">
         <span className="truncate">{moment?.sourceRefLabel ?? "No candidate"}</span>
-        <span className={hole ? "text-[#d24b3f]" : "text-[#777]"}>{getModeLabel(mode, match)}</span>
+        <span className={hole ? "text-[#d24b3f]" : "text-[#777]"}>{getMatchModeLabel(mode, match)}</span>
       </div>
     </article>
   );
@@ -323,10 +326,30 @@ function MusicCueTimeline({ cueMap, project }: { cueMap: AdaptiveCueMap; project
   );
 }
 
-function MatchCard({ label, start, end, prompt, match, moment, mode }: { label: string; start: number; end: number; prompt: string; match?: SemanticClipMatch; moment?: VideoMoment; mode: MatchMode }) {
+function MatchCard({
+  label,
+  start,
+  end,
+  prompt,
+  match,
+  moment,
+  mode,
+  candidateMatches,
+  momentsById,
+}: {
+  label: string;
+  start: number;
+  end: number;
+  prompt: string;
+  match?: SemanticClipMatch;
+  moment?: VideoMoment;
+  mode: MatchMode;
+  candidateMatches: SemanticClipMatch[];
+  momentsById: Map<string, VideoMoment>;
+}) {
   const score = match ? Math.round(match.score * 100) : 0;
   const ready = Boolean(moment?.caption && score >= 45);
-  const modeScore = getModeScore(mode, match);
+  const modeScore = getMatchModeScore(mode, match);
   const caption = getDisplayCaption(moment);
   const palette = buildPalette(moment, mode);
   const direction = inferMotionDirection(moment);
@@ -352,6 +375,7 @@ function MatchCard({ label, start, end, prompt, match, moment, mode }: { label: 
             {moment ? <div className="mt-2 font-mono text-[8px] text-[#666]">{moment.sourceRefLabel ?? `S${moment.sourceClipId + 1}`} · {fmt(moment.start)}–{fmt(moment.end)}</div> : null}
             {match?.reasons.length ? <div className="mt-2 text-[8px] uppercase tracking-[0.12em] text-[#606060]">{match.reasons.slice(0, 3).join(" · ")}</div> : null}
           </div>
+          <MatchCandidateRail candidateMatches={candidateMatches} selectedMomentId={moment?.id ?? match?.momentId ?? null} momentsById={momentsById} mode={mode} />
           <div className="mt-2 grid gap-2 md:grid-cols-[1fr_170px]">
             <div className="rounded-[2px] border border-[#171717] bg-[#050505] p-2">
               <div className="mb-2 text-[8px] uppercase tracking-[0.14em] text-[#555]">Edge / continuity labels</div>
@@ -414,56 +438,6 @@ function ScoreBar({ label, value, active = false }: { label: string; value: numb
       <span className="text-right font-mono text-[#666]">{Math.round(score * 100)}</span>
     </div>
   );
-}
-
-function getModeScore(mode: MatchMode, match?: SemanticClipMatch) {
-  if (!match) return 0;
-  switch (mode) {
-    case "story":
-      return Math.max(match.semanticScore, match.actionIntentScore);
-    case "motion":
-      return Math.max(match.motionContinuityScore, match.actionIntentScore);
-    case "energy":
-      return match.motionEnergyScore;
-    case "color":
-      return Math.max(match.semanticScore * 0.6, match.motionContinuityScore * 0.8);
-    default:
-      return Math.max(match.semanticScore, match.lyricCaptionScore);
-  }
-}
-
-function getModeLabel(mode: MatchMode, match?: SemanticClipMatch) {
-  if (!match) return "missing";
-  const score = Math.round(getModeScore(mode, match) * 100);
-  return `${MATCH_MODE_LABELS[mode]} ${score}`;
-}
-
-function getDisplayCaption(moment?: VideoMoment) {
-  if (!moment) return "";
-  const text = moment.captionMeta?.caption ?? moment.caption ?? "";
-  const parsed = parseCaptionObject(text) ?? extractCaptionField(text);
-  return parsed?.caption ?? text;
-}
-
-function parseCaptionObject(text: string) {
-  const trimmed = text.trim();
-  if (!trimmed.startsWith("{")) return null;
-  try {
-    const parsed = JSON.parse(trimmed) as { caption?: unknown };
-    return typeof parsed.caption === "string" ? { caption: parsed.caption } : null;
-  } catch {
-    return null;
-  }
-}
-
-function extractCaptionField(text: string) {
-  const match = /"caption"\s*:\s*"((?:\\.|[^"\\])*)"/i.exec(text.trim());
-  if (!match) return null;
-  try {
-    return { caption: JSON.parse(`"${match[1]}"`) as string };
-  } catch {
-    return { caption: match[1].replace(/\\"/g, '"') };
-  }
 }
 
 type MotionLabel = { label: string; inEdge: string; outEdge: string };
