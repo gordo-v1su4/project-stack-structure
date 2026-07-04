@@ -9,6 +9,7 @@ import type { ArrangementSegment } from "./studio/arrangementBuilder";
 import { NAV } from "./studio/constants";
 import { mergeUploadedVideoSourceUpdate, prepareVideoSources, revokePreparedVideoSources } from "./studio/mediaUpload";
 import { buildEditPlanPreviewSegments, normalizeStoryEditSettings, type EditPlanPreviewSegment, type MusicVideoProject } from "./studio/musicVideoProject";
+import { selectStorySectionCandidate } from "./studio/musicVideoProjectSelection";
 import { buildAutoShaderCues, describeMusicVideoShaderPreset, MUSIC_VIDEO_SHADER_PRESETS, type ShaderEffectCue } from "./studio/shaderEffectPlan";
 import { buildVideoMediaKey, loadStudioProjectDraft, saveStudioProjectDraft } from "./studio/projectPersistence";
 import type { GeneratedStudioAsset } from "./studio/generatedAssets";
@@ -1099,6 +1100,14 @@ export default function StudioApp() {
     setProgress(100);
   }
 
+  function handleSelectSemanticCandidate(sectionId: string, momentId: string) {
+    setMusicVideoProject((currentProject) => {
+      if (!currentProject) return currentProject;
+      return selectStorySectionCandidate(currentProject, { sectionId, momentId });
+    });
+    setDone(false);
+  }
+
   const readout = useMemo(
     () =>
       buildReadout({
@@ -1645,6 +1654,7 @@ export default function StudioApp() {
                 onColorGradient={setColorGradient}
                 onSelectStory={() => handleSelectTab("story")}
                 onSelectSplit={() => handleSelectTab("split")}
+                onSelectCandidate={handleSelectSemanticCandidate}
               />
             )}
 

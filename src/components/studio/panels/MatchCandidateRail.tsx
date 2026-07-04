@@ -7,11 +7,13 @@ export function MatchCandidateRail({
   selectedMomentId,
   momentsById,
   mode,
+  onSelectCandidate,
 }: {
   candidateMatches: SemanticClipMatch[];
   selectedMomentId: string | null;
   momentsById: Map<string, VideoMoment>;
   mode: MatchMode;
+  onSelectCandidate?: (momentId: string) => void;
 }) {
   const candidates = buildMatchCandidateRailItems({ candidateMatches, selectedMomentId, momentsById, mode });
   if (!candidates.length) return null;
@@ -29,16 +31,21 @@ export function MatchCandidateRail({
       </div>
       <div className="grid gap-1 sm:grid-cols-2 2xl:grid-cols-5">
         {candidates.map((candidate) => (
-          <CandidateMiniCard key={`${candidate.match.momentId}-${candidate.rank}`} candidate={candidate} mode={mode} />
+          <CandidateMiniCard key={`${candidate.match.momentId}-${candidate.rank}`} candidate={candidate} mode={mode} onSelectCandidate={onSelectCandidate} />
         ))}
       </div>
     </div>
   );
 }
 
-function CandidateMiniCard({ candidate, mode }: { candidate: MatchCandidateRailItem; mode: MatchMode }) {
+function CandidateMiniCard({ candidate, mode, onSelectCandidate }: { candidate: MatchCandidateRailItem; mode: MatchMode; onSelectCandidate?: (momentId: string) => void }) {
   return (
-    <article className={`overflow-hidden rounded-[2px] border ${candidate.selected ? "border-[#e05c00] bg-[#100905]" : "border-[#1d1d1d] bg-[#060606]"}`}>
+    <button
+      type="button"
+      aria-pressed={candidate.selected}
+      aria-label={`${candidate.selected ? "Selected" : "Select"} candidate ${candidate.rank}: ${candidate.caption}`}
+      onClick={() => onSelectCandidate?.(candidate.match.momentId)}
+      className={`overflow-hidden rounded-[2px] border text-left transition-colors ${candidate.selected ? "border-[#e05c00] bg-[#100905]" : "border-[#1d1d1d] bg-[#060606] hover:border-[#6a3218]"} ${onSelectCandidate ? "cursor-pointer" : "cursor-default"}`}>
       <div className="relative aspect-video bg-[#030303]">
         {candidate.frameUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -55,6 +62,6 @@ function CandidateMiniCard({ candidate, mode }: { candidate: MatchCandidateRailI
         <div className="mt-1 line-clamp-2 min-h-8 text-[9px] leading-4 text-[#b0b0b0]">{candidate.caption}</div>
         <div className="mt-1 truncate text-[8px] uppercase tracking-[0.1em] text-[#606060]">{candidate.reason}</div>
       </div>
-    </article>
+    </button>
   );
 }
