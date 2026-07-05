@@ -43,3 +43,11 @@ This file captures the current UI language before further MVP finishing work. It
 - Reuse existing component style and Tailwind utility patterns before introducing new abstractions.
 - Do not add new UI dependencies for the local MVP.
 - Prefer small pure model changes backed by tests, then render those facts in panels.
+
+## Lane stack primitive
+
+- The smart track stack is an evidence board, not a full NLE timeline. It must keep one live selected clip per story slot while showing alternates by footage role.
+- Use compact rows for footage roles: performance/lip-sync, Camera A, Camera B, B-roll, generated fill, effects/texture, and unsorted review.
+- Mute, solo, collapse, focus, and zoom controls are view-only. They must not mutate project state or imply export changes.
+- The selected export-bound candidate uses the existing burnt-orange selected treatment. Muted lanes reduce opacity/grayscale; empty cells stay visible as dashed placeholders so the user understands missing coverage.
+- Each block should expose source label, caption/search text, match score, lane confidence, and head/tail timing so transitions can be reasoned about without opening a heavy editor.

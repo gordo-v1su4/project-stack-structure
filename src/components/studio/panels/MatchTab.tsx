@@ -2,9 +2,11 @@
 
 import { useMemo, useState } from "react";
 import { ParamSlider } from "../ParamSlider";
-import type { BeatJoinAnalysis, ColorGradient } from "../types";
+import type { BeatJoinAnalysis, ColorGradient, UploadedVideoSource } from "../types";
 import { buildAdaptiveCueMap } from "../adaptiveCueMap";
 import type { MusicVideoProject } from "../musicVideoProject";
+import { buildTrackLaneStack } from "../trackLaneStack";
+import { TrackLaneStackBoard } from "./TrackLaneStackBoard";
 import { MatchCard, ThumbMatchCard } from "./MatchCards";
 import { MatchMusicCueTimeline } from "./MatchMusicCueTimeline";
 import { MATCH_MODE_DETAILS, MATCH_MODE_LABELS, type MatchMode } from "./matchModes";
@@ -20,6 +22,7 @@ type MatchTabProps = {
   lyricCueBlend: number;
   lyricMergeWindow: number;
   colorGradient: ColorGradient;
+  videoSources: UploadedVideoSource[];
   onMatchMode: (mode: MatchMode) => void;
   onOnsetDensity: (value: number) => void;
   onLyricCueBlend: (value: number) => void;
@@ -39,6 +42,7 @@ export function MatchTab({
   lyricCueBlend,
   lyricMergeWindow,
   colorGradient,
+  videoSources,
   onMatchMode,
   onOnsetDensity,
   onLyricCueBlend,
@@ -54,6 +58,8 @@ export function MatchTab({
   const ready = storyGenerated && hasLyrics && hasCaptions;
   const momentsById = new Map((project?.videoMoments ?? []).map((moment) => [moment.id, moment]));
   const sectionsById = new Map((project?.storySections ?? []).map((section) => [section.id, section]));
+  const sourceNameByClipId = useMemo(() => new Map(videoSources.map((source) => [source.id, source.name])), [videoSources]);
+  const laneStack = useMemo(() => buildTrackLaneStack({ project, sourceNameByClipId }), [project, sourceNameByClipId]);
   const cueMap = useMemo(() => buildAdaptiveCueMap({
     analysis,
     project,
@@ -145,6 +151,8 @@ export function MatchTab({
           </div>
         ) : null}
       </section>
+
+      <TrackLaneStackBoard stack={laneStack} onSelectCandidate={onSelectCandidate} />
 
       {!ready ? (
         <section className="rounded-[2px] border border-dashed border-[#252525] bg-[#080808] p-6 text-center">

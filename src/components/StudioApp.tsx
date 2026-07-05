@@ -1647,6 +1647,7 @@ export default function StudioApp() {
                 lyricCueBlend={matchLyricCueBlend}
                 lyricMergeWindow={matchLyricMergeWindow}
                 colorGradient={colorGradient}
+                videoSources={videoSources}
                 onMatchMode={setMatchMode}
                 onOnsetDensity={setMatchOnsetDensity}
                 onLyricCueBlend={setMatchLyricCueBlend}
