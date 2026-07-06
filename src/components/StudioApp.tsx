@@ -7,7 +7,8 @@ import { uploadAudioFileToRustFs } from "./studio/audioStorage";
 import { buildArrangementSegments } from "./studio/arrangementBuilder";
 import type { ArrangementSegment } from "./studio/arrangementBuilder";
 import { NAV } from "./studio/constants";
-import { mergeUploadedVideoSourceUpdate, prepareVideoSources, revokePreparedVideoSources } from "./studio/mediaUpload";
+import { mergeUploadedVideoSourceUpdate, prepareVideoSources, rerunSourceSceneAnalysis, revokePreparedVideoSources } from "./studio/mediaUpload";
+import type { VideoSceneUpdate } from "./studio/mediaUpload";
 import { buildEditPlanPreviewSegments, normalizeStoryEditSettings, type EditPlanPreviewSegment, type MusicVideoProject } from "./studio/musicVideoProject";
 import { selectStorySectionCandidate } from "./studio/musicVideoProjectSelection";
 import { buildAutoShaderCues, describeMusicVideoShaderPreset, MUSIC_VIDEO_SHADER_PRESETS, type ShaderEffectCue } from "./studio/shaderEffectPlan";
@@ -85,6 +86,7 @@ export default function StudioApp() {
   const [videoStatus, setVideoStatus] = useState("Upload one or more video clips to begin.");
   const [videoError, setVideoError] = useState<string | null>(null);
   const [isPreparingVideos, setIsPreparingVideos] = useState(false);
+  const [isRerunningSceneAnalysis, setIsRerunningSceneAnalysis] = useState(false);
   const [audioStatus, setAudioStatus] = useState("Upload a song to unlock beat sync.");
   const [audioError, setAudioError] = useState<string | null>(null);
   const [isPreparingAudio, setIsPreparingAudio] = useState(false);
@@ -533,6 +535,54 @@ export default function StudioApp() {
 
       return nextSources;
     });
+  }
+
+  async function handleRerunSceneAnalysis(scope: "failed" | "all") {
+    if (isRerunningSceneAnalysis || isPreparingVideos) return;
+
+    const targets = videoSources.filter((source) => {
+      if (!source.storageBucket || !source.storagePath) return false;
+      if (scope === "all") return true;
+      return source.sceneStatus === "failed" || !(source.scenes?.length);
+    });
+    if (!targets.length) return;
+
+    setIsRerunningSceneAnalysis(true);
+    setVideoError(null);
+    setVideoStatus(
+      `${scope === "all" ? "Re-running scene analysis + captions" : "Re-running failed scene detection"} on ${targets.length} clip${targets.length === 1 ? "" : "s"}...`,
+    );
+
+    const applySceneUpdate = ({ key, source }: VideoSceneUpdate) => {
+      startTransition(() => {
+        setVideoSources((currentSources) =>
+          currentSources.map((currentSource) => {
+            if (buildVideoSourceKey(currentSource) !== key) return currentSource;
+            // Replace instead of merge: rerun updates carry the full source state
+            // and must be able to clear stale sceneError/captionError values.
+            return remapVideoSourceId(
+              { ...source, videoUrl: currentSource.videoUrl, thumbnailUrl: currentSource.thumbnailUrl },
+              currentSource.id,
+            );
+          }),
+        );
+      });
+    };
+
+    try {
+      await Promise.allSettled(
+        targets.map((source) =>
+          rerunSourceSceneAnalysis(
+            source,
+            buildSceneCaptionSettings(captionMode, beatJoinAnalysis, storyState),
+            applySceneUpdate,
+          ),
+        ),
+      );
+      setVideoStatus(`Scene analysis rerun finished for ${targets.length} clip${targets.length === 1 ? "" : "s"}.`);
+    } finally {
+      setIsRerunningSceneAnalysis(false);
+    }
   }
 
   async function handleReferenceAssetUpload(role: ReferenceAssetRole, files: File[]) {
@@ -1546,11 +1596,13 @@ export default function StudioApp() {
                 videoStatus={videoStatus}
                 videoError={videoError}
                 isPreparingVideos={isPreparingVideos}
+                isRerunningSceneAnalysis={isRerunningSceneAnalysis}
                 captionMode={captionMode}
                 onCaptionModeChange={setCaptionMode}
                 onVideoUpload={handleVideoUpload}
                 onAppendVideos={handleAppendVideos}
                 onRemoveVideo={handleRemoveVideo}
+                onRerunSceneAnalysis={(scope) => void handleRerunSceneAnalysis(scope)}
                 referenceAssets={referenceAssets}
                 onReferenceAssetUpload={(role, files) => void handleReferenceAssetUpload(role, files)}
                 onReferenceAssetUpdate={handleReferenceAssetUpdate}

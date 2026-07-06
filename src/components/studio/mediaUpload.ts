@@ -1,5 +1,5 @@
 import { uploadSceneCaptionManifestToRustFs, uploadVideoFileToRustFs } from "./mediaStorage";
-import { captionDetectedScenes } from "./sceneCaptioning";
+import { captionDetectedScenes, sceneCaptionMatchesMode, type SceneCaptionOptions } from "./sceneCaptioning";
 import { detectScenesFromStoredVideo } from "./sceneSplit";
 import type { DetectedSceneSegment, SceneCaptionSettings, UploadedVideoSource } from "./types";
 
@@ -141,11 +141,91 @@ export function revokePreparedVideoSources(sources: UploadedVideoSource[]) {
   }
 }
 
+/**
+ * Counts scenes whose captions were not produced by the requested caption
+ * mode (e.g. BLIP captions imported from the scene-detect worker while the
+ * studio is set to smart Qwen captions).
+ */
+export function countMismatchedSceneCaptions(sources: UploadedVideoSource[], mode: SceneCaptionSettings["mode"]) {
+  return sources.reduce(
+    (total, source) => total + (source.scenes ?? []).filter((scene) => scene.caption && !sceneCaptionMatchesMode(scene, mode)).length,
+    0,
+  );
+}
+
+/**
+ * Re-runs server scene detection and/or captioning for an already-uploaded
+ * source. Used for clips restored from a draft after a transient gateway
+ * failure, and to recaption scenes with the currently selected caption lane.
+ * Detection is skipped when the source already has ready scenes; captioning
+ * always runs and replaces captions that do not match the requested mode
+ * (keeping the previous caption when a recaption attempt fails).
+ */
+export async function rerunSourceSceneAnalysis(
+  source: UploadedVideoSource,
+  captionSettings: SceneCaptionSettings,
+  onUpdate: (update: VideoSceneUpdate) => void,
+): Promise<void> {
+  const key = buildPreparedSourceKey(source);
+
+  if (!source.storageBucket || !source.storagePath) {
+    onUpdate({
+      key,
+      source: {
+        ...source,
+        sceneStatus: "failed",
+        sceneError: "Scene analysis needs this clip in RustFS; re-upload the clip first.",
+        captionStatus: "failed",
+        captionError: "Captioning requires successful PySceneDetect scene output.",
+      },
+    });
+    return;
+  }
+
+  let workingSource: UploadedVideoSource = { ...source };
+  const needsDetection = workingSource.sceneStatus !== "ready" || !(workingSource.scenes?.length);
+
+  if (needsDetection) {
+    onUpdate({
+      key,
+      source: { ...workingSource, scenes: [], sceneStatus: "detecting", sceneError: null, captionStatus: undefined, captionError: null },
+    });
+
+    try {
+      const scenes = await detectScenesFromStoredVideo(
+        { bucket: source.storageBucket, objectKey: source.storagePath },
+        source.id,
+      );
+      workingSource = { ...workingSource, scenes, sceneStatus: "ready", sceneError: null };
+    } catch (error) {
+      onUpdate({
+        key,
+        source: {
+          ...workingSource,
+          scenes: [],
+          sceneStatus: "failed",
+          sceneError: error instanceof Error ? error.message : "Stored-object scene detection failed",
+          captionStatus: "failed",
+          captionError: "Captioning requires successful PySceneDetect scene output.",
+        },
+      });
+      return;
+    }
+  }
+
+  workingSource = { ...workingSource, captionStatus: "captioning", captionError: null };
+  onUpdate({ key, source: workingSource });
+
+  const captionedSource = await captionAndPersistSourceScenes(workingSource, key, captionSettings, onUpdate, { force: true });
+  onUpdate({ key, source: captionedSource });
+}
+
 async function captionAndPersistSourceScenes(
   source: UploadedVideoSource,
   key: string,
   captionSettings: SceneCaptionSettings,
   onSceneUpdate?: (update: VideoSceneUpdate) => void,
+  captionOptions: SceneCaptionOptions = {},
 ): Promise<UploadedVideoSource> {
   const scenes = source.scenes ?? [];
   if (!scenes.length) {
@@ -167,7 +247,7 @@ async function captionAndPersistSourceScenes(
           captionError: null,
         },
       });
-    });
+    }, captionOptions);
     let captionedSource: UploadedVideoSource = {
       ...source,
       scenes: captionedScenes,

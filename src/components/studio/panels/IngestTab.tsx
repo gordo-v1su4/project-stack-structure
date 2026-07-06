@@ -2,8 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { fmt } from "../math";
+import { sceneCaptionMatchesMode } from "../sceneCaptioning";
 import { SourceVideoLibrary } from "../SourceVideoLibrary";
-import { SourceVideoTimeline } from "../SourceVideoTimeline";
 import { UploadControl } from "../UploadControl";
 import type { DeepgramTranscriptSummary } from "../deepgramUtils";
 import { REFERENCE_ASSET_SLOT_DETAILS, REFERENCE_ASSET_SLOT_LABELS, type ReferenceAsset, type ReferenceAssetKind, type ReferenceAssetRole } from "../referenceAssets";
@@ -20,11 +20,13 @@ type IngestTabProps = {
   videoStatus: string;
   videoError: string | null;
   isPreparingVideos: boolean;
+  isRerunningSceneAnalysis: boolean;
   captionMode: SceneCaptionMode;
   onCaptionModeChange: (mode: SceneCaptionMode) => void;
   onVideoUpload: (files: File[]) => void | Promise<void>;
   onAppendVideos: (files: File[]) => void | Promise<void>;
   onRemoveVideo: (sourceId: number) => void;
+  onRerunSceneAnalysis: (scope: "failed" | "all") => void;
   referenceAssets: ReferenceAsset[];
   onReferenceAssetUpload: (role: ReferenceAssetRole, files: File[]) => void | Promise<void>;
   onReferenceAssetUpdate: (assetId: string, patch: Partial<Pick<ReferenceAsset, "displayName" | "promptHint" | "kind">>) => void;
@@ -45,11 +47,13 @@ export function IngestTab({
   videoStatus,
   videoError,
   isPreparingVideos,
+  isRerunningSceneAnalysis,
   captionMode,
   onCaptionModeChange,
   onVideoUpload,
   onAppendVideos,
   onRemoveVideo,
+  onRerunSceneAnalysis,
   referenceAssets,
   onReferenceAssetUpload,
   onReferenceAssetUpdate,
@@ -64,13 +68,33 @@ export function IngestTab({
   const sceneTone: ReadinessTone = stats.sceneFailed > 0 ? "failed" : stats.sceneCount > 0 && stats.detecting === 0 ? "ready" : stats.detecting > 0 ? "processing" : "waiting";
   const captionTone: ReadinessTone = stats.captionFailed > 0 ? "failed" : stats.captionTotal > 0 && stats.captionReady === stats.captionTotal ? "ready" : stats.captioning > 0 ? "processing" : "waiting";
   const storageTone: ReadinessTone = stats.storageFailed > 0 ? "failed" : stats.storageUploaded === videoSources.length && videoSources.length > 0 ? "ready" : videoSources.length > 0 ? "processing" : "waiting";
-  const cutCards = useMemo(
+  const rerunFailedCount = useMemo(
+    () =>
+      videoSources.filter(
+        (source) => Boolean(source.storageBucket && source.storagePath) && (source.sceneStatus === "failed" || !(source.scenes?.length)),
+      ).length,
+    [videoSources],
+  );
+  const mismatchedCaptionCount = useMemo(
+    () =>
+      videoSources.reduce(
+        (total, source) => total + (source.scenes ?? []).filter((scene) => scene.caption && !sceneCaptionMatchesMode(scene, captionMode)).length,
+        0,
+      ),
+    [captionMode, videoSources],
+  );
+  const cutGroups = useMemo(
     () =>
       videoSources
-        .flatMap((source) => (source.scenes ?? []).map((scene) => ({ source, scene })))
-        .filter(({ source, scene }) => matchesCaptionSearch(captionSearch, source, scene)),
+        .map((source) => ({
+          source,
+          allCuts: source.scenes ?? [],
+          cuts: (source.scenes ?? []).filter((scene) => matchesCaptionSearch(captionSearch, source, scene)),
+        }))
+        .filter((group) => group.allCuts.length > 0 || group.source.sceneStatus === "failed" || group.source.sceneStatus === "detecting"),
     [captionSearch, videoSources],
   );
+  const filteredCutCount = cutGroups.reduce((total, group) => total + group.cuts.length, 0);
 
   return (
     <div className="space-y-3">
@@ -99,6 +123,37 @@ export function IngestTab({
           <ReadinessCard label="Captions" value={`${stats.captionReady}/${stats.captionTotal}`} tone={captionTone} detail={stats.captioning ? "captioning scene frames" : "video captions ready for matching"} />
           <ReadinessCard label="RustFS" value={`${stats.storageUploaded}/${videoSources.length}`} tone={storageTone} detail="media + caption manifests" />
         </div>
+
+        {rerunFailedCount > 0 || mismatchedCaptionCount > 0 ? (
+          <div className="mt-3 flex flex-wrap items-center gap-2 rounded-[2px] border border-[#6f4a12] bg-[#120d05] px-3 py-2">
+            <div className="mr-auto text-[10px] leading-4 text-[#c07a3f]">
+              {rerunFailedCount > 0 ? `${rerunFailedCount} clip${rerunFailedCount === 1 ? "" : "s"} failed scene detection. ` : ""}
+              {mismatchedCaptionCount > 0
+                ? `${mismatchedCaptionCount} caption${mismatchedCaptionCount === 1 ? "" : "s"} came from a different lane than the selected ${captionMode === "smart" ? "Smart · Qwen3-VL" : "Fast · LFM"} mode.`
+                : ""}
+            </div>
+            {rerunFailedCount > 0 ? (
+              <button
+                type="button"
+                onClick={() => onRerunSceneAnalysis("failed")}
+                disabled={isRerunningSceneAnalysis || isPreparingVideos}
+                className="rounded-[2px] border border-[#e05c00] px-3 py-2 text-[9px] uppercase tracking-[0.14em] text-[#e05c00] hover:bg-[#1c0f04] disabled:cursor-not-allowed disabled:border-[#3a3a3a] disabled:text-[#555]"
+              >
+                {isRerunningSceneAnalysis ? "Re-running…" : `Rerun failed scene detect (${rerunFailedCount})`}
+              </button>
+            ) : null}
+            {mismatchedCaptionCount > 0 ? (
+              <button
+                type="button"
+                onClick={() => onRerunSceneAnalysis("all")}
+                disabled={isRerunningSceneAnalysis || isPreparingVideos}
+                className="rounded-[2px] border border-[#e05c00] px-3 py-2 text-[9px] uppercase tracking-[0.14em] text-[#e05c00] hover:bg-[#1c0f04] disabled:cursor-not-allowed disabled:border-[#3a3a3a] disabled:text-[#555]"
+              >
+                {isRerunningSceneAnalysis ? "Re-running…" : `Recaption all · ${captionMode === "smart" ? "Qwen3-VL" : "LFM"}`}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
       </section>
 
       <ReferenceLibrary
@@ -141,12 +196,6 @@ export function IngestTab({
 
       {videoSources.length ? (
         <section className="space-y-3">
-          <SourceVideoTimeline
-            sources={videoSources}
-            playhead={0}
-            label={`SOURCE INGEST · ${videoSources.length} VIDEOS · ${stats.sceneCount} CUTS · ${stats.captionReady}/${stats.captionTotal} CAPTIONS`}
-            height={132}
-          />
           <SourceVideoLibrary
             sources={videoSources}
             isPreparingVideos={isPreparingVideos}
@@ -176,8 +225,8 @@ export function IngestTab({
       <section className="rounded-[2px] border border-[#1a1a1a] bg-[#0b0b0b] p-3">
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
-            <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Scene cut thumbnails + captions</div>
-            <div className="mt-1 text-[11px] text-[#6d6d6d]">Each detected cut uses its first/representative frame as the thumbnail and carries the caption text that Match will search against lyrics and story prompts.</div>
+            <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Scene cuts by clip</div>
+            <div className="mt-1 text-[11px] text-[#6d6d6d]">Every detected cut, grouped under its source clip. Each cut carries the caption text that Match will search against lyrics and story prompts.</div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <input
@@ -186,13 +235,48 @@ export function IngestTab({
               placeholder="Search captions, tags, actions…"
               className="w-64 rounded-[2px] border border-[#242424] bg-[#060606] px-3 py-2 font-mono text-[10px] text-[#d0d0d0] outline-none placeholder:text-[#444] focus:border-[#e05c00]"
             />
-            <div className="font-mono text-[10px] text-[#777]">{cutCards.length} cuts</div>
+            <div className="font-mono text-[10px] text-[#777]">
+              {captionSearch.trim() ? `${filteredCutCount}/${stats.sceneCount} cuts` : `${stats.sceneCount} cuts`}
+            </div>
           </div>
         </div>
-        {cutCards.length ? (
-          <div className="grid gap-2 md:grid-cols-3 xl:grid-cols-5">
-            {cutCards.slice(0, 20).map(({ source, scene }) => (
-              <CutCaptionCard key={`${source.id}-${scene.id}-${scene.start}`} sourceName={source.name} scene={scene} fallbackThumbnail={source.thumbnailUrl} />
+        {cutGroups.length ? (
+          <div className="space-y-3">
+            {cutGroups.map(({ source, allCuts, cuts }) => (
+              <div key={source.id} className="rounded-[2px] border border-[#161616] bg-[#080808] p-2">
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <span className="rounded-[2px] bg-[#141414] px-1.5 py-[2px] font-mono text-[9px] text-[#e05c00]">S{source.id + 1}</span>
+                  <span className="max-w-[360px] truncate font-mono text-[10px] text-[#9a9a9a]" title={source.name}>{source.name}</span>
+                  <span className="font-mono text-[9px] text-[#555]">
+                    {allCuts.length} cut{allCuts.length === 1 ? "" : "s"} · {allCuts.filter((scene) => Boolean(scene.caption)).length}/{allCuts.length} captioned
+                  </span>
+                  {source.sceneStatus === "detecting" ? (
+                    <span className="text-[9px] uppercase tracking-[0.12em] text-[#e05c00]">detecting…</span>
+                  ) : null}
+                  {source.sceneStatus === "failed" ? (
+                    <span className="max-w-[420px] truncate text-[9px] text-[#d24b3f]" title={source.sceneError ?? undefined}>
+                      scene detection failed{source.sceneError ? ` · ${source.sceneError}` : ""}
+                    </span>
+                  ) : null}
+                </div>
+                {cuts.length ? (
+                  <div className="grid gap-2 md:grid-cols-3 xl:grid-cols-5">
+                    {cuts.map((scene) => (
+                      <CutCaptionCard key={`${source.id}-${scene.id}-${scene.start}`} sourceName={source.name} scene={scene} fallbackThumbnail={source.thumbnailUrl} />
+                    ))}
+                  </div>
+                ) : allCuts.length ? (
+                  <div className="rounded-[2px] border border-dashed border-[#202020] bg-[#060606] px-3 py-3 text-[10px] text-[#4f4f4f]">
+                    No cuts in this clip match the search.
+                  </div>
+                ) : (
+                  <div className="rounded-[2px] border border-dashed border-[#202020] bg-[#060606] px-3 py-3 text-[10px] text-[#4f4f4f]">
+                    {source.sceneStatus === "failed"
+                      ? "No cuts yet — use “Rerun failed scene detect” above."
+                      : "Waiting for scene detection to finish."}
+                  </div>
+                )}
+              </div>
             ))}
           </div>
         ) : (
@@ -367,7 +451,7 @@ function CutCaptionCard({ sourceName, scene, fallbackThumbnail }: { sourceName: 
   const failed = Boolean(scene.captionError);
   const tone: ReadinessTone = failed ? "failed" : hasCaption ? "ready" : "waiting";
   const colors = toneColors(tone);
-  const displayCaption = scene.captionError ?? getDisplayCaption(scene) ?? "No caption yet.";
+  const displayCaption = getDisplayCaption(scene) ?? scene.captionError ?? "No caption yet.";
   const frameStrip = [
     ["first", scene.firstFrameUrl ?? scene.thumbnailUrl ?? fallbackThumbnail],
     ["middle", scene.middleFrameUrl],
@@ -396,7 +480,9 @@ function CutCaptionCard({ sourceName, scene, fallbackThumbnail }: { sourceName: 
           </div>
         ) : null}
         <div className="truncate font-mono text-[8px] text-[#666]" title={sourceName}>{sourceName}</div>
-        <div className={`text-[8px] uppercase tracking-[0.12em] ${colors.text}`}>{failed ? "Caption failed" : hasCaption ? "Caption ready" : "Caption pending"}</div>
+        <div className={`text-[8px] uppercase tracking-[0.12em] ${colors.text}`} title={scene.captionError ?? undefined}>
+          {failed ? (hasCaption ? "Recaption failed · kept previous" : "Caption failed") : hasCaption ? "Caption ready" : "Caption pending"}
+        </div>
         <div className="line-clamp-3 min-h-12 text-[9px] leading-4 text-[#9a9a9a]" title={displayCaption}>
           {displayCaption}
         </div>

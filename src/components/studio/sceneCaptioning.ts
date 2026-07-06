@@ -14,13 +14,35 @@ export type SceneCaptionProgress = {
   sceneId: number;
 };
 
+export type SceneCaptionOptions = {
+  /**
+   * Recaption scenes whose existing caption was not produced by the requested
+   * mode (e.g. captions imported from the scene-detect worker). The previous
+   * caption is kept when the new pass fails, so a rerun never loses data.
+   */
+  force?: boolean;
+};
+
 let serverCaptionAvailablePromise: Promise<boolean> | null = null;
+
+/**
+ * True when a scene's existing caption already satisfies the requested
+ * caption mode. Manual captions always match; gateway-imported captions
+ * (e.g. the scene-detect worker's own BLIP pass) match neither lane.
+ */
+export function sceneCaptionMatchesMode(scene: DetectedSceneSegment, mode: SceneCaptionSettings["mode"]): boolean {
+  if (!scene.caption) return false;
+  if (scene.captionSource === "manual") return true;
+  if (mode === "smart") return scene.captionMode === "smart" && scene.captionSource === "qwen3-vl-server";
+  return scene.captionMode === "fast" && (scene.captionSource === "lfm-webgpu" || scene.captionSource === "lfm-server");
+}
 
 export async function captionDetectedScenes(
   source: UploadedVideoSource,
   scenes: DetectedSceneSegment[],
   settings: SceneCaptionSettings = { mode: "fast" },
   onProgress?: (progress: SceneCaptionProgress, scenes: DetectedSceneSegment[]) => void,
+  options: SceneCaptionOptions = {},
 ): Promise<DetectedSceneSegment[]> {
   if (!scenes.length) return scenes;
 
@@ -32,7 +54,8 @@ export async function captionDetectedScenes(
 
     for (let index = 0; index < captioned.length; index += 1) {
       const scene = captioned[index]!;
-      if (scene.caption) {
+      const skipExisting = options.force ? sceneCaptionMatchesMode(scene, settings.mode) : Boolean(scene.caption);
+      if (skipExisting) {
         onProgress?.({ completed: index + 1, total: captioned.length, sceneId: scene.id }, [...captioned]);
         continue;
       }
