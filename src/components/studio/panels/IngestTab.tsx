@@ -27,6 +27,7 @@ type IngestTabProps = {
   onAppendVideos: (files: File[]) => void | Promise<void>;
   onRemoveVideo: (sourceId: number) => void;
   onRerunSceneAnalysis: (scope: "failed" | "all") => void;
+  onMergeScene: (sourceId: number, sceneId: number) => void;
   referenceAssets: ReferenceAsset[];
   onReferenceAssetUpload: (role: ReferenceAssetRole, files: File[]) => void | Promise<void>;
   onReferenceAssetUpdate: (assetId: string, patch: Partial<Pick<ReferenceAsset, "displayName" | "promptHint" | "kind">>) => void;
@@ -54,6 +55,7 @@ export function IngestTab({
   onAppendVideos,
   onRemoveVideo,
   onRerunSceneAnalysis,
+  onMergeScene,
   referenceAssets,
   onReferenceAssetUpload,
   onReferenceAssetUpdate,
@@ -262,7 +264,13 @@ export function IngestTab({
                 {cuts.length ? (
                   <div className="grid gap-2 md:grid-cols-3 xl:grid-cols-5">
                     {cuts.map((scene) => (
-                      <CutCaptionCard key={`${source.id}-${scene.id}-${scene.start}`} sourceName={source.name} scene={scene} fallbackThumbnail={source.thumbnailUrl} />
+                      <CutCaptionCard
+                        key={`${source.id}-${scene.id}-${scene.start}`}
+                        sourceName={source.name}
+                        scene={scene}
+                        fallbackThumbnail={source.thumbnailUrl}
+                        onMergeLeft={allCuts.findIndex((candidate) => candidate.id === scene.id) > 0 ? () => onMergeScene(source.id, scene.id) : undefined}
+                      />
                     ))}
                   </div>
                 ) : allCuts.length ? (
@@ -446,7 +454,7 @@ function ReadinessCard({ label, value, detail, tone }: { label: string; value: s
   );
 }
 
-function CutCaptionCard({ sourceName, scene, fallbackThumbnail }: { sourceName: string; scene: DetectedSceneSegment; fallbackThumbnail?: string }) {
+function CutCaptionCard({ sourceName, scene, fallbackThumbnail, onMergeLeft }: { sourceName: string; scene: DetectedSceneSegment; fallbackThumbnail?: string; onMergeLeft?: () => void }) {
   const hasCaption = Boolean(scene.caption);
   const failed = Boolean(scene.captionError);
   const tone: ReadinessTone = failed ? "failed" : hasCaption ? "ready" : "waiting";
@@ -486,10 +494,20 @@ function CutCaptionCard({ sourceName, scene, fallbackThumbnail }: { sourceName: 
         <div className="line-clamp-3 min-h-12 text-[9px] leading-4 text-[#9a9a9a]" title={displayCaption}>
           {displayCaption}
         </div>
-        <div className="mt-2 flex flex-wrap gap-1 font-mono text-[8px] uppercase tracking-[0.1em] text-[#555]">
+        <div className="mt-2 flex flex-wrap items-center gap-1 font-mono text-[8px] uppercase tracking-[0.1em] text-[#555]">
           {scene.captionMode ? <span className="rounded-[2px] border border-[#1c1c1c] px-1 py-[1px]">{scene.captionMode}</span> : null}
           {scene.captionSource ? <span className="rounded-[2px] border border-[#1c1c1c] px-1 py-[1px]">{scene.captionSource}</span> : null}
           {scene.captionModel ? <span className="max-w-full truncate rounded-[2px] border border-[#1c1c1c] px-1 py-[1px]" title={scene.captionModel}>{scene.captionModel}</span> : null}
+          {onMergeLeft ? (
+            <button
+              type="button"
+              onClick={onMergeLeft}
+              title="Not a real cut? Merge this cut into the previous one."
+              className="ml-auto rounded-[2px] border border-[#242424] px-1.5 py-[1px] uppercase tracking-[0.1em] text-[#777] hover:border-[#e05c00] hover:text-[#e05c00]"
+            >
+              ← Merge
+            </button>
+          ) : null}
         </div>
       </div>
     </div>

@@ -258,6 +258,77 @@ async function sleep(ms: number) {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+export const MIN_SCENE_CUT_SECONDS = 0.9;
+
+/**
+ * Merges sub-threshold scene fragments into their neighbors. Adaptive
+ * PySceneDetect treats exposure spikes (lightning flashes, strobes) as cuts,
+ * splitting single-shot footage into sub-second fragments; real cuts that
+ * short are vanishingly rare in source clips. A short fragment merges into
+ * the scene before it; a short leading fragment is absorbed into the scene
+ * after it (the longer scene keeps its caption and analysis).
+ */
+export function mergeShortSceneCuts(
+  scenes: DetectedSceneSegment[],
+  minDuration = MIN_SCENE_CUT_SECONDS,
+): DetectedSceneSegment[] {
+  if (scenes.length < 2) return scenes;
+
+  const ordered = [...scenes].sort((left, right) => left.start - right.start);
+  const merged: DetectedSceneSegment[] = [];
+
+  for (const scene of ordered) {
+    const previous = merged[merged.length - 1];
+    if (!previous) {
+      merged.push(scene);
+      continue;
+    }
+    if (scene.end - scene.start < minDuration) {
+      merged[merged.length - 1] = extendSceneWith(previous, scene);
+      continue;
+    }
+    if (previous.end - previous.start < minDuration) {
+      merged[merged.length - 1] = absorbLeadingFragment(scene, previous);
+      continue;
+    }
+    merged.push(scene);
+  }
+
+  return merged;
+}
+
+/** Merges the scene with the given id into the scene before it (manual false-cut repair). */
+export function mergeSceneIntoPrevious(scenes: DetectedSceneSegment[], sceneId: number): DetectedSceneSegment[] {
+  const index = scenes.findIndex((scene) => scene.id === sceneId);
+  if (index <= 0) return scenes;
+  const previous = scenes[index - 1]!;
+  const scene = scenes[index]!;
+  return [...scenes.slice(0, index - 1), extendSceneWith(previous, scene), ...scenes.slice(index + 1)];
+}
+
+function extendSceneWith(host: DetectedSceneSegment, tail: DetectedSceneSegment): DetectedSceneSegment {
+  return {
+    ...host,
+    end: tail.end,
+    duration: roundSceneTime(tail.end - host.start),
+    lastFrameUrl: tail.lastFrameUrl ?? host.lastFrameUrl,
+  };
+}
+
+function absorbLeadingFragment(host: DetectedSceneSegment, fragment: DetectedSceneSegment): DetectedSceneSegment {
+  return {
+    ...host,
+    id: fragment.id,
+    start: fragment.start,
+    duration: roundSceneTime(host.end - fragment.start),
+    firstFrameUrl: fragment.firstFrameUrl ?? host.firstFrameUrl,
+  };
+}
+
+function roundSceneTime(value: number) {
+  return Math.round(value * 1000) / 1000;
+}
+
 export async function detectScenesFromStoredVideo(
   storage: StoredVideoSceneReference,
   sourceClipId: number,
@@ -299,7 +370,7 @@ export async function detectScenesFromStoredVideo(
   }
 
   const result = await readJsonResponse(await fetch(`/api/media/video/jobs/${encodeURIComponent(jobId)}/result`));
-  const scenes = normalizeSplitterManifest(result, sourceClipId, "");
+  const scenes = mergeShortSceneCuts(normalizeSplitterManifest(result, sourceClipId, ""));
   if (!scenes.length) throw new Error("Media video job completed but returned no scene segments.");
   return scenes;
 }

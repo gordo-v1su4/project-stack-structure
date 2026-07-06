@@ -1,5 +1,80 @@
 import { describe, expect, test } from "bun:test";
-import { detectScenesFromStoredVideo, normalizeSplitterManifest } from "../../src/components/studio/sceneSplit";
+import { detectScenesFromStoredVideo, mergeSceneIntoPrevious, mergeShortSceneCuts, normalizeSplitterManifest } from "../../src/components/studio/sceneSplit";
+import type { DetectedSceneSegment } from "../../src/components/studio/types";
+
+function makeScene(id: number, start: number, end: number, overrides: Partial<DetectedSceneSegment> = {}): DetectedSceneSegment {
+  return {
+    id,
+    sourceClipId: 0,
+    label: `Scene ${id + 1}`,
+    start,
+    end,
+    duration: Math.round((end - start) * 1000) / 1000,
+    detector: "pyscenedetect-adaptive",
+    confidence: null,
+    ...overrides,
+  };
+}
+
+describe("sceneSplit.mergeShortSceneCuts", () => {
+  test("merges lightning-flash fragments into their neighbors (real over-split pattern)", () => {
+    // Observed on a single-shot storm clip: 15s split into 5 scenes with
+    // 0.83s and 0.75s fragments at exposure spikes.
+    const merged = mergeShortSceneCuts([
+      makeScene(0, 0, 0.83),
+      makeScene(1, 0.83, 2.917),
+      makeScene(2, 2.917, 3.667),
+      makeScene(3, 3.667, 10.125),
+      makeScene(4, 10.125, 15.042),
+    ]);
+
+    expect(merged.map((scene) => [scene.id, scene.start, scene.end])).toEqual([
+      [0, 0, 3.667],
+      [3, 3.667, 10.125],
+      [4, 10.125, 15.042],
+    ]);
+    expect(merged[0]?.duration).toBeCloseTo(3.667, 3);
+  });
+
+  test("keeps clean cuts untouched and preserves the longer scene's caption", () => {
+    const scenes = [
+      makeScene(0, 0, 4, { caption: "wide shot" }),
+      makeScene(1, 4, 4.5, { caption: "flash fragment" }),
+      makeScene(2, 4.5, 9, { caption: "close-up" }),
+    ];
+    const merged = mergeShortSceneCuts(scenes);
+
+    expect(merged.map((scene) => scene.caption)).toEqual(["wide shot", "close-up"]);
+    expect(merged.map((scene) => [scene.start, scene.end])).toEqual([[0, 4.5], [4.5, 9]]);
+  });
+
+  test("leaves single-scene and all-long inputs unchanged", () => {
+    const single = [makeScene(0, 0, 5)];
+    expect(mergeShortSceneCuts(single)).toEqual(single);
+
+    const long = [makeScene(0, 0, 5), makeScene(1, 5, 12)];
+    expect(mergeShortSceneCuts(long)).toEqual(long);
+  });
+});
+
+describe("sceneSplit.mergeSceneIntoPrevious", () => {
+  test("merges the given cut into the one before it", () => {
+    const scenes = [makeScene(0, 0, 4, { caption: "keep me" }), makeScene(1, 4, 9, { caption: "false cut" }), makeScene(2, 9, 12)];
+    const merged = mergeSceneIntoPrevious(scenes, 1);
+
+    expect(merged.map((scene) => [scene.id, scene.start, scene.end])).toEqual([
+      [0, 0, 9],
+      [2, 9, 12],
+    ]);
+    expect(merged[0]?.caption).toBe("keep me");
+  });
+
+  test("returns the input unchanged for the first cut or an unknown id", () => {
+    const scenes = [makeScene(0, 0, 4), makeScene(1, 4, 9)];
+    expect(mergeSceneIntoPrevious(scenes, 0)).toBe(scenes);
+    expect(mergeSceneIntoPrevious(scenes, 99)).toBe(scenes);
+  });
+});
 
 const mediaSceneManifest = {
   job_id: "job-123",

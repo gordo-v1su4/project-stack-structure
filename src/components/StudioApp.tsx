@@ -54,6 +54,7 @@ import {
   derivePreviewWindow,
   normalizeColorScore,
 } from "./studio/studioUiState";
+import { mergeSceneIntoPrevious } from "./studio/sceneSplit";
 import { buildAudioDrivenSegments, buildBeatSegments, buildSourceClipSpans, buildUnifiedSplitSegments, getSourceClipTimeOffset } from "./studio/sourceTimeline";
 import type { SourceClipSpan, SourceTimelineSegment, SplitMode } from "./studio/sourceTimeline";
 import type {
@@ -535,6 +536,17 @@ export default function StudioApp() {
 
       return nextSources;
     });
+  }
+
+  function handleMergeSceneIntoPrevious(sourceId: number, sceneId: number) {
+    setVideoSources((currentSources) =>
+      currentSources.map((source) => {
+        if (source.id !== sourceId || !source.scenes?.length) return source;
+        const nextScenes = mergeSceneIntoPrevious(source.scenes, sceneId);
+        if (nextScenes === source.scenes) return source;
+        return { ...source, scenes: nextScenes };
+      }),
+    );
   }
 
   async function handleRerunSceneAnalysis(scope: "failed" | "all") {
@@ -1603,6 +1615,7 @@ export default function StudioApp() {
                 onAppendVideos={handleAppendVideos}
                 onRemoveVideo={handleRemoveVideo}
                 onRerunSceneAnalysis={(scope) => void handleRerunSceneAnalysis(scope)}
+                onMergeScene={handleMergeSceneIntoPrevious}
                 referenceAssets={referenceAssets}
                 onReferenceAssetUpload={(role, files) => void handleReferenceAssetUpload(role, files)}
                 onReferenceAssetUpdate={handleReferenceAssetUpdate}
