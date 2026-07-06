@@ -1,4 +1,4 @@
-import { rankMomentsForSection, type SemanticEditAssignment, type SemanticSectionInput, type SemanticVideoMomentInput } from "./semanticEditPlanner";
+import { promoteReservedMoment, rankMomentsForSection, reserveSectionMoments, type SemanticEditAssignment, type SemanticSectionInput, type SemanticVideoMomentInput } from "./semanticEditPlanner";
 import type { SrtChunk } from "./srtUtils";
 import type { BeatJoinAnalysis, BeatJoinSection, DetectedSceneSegment, SceneVisualAnalysis, SegmentPreview, UploadedVideoSource } from "./types";
 
@@ -522,10 +522,14 @@ function roundTime(value: number) {
 function rankSectionsWithContinuity(sections: SemanticSectionInput[], moments: SemanticVideoMomentInput[]) {
   const rankedBySection = new Map<string, SemanticEditAssignment[]>();
   const useCounts = new Map<string, number>();
+  const reservations = reserveSectionMoments({ sections, moments });
   let previous: SemanticVideoMomentInput | null = null;
 
   for (const section of sections) {
-    const ranked = rankMomentsForSection({ section, moments, previous, useCounts });
+    const ranked = promoteReservedMoment(
+      rankMomentsForSection({ section, moments, previous, useCounts }),
+      reservations.get(section.id),
+    );
     rankedBySection.set(section.id, ranked);
 
     const best = ranked[0];
@@ -668,7 +672,7 @@ function expandMomentsToSectionPreviewSegments(params: {
   if (!candidates.length) return [];
 
   const segments: EditPlanPreviewSegment[] = [];
-  let candidateIndex = 0;
+  let lastMomentId: string | null = null;
   const labelCounts = new Map<string, number>();
 
   const cutWindows = params.cutWindows?.length
@@ -682,8 +686,8 @@ function expandMomentsToSectionPreviewSegments(params: {
     let localLoopCount = 0;
 
     while (musicCursor < window.end - 0.025 && localLoopCount < maxSegmentsPerWindow) {
-      const candidate = candidates[candidateIndex % candidates.length]!;
       const remaining = window.end - musicCursor;
+      const candidate = pickPreviewCandidate({ candidates, remaining, lastMomentId, useCounts: labelCounts });
       const sliceDuration = roundTime(Math.min(candidate.momentDuration, remaining));
       const startTime = candidate.momentStart;
       const endTime = roundTime(Math.min(candidate.momentEnd, startTime + sliceDuration));
@@ -712,12 +716,58 @@ function expandMomentsToSectionPreviewSegments(params: {
       });
 
       musicCursor = roundTime(musicEnd);
-      candidateIndex += 1;
+      lastMomentId = candidate.moment.id;
       localLoopCount += 1;
     }
   }
 
   return segments;
+}
+
+interface PreparedPreviewCandidate {
+  moment: VideoMoment;
+  source: UploadedVideoSource;
+  momentStart: number;
+  momentEnd: number;
+  momentDuration: number;
+}
+
+/**
+ * Picks the source moment for the next music window slice. A slice shorter
+ * than the remaining window forces an extra cut at a non-musical position, so
+ * moments that cover the window win first; among those, semantic rank (the
+ * candidates array is already ranked) decides. Also avoids repeating the
+ * moment that just played and prefers moments used least so far for variety.
+ */
+function pickPreviewCandidate(params: {
+  candidates: PreparedPreviewCandidate[];
+  remaining: number;
+  lastMomentId: string | null;
+  useCounts: Map<string, number>;
+}): PreparedPreviewCandidate {
+  const { candidates, remaining, lastMomentId, useCounts } = params;
+  const pool = lastMomentId && candidates.length > 1
+    ? candidates.filter((candidate) => candidate.moment.id !== lastMomentId)
+    : candidates;
+
+  const scored = pool.map((candidate) => ({
+    candidate,
+    rank: candidates.indexOf(candidate),
+    covers: candidate.momentDuration >= remaining - 0.025,
+    useCount: useCounts.get(candidate.moment.id) ?? 0,
+  }));
+
+  scored.sort((left, right) => {
+    if (left.useCount !== right.useCount) return left.useCount - right.useCount;
+    if (left.covers !== right.covers) return left.covers ? -1 : 1;
+    if (!left.covers && left.candidate.momentDuration !== right.candidate.momentDuration) {
+      // Nothing covers the window: the longest moment forces the fewest off-cue cuts.
+      return right.candidate.momentDuration - left.candidate.momentDuration;
+    }
+    return left.rank - right.rank;
+  });
+
+  return scored[0]!.candidate;
 }
 
 function buildPreviewSegmentLabel(params: {

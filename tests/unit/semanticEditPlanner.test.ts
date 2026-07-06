@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { buildSemanticEditPlan, keywordSemanticScore, rankMomentsForSection } from "@/components/studio/semanticEditPlanner";
+import { buildSemanticEditPlan, keywordSemanticScore, rankMomentsForSection, reserveSectionMoments } from "@/components/studio/semanticEditPlanner";
 import { makeMotionDescriptor } from "../helpers/studioFixtures";
 
 describe("semantic edit planner", () => {
@@ -101,5 +101,51 @@ describe("semantic edit planner", () => {
     expect(ranked[0]?.momentId).toBe("moving");
     expect(ranked[0]?.motionEnergyScore).toBeGreaterThan(ranked[1]?.motionEnergyScore ?? 1);
     expect(ranked[0]?.reasons).toContain("music/motion energy fit");
+  });
+
+  test("resolves contested moments by regret instead of section order", () => {
+    // Both sections top-pick "neon-street", but the verse has a near-equal
+    // alternative while the chorus does not; the chorus must keep it.
+    const sections = [
+      { id: "verse", label: "Verse", prompt: "neon street at night", start: 0, end: 4, lyricTexts: ["walking the neon street in the rain"] },
+      { id: "chorus", label: "Chorus", prompt: "neon street night lights", start: 4, end: 8, lyricTexts: ["neon street tonight under neon lights"] },
+    ];
+    const videoMoments = [
+      { id: "neon-street", sourceClipId: 0, label: "neon street", start: 0, end: 4, duration: 4, caption: "a neon street at night with neon lights" },
+      { id: "rain-street", sourceClipId: 1, label: "rain street", start: 0, end: 4, duration: 4, caption: "a person walking through rain on a street" },
+    ];
+
+    const verseRanked = rankMomentsForSection({ section: sections[0]!, moments: videoMoments });
+    const chorusRanked = rankMomentsForSection({ section: sections[1]!, moments: videoMoments });
+    expect(verseRanked[0]?.momentId).toBe("neon-street");
+    expect(chorusRanked[0]?.momentId).toBe("neon-street");
+
+    const reservations = reserveSectionMoments({ sections, moments: videoMoments });
+    expect(reservations.get("chorus")).toBe("neon-street");
+    expect(reservations.get("verse")).toBe("rain-street");
+
+    const plan = buildSemanticEditPlan({ sections, videoMoments });
+    expect(plan.assignments.map((assignment) => [assignment.sectionId, assignment.momentId])).toEqual([
+      ["verse", "rain-street"],
+      ["chorus", "neon-street"],
+    ]);
+  });
+
+  test("falls back to the best moment when sections outnumber moments", () => {
+    const sections = [
+      { id: "a", label: "A", prompt: "dance floor", start: 0, end: 3, lyricTexts: ["dance"] },
+      { id: "b", label: "B", prompt: "dance floor", start: 3, end: 6, lyricTexts: ["dance"] },
+    ];
+    const videoMoments = [
+      { id: "only", sourceClipId: 0, label: "dance", start: 0, end: 3, duration: 3, caption: "people dancing on a dance floor" },
+    ];
+
+    const reservations = reserveSectionMoments({ sections, moments: videoMoments });
+    expect(reservations.get("a")).toBe("only");
+    expect(reservations.get("b")).toBe("only");
+
+    const plan = buildSemanticEditPlan({ sections, videoMoments });
+    expect(plan.assignments).toHaveLength(2);
+    expect(plan.assignments.every((assignment) => assignment.momentId === "only")).toBe(true);
   });
 });

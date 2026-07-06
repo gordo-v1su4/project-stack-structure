@@ -8,7 +8,6 @@ describe("readout", () => {
       tab: "split",
       clipDur: 5,
       splitSegmentCount: 4,
-      gpu: 20,
       bpm: 120,
       barsPerSeg: 2,
       beatSplitSegmentCount: 6,
@@ -33,7 +32,7 @@ describe("readout", () => {
     expect(rows).toEqual([
       ["Source", "Awaiting video"],
       ["State", "Locked"],
-      ["GPU", "20%"],
+      ["Audio", "None"],
       ["Codec", "H.264"],
     ]);
   });
@@ -43,7 +42,6 @@ describe("readout", () => {
       tab: "beatjoin",
       clipDur: 5,
       splitSegmentCount: 4,
-      gpu: 20,
       bpm: 120,
       barsPerSeg: 2,
       beatSplitSegmentCount: 6,

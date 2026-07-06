@@ -296,6 +296,123 @@ describe("musicVideoProject source moments and review contract", () => {
     ]);
   });
 
+  test("prefers a moment that covers the music window over a higher-ranked short moment", () => {
+    const videoSources: UploadedVideoSource[] = [{
+      id: 0,
+      name: "mixed.mp4",
+      duration: 10,
+      size: 10,
+      thumbnailUrl: "thumb",
+      videoUrl: "blob:mixed",
+      scenes: [
+        {
+          id: 0,
+          sourceClipId: 0,
+          label: "Singer close-up",
+          start: 0,
+          end: 1,
+          duration: 1,
+          detector: "pyscenedetect-adaptive",
+          caption: "Close-up of a singer face in blue light.",
+          captionMeta: { action: "singing", shotType: "close-up" },
+          captionSource: "lfm-webgpu",
+        },
+        {
+          id: 1,
+          sourceClipId: 0,
+          label: "Wide landscape",
+          start: 2,
+          end: 6,
+          duration: 4,
+          detector: "pyscenedetect-adaptive",
+          caption: "Wide empty landscape.",
+          captionMeta: { setting: "landscape" },
+          captionSource: "lfm-webgpu",
+        },
+      ],
+    }];
+
+    const project = createMusicVideoProject({
+      analysis: mockAnalysis({
+        beats: [],
+        onsets: [],
+        sections: [{ label: "Chorus", start: 0, end: 4, energy: 0.5 }],
+        duration: 4,
+      }),
+      duration: 4,
+      storyDrafts: [{ id: "chorus", label: "Chorus", prompt: "close up singer face blue light" }],
+      videoSources,
+      createdAt: "2026-06-18T00:00:00.000Z",
+    });
+
+    // Premise: the short close-up outranks the long landscape semantically.
+    expect(project.storySections[0]?.videoMomentIds[0]).toBe("scene-moment-0-0");
+
+    const segments = buildEditPlanPreviewSegments({ project, videoSources });
+
+    // Without beat cues the whole section is one music window; slicing the
+    // 1s close-up first would force an off-cue cut, so the 4s landscape
+    // moment fills the window in a single musically aligned slice.
+    expect(segments).toHaveLength(1);
+    expect(segments[0]).toMatchObject({ startTime: 2, endTime: 6, musicStart: 0, musicEnd: 4 });
+  });
+
+  test("alternates moments instead of repeating the clip that just played", () => {
+    const videoSources: UploadedVideoSource[] = [{
+      id: 0,
+      name: "pair.mp4",
+      duration: 10,
+      size: 10,
+      thumbnailUrl: "thumb",
+      videoUrl: "blob:pair",
+      scenes: [
+        {
+          id: 0,
+          sourceClipId: 0,
+          label: "Shot A",
+          start: 0,
+          end: 1.5,
+          duration: 1.5,
+          detector: "pyscenedetect-adaptive",
+          caption: "Dancer spinning in neon light.",
+          captionSource: "lfm-webgpu",
+        },
+        {
+          id: 1,
+          sourceClipId: 0,
+          label: "Shot B",
+          start: 4,
+          end: 5.5,
+          duration: 1.5,
+          detector: "pyscenedetect-adaptive",
+          caption: "Crowd moving in a dark club.",
+          captionSource: "lfm-webgpu",
+        },
+      ],
+    }];
+
+    const project = createMusicVideoProject({
+      analysis: mockAnalysis({
+        beats: [],
+        onsets: [],
+        sections: [{ label: "Chorus", start: 0, end: 4, energy: 0.5 }],
+        duration: 4,
+      }),
+      duration: 4,
+      storyDrafts: [{ id: "chorus", label: "Chorus", prompt: "dance energy" }],
+      videoSources,
+      createdAt: "2026-06-18T00:00:00.000Z",
+    });
+
+    const segments = buildEditPlanPreviewSegments({ project, videoSources });
+    const playedStarts = segments.map((segment) => segment.startTime);
+
+    expect(segments.length).toBeGreaterThan(1);
+    for (let index = 1; index < playedStarts.length; index += 1) {
+      expect(playedStarts[index]).not.toBe(playedStarts[index - 1]);
+    }
+  });
+
   test("reports invalid projects instead of silently accepting empty edit plans", () => {
     const project: MusicVideoProject = {
       id: "bad",

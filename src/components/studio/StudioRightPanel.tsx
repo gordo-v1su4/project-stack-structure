@@ -1,6 +1,5 @@
 "use client";
 
-import { LOG } from "./constants";
 import { PreviewPlayer } from "./PreviewPlayerComponent";
 import type { BrowserPreviewPlayer } from "./previewPlayer";
 import type { PreviewPlayerState, PreviewSegment } from "./previewPlayer";
@@ -35,6 +34,10 @@ type StudioRightPanelProps = {
   isShaderCaptureExporting?: boolean;
   onFinalExport?: () => void;
   onWebGpuExport?: () => void;
+  audioStatus?: string;
+  videoStatus?: string;
+  draftStatus?: string;
+  nextHint?: string | null;
 };
 
 export function StudioRightPanel({
@@ -64,6 +67,10 @@ export function StudioRightPanel({
   isShaderCaptureExporting = false,
   onFinalExport,
   onWebGpuExport,
+  audioStatus = "",
+  videoStatus = "",
+  draftStatus = "",
+  nextHint = null,
 }: StudioRightPanelProps) {
   const previewAssetFileName = getPreviewAssetFileName(previewAssetKey);
   const showBrowserPreview = browserPreviewSegments.length > 0 && previewPlayer;
@@ -89,20 +96,12 @@ export function StudioRightPanel({
       </div>
 
       <div className="min-w-0 border-r border-[#181818] p-2.5">
-        <div className="mb-1.5 text-[8px] uppercase tracking-[0.22em] text-[#343434]">Output Pipeline</div>
-        <div className="border border-[#181818] bg-[#080808] rounded-[2px] px-2 py-[5px] font-mono text-[10px] text-[#484848] mb-2">
-          /output/processed_v1/
+        <div className="mb-1.5 text-[8px] uppercase tracking-[0.22em] text-[#343434]">Next Step</div>
+        <div className="rounded-[2px] border border-[#1d1208] bg-[#0d0803] px-2 py-[6px] text-[10px] leading-relaxed text-[#c07a3f]">
+          {nextHint ?? "Work through the stages left to right; every stage dot turns green when it is ready."}
         </div>
-        <div className="grid grid-cols-2 gap-2">
-          {[
-            ["QUEUE", "00:00"],
-            ["CORES", "16384"],
-          ].map(([k, v]) => (
-            <div key={k} className="border border-[#181818] bg-[#090909] rounded-[2px] p-2">
-              <div className="text-[9px] text-[#303030] mb-[2px]">{k}</div>
-              <div className={`font-mono text-[12px] ${k === "CORES" ? "text-[#e05c00]" : "text-[#777]"}`}>{v}</div>
-            </div>
-          ))}
+        <div className="mt-2 font-mono text-[9px] text-[#4d4d4d] break-all" title={draftStatus}>
+          {draftStatus || "Draft autosave idle"}
         </div>
       </div>
 
@@ -240,14 +239,22 @@ export function StudioRightPanel({
       </div>
 
       <div className="min-w-0 border-r border-[#181818] p-2.5">
-        <div className="mb-1.5 text-[8px] uppercase tracking-[0.22em] text-[#343434]">Terminal</div>
+        <div className="mb-1.5 text-[8px] uppercase tracking-[0.22em] text-[#343434]">Activity</div>
         <div className="space-y-[4px]">
-          {LOG.map((l, i) => (
-            <div key={i} className="font-mono text-[9px] leading-tight">
-              <span className="text-[#e05c0099]">[{l.tag}]</span> <span style={{ color: l.col }}>{l.msg}</span>
-            </div>
-          ))}
-          <div className="font-mono text-[9px] text-[#2e2e2e] mt-1 animate-pulse">&gt; WAITING_FOR_OPERATOR_INPUT_</div>
+          {[
+            ["AUDIO", audioStatus],
+            ["VIDEO", videoStatus],
+            ["EXPORT", finalExportStatus],
+          ]
+            .filter(([, message]) => Boolean(message))
+            .map(([tag, message]) => (
+              <div key={tag} className="font-mono text-[9px] leading-tight">
+                <span className="text-[#e05c0099]">[{tag}]</span>{" "}
+                <span className="text-[#555]" title={message}>
+                  {truncateMessage(message ?? "", 96)}
+                </span>
+              </div>
+            ))}
         </div>
       </div>
 
@@ -272,11 +279,16 @@ export function StudioRightPanel({
             </>
           ) : (
             <>
-              Enable <span className="text-[#e05c00]">CUDA SM_120</span> for 4× faster encode than CPU on RTX 5090.
+              Upload the song and clips in <span className="text-[#e05c00]">Ingest</span>, generate the{" "}
+              <span className="text-[#e05c00]">Story</span> plan, then review matches before export.
             </>
           )}
         </p>
       </div>
     </aside>
   );
+}
+
+function truncateMessage(value: string, maxLength: number) {
+  return value.length > maxLength ? `${value.slice(0, maxLength - 1)}…` : value;
 }

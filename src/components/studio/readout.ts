@@ -5,7 +5,6 @@ export function buildReadout(params: {
   tab: Tab;
   clipDur: number;
   splitSegmentCount: number;
-  gpu: number;
   bpm: number;
   barsPerSeg: number;
   beatSplitSegmentCount: number;
@@ -30,7 +29,6 @@ export function buildReadout(params: {
     tab,
     clipDur,
     splitSegmentCount,
-    gpu,
     bpm,
     barsPerSeg,
     beatSplitSegmentCount,
@@ -57,14 +55,14 @@ export function buildReadout(params: {
       return [
         ["Source", "Awaiting video"],
         ["State", "Locked"],
-        ["GPU", `${gpu.toFixed(0)}%`],
+        ["Audio", beatJoinReady ? "Analyzed" : "None"],
         ["Codec", "H.264"],
       ];
     }
     return [
       ["Clip Dur", `${clipDur}s`],
       ["Est Clips", splitSegmentCount],
-      ["GPU", `${gpu.toFixed(0)}%`],
+      ["Audio", beatJoinReady ? "Analyzed" : "None"],
       ["Codec", "H.264"],
     ];
   }
@@ -81,7 +79,7 @@ export function buildReadout(params: {
       ["BPM", bpm],
       ["Bars/Seg", barsPerSeg],
       ["Segments", beatSplitSegmentCount],
-      ["Confidence", "94%"],
+      ["Audio", beatJoinReady ? "Analyzed" : "Fallback grid"],
     ];
   }
   if (tab === "shuffle") {

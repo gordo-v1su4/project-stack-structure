@@ -89,8 +89,13 @@ export function buildSemanticEditPlan(params: {
     };
   }
 
+  const reservations = reserveSectionMoments({ sections: params.sections, moments: params.videoMoments });
+
   for (const section of params.sections) {
-    const ranked = rankMomentsForSection({ section, moments: params.videoMoments, previous, useCounts });
+    const ranked = promoteReservedMoment(
+      rankMomentsForSection({ section, moments: params.videoMoments, previous, useCounts }),
+      reservations.get(section.id),
+    );
     const best = ranked[0];
     if (!best) {
       findings.push({ code: "semantic-edit-no-match", severity: "warning", message: `No source moment matched ${section.label}.`, sectionId: section.id });
@@ -107,6 +112,86 @@ export function buildSemanticEditPlan(params: {
   }
 
   return { assignments, findings };
+}
+
+/**
+ * Resolves contention over source moments across sections before the
+ * continuity pass runs. Pure greedy assignment lets an early section take a
+ * moment that a later section needs far more, even when the early section has
+ * a near-equal alternative. This auction assigns each contested moment to the
+ * section with the most to lose (largest score margin over its next available
+ * candidate); losers move on to their next-best moment. When a section runs
+ * out of un-reserved candidates it falls back to its overall best moment, so
+ * projects with fewer moments than sections still get full coverage (reuse is
+ * handled downstream by the repetition penalty).
+ */
+export function reserveSectionMoments(params: {
+  sections: SemanticSectionInput[];
+  moments: SemanticVideoMomentInput[];
+}): Map<string, string> {
+  const { sections, moments } = params;
+  const reservations = new Map<string, string>();
+  if (!sections.length || !moments.length) return reservations;
+
+  const rankings = new Map(sections.map((section) => [section.id, rankMomentsForSection({ section, moments })]));
+  const holders = new Map<string, string>();
+  const cursors = new Map<string, number>(sections.map((section) => [section.id, 0]));
+  const queue = sections.map((section) => section.id);
+  let guard = sections.length * (moments.length + 2) * 2;
+
+  const regretAt = (sectionId: string, index: number) => {
+    const ranked = rankings.get(sectionId) ?? [];
+    const currentScore = ranked[index]?.score ?? 0;
+    for (let next = index + 1; next < ranked.length; next += 1) {
+      const holder = holders.get(ranked[next]!.momentId);
+      if (!holder || holder === sectionId) return currentScore - ranked[next]!.score;
+    }
+    return currentScore;
+  };
+
+  while (queue.length && guard-- > 0) {
+    const sectionId = queue.shift()!;
+    const ranked = rankings.get(sectionId) ?? [];
+    let index = cursors.get(sectionId) ?? 0;
+
+    while (index < ranked.length) {
+      const candidate = ranked[index]!;
+      const holder = holders.get(candidate.momentId);
+
+      if (!holder || holder === sectionId) {
+        holders.set(candidate.momentId, sectionId);
+        reservations.set(sectionId, candidate.momentId);
+        break;
+      }
+
+      const holderRanked = rankings.get(holder) ?? [];
+      const holderIndex = holderRanked.findIndex((entry) => entry.momentId === candidate.momentId);
+      if (regretAt(sectionId, index) > regretAt(holder, holderIndex) + 1e-9) {
+        holders.set(candidate.momentId, sectionId);
+        reservations.set(sectionId, candidate.momentId);
+        reservations.delete(holder);
+        cursors.set(holder, holderIndex + 1);
+        queue.push(holder);
+        break;
+      }
+
+      index += 1;
+    }
+
+    cursors.set(sectionId, Math.min(index, ranked.length));
+    if (index >= ranked.length && ranked[0]) {
+      reservations.set(sectionId, ranked[0].momentId);
+    }
+  }
+
+  return reservations;
+}
+
+export function promoteReservedMoment(ranked: SemanticEditAssignment[], reservedMomentId: string | undefined): SemanticEditAssignment[] {
+  if (!reservedMomentId || !ranked.length || ranked[0]!.momentId === reservedMomentId) return ranked;
+  const index = ranked.findIndex((entry) => entry.momentId === reservedMomentId);
+  if (index <= 0) return ranked;
+  return [ranked[index]!, ...ranked.slice(0, index), ...ranked.slice(index + 1)];
 }
 
 export function rankMomentsForSection(params: {

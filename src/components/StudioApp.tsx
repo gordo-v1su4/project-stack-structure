@@ -30,6 +30,7 @@ import { StudioAudioLane } from "./studio/StudioAudioLane";
 import { StudioRightPanel } from "./studio/StudioRightPanel";
 import { StudioSidebar } from "./studio/StudioSidebar";
 import { StudioStatusBar } from "./studio/StudioStatusBar";
+import { buildPipelineState } from "./studio/studioPipeline";
 import { buildShuffleQueue } from "./studio/shuffleQueue";
 import { rankManifestCandidates } from "./studio/manifestRanking";
 import { buildMusicCutEvents, buildSegmentManifest } from "./studio/segmentManifest";
@@ -73,10 +74,6 @@ export default function StudioApp() {
   const [playhead] = useState(0.08);
   const [, setAudioPreviewPlayhead] = useState(0);
   const [activeClip, setActiveClip] = useState(2);
-
-  const [gpu, setGpu] = useState(24);
-  const [cpu, setCpu] = useState(11);
-  const [vram, setVram] = useState(7.8);
 
   const [clipDur, setClipDur] = useState(5);
   const [barsPerSeg] = useState(4);
@@ -306,15 +303,6 @@ export default function StudioApp() {
         if (asset.previewUrl.startsWith("blob:")) URL.revokeObjectURL(asset.previewUrl);
       }
     };
-  }, []);
-
-  useEffect(() => {
-    const id = setInterval(() => {
-      setGpu((g) => Math.max(10, Math.min(48, g + (Math.random() - 0.5) * 3)));
-      setCpu((c) => Math.max(5, Math.min(28, c + (Math.random() - 0.5) * 2)));
-      setVram((v) => Math.max(5, Math.min(14, v + (Math.random() - 0.5) * 0.15)));
-    }, 1400);
-    return () => clearInterval(id);
   }, []);
 
   const sourceClips = useMemo(() => buildSourceClipSpans(videoSources), [videoSources]);
@@ -1114,7 +1102,6 @@ export default function StudioApp() {
         tab,
         clipDur,
         splitSegmentCount: splitSegments.length,
-        gpu,
         bpm,
         barsPerSeg,
         beatSplitSegmentCount: beatSplitSegments.length,
@@ -1139,7 +1126,6 @@ export default function StudioApp() {
       tab,
       clipDur,
       splitSegments.length,
-      gpu,
       bpm,
       barsPerSeg,
       beatSplitSegments.length,
@@ -1372,62 +1358,38 @@ export default function StudioApp() {
     return { sceneCount, captionReady, captionTotal };
   }, [videoSources]);
 
-  const pipelineStages = [
-    {
-      label: "Ingest",
-      status: beatJoinAnalysis && storyState.transcriptSummary && videoSources.length
-        ? `${videoSources.length} videos · ${ingestStats.captionReady}/${ingestStats.captionTotal} captions`
-        : "Loading media",
-      active: tab === "review",
-      ready: Boolean(beatJoinAnalysis && storyState.transcriptSummary && videoSources.length),
-    },
-    {
-      label: "Story",
-      status: storyState.storyGenerated ? `${musicVideoProject?.editPlan.timelineItems.length ?? 0} edit slots` : "Draft",
-      active: tab === "story",
-      ready: Boolean(storyState.storyGenerated && musicVideoProject?.editPlan.timelineItems.length),
-    },
-    {
-      label: "Split",
-      status: ingestStats.sceneCount ? `${ingestStats.sceneCount} cuts` : videoSources.length ? "Detecting" : "Waiting",
-      active: tab === "split",
-      ready: ingestStats.sceneCount > 0,
-    },
-    {
-      label: "Match",
-      status: storyState.storyGenerated && ingestStats.captionReady > 0 ? "Lyrics + captions" : "Waiting",
-      active: tab === "shuffle",
-      ready: Boolean(storyState.storyGenerated && ingestStats.captionReady > 0),
-    },
-    {
-      label: "Generate",
-      status: musicVideoProject?.editPlan.timelineItems.some((item) => !item.videoMomentId || (item.semanticMatch?.score ?? 0) < 0.45)
-        ? "Fill gaps"
-        : storyPreviewSegments.length
-          ? "Optional B-roll"
-          : "Waiting for match",
-      active: tab === "generate",
-      ready: Boolean(storyState.storyGenerated && musicVideoProject?.editPlan.timelineItems.length),
-    },
-    {
-      label: "Join",
-      status: storyPreviewSegments.length ? `${storyPreviewSegments.length} cuts` : "Waiting for generate",
-      active: tab === "join",
-      ready: storyPreviewSegments.length > 0,
-    },
-    {
-      label: "Effects",
-      status: shaderPresetSummary.preset.label,
-      active: tab === "ramp",
-      ready: storyPreviewSegments.length > 0 || Boolean(committedBeatSplit),
-    },
-    {
-      label: "Export",
-      status: finalExportUrl ? "MP4 ready" : storyPreviewSegments.length ? "Preview ready" : "Waiting",
-      active: tab === "compose",
-      ready: Boolean(finalExportUrl || storyPreviewSegments.length),
-    },
-  ];
+  const pipeline = useMemo(() => {
+    const timelineItems = musicVideoProject?.editPlan.timelineItems ?? [];
+    return buildPipelineState({
+      activeTab: tab,
+      hasAudioAnalysis: beatJoinAnalysis !== null,
+      hasTranscript: Boolean(storyState.transcriptSummary),
+      videoCount: videoSources.length,
+      sceneCount: ingestStats.sceneCount,
+      captionReadyCount: ingestStats.captionReady,
+      captionTotalCount: ingestStats.captionTotal,
+      storyGenerated: storyState.storyGenerated,
+      editSlotCount: timelineItems.length,
+      matchedSlotCount: timelineItems.filter((item) => item.videoMomentId).length,
+      gapSlotCount: timelineItems.filter((item) => !item.videoMomentId || (item.semanticMatch?.score ?? 0) < 0.45).length,
+      storySegmentCount: storyPreviewSegments.length,
+      hasCommittedSplit: Boolean(committedBeatSplit),
+      shaderPresetLabel: shaderPresetSummary.preset.label,
+      finalExportReady: Boolean(finalExportUrl),
+    });
+  }, [
+    tab,
+    beatJoinAnalysis,
+    storyState.transcriptSummary,
+    storyState.storyGenerated,
+    videoSources.length,
+    ingestStats,
+    musicVideoProject,
+    storyPreviewSegments.length,
+    committedBeatSplit,
+    shaderPresetSummary.preset.label,
+    finalExportUrl,
+  ]);
 
   useEffect(() => {
     if (tab === "beatsplit" && committedBeatSplit && !isCommittedBeatSplitCurrent) {
@@ -1503,10 +1465,27 @@ export default function StudioApp() {
       className="flex h-screen overflow-hidden bg-[#0a0a0a] text-[#c0c0c0] antialiased select-none"
       style={{ fontFamily: "'Inter','SF Pro Display',system-ui,sans-serif" }}
     >
-      <StudioSidebar tab={tab} gpu={gpu} cpu={cpu} vram={vram} onSelectTab={handleSelectTab} />
+      <StudioSidebar
+        tab={tab}
+        stages={pipeline.stages}
+        sessionStats={{
+          audioLabel: beatJoinAnalysis?.sourceLabel ?? null,
+          videoCount: videoSources.length,
+          sceneCount: ingestStats.sceneCount,
+          captionReadyCount: ingestStats.captionReady,
+          captionTotalCount: ingestStats.captionTotal,
+        }}
+        onSelectTab={handleSelectTab}
+      />
 
       <div className="flex flex-1 flex-col overflow-hidden">
-        <StudioHeader tabLabel={tabLabel} tabSub={tabSub} playhead={playhead} bpm={bpm} />
+        <StudioHeader
+          tabLabel={tabLabel}
+          tabSub={tabSub}
+          stepLabel={pipeline.stages.find((stage) => stage.active) ? `Step ${pipeline.stages.find((stage) => stage.active)!.step} of ${pipeline.stages.length}` : null}
+          songLabel={beatJoinAnalysis?.sourceLabel ?? null}
+          songDuration={beatJoinAnalysis?.duration ?? null}
+        />
 
         <div className="flex flex-1 flex-col overflow-hidden">
           <>
@@ -1525,32 +1504,34 @@ export default function StudioApp() {
 
             <div className="rounded-[2px] border border-[#171717] bg-[#080808] px-2 py-2">
               <div className="flex flex-wrap items-center gap-1.5">
-                {pipelineStages.map((stage, index) => (
+                {pipeline.stages.map((stage) => (
                   <button
-                    key={stage.label}
+                    key={stage.key}
                     type="button"
-                    onClick={() => handleSelectTab(NAV[index]?.key ?? tab)}
+                    onClick={() => handleSelectTab(stage.key)}
                     className={`min-w-[92px] flex-1 rounded-[2px] border px-2 py-1.5 text-left transition-colors ${
                       stage.active
                         ? "border-[#e05c00] bg-[#120b06]"
-                        : stage.ready
-                          ? "border-[#202020] bg-[#0a0a0a] hover:border-[#333]"
-                          : "border-[#151515] bg-[#070707] hover:border-[#242424]"
+                        : stage.isNext
+                          ? "border-[#7a3a10] bg-[#0d0803] hover:border-[#e05c00]"
+                          : stage.ready
+                            ? "border-[#202020] bg-[#0a0a0a] hover:border-[#333]"
+                            : "border-[#151515] bg-[#070707] hover:border-[#242424]"
                     }`}
                     title={`${stage.label}: ${stage.status}`}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <span className={`text-[8px] uppercase tracking-[0.16em] ${stage.active ? "text-[#e05c00]" : "text-[#555]"}`}>{stage.label}</span>
+                      <span className={`text-[8px] uppercase tracking-[0.16em] ${stage.active ? "text-[#e05c00]" : "text-[#555]"}`}>
+                        <span className="mr-1 font-mono text-[#3a3a3a]">{stage.step}</span>
+                        {stage.label}
+                        {stage.isNext && !stage.active ? <span className="ml-1 text-[#c07a3f]">· next</span> : null}
+                      </span>
                       <span className={`h-1.5 w-1.5 rounded-full ${stage.ready ? "bg-[#3a8a3a]" : "bg-[#3d3d3d]"}`} />
                     </div>
                     <div className="mt-[2px] truncate font-mono text-[9px] text-[#777]">{stage.status}</div>
                   </button>
                 ))}
               </div>
-            </div>
-
-            <div className="rounded-[2px] border border-[#171717] bg-[#080808] px-3 py-2 text-[10px] text-[#666]">
-              Local project draft: <span className="font-mono text-[#8a8a8a]">{draftStatus}</span>
             </div>
 
             {tab === "review" && (
@@ -1762,16 +1743,20 @@ export default function StudioApp() {
             isShaderCaptureExporting={isShaderCaptureExporting}
             onFinalExport={() => void runFinalExport()}
             onWebGpuExport={() => void runWebGpuShaderCaptureExport()}
+            audioStatus={audioStatus}
+            videoStatus={videoStatus}
+            draftStatus={draftStatus}
+            nextHint={pipeline.nextHint}
           />
           </>
         </div>
 
         <StudioStatusBar
-          gpu={gpu}
           previewStage={previewState.stage}
           activeRequestKey={previewState.activeRequestKey}
           assetKey={previewState.currentAssetKey}
           statusLabel={previewStatusLabel}
+          draftStatus={draftStatus}
         />
       </div>
     </div>
