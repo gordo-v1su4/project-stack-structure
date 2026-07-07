@@ -231,6 +231,54 @@ export function pickRicherDeepgramResponse(primary: JsonRecord, fallback: JsonRe
   return primary;
 }
 
+/**
+ * Merges a tail-segment transcription (audio sliced at offsetSeconds) into a
+ * full-song transcription. ASR models drop sung content deep into a long
+ * file but transcribe the same audio fine as its own clip, so the uncovered
+ * tail is re-transcribed separately and stitched back with offset times.
+ * Only utterances/words starting after the primary's last word are added;
+ * junk without letters (e.g. "000000.") is dropped and ♪ marks stripped.
+ */
+export function mergeDeepgramTailResponse(primary: JsonRecord, tail: JsonRecord, offsetSeconds: number): JsonRecord {
+  const minStart = measureDeepgramWordCoverage(primary).lastWordEnd + 0.25;
+  const cleanLyric = (value: unknown) => cleanText(String(value ?? "").replace(/♪/g, " "));
+  const hasLetters = (value: string) => /\p{L}/u.test(value);
+
+  const offsetTail = (record: JsonRecord): JsonRecord => ({
+    ...record,
+    start: numberFrom(record.start, 0) + offsetSeconds,
+    end: numberFrom(record.end, 0) + offsetSeconds,
+  });
+
+  const tailUtterances = asRecordArray(asRecord(tail.results).utterances)
+    .map(offsetTail)
+    .map((utterance): JsonRecord => ({ ...utterance, transcript: cleanLyric(utterance.transcript) }))
+    .filter((utterance) => numberFrom(utterance.start, 0) >= minStart && hasLetters(String(utterance.transcript)));
+  const tailAlternative = getPrimaryAlternative(tail);
+  const tailWords = asRecordArray(tailAlternative.words)
+    .map(offsetTail)
+    .filter((word) => numberFrom(word.start, 0) >= minStart && hasLetters(cleanLyric(word.punctuated_word || word.word)));
+
+  if (!tailUtterances.length && !tailWords.length) return primary;
+
+  const merged = JSON.parse(JSON.stringify(primary)) as JsonRecord;
+  const results = asRecord(merged.results);
+  merged.results = results;
+  results.utterances = [...asRecordArray(results.utterances), ...tailUtterances];
+
+  const channels = asRecordArray(results.channels);
+  const alternative = asRecord(asRecordArray(asRecord(channels[0]).alternatives)[0]);
+  if (channels[0] && Array.isArray(asRecord(channels[0]).alternatives)) {
+    alternative.words = [...asRecordArray(alternative.words), ...tailWords];
+    const tailText = tailUtterances.map((utterance) => String(utterance.transcript)).join(" ");
+    if (tailText) {
+      alternative.transcript = cleanText(`${cleanText(alternative.transcript)} ${tailText}`);
+    }
+  }
+
+  return merged;
+}
+
 export type DeepgramTranscriptSummary = {
   provider: "deepgram";
   model: string;

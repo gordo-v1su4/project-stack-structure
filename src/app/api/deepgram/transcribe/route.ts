@@ -2,8 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   isDeepgramCoverageSparse,
   measureDeepgramWordCoverage,
+  mergeDeepgramTailResponse,
   pickRicherDeepgramResponse,
 } from "@/components/studio/deepgramUtils";
+import { sliceWavFromSeconds } from "@/lib/wavSlice";
 
 export const runtime = "nodejs";
 
@@ -27,7 +29,8 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const body = new Blob([await request.arrayBuffer()], { type: contentType });
+    const rawBytes = new Uint8Array(await request.arrayBuffer());
+    const body = new Blob([rawBytes], { type: contentType });
     if (!body.size) {
       console.warn("[Deepgram] Empty vocal stem upload body.");
       return NextResponse.json({ ok: false, error: "No audio bytes received." }, { status: 400 });
@@ -91,6 +94,41 @@ export async function POST(request: NextRequest) {
           }
         } catch (retryError) {
           console.warn(`[Deepgram] ${fallbackModel} retry errored; keeping ${model} result.`, retryError);
+        }
+      }
+    }
+
+    // Windowed tail pass: even whisper drops sung content deep into a long
+    // file (repeated refrains, ad-libs), yet transcribes the same audio fine
+    // when it arrives as its own clip. If coverage still stops short, slice
+    // the uncovered tail of the WAV and stitch its utterances back in.
+    if (primary.ok && isRecord(payload)) {
+      const coverage = measureDeepgramWordCoverage(payload);
+      if (coverage.duration > 45 && coverage.lastWordEnd > 0 && coverage.lastWordEnd < coverage.duration * 0.85) {
+        const sliceStart = Math.max(0, coverage.lastWordEnd - 2);
+        const tailBytes = sliceWavFromSeconds(rawBytes, sliceStart);
+        if (tailBytes) {
+          console.info(
+            `[Deepgram] Words still end at ${coverage.lastWordEnd.toFixed(1)}s of ${coverage.duration.toFixed(1)}s; re-transcribing the tail from ${sliceStart.toFixed(1)}s.`,
+          );
+          const tailQuery = new URLSearchParams({
+            model: fallbackModel || model,
+            smart_format: "true",
+            punctuate: "true",
+            utterances: "true",
+            utt_split: "0.8",
+            language,
+          });
+          try {
+            const tail = await callDeepgram(tailQuery, apiKey, contentType, new Blob([tailBytes as BlobPart], { type: contentType }));
+            if (tail.ok && isRecord(tail.payload)) {
+              payload = mergeDeepgramTailResponse(payload, tail.payload, sliceStart);
+              const mergedCoverage = measureDeepgramWordCoverage(payload as Record<string, unknown>);
+              console.info(`[Deepgram] Tail merge complete; words now end at ${mergedCoverage.lastWordEnd.toFixed(1)}s.`);
+            }
+          } catch (tailError) {
+            console.warn("[Deepgram] Tail re-transcription errored; keeping current result.", tailError);
+          }
         }
       }
     }
