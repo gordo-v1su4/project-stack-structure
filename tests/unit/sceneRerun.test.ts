@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { countMismatchedSceneCaptions, rerunSourceSceneAnalysis, type VideoSceneUpdate } from "@/components/studio/mediaUpload";
+import { countMismatchedSceneCaptions, rerunSourceSceneAnalysis, selectSceneRetrySources, type VideoSceneUpdate } from "@/components/studio/mediaUpload";
 import { sceneCaptionMatchesMode } from "@/components/studio/sceneCaptioning";
 import type { DetectedSceneSegment, UploadedVideoSource } from "@/components/studio/types";
 
@@ -81,6 +81,24 @@ describe("sceneCaptionMatchesMode", () => {
 
     expect(countMismatchedSceneCaptions(sources, "smart")).toBe(1);
     expect(countMismatchedSceneCaptions(sources, "fast")).toBe(2);
+  });
+});
+
+describe("selectSceneRetrySources", () => {
+  test("picks clips with failed detection or missed captions, skips completed and un-stored clips", () => {
+    const stored = { storageBucket: "b", storagePath: "p" };
+    const sources = [
+      // fully Qwen-captioned: done
+      makeSource({ id: 0, ...stored, sceneStatus: "ready", scenes: [makeScene({ caption: "x", captionSource: "qwen3-vl-server" })] }),
+      // missed caption (kept BLIP + captionError): retry
+      makeSource({ id: 1, ...stored, sceneStatus: "ready", scenes: [makeScene({ caption: "x", captionSource: "self-hosted-blip-cpu" as DetectedSceneSegment["captionSource"], captionError: "proxy timeout" })] }),
+      // detection failed: retry
+      makeSource({ id: 2, ...stored, sceneStatus: "failed", scenes: [] }),
+      // not in RustFS: cannot retry
+      makeSource({ id: 3, sceneStatus: "failed", scenes: [] }),
+    ];
+
+    expect(selectSceneRetrySources(sources, "smart").map((source) => source.id)).toEqual([1, 2]);
   });
 });
 

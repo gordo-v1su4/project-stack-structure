@@ -7,7 +7,7 @@ import { uploadAudioFileToRustFs } from "./studio/audioStorage";
 import { buildArrangementSegments } from "./studio/arrangementBuilder";
 import type { ArrangementSegment } from "./studio/arrangementBuilder";
 import { NAV } from "./studio/constants";
-import { mergeUploadedVideoSourceUpdate, prepareVideoSources, rerunSourceSceneAnalysis, revokePreparedVideoSources } from "./studio/mediaUpload";
+import { mergeUploadedVideoSourceUpdate, prepareVideoSources, rerunSourceSceneAnalysis, revokePreparedVideoSources, selectSceneRetrySources } from "./studio/mediaUpload";
 import type { VideoSceneUpdate } from "./studio/mediaUpload";
 import { buildEditPlanPreviewSegments, normalizeStoryEditSettings, type EditPlanPreviewSegment, type MusicVideoProject } from "./studio/musicVideoProject";
 import { selectStorySectionCandidate } from "./studio/musicVideoProjectSelection";
@@ -582,16 +582,41 @@ export default function StudioApp() {
     };
 
     try {
-      await Promise.allSettled(
-        targets.map((source) =>
-          rerunSourceSceneAnalysis(
-            source,
-            buildSceneCaptionSettings(captionMode, beatJoinAnalysis, storyState),
-            applySceneUpdate,
-          ),
-        ),
+      // Throttle: captions funnel through one GPU-locked gateway behind a
+      // proxy timeout; hitting it with every clip at once turns queued
+      // requests into proxy-timeout errors instead of throughput. Scenes
+      // that miss (timeout / gateway error) keep their previous caption and
+      // are retried in follow-up rounds once the pass finishes.
+      const captionSettings = buildSceneCaptionSettings(captionMode, beatJoinAnalysis, storyState);
+      const maxRounds = 3;
+      let pending = targets;
+
+      for (let round = 1; round <= maxRounds && pending.length; round += 1) {
+        if (round > 1) {
+          setVideoStatus(`Retrying ${pending.length} clip${pending.length === 1 ? "" : "s"} with missed captions (round ${round}/${maxRounds})...`);
+          await new Promise((resolve) => setTimeout(resolve, 5_000 * (round - 1)));
+        }
+
+        const queue = [...pending];
+        await Promise.all(
+          Array.from({ length: Math.min(2, queue.length) }, async () => {
+            for (let source = queue.shift(); source; source = queue.shift()) {
+              await rerunSourceSceneAnalysis(source, captionSettings, applySceneUpdate).catch(() => undefined);
+            }
+          }),
+        );
+
+        const targetKeys = new Set(pending.map(buildVideoSourceKey));
+        pending = scope === "all"
+          ? selectSceneRetrySources(videoSourcesRef.current, captionMode).filter((source) => targetKeys.has(buildVideoSourceKey(source)))
+          : videoSourcesRef.current.filter((source) => targetKeys.has(buildVideoSourceKey(source)) && (source.sceneStatus === "failed" || !(source.scenes?.length)));
+      }
+
+      setVideoStatus(
+        pending.length
+          ? `Scene analysis rerun finished · ${pending.length} clip${pending.length === 1 ? "" : "s"} still ha${pending.length === 1 ? "s" : "ve"} missed captions — run it again.`
+          : `Scene analysis rerun finished for ${targets.length} clip${targets.length === 1 ? "" : "s"}.`,
       );
-      setVideoStatus(`Scene analysis rerun finished for ${targets.length} clip${targets.length === 1 ? "" : "s"}.`);
     } finally {
       setIsRerunningSceneAnalysis(false);
     }

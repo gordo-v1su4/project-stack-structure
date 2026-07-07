@@ -166,6 +166,9 @@ async function captionSceneFrameViaServer(
     const response = await fetch("/api/caption/scene", {
       method: "POST",
       body: form,
+      // A hung gateway request must fail instead of stalling the whole
+      // recaption pass; failed scenes are retried in a later round.
+      signal: AbortSignal.timeout(150_000),
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {

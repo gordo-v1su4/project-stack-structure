@@ -160,10 +160,14 @@ export async function POST(request: Request) {
     const payload = parseGatewayText(text) as CaptionGatewayPayload;
 
     if (!upstream.ok || payload.ok === false) {
+      const looksLikeHtml = /^\s*<(!doctype|html)/i.test(text);
       return Response.json({
         ok: false,
         configured: true,
-        error: readString(payload.error) || text.slice(0, 300) || `${upstream.status} ${upstream.statusText}`,
+        error: readString(payload.error)
+          || (looksLikeHtml
+            ? `Caption gateway returned an HTML error page (${upstream.status}); likely a proxy timeout while the GPU queue was busy — retry.`
+            : text.slice(0, 300) || `${upstream.status} ${upstream.statusText}`),
       }, { status: upstream.ok ? 502 : upstream.status });
     }
 

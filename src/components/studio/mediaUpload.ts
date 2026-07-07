@@ -142,6 +142,20 @@ export function revokePreparedVideoSources(sources: UploadedVideoSource[]) {
 }
 
 /**
+ * Sources that still need another scene-analysis pass after a rerun: scene
+ * detection failed, or at least one scene is missing a caption for the
+ * requested mode (missed/timed-out gateway calls included — those keep their
+ * old caption plus a captionError).
+ */
+export function selectSceneRetrySources(sources: UploadedVideoSource[], mode: SceneCaptionSettings["mode"]): UploadedVideoSource[] {
+  return sources.filter((source) => {
+    if (!source.storageBucket || !source.storagePath) return false;
+    if (source.sceneStatus === "failed" || !(source.scenes?.length)) return true;
+    return source.scenes.some((scene) => !sceneCaptionMatchesMode(scene, mode));
+  });
+}
+
+/**
  * Counts scenes whose captions were not produced by the requested caption
  * mode (e.g. BLIP captions imported from the scene-detect worker while the
  * studio is set to smart Qwen captions).
