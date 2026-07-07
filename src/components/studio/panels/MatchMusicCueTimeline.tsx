@@ -1,5 +1,5 @@
 import { fmt } from "../math";
-import type { AdaptiveCueMap } from "../adaptiveCueMap";
+import type { AdaptiveCueMap, OnsetMarker } from "../adaptiveCueMap";
 import type { MusicVideoProject } from "../musicVideoProject";
 
 export function MatchMusicCueTimeline({ cueMap, project }: { cueMap: AdaptiveCueMap; project: MusicVideoProject | null }) {
@@ -7,6 +7,18 @@ export function MatchMusicCueTimeline({ cueMap, project }: { cueMap: AdaptiveCue
   if (!duration) {
     return <div className="rounded-[2px] border border-dashed border-[#202020] bg-[#070707] px-3 py-8 text-center text-[10px] uppercase tracking-[0.14em] text-[#4f4f4f]">Upload/analyze master song to show adaptive cut blocks.</div>;
   }
+
+  // A merged lyric cut is rendered on the onset that absorbed it, not as a
+  // separate marker at the lyric position.
+  const mergedLyricsByOnsetKey = new Map<string, OnsetMarker>();
+  for (const marker of cueMap.markers) {
+    if (marker.kind === "lyric" && marker.mergedWithTime !== undefined) {
+      mergedLyricsByOnsetKey.set(marker.mergedWithTime.toFixed(2), marker);
+    }
+  }
+
+  const lyricCoverageRatio = duration > 0 ? cueMap.lyricCoverageSeconds / duration : 0;
+  const showSparseTranscriptWarning = cueMap.lyricCount > 0 && (lyricCoverageRatio < 0.7 || cueMap.lyricLastTime < duration * 0.85);
 
   return (
     <div className="rounded-[2px] border border-[#151515] bg-[#060606] p-2">
@@ -44,33 +56,50 @@ export function MatchMusicCueTimeline({ cueMap, project }: { cueMap: AdaptiveCue
             </button>
           );
         })}
-        {cueMap.markers.map((marker, index) => (
-          <div
-            key={`${marker.kind}-${index}-${marker.time}`}
-            className={`absolute bottom-2 ${marker.kind === "lyric" ? "w-[2px]" : "w-px"}`}
-            style={{
-              left: `${marker.position * 100}%`,
-              height: `${Math.max(12, marker.strength * (marker.kind === "lyric" ? 48 : 62))}%`,
-              background: marker.kind === "lyric"
-                ? marker.mergedWithTime !== undefined
-                  ? "#75d767"
-                  : marker.active
-                    ? "#32c7d7"
-                    : "#1d3a3e"
-                : marker.active
-                  ? "#ff9a28"
-                  : "#333",
-              opacity: marker.active ? 0.92 : 0.3,
-            }}
-            title={marker.kind === "lyric"
-              ? `SRT ${fmt(marker.time)} · ${marker.label ?? "phrase"}${marker.mergedWithTime !== undefined ? ` · merged with onset ${fmt(marker.mergedWithTime)}` : marker.active ? " · added cut" : " · filtered"}${marker.text ? ` · ${marker.text}` : ""}`
-              : `onset ${fmt(marker.time)} · strength ${marker.strength.toFixed(2)}${marker.active ? " · section-kept" : " · filtered"}`}
-          />
-        ))}
+        {cueMap.markers.map((marker, index) => {
+          if (marker.kind === "lyric") {
+            if (marker.mergedWithTime !== undefined) return null;
+            return (
+              <div
+                key={`${marker.kind}-${index}-${marker.time}`}
+                className="absolute bottom-2 w-[2px]"
+                style={{
+                  left: `${marker.position * 100}%`,
+                  height: "52%",
+                  background: marker.active ? "#32c7d7" : "#1d3a3e",
+                  opacity: marker.active ? 0.92 : 0.35,
+                }}
+                title={`SRT ${fmt(marker.time)} · ${marker.label ?? "phrase"}${marker.active ? " · added cut" : " · filtered"}${marker.text ? ` · ${marker.text}` : ""}`}
+              />
+            );
+          }
+
+          const absorbedLyric = mergedLyricsByOnsetKey.get(marker.time.toFixed(2));
+          return (
+            <div
+              key={`${marker.kind}-${index}-${marker.time}`}
+              className={`absolute bottom-2 ${absorbedLyric ? "w-[2px]" : "w-px"}`}
+              style={{
+                left: `${marker.position * 100}%`,
+                height: `${Math.max(12, marker.strength * 62)}%`,
+                background: absorbedLyric ? "#75d767" : marker.active ? "#ff9a28" : "#333",
+                opacity: marker.active || absorbedLyric ? 0.92 : 0.3,
+              }}
+              title={absorbedLyric
+                ? `onset ${fmt(marker.time)} + SRT ${fmt(absorbedLyric.time)} merged${absorbedLyric.text ? ` · ${absorbedLyric.text}` : ""}`
+                : `onset ${fmt(marker.time)} · strength ${marker.strength.toFixed(2)}${marker.active ? " · section-kept" : " · filtered"}`}
+            />
+          );
+        })}
       </div>
+      {showSparseTranscriptWarning ? (
+        <div className="mt-2 rounded-[2px] border border-[#6f4a12] bg-[#120d05] px-2 py-1.5 text-[10px] leading-4 text-[#c07a3f]">
+          SRT transcript covers only {fmt(cueMap.lyricCoverageSeconds)} of {fmt(duration)} and ends at {fmt(cueMap.lyricLastTime)} — the vocal after that has no timed lyrics, so no cyan cuts can appear there. Re-run the transcription in Story for full-song lyric cuts.
+        </div>
+      ) : null}
       <div className="mt-2 flex items-center justify-between font-mono text-[9px] text-[#555]">
         <span>0:00</span>
-        <span>{cueMap.chunks.length} blocks · {cueMap.onsetActiveCount} active onsets · {cueMap.lyricActiveCount}/{cueMap.lyricCount} SRT markers · {cueMap.lyricMergedCount} merged · {cueMap.beatCount} beats</span>
+        <span>{cueMap.chunks.length} blocks · {cueMap.onsetActiveCount} active onsets · {cueMap.lyricActiveCount}/{cueMap.lyricCount} SRT cuts · {cueMap.lyricMergedCount} merged into onsets · {cueMap.beatCount} beats</span>
         <span>{fmt(duration)}</span>
       </div>
     </div>

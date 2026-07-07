@@ -36,6 +36,10 @@ export type AdaptiveCueMap = {
   lyricActiveCount: number;
   lyricMergedCount: number;
   lyricCount: number;
+  /** Seconds of the song actually covered by timed SRT chunks. */
+  lyricCoverageSeconds: number;
+  /** End time of the last timed SRT chunk (0 when there are none). */
+  lyricLastTime: number;
 };
 
 
@@ -168,6 +172,7 @@ export function buildAdaptiveCueMap(params: {
     lyricActiveCount,
     lyricMergedCount: lyricMarkers.filter((marker) => Boolean(marker.mergedWithTime)).length,
     lyricCount: lyricMarkers.length,
+    ...measureLyricCoverage(project?.lyricChunks ?? [], duration),
   };
 }
 
@@ -182,24 +187,53 @@ function createEmptyCueMap(duration: number): AdaptiveCueMap {
     lyricActiveCount: 0,
     lyricMergedCount: 0,
     lyricCount: 0,
+    lyricCoverageSeconds: 0,
+    lyricLastTime: 0,
   };
 }
 
-function buildLyricBoundaries(chunks: LyricChunk[], duration: number): LyricBoundary[] {
-  const byTime = new Map<string, LyricBoundary>();
+function measureLyricCoverage(chunks: LyricChunk[], duration: number) {
+  let covered = 0;
+  let lastTime = 0;
   for (const chunk of chunks) {
+    const start = clamp(chunk.start, 0, duration);
+    const end = clamp(chunk.end, start, duration);
+    covered += end - start;
+    lastTime = Math.max(lastTime, end);
+  }
+  return { lyricCoverageSeconds: roundTime(covered), lyricLastTime: roundTime(lastTime) };
+}
+
+const LYRIC_MARKER_STRENGTH = 0.62;
+const LYRIC_END_SILENCE_GAP_SECONDS = 0.9;
+
+/**
+ * One boundary per SRT phrase start (uniform strength — a phrase boundary is
+ * a phrase boundary), plus a phrase-end boundary only when real silence
+ * follows (cut away when the vocal stops). Back-to-back phrases don't emit
+ * near-duplicate end/start markers.
+ */
+function buildLyricBoundaries(chunks: LyricChunk[], duration: number): LyricBoundary[] {
+  const ordered = [...chunks].sort((left, right) => left.start - right.start);
+  const byTime = new Map<string, LyricBoundary>();
+
+  ordered.forEach((chunk, index) => {
     const cleanText = chunk.text?.trim() || chunk.lyrics?.trim() || "lyric phrase";
-    const chunkDuration = Math.max(0.25, chunk.end - chunk.start);
-    const strength = clamp(0.38 + Math.min(chunkDuration, 6) / 12 + Math.min(cleanText.length, 80) / 400, 0.35, 1);
-    for (const [label, time] of [["lyric start", chunk.start], ["lyric end", chunk.end]] as const) {
+    const nextStart = ordered[index + 1]?.start ?? Number.POSITIVE_INFINITY;
+    const boundaries: Array<readonly [string, number]> = [["lyric start", chunk.start]];
+    if (nextStart - chunk.end > LYRIC_END_SILENCE_GAP_SECONDS) {
+      boundaries.push(["lyric end", chunk.end]);
+    }
+
+    for (const [label, time] of boundaries) {
       if (!Number.isFinite(time) || time <= 0 || time >= duration) continue;
       const key = timeKey(time);
-      const existing = byTime.get(key);
-      if (!existing || strength > existing.strength) {
-        byTime.set(key, { time: roundTime(time), strength, label, text: cleanText, chunkId: chunk.id });
+      if (!byTime.has(key)) {
+        byTime.set(key, { time: roundTime(time), strength: LYRIC_MARKER_STRENGTH, label, text: cleanText, chunkId: chunk.id });
       }
     }
-  }
+  });
+
   return Array.from(byTime.values()).sort((left, right) => left.time - right.time);
 }
 
