@@ -16,6 +16,21 @@ function makeScene(id: number, start: number, end: number, overrides: Partial<De
   };
 }
 
+describe("sceneSplit.normalizeSplitterManifest caption lanes", () => {
+  test("labels worker-embedded qwen captions as smart, including snake_case caption_source", () => {
+    const scenes = normalizeSplitterManifest({
+      job_id: "job-9",
+      segments: [
+        { index: 1, start_seconds: 0, end_seconds: 4, duration_seconds: 4, caption: "storm jungle", caption_source: "qwen3-vl-server" },
+        { index: 2, start_seconds: 4, end_seconds: 8, duration_seconds: 4, caption: "blip text", captionSource: "self-hosted-blip-cpu" },
+      ],
+    }, 0);
+
+    expect(scenes[0]).toMatchObject({ captionSource: "qwen3-vl-server", captionMode: "smart" });
+    expect(scenes[1]).toMatchObject({ captionSource: "self-hosted-blip-cpu", captionMode: "fast" });
+  });
+});
+
 describe("sceneSplit.mergeShortSceneCuts", () => {
   test("merges lightning-flash fragments into their neighbors (real over-split pattern)", () => {
     // Observed on a single-shot storm clip: 15s split into 5 scenes with

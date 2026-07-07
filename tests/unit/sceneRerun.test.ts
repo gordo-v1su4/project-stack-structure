@@ -44,6 +44,15 @@ describe("sceneCaptionMatchesMode", () => {
     expect(sceneCaptionMatchesMode(blipScene, "smart")).toBe(false);
   });
 
+  test("worker-embedded Qwen captions satisfy smart mode without a recaption pass", () => {
+    // The video worker now runs SCENE_CAPTION_MODE=smart and embeds Qwen
+    // captions in the scene-detect manifest; the source decides the lane.
+    const workerQwenScene = makeScene({ caption: "a person in a storm", captionSource: "qwen3-vl-server" });
+
+    expect(sceneCaptionMatchesMode(workerQwenScene, "smart")).toBe(true);
+    expect(sceneCaptionMatchesMode(workerQwenScene, "fast")).toBe(false);
+  });
+
   test("studio-produced captions match only their own lane; manual always matches", () => {
     const fastScene = makeScene({ caption: "x", captionMode: "fast", captionSource: "lfm-webgpu" });
     const smartScene = makeScene({ caption: "x", captionMode: "smart", captionSource: "qwen3-vl-server" });

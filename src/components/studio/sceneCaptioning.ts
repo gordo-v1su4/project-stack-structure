@@ -27,14 +27,16 @@ let serverCaptionAvailablePromise: Promise<boolean> | null = null;
 
 /**
  * True when a scene's existing caption already satisfies the requested
- * caption mode. Manual captions always match; gateway-imported captions
- * (e.g. the scene-detect worker's own BLIP pass) match neither lane.
+ * caption mode. The caption source is authoritative: Qwen captions satisfy
+ * smart whether the studio requested them or the scene-detect worker embedded
+ * them (SCENE_CAPTION_MODE=smart); other imported captions (e.g. a worker
+ * BLIP pass) match neither lane. Manual captions always match.
  */
 export function sceneCaptionMatchesMode(scene: DetectedSceneSegment, mode: SceneCaptionSettings["mode"]): boolean {
   if (!scene.caption) return false;
   if (scene.captionSource === "manual") return true;
-  if (mode === "smart") return scene.captionMode === "smart" && scene.captionSource === "qwen3-vl-server";
-  return scene.captionMode === "fast" && (scene.captionSource === "lfm-webgpu" || scene.captionSource === "lfm-server");
+  if (mode === "smart") return scene.captionSource === "qwen3-vl-server";
+  return scene.captionSource === "lfm-webgpu" || scene.captionSource === "lfm-server";
 }
 
 export async function captionDetectedScenes(

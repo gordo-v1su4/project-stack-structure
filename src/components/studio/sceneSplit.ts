@@ -120,8 +120,14 @@ export function normalizeSplitterManifest(
         timeOfDay: readString(sceneData.timeOfDay) ?? readString(sceneData.time_of_day),
         weather: readString(sceneData.weather),
       } : undefined,
-      captionSource: readString(record.captionSource) as DetectedSceneSegment["captionSource"] | undefined ?? (caption ? "imported" : undefined),
-      captionMode: readString(record.captionMode) === "smart" || readString(record.caption_mode) === "smart" ? "smart" : caption ? "fast" : undefined,
+      captionSource: (readString(record.captionSource) ?? readString(record.caption_source)) as DetectedSceneSegment["captionSource"] | undefined ?? (caption ? "imported" : undefined),
+      captionMode: readString(record.captionMode) === "smart" ||
+        readString(record.caption_mode) === "smart" ||
+        (readString(record.captionSource) ?? readString(record.caption_source)) === "qwen3-vl-server"
+        ? "smart"
+        : caption
+          ? "fast"
+          : undefined,
       captionModel: readString(record.captionModel) ?? readString(record.caption_model),
       captionSampleStrategy: readString(record.captionSampleStrategy) ?? readString(record.caption_sample_strategy),
       visualAnalysis,
