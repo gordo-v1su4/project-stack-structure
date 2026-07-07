@@ -191,6 +191,46 @@ export function buildSrtChunksFromDeepgram(response: JsonRecord, options: JsonRe
     : [];
 }
 
+export type DeepgramWordCoverage = {
+  duration: number;
+  lastWordEnd: number;
+  wordCount: number;
+};
+
+/** How much of the audio the transcription's words actually span. */
+export function measureDeepgramWordCoverage(response: JsonRecord): DeepgramWordCoverage {
+  const alternative = getPrimaryAlternative(response);
+  const words = asRecordArray(alternative.words);
+  const duration = numberFrom(asRecord(response.metadata).duration, 0);
+  let lastWordEnd = 0;
+  for (const word of words) {
+    lastWordEnd = Math.max(lastWordEnd, numberFrom(word.end, 0));
+  }
+  return { duration, lastWordEnd, wordCount: words.length };
+}
+
+/**
+ * True when a speech model plausibly gave up on sung/processed vocals: the
+ * audio is long but recognized words stop well before it ends. Used to decide
+ * whether a whisper retry is worth the extra latency.
+ */
+export function isDeepgramCoverageSparse(coverage: DeepgramWordCoverage): boolean {
+  if (coverage.duration < 30) return false;
+  if (coverage.wordCount === 0) return true;
+  return coverage.lastWordEnd < coverage.duration * 0.6;
+}
+
+/** Picks the transcription whose words cover more of the song. */
+export function pickRicherDeepgramResponse(primary: JsonRecord, fallback: JsonRecord): JsonRecord {
+  const primaryCoverage = measureDeepgramWordCoverage(primary);
+  const fallbackCoverage = measureDeepgramWordCoverage(fallback);
+  if (fallbackCoverage.wordCount === 0) return primary;
+  if (primaryCoverage.wordCount === 0) return fallback;
+  if (fallbackCoverage.lastWordEnd > primaryCoverage.lastWordEnd * 1.15) return fallback;
+  if (fallbackCoverage.wordCount > primaryCoverage.wordCount * 1.3) return fallback;
+  return primary;
+}
+
 export type DeepgramTranscriptSummary = {
   provider: "deepgram";
   model: string;
