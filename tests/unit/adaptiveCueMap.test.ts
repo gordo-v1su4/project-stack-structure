@@ -50,6 +50,31 @@ describe("adaptive cue map lyric/SRT blending", () => {
     expect(blended.chunks.some((chunk) => chunk.lyricCueCount > 0)).toBe(true);
   });
 
+  test("covers the whole song even when story sections do not, so SRT cuts appear everywhere", () => {
+    // Section only covers the first 8s of a 20s song; the singer keeps going.
+    const partialProject: MusicVideoProject = {
+      ...project,
+      storySections: [{ id: "verse", label: "Verse", start: 0, end: 8, energy: 0.5, prompt: "story", source: "analysis", lyricChunkIds: [], videoMomentIds: [] }],
+    };
+    const map = buildAdaptiveCueMap({ analysis, project: partialProject, density: 0.65, lyricBlend: 1, lyricMergeWindowSeconds: 0 });
+
+    const lastChunk = map.chunks[map.chunks.length - 1];
+    expect(lastChunk?.end).toBe(20);
+    expect(map.chunks.some((chunk) => chunk.sectionLabel === "Unmapped")).toBe(true);
+    // Lyrics at 9–13s and 16–18s are outside the section but must become cuts.
+    expect(map.markers.some((marker) => marker.kind === "lyric" && marker.time > 8 && marker.active)).toBe(true);
+  });
+
+  test("caps chunk duration so strength-clustered onsets cannot leave giant blocks", () => {
+    const map = buildAdaptiveCueMap({ analysis, project, density: 0.9, lyricBlend: 0, lyricMergeWindowSeconds: 0 });
+    const maxChunkSeconds = Math.max(1.2, 6.5 - 0.9 * 4.6);
+
+    expect(map.chunks.length).toBeGreaterThan(3);
+    for (const chunk of map.chunks) {
+      expect(chunk.end - chunk.start).toBeLessThanOrEqual(maxChunkSeconds + 0.001);
+    }
+  });
+
   test("merges lyric cues near selected music onsets instead of double-counting cuts", () => {
     const noMerge = buildAdaptiveCueMap({ analysis, project, density: 0.65, lyricBlend: 1, lyricMergeWindowSeconds: 0 });
     const merged = buildAdaptiveCueMap({ analysis, project, density: 0.65, lyricBlend: 1, lyricMergeWindowSeconds: 2 });

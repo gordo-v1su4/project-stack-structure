@@ -73,6 +73,7 @@ export default function StudioApp() {
   const videoSourcesRef = useRef<UploadedVideoSource[]>([]);
   const referenceAssetsRef = useRef<ReferenceAsset[]>([]);
   const [tab, setTab] = useState<Tab>("review");
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [playhead] = useState(0.08);
   const [, setAudioPreviewPlayhead] = useState(0);
   const [activeClip, setActiveClip] = useState(2);
@@ -171,6 +172,16 @@ export default function StudioApp() {
     if (typeof window === "undefined") return;
     window.localStorage.setItem("svs.studio.activeTab", tab);
   }, [tab]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setIsSidebarCollapsed(window.localStorage.getItem("svs.studio.sidebarCollapsed") === "1");
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("svs.studio.sidebarCollapsed", isSidebarCollapsed ? "1" : "0");
+  }, [isSidebarCollapsed]);
 
   useEffect(() => {
     const player = previewPlayerRef.current;
@@ -1555,6 +1566,8 @@ export default function StudioApp() {
       <StudioSidebar
         tab={tab}
         stages={pipeline.stages}
+        collapsed={isSidebarCollapsed}
+        onToggleCollapsed={() => setIsSidebarCollapsed((current) => !current)}
         sessionStats={{
           audioLabel: beatJoinAnalysis?.sourceLabel ?? null,
           videoCount: videoSources.length,

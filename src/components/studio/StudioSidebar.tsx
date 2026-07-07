@@ -16,11 +16,52 @@ type StudioSidebarProps = {
   tab: Tab;
   stages: PipelineStage[];
   sessionStats: SidebarSessionStats;
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
   onSelectTab: (t: Tab) => void;
 };
 
-export function StudioSidebar({ tab, stages, sessionStats, onSelectTab }: StudioSidebarProps) {
+export function StudioSidebar({ tab, stages, sessionStats, collapsed, onToggleCollapsed, onSelectTab }: StudioSidebarProps) {
   const stagesByKey = new Map(stages.map((stage) => [stage.key, stage]));
+
+  if (collapsed) {
+    return (
+      <aside className="flex w-9 shrink-0 flex-col items-center border-r border-[#181818] bg-[#0c0c0c]">
+        <button
+          type="button"
+          onClick={onToggleCollapsed}
+          title="Expand workflow panel"
+          className="flex h-9 w-full items-center justify-center border-b border-[#181818] text-[12px] text-[#777] hover:bg-[#131313] hover:text-[#e05c00]"
+        >
+          »
+        </button>
+        <div className="mt-3 grid grid-cols-2 gap-[2px]">
+          <div className="h-[5px] w-[5px] bg-[#e05c00]" />
+          <div className="h-[5px] w-[5px] bg-[#2a2a2a]" />
+          <div className="h-[5px] w-[5px] bg-[#2a2a2a]" />
+          <div className="h-[5px] w-[5px] bg-[#e05c00]" />
+        </div>
+        <div className="mt-4 flex flex-1 flex-col items-center gap-2 overflow-y-auto py-1">
+          {NAV.map((item) => {
+            const stage = stagesByKey.get(item.key);
+            return (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => onSelectTab(item.key)}
+                title={stage ? `${item.label}: ${stage.status}` : item.label}
+                className={`flex h-5 w-5 items-center justify-center rounded-[2px] border transition-colors ${
+                  tab === item.key ? "border-[#e05c00]" : "border-transparent hover:border-[#333]"
+                }`}
+              >
+                <span className={`h-1.5 w-1.5 rounded-full ${stage?.ready ? "bg-[#3a8a3a]" : stage?.isNext ? "bg-[#e05c00]" : "bg-[#2a2a2a]"}`} />
+              </button>
+            );
+          })}
+        </div>
+      </aside>
+    );
+  }
 
   return (
     <aside className="flex w-52 shrink-0 flex-col border-r border-[#181818] bg-[#0c0c0c]">
@@ -31,10 +72,18 @@ export function StudioSidebar({ tab, stages, sessionStats, onSelectTab }: Studio
           <div className="h-[7px] w-[7px] bg-[#2a2a2a]" />
           <div className="h-[7px] w-[7px] bg-[#e05c00]" />
         </div>
-        <div>
+        <div className="min-w-0 flex-1">
           <div className="text-[13px] font-semibold tracking-wide text-[#e0e0e0]">SVS Studio</div>
           <div className="text-[9px] uppercase tracking-[0.22em] text-[#3a3a3a]">Video Process Engine</div>
         </div>
+        <button
+          type="button"
+          onClick={onToggleCollapsed}
+          title="Collapse workflow panel"
+          className="shrink-0 rounded-[2px] border border-transparent px-1.5 py-1 text-[12px] text-[#555] hover:border-[#333] hover:text-[#e05c00]"
+        >
+          «
+        </button>
       </div>
 
       <div className="flex-1 overflow-y-auto py-2">

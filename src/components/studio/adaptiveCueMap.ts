@@ -66,9 +66,7 @@ export function buildAdaptiveCueMap(params: {
     strength: clamp(sampleSeries(analysis.energy, duration, time) * 0.62 + sampleSeries(analysis.waveform, duration, time) * 0.38, 0.05, 1),
   }));
   const lyricBoundaries = buildLyricBoundaries(project?.lyricChunks ?? [], duration);
-  const sections = project?.storySections.length
-    ? project.storySections.map((section) => ({ id: section.id, label: section.label, start: section.start, end: section.end, energy: section.energy ?? 0.5 }))
-    : buildFallbackSections(duration);
+  const sections = buildCoverageWindows(project?.storySections ?? [], duration);
 
   const activeOnsetKeys = new Set<string>();
   const activeLyricKeys = new Set<string>();
@@ -111,12 +109,12 @@ export function buildAdaptiveCueMap(params: {
     }
 
     const cutTimes = uniqueSortedTimes([start, ...onsetCutTimes, ...lyricCutTimes, end], duration);
-    while (cutTimes.length < minimumInteriorCuts + 2) {
-      const gaps = cutTimes.slice(1).map((time, index) => ({ index, span: time - cutTimes[index] })).sort((left, right) => right.span - left.span);
-      const gap = gaps[0];
-      if (!gap || gap.span <= 0.35) break;
-      cutTimes.splice(gap.index + 1, 0, roundTime((cutTimes[gap.index] + cutTimes[gap.index + 1]) / 2));
-    }
+    // Strength-ranked selection clusters cuts where the music is loud and can
+    // leave the rest of a window as one giant block. Split oversized gaps at
+    // the strongest unused onset inside them (midpoint when none exists) so
+    // no chunk exceeds the density-derived maximum.
+    const maxChunkSeconds = Math.max(1.2, 6.5 - density * 4.6);
+    enforceMaxChunkDuration({ cutTimes, onsets: sectionOnsets, maxChunkSeconds, activeOnsetKeys });
 
     for (let index = 0; index < cutTimes.length - 1; index += 1) {
       const chunkStart = cutTimes[index];
@@ -203,6 +201,95 @@ function buildLyricBoundaries(chunks: LyricChunk[], duration: number): LyricBoun
     }
   }
   return Array.from(byTime.values()).sort((left, right) => left.time - right.time);
+}
+
+type CoverageWindow = {
+  id: string;
+  label: string;
+  start: number;
+  end: number;
+  energy?: number;
+};
+
+/**
+ * Tiles the full song duration with cue windows. Story sections rarely cover
+ * the whole track (intros/outros/bridges without analysis windows), and cuts
+ * were only ever generated inside them — so lyrics sung outside a section got
+ * no representation and uncovered spans rendered as giant empty blocks. Gaps
+ * between, before, and after sections become their own windows.
+ */
+export function buildCoverageWindows(
+  sections: Array<{ id: string; label: string; start: number; end: number; energy?: number }>,
+  duration: number,
+): CoverageWindow[] {
+  const MIN_GAP_SECONDS = 1.25;
+  const valid = sections
+    .filter((section) => Number.isFinite(section.start) && Number.isFinite(section.end))
+    .map((section) => ({
+      id: section.id,
+      label: section.label,
+      start: clamp(section.start, 0, duration),
+      end: clamp(section.end, 0, duration),
+      energy: section.energy,
+    }))
+    .filter((section) => section.end > section.start + 0.05)
+    .sort((left, right) => left.start - right.start);
+
+  if (!valid.length) return buildFallbackSections(duration);
+
+  const windows: CoverageWindow[] = [];
+  let cursor = 0;
+  for (const section of valid) {
+    if (section.start - cursor >= MIN_GAP_SECONDS) {
+      windows.push({ id: `coverage-gap-${cursor.toFixed(2)}`, label: "Unmapped", start: roundTime(cursor), end: roundTime(section.start) });
+    }
+    const start = Math.max(section.start, cursor);
+    if (section.end > start + 0.05) {
+      windows.push({ ...section, start: roundTime(start) });
+    }
+    cursor = Math.max(cursor, section.end);
+  }
+  if (duration - cursor >= MIN_GAP_SECONDS) {
+    windows.push({ id: `coverage-gap-${cursor.toFixed(2)}`, label: "Unmapped", start: roundTime(cursor), end: roundTime(duration) });
+  }
+
+  return windows;
+}
+
+function enforceMaxChunkDuration(params: {
+  cutTimes: number[];
+  onsets: Array<{ time: number; strength: number }>;
+  maxChunkSeconds: number;
+  activeOnsetKeys: Set<string>;
+}) {
+  const { cutTimes, onsets, maxChunkSeconds, activeOnsetKeys } = params;
+  const used = new Set(cutTimes.map(timeKey));
+
+  let index = 0;
+  let guard = 512;
+  while (index < cutTimes.length - 1 && guard-- > 0) {
+    const gapStart = cutTimes[index]!;
+    const gapEnd = cutTimes[index + 1]!;
+    if (gapEnd - gapStart <= maxChunkSeconds) {
+      index += 1;
+      continue;
+    }
+
+    const margin = Math.min(0.4, (gapEnd - gapStart) / 4);
+    const candidate = onsets
+      .filter((onset) => onset.time > gapStart + margin && onset.time < gapEnd - margin && !used.has(timeKey(onset.time)))
+      .sort((left, right) => right.strength - left.strength)[0];
+    const splitTime = roundTime(candidate ? candidate.time : (gapStart + gapEnd) / 2);
+    if (used.has(timeKey(splitTime))) {
+      index += 1;
+      continue;
+    }
+
+    used.add(timeKey(splitTime));
+    if (candidate) activeOnsetKeys.add(timeKey(candidate.time));
+    cutTimes.splice(index + 1, 0, splitTime);
+    // Re-examine the same index: the left half may still be oversized.
+  }
 }
 
 function buildFallbackSections(duration: number) {

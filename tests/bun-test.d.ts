@@ -8,6 +8,7 @@ declare module "bun:test" {
     toBeGreaterThan(expected: number): void;
     toBeGreaterThanOrEqual(expected: number): void;
     toBeLessThan(expected: number): void;
+    toBeLessThanOrEqual(expected: number): void;
     toBeCloseTo(expected: number, precision?: number): void;
     toContain(expected: unknown): void;
     toContainEqual(expected: unknown): void;
