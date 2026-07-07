@@ -54,7 +54,9 @@ const SEGMENT_END_TOLERANCE_SECONDS = 0.025;
 
 export class BrowserPreviewPlayer {
   private segments: PreviewSegment[] = [];
-  private videoElement: HTMLVideoElement | null = null;
+  private elements: [HTMLVideoElement | null, HTMLVideoElement | null] = [null, null];
+  private activeElementIndex: 0 | 1 = 0;
+  private nextSegmentIsLive = false;
   private currentIndex = 0;
   private listeners = new Set<PreviewPlayerListener>();
   private totalDuration = 0;
@@ -75,16 +77,48 @@ export class BrowserPreviewPlayer {
     this.prerollSeconds = Math.max(0, options.prerollSeconds ?? DEFAULT_PREROLL_SECONDS);
   }
 
-  attach(videoElement: HTMLVideoElement) {
-    this.videoElement = videoElement;
-    videoElement.preload = "auto";
-    videoElement.playsInline = true;
+  /** The element currently shown to the user. */
+  private get videoElement(): HTMLVideoElement | null {
+    return this.elements[this.activeElementIndex];
+  }
+
+  /** The hidden element the next cut is staged on (double buffering). */
+  private get standbyElement(): HTMLVideoElement | null {
+    return this.elements[this.activeElementIndex === 0 ? 1 : 0];
+  }
+
+  /**
+   * Attach the visible playback element and, optionally, a second stacked
+   * element used to stage the next cut off-screen. With a standby element the
+   * cut swap is atomic — no black frame while the next source loads/seeks.
+   */
+  attach(videoElement: HTMLVideoElement, standbyElement: HTMLVideoElement | null = null) {
+    this.elements = [videoElement, standbyElement];
+    this.activeElementIndex = 0;
+    this.nextSegmentIsLive = false;
+    for (const element of this.elements) {
+      if (!element) continue;
+      element.preload = "auto";
+      element.playsInline = true;
+    }
+    this.applyElementVisibility();
   }
 
   detach() {
     this.stop();
     this.releaseWarmElements();
-    this.videoElement = null;
+    this.elements = [null, null];
+    this.activeElementIndex = 0;
+  }
+
+  getActiveVideoElement(): HTMLVideoElement | null {
+    return this.videoElement;
+  }
+
+  private applyElementVisibility() {
+    this.elements.forEach((element, index) => {
+      if (element) element.style.opacity = index === this.activeElementIndex ? "1" : "0";
+    });
   }
 
   load(segments: PreviewSegment[]) {
@@ -153,11 +187,15 @@ export class BrowserPreviewPlayer {
     this.playbackToken++;
     this.stopProgressLoop();
     this.currentSegmentEndTime = null;
-    if (this.videoElement) {
-      this.videoElement.pause();
-      this.videoElement.removeAttribute("src");
-      this.videoElement.load();
+    this.nextSegmentIsLive = false;
+    for (const element of this.elements) {
+      if (!element) continue;
+      element.pause();
+      element.removeAttribute("src");
+      element.load();
     }
+    this.activeElementIndex = 0;
+    this.applyElementVisibility();
     this.status = "idle";
     this.currentIndex = 0;
     this.emit();
@@ -214,7 +252,8 @@ export class BrowserPreviewPlayer {
   }
 
   private async playSegment(index: number, token: number) {
-    if (!this.videoElement || index >= this.segments.length || token !== this.playbackToken) {
+    const video = this.videoElement;
+    if (!video || index >= this.segments.length || token !== this.playbackToken) {
       this.status = "ended";
       this.emit();
       return;
@@ -230,19 +269,50 @@ export class BrowserPreviewPlayer {
     this.currentIndex = index;
     this.warmSourcesAround(index);
 
-    const video = this.videoElement;
-    await this.prepareVisibleVideo(video, segment, token);
-    if (token !== this.playbackToken) return;
+    if (this.nextSegmentIsLive) {
+      // This segment was staged on the standby element and swapped in at the
+      // previous cut boundary; it is already seeked, visible, and playing.
+      this.nextSegmentIsLive = false;
+    } else {
+      await this.prepareVisibleVideo(video, segment, token);
+      if (token !== this.playbackToken) return;
 
-    await video.play();
-    if (token !== this.playbackToken) return;
+      await video.play();
+      if (token !== this.playbackToken) return;
+    }
 
     this.status = "playing";
     this.currentSegmentEndTime = segment.endTime;
     this.startProgressLoop();
     this.emit();
 
+    // Stage the next cut on the hidden standby element while this one plays,
+    // so the boundary is an atomic visibility swap instead of a src/seek gap.
+    const nextSegment = this.segments[index + 1];
+    const standby = this.standbyElement;
+    let standbyReady = false;
+    if (standby && nextSegment) {
+      void this.prepareVisibleVideo(standby, nextSegment, token)
+        .then(() => {
+          if (token === this.playbackToken) standbyReady = true;
+        })
+        .catch(() => {
+          // Fall back to preparing on the visible element at the boundary.
+        });
+    }
+
     await this.waitForSegmentEnd(segment.endTime, token);
+    if (token !== this.playbackToken) return;
+
+    if (standby && nextSegment && standbyReady) {
+      void standby.play().catch(() => {});
+      this.activeElementIndex = this.activeElementIndex === 0 ? 1 : 0;
+      this.applyElementVisibility();
+      video.pause();
+      this.nextSegmentIsLive = true;
+      this.stopProgressLoop();
+    }
+
     await this.advanceToNext(token);
   }
 

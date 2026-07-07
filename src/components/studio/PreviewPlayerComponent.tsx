@@ -42,6 +42,7 @@ export function PreviewPlayer({
   useSourceAudio = false,
 }: PreviewPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const standbyVideoRef = useRef<HTMLVideoElement>(null);
   const shaderCanvasRef = useRef<HTMLCanvasElement>(null);
   const sourceMonitorRef = useRef<HTMLVideoElement>(null);
   const shaderRendererRef = useRef<StutterWebGpuPreviewRenderer | null>(null);
@@ -53,7 +54,7 @@ export function PreviewPlayer({
 
   useEffect(() => {
     if (videoRef.current) {
-      player.attach(videoRef.current);
+      player.attach(videoRef.current, standbyVideoRef.current);
     }
     return () => {
       player.detach();
@@ -99,14 +100,14 @@ export function PreviewPlayer({
   }, [hasShaderCues]);
 
   useEffect(() => {
-    const video = videoRef.current;
+    const video = player.getActiveVideoElement() ?? videoRef.current;
     const renderer = shaderRendererRef.current;
     if (!video || !renderer || !hasShaderCues) return;
 
     const plan = selectActiveStutterRuntimePlan(effectCues, state.currentTime);
     renderer.render(video, plan, state.currentTime);
     shaderModeRef.current = renderer.getMode();
-  }, [effectCues, hasShaderCues, state.currentIndex, state.currentTime, state.status]);
+  }, [effectCues, hasShaderCues, player, state.currentIndex, state.currentTime, state.status]);
 
   const handlePlay = useCallback(() => {
     if (state.status === "paused") {
@@ -170,6 +171,17 @@ export function PreviewPlayer({
             data-preview-engine={state.engineMode}
             data-shader-preview={hasShaderCues ? shaderMode : "disabled"}
             className={`aspect-video rounded-[2px] border border-[#181818] bg-[#050505] object-contain ${isExpanded ? "w-full max-h-[68vh]" : "h-[96px] w-full"}`}
+          />
+          {/* Standby buffer: the next cut is staged here off-screen, then the
+              player swaps opacities at the boundary — no black frame. */}
+          <video
+            ref={standbyVideoRef}
+            preload="auto"
+            muted={!useSourceAudio}
+            playsInline
+            aria-hidden="true"
+            data-preview-standby="true"
+            className="pointer-events-none absolute inset-0 h-full w-full rounded-[2px] border border-[#181818] bg-[#050505] object-contain opacity-0"
           />
           {isExpanded ? (
             <div className="pointer-events-none absolute bottom-2 left-2 rounded-[2px] border border-[#151515] bg-[#050505cc] px-2 py-1 font-mono text-[8px] uppercase tracking-[0.12em] text-[#777]">
