@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { buildAdaptiveCueMap } from "@/components/studio/adaptiveCueMap";
+import { shouldWarnForEarlySrtEnd } from "@/components/studio/panels/MatchMusicCueTimeline";
 import type { MusicVideoProject } from "@/components/studio/musicVideoProject";
 import type { BeatJoinAnalysis } from "@/components/studio/types";
 
@@ -82,5 +83,10 @@ describe("adaptive cue map lyric/SRT blending", () => {
     expect(merged.lyricMergedCount).toBeGreaterThan(0);
     expect(merged.chunks.length).toBeLessThan(noMerge.chunks.length);
     expect(merged.markers.some((marker) => marker.kind === "lyric" && marker.mergedWithTime !== undefined)).toBe(true);
+  });
+
+  test("does not warn about incomplete lyrics when sparse phrases still reach the end of the song", () => {
+    expect(shouldWarnForEarlySrtEnd({ lyricCount: 46, lyricLastTime: 240.8 }, 246.5)).toBe(false);
+    expect(shouldWarnForEarlySrtEnd({ lyricCount: 46, lyricLastTime: 104 }, 246.5)).toBe(true);
   });
 });

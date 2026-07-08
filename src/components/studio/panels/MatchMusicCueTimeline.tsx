@@ -17,8 +17,7 @@ export function MatchMusicCueTimeline({ cueMap, project }: { cueMap: AdaptiveCue
     }
   }
 
-  const lyricCoverageRatio = duration > 0 ? cueMap.lyricCoverageSeconds / duration : 0;
-  const showSparseTranscriptWarning = cueMap.lyricCount > 0 && (lyricCoverageRatio < 0.7 || cueMap.lyricLastTime < duration * 0.85);
+  const showSparseTranscriptWarning = shouldWarnForEarlySrtEnd(cueMap, duration);
 
   return (
     <div className="rounded-[2px] border border-[#151515] bg-[#060606] p-2">
@@ -94,7 +93,7 @@ export function MatchMusicCueTimeline({ cueMap, project }: { cueMap: AdaptiveCue
       </div>
       {showSparseTranscriptWarning ? (
         <div className="mt-2 rounded-[2px] border border-[#6f4a12] bg-[#120d05] px-2 py-1.5 text-[10px] leading-4 text-[#c07a3f]">
-          SRT transcript covers only {fmt(cueMap.lyricCoverageSeconds)} of {fmt(duration)} and ends at {fmt(cueMap.lyricLastTime)} — the vocal after that has no timed lyrics, so no cyan cuts can appear there. Re-run the transcription in Story for full-song lyric cuts.
+          SRT transcript ends at {fmt(cueMap.lyricLastTime)} of {fmt(duration)} — the vocal after that has no timed lyrics, so no cyan cuts can appear there. Re-run the transcription in Story for full-song lyric cuts.
         </div>
       ) : null}
       <div className="mt-2 flex items-center justify-between font-mono text-[9px] text-[#555]">
@@ -109,6 +108,10 @@ export function MatchMusicCueTimeline({ cueMap, project }: { cueMap: AdaptiveCue
 
 function clamp01(value: number) {
   return clamp(value, 0, 1);
+}
+
+export function shouldWarnForEarlySrtEnd(cueMap: Pick<AdaptiveCueMap, "lyricCount" | "lyricLastTime">, duration: number) {
+  return duration > 0 && cueMap.lyricCount > 0 && cueMap.lyricLastTime < duration * 0.85;
 }
 
 function clamp(value: number, min: number, max: number) {
