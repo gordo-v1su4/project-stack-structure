@@ -1,4 +1,4 @@
-import { createMediaGatewayVideoJob } from "@/lib/mediaGateway";
+import { triggerMediaSceneDetection } from "@/lib/triggerOrchestration";
 
 export const runtime = "nodejs";
 
@@ -17,17 +17,26 @@ export async function POST(request: Request) {
       return Response.json({ error: "bucket and objectKey are required" }, { status: 400 });
     }
 
-    const job = await createMediaGatewayVideoJob({
+    const handle = await triggerMediaSceneDetection({
       bucket: payload.bucket,
       objectKey,
       mode: payload.mode,
       profile: payload.profile,
       metadata: payload.metadata,
     });
-    return Response.json({ job });
+    return Response.json({
+      orchestration: "trigger.dev",
+      job: {
+        job_id: handle.id,
+        status: "queued",
+        stage: "trigger-queued",
+        bucket: payload.bucket,
+        objectKey,
+      },
+    }, { status: 202 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Video job creation failed";
-    const status = /Missing RustFS media gateway env/i.test(message) ? 503 : 500;
+    const status = /not configured/i.test(message) ? 503 : 500;
     return Response.json({ error: message }, { status });
   }
 }

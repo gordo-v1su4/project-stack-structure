@@ -2,7 +2,7 @@
 
 import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import { extractWaveformData, fetchEssentiaAnalysis, parseEssentiaPayload } from "./studio/audioAnalysis";
+import { extractWaveformData, fetchEssentiaAnalysis, getEssentiaStorageFromPayload, parseEssentiaPayload } from "./studio/audioAnalysis";
 import { uploadAudioFileToRustFs } from "./studio/audioStorage";
 import { buildArrangementSegments } from "./studio/arrangementBuilder";
 import type { ArrangementSegment } from "./studio/arrangementBuilder";
@@ -692,6 +692,7 @@ export default function StudioApp() {
     try {
       const { waveform, duration } = await extractWaveformData(file);
       const response = await fetchEssentiaAnalysis(file);
+      const orchestratedStorage = getEssentiaStorageFromPayload(response);
       const parsed = parseEssentiaPayload({
         payload: response,
         fileName: file.name,
@@ -706,7 +707,13 @@ export default function StudioApp() {
 
       setAudioStatus(`Uploading ${file.name} to RustFS...`);
       let parsedWithStorage: BeatJoinAnalysis = parsed;
-      try {
+      if (orchestratedStorage) {
+        parsedWithStorage = {
+          ...parsed,
+          ...orchestratedStorage,
+          audioUrl: orchestratedStorage.storageUrl,
+        };
+      } else try {
         const storage = await uploadAudioFileToRustFs(file);
         parsedWithStorage = {
           ...parsed,

@@ -26,6 +26,7 @@ Smart auto music-video editor: **upload your song and footage**, get a **musical
 | Layer | Where it runs |
 | --- | --- |
 | Studio UI | Browser (Next.js) |
+| Durable orchestration | Self-hosted Trigger.dev |
 | Song analysis | Essentia API (server GPU) |
 | Clip storage and scene detect | RustFS + media gateway |
 | Semantic clip tagging | Vision caption gateways — LFM fast, Qwen3-VL GGUF smart (server GPU) |
@@ -52,6 +53,7 @@ graph TB
     end
 
     subgraph Cloud["Hosted services"]
+        TR["Trigger.dev orchestration"]
         ESS["Essentia API GPU"]
         FFG["FFmpeg gateway"]
         MG["Media gateway and scene detect"]
@@ -63,10 +65,13 @@ graph TB
     UI --> API_C
     UI --> API_M
     UI --> API_P
-    API_E --> ESS
+    API_E --> TR
     API_F --> FFG
-    API_C --> VL
-    API_M --> MG
+    API_C --> TR
+    API_M --> TR
+    TR --> ESS
+    TR --> MG
+    TR --> VL
     API_P --> FFG
 ```
 
@@ -74,6 +79,7 @@ graph TB
 
 | Service | URL | Repo | Role |
 | --- | --- | --- | --- |
+| Trigger.dev | `trigger.v1su4.dev` | — | Durable task runs, retries, idempotency, and run history |
 | Essentia API | `essentia.v1su4.dev` | [essentia-endpoint](https://github.com/gordo-v1su4/essentia-endpoint) | Beats, sections, onsets, waveform |
 | FFmpeg Gateway | `ffmpeg.v1su4.dev` | [ffmpeg-gateway](https://github.com/gordo-v1su4/ffmpeg-gateway) | Preview, concat, extract-audio, FFglitch |
 | Media gateway | env `MEDIA_GATEWAY_URL` | — | RustFS uploads, PySceneDetect jobs |
@@ -93,6 +99,7 @@ FFmpeg gateway API: `https://ffmpeg.v1su4.dev/docs`
 | `src/components/studio/panels/GenerateTab.tsx` | Coverage gaps and filler prompts |
 | `src/app/api/essentia/full/route.ts` | Audio analysis proxy |
 | `src/app/api/caption/scene/route.ts` | Vision caption proxy |
+| `src/app/api/orchestration/runs/[runId]/route.ts` | Trigger run status and output |
 | `src/app/api/ffglitch/route.ts` | FFglitch capability/proxy route |
 
 ## Getting started
@@ -111,6 +118,12 @@ bun run probe:media
 bun run preview:section
 bun run bench:latency
 ```
+
+Copy the server-side variable names from `.env.example` into the local or
+deployment environment. `TRIGGER_SECRET_KEY` must never use a `NEXT_PUBLIC_`
+or `VITE_` prefix. The media, Essentia, and smart-caption API routes return a
+Trigger run ID; the UI polls `/api/orchestration/runs/<runId>` until the run
+reaches a terminal state.
 
 Local media fixtures (gitignored): `.local-fixtures/media/`
 

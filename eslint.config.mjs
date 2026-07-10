@@ -12,6 +12,11 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Local vendor research and generated Trigger.dev deployment output.
+    ".research/**",
+    "_repo-research/**",
+    "documents/comparative-research/**",
+    ".trigger/**",
   ]),
 ]);
 

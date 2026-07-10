@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   buildStudioMediaFolder,
+  downloadMediaGatewayFile,
   getMediaGatewayConfig,
   normalizeMediaGatewayUploadResult,
 } from "@/lib/mediaGateway";
@@ -60,5 +61,34 @@ describe("mediaGateway", () => {
       publicUrl: "https://s3.v1su4.dev/stack-structure/media-uploads/b.mp4",
       path: "media-uploads/b.mp4",
     }, "stack-structure", "video/mp4").storagePath).toBe("media-uploads/b.mp4");
+  });
+
+  test("downloads a stored object through the authenticated media gateway", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const result = await downloadMediaGatewayFile({
+      bucket: "stack-structure",
+      objectKey: "media-uploads/source-audio/song.wav",
+      env: {
+        MEDIA_GATEWAY_URL: "https://media.local",
+        MEDIA_GATEWAY_TOKEN: "media-token",
+      },
+      fetchImpl: (async (url: string | URL | Request, init?: RequestInit) => {
+        calls.push({ url: String(url), init });
+        return new Response(new Uint8Array([1, 2, 3]), {
+          headers: { "content-type": "audio/wav" },
+        });
+      }) as typeof fetch,
+    });
+
+    expect(calls).toEqual([{
+      url: "https://media.local/files/stack-structure/media-uploads/source-audio/song.wav",
+      init: {
+        headers: { Authorization: "Bearer media-token" },
+        redirect: "follow",
+      },
+    }]);
+    expect(result.fileName).toBe("song.wav");
+    expect(result.mime).toBe("audio/wav");
+    expect(Array.from(new Uint8Array(result.bytes))).toEqual([1, 2, 3]);
   });
 });

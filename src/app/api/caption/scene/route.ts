@@ -1,5 +1,9 @@
-import { LFM_SCENE_CAPTION_PROMPT, parseSceneCaptionResponse } from "@/review/lib/analysis/scene-caption-format";
+import { createHash } from "node:crypto";
+
+import { LFM_SCENE_CAPTION_PROMPT } from "@/review/lib/analysis/scene-caption-format";
 import type { SceneCaptionMode, SceneCaptionSource } from "@/components/studio/types";
+import { uploadFileToMediaGateway } from "@/lib/mediaGateway";
+import { triggerSmartSceneCaption } from "@/lib/triggerOrchestration";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,17 +20,6 @@ type CaptionGatewayConfig = {
   model: string;
   endpoint: string;
   captionSource: SceneCaptionSource;
-};
-
-type CaptionGatewayPayload = {
-  ok?: boolean;
-  text?: unknown;
-  caption?: unknown;
-  meta?: unknown;
-  sceneData?: unknown;
-  source?: unknown;
-  model?: unknown;
-  error?: unknown;
 };
 
 type CaptionGatewayHealth = {
@@ -119,6 +112,14 @@ export async function POST(request: Request) {
     const formData = await request.formData();
     const mode = readCaptionMode(formData.get("mode"));
     const config = getCaptionGatewayConfig(mode);
+    if (mode !== "smart") {
+      return Response.json({
+        ok: false,
+        configured: false,
+        mode,
+        error: "Fast captions run in browser WebGPU. Server-orchestrated captions use smart Qwen mode.",
+      }, { status: 400 });
+    }
     if (!config.configured) {
       return Response.json({
         ok: false,
@@ -134,57 +135,36 @@ export async function POST(request: Request) {
     if (!(image instanceof File)) {
       return Response.json({ ok: false, error: "image file is required" }, { status: 400 });
     }
-
-    const upstreamForm = new FormData();
-    upstreamForm.set("image", image, image.name || "scene-frame.jpg");
-    upstreamForm.set("prompt", stringOrDefault(formData.get("prompt"), LFM_SCENE_CAPTION_PROMPT));
-    upstreamForm.set("model", stringOrDefault(formData.get("model"), config.model));
-    upstreamForm.set("mode", mode);
-    copyString(formData, upstreamForm, "sceneId");
-    copyString(formData, upstreamForm, "sourceName");
-    copyString(formData, upstreamForm, "sampleTime");
-    copyString(formData, upstreamForm, "sceneStart");
-    copyString(formData, upstreamForm, "sceneEnd");
-    copyString(formData, upstreamForm, "sceneDuration");
-    copyString(formData, upstreamForm, "captionContext");
-
-    const headers: Record<string, string> = {};
-    if (config.token) headers.Authorization = `Bearer ${config.token}`;
-
-    const upstream = await fetch(`${config.url}${config.endpoint}`, {
-      method: "POST",
-      headers,
-      body: upstreamForm,
+    const bytes = await image.arrayBuffer();
+    const imageDigest = createHash("sha256").update(new Uint8Array(bytes)).digest("hex");
+    const uploaded = await uploadFileToMediaGateway({
+      file: image,
+      folder: "media-uploads/caption-frames",
     });
-    const text = await upstream.text();
-    const payload = parseGatewayText(text) as CaptionGatewayPayload;
-
-    if (!upstream.ok || payload.ok === false) {
-      const looksLikeHtml = /^\s*<(!doctype|html)/i.test(text);
-      return Response.json({
-        ok: false,
-        configured: true,
-        error: readString(payload.error)
-          || (looksLikeHtml
-            ? `Caption gateway returned an HTML error page (${upstream.status}); likely a proxy timeout while the GPU queue was busy — retry.`
-            : text.slice(0, 300) || `${upstream.status} ${upstream.statusText}`),
-      }, { status: upstream.ok ? 502 : upstream.status });
-    }
-
-    const caption = normalizeGatewayCaption(payload, text);
-    if (!caption.text) {
-      return Response.json({ ok: false, configured: true, error: "Caption gateway returned no caption text." }, { status: 502 });
-    }
-
+    const handle = await triggerSmartSceneCaption({
+      bucket: uploaded.bucket,
+      objectKey: uploaded.objectKey,
+      fileName: image.name || "scene-frame.jpg",
+      prompt: stringOrDefault(formData.get("prompt"), LFM_SCENE_CAPTION_PROMPT),
+      model: stringOrDefault(formData.get("model"), config.model),
+      sceneId: readFormString(formData, "sceneId"),
+      sourceName: readFormString(formData, "sourceName"),
+      sampleTime: readFormString(formData, "sampleTime"),
+      sceneStart: readFormString(formData, "sceneStart"),
+      sceneEnd: readFormString(formData, "sceneEnd"),
+      sceneDuration: readFormString(formData, "sceneDuration"),
+      captionContext: readFormString(formData, "captionContext"),
+    }, imageDigest);
     return Response.json({
       ok: true,
       configured: true,
       mode,
-      text: caption.text,
-      meta: caption.meta,
+      queued: true,
+      orchestration: "trigger.dev",
+      runId: handle.id,
       captionSource: config.captionSource,
-      model: readString(payload.model) || config.model,
-    });
+      model: config.model,
+    }, { status: 202 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Server scene captioning failed.";
     return Response.json({ ok: false, configured: false, error: message }, { status: 502 });
@@ -220,38 +200,12 @@ async function checkCaptionGatewayHealth(config: CaptionGatewayConfig): Promise<
   }
 }
 
-function normalizeGatewayCaption(payload: CaptionGatewayPayload, rawText: string) {
-  const directText = readString(payload.text) || readString(payload.caption);
-  const directMeta = isRecord(payload.meta) ? payload.meta : isRecord(payload.sceneData) ? payload.sceneData : undefined;
-  if (directText) {
-    const parsed = parseSceneCaptionResponse(directText);
-    return {
-      text: parsed.text || directText,
-      meta: directMeta || parsed.meta,
-    };
-  }
-  return parseSceneCaptionResponse(rawText);
-}
-
-function parseGatewayText(text: string): unknown {
-  if (!text.trim()) return {};
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    return { text };
-  }
-}
-
 function stringOrDefault(value: FormDataEntryValue | null, fallback: string) {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
 
-function copyString(from: FormData, to: FormData, key: string) {
-  const value = from.get(key);
-  if (typeof value === "string" && value.trim()) to.set(key, value.trim());
-}
-
-function readString(value: unknown) {
+function readFormString(form: FormData, key: string) {
+  const value = form.get(key);
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
@@ -265,8 +219,4 @@ function cleanUrl(value: string | undefined) {
 
 function normalizeEndpoint(value: string) {
   return value.startsWith("/") ? value : `/${value}`;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

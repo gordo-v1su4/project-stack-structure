@@ -1,6 +1,7 @@
 "use client";
 
 import { LFM_SCENE_CAPTION_PROMPT } from "@/review/lib/analysis/scene-caption-format";
+import { waitForTriggerRunOutput } from "@/lib/clientTriggerRuns";
 import { captionFrame as captionFrameWithLfm } from "@/review/lib/analysis/caption-client";
 import { createAnalysisVideo, grabBitmap } from "@/review/lib/video/frame-grab";
 import { normalizeServerCaptionAvailability, normalizeServerCaptionPayload } from "./sceneCaptioningServer";
@@ -170,10 +171,14 @@ async function captionSceneFrameViaServer(
       // recaption pass; failed scenes are retried in a later round.
       signal: AbortSignal.timeout(150_000),
     });
-    const payload = await response.json().catch(() => ({}));
+    const initialPayload = await response.json().catch(() => ({}));
     if (!response.ok) {
-      throw new Error(readServerCaptionError(payload) || `${response.status} ${response.statusText}`);
+      throw new Error(readServerCaptionError(initialPayload) || `${response.status} ${response.statusText}`);
     }
+    const runId = readServerCaptionRunId(initialPayload);
+    const payload = response.status === 202 && runId
+      ? await waitForTriggerRunOutput(runId, { timeoutMs: 145_000, pollIntervalMs: 1_500 })
+      : initialPayload;
     return normalizeServerCaptionPayload(payload);
   } finally {
     bitmap.close();
@@ -217,4 +222,10 @@ function readServerCaptionError(payload: unknown) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return undefined;
   const error = (payload as Record<string, unknown>).error;
   return typeof error === "string" && error.trim() ? error.trim() : undefined;
+}
+
+function readServerCaptionRunId(payload: unknown) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return undefined;
+  const runId = (payload as Record<string, unknown>).runId;
+  return typeof runId === "string" && runId.trim() ? runId.trim() : undefined;
 }
