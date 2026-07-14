@@ -1,3 +1,5 @@
+import { Buffer } from "node:buffer";
+
 import { AbortTaskRunError, logger, task, wait } from "@trigger.dev/sdk";
 
 import {
@@ -243,12 +245,12 @@ async function fetchProviderAsset(
   return new File([blob], filename, { type: contentType });
 }
 
-function dataUrlToFile(value: string, fallbackName: string) {
+export function dataUrlToFile(value: string, fallbackName: string) {
   const match = value.match(/^data:([^;,]+)?(;base64)?,([\s\S]*)$/);
   if (!match) throw new Error("Generated data URL is invalid.");
   const mime = match[1] || "application/octet-stream";
   const bytes = match[2]
-    ? Uint8Array.from(atob(match[3]), (character) => character.charCodeAt(0))
+    ? Buffer.from(match[3], "base64")
     : new TextEncoder().encode(decodeURIComponent(match[3]));
   return new File([bytes], `${fallbackName}${extensionFromMime(mime)}`, { type: mime });
 }

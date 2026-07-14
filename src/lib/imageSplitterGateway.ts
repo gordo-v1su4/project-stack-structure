@@ -161,7 +161,7 @@ export async function uploadImageSplitPanelsToMediaGateway(args: {
   const panels: ImageSplitPanel[] = [];
   for (const panel of args.split.manifest.panels) {
     const sourceUrl = buildImageSplitterPanelSourceUrl(baseUrl, args.split.manifest.splitId, panel.assetPath);
-    let bytes: Uint8Array;
+    let bytes: Uint8Array<ArrayBuffer>;
     let contentType: string;
     if (args.fetchImpl) {
       const response = await fetcher(sourceUrl);
@@ -178,9 +178,7 @@ export async function uploadImageSplitPanelsToMediaGateway(args: {
     }
 
     const filename = buildPanelFilename(panel, args.split.manifest);
-    const fileBuffer = new ArrayBuffer(bytes.byteLength);
-    new Uint8Array(fileBuffer).set(bytes);
-    const file = new File([fileBuffer], filename, { type: contentType });
+    const file = new File([bytes], filename, { type: contentType });
     const storage = await uploadFileToMediaGateway({ file, folder, env, fetchImpl: fetcher });
     panels.push({ ...panel, storage });
   }

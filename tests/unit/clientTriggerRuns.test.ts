@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { waitForTriggerRunOutput } from "@/lib/clientTriggerRuns";
+import { nextTriggerPollInterval, waitForTriggerRunOutput } from "@/lib/clientTriggerRuns";
 
 const originalFetch = globalThis.fetch;
 
@@ -9,6 +9,12 @@ function restoreFetch() {
 }
 
 describe("client Trigger run polling", () => {
+  test("progressively backs off polling to a 15 second ceiling", () => {
+    expect(nextTriggerPollInterval(1_500)).toBe(2_250);
+    expect(nextTriggerPollInterval(10_000)).toBe(15_000);
+    expect(nextTriggerPollInterval(15_000)).toBe(15_000);
+  });
+
   test("returns successful output", async () => {
     try {
       globalThis.fetch = (async () => Response.json({

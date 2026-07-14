@@ -14,7 +14,7 @@ export async function waitForTriggerRunOutput(
   options: { timeoutMs: number; pollIntervalMs?: number },
 ) {
   const startedAt = Date.now();
-  const pollIntervalMs = options.pollIntervalMs ?? 1_500;
+  let currentIntervalMs = options.pollIntervalMs ?? 1_500;
 
   while (Date.now() - startedAt <= options.timeoutMs) {
     const response = await fetch(`/api/orchestration/runs/${encodeURIComponent(runId)}`, {
@@ -35,10 +35,15 @@ export async function waitForTriggerRunOutput(
       throw new Error(run.error || `Trigger run ${runId} ended with ${run.status}.`);
     }
 
-    await sleep(pollIntervalMs);
+    await sleep(currentIntervalMs);
+    currentIntervalMs = nextTriggerPollInterval(currentIntervalMs);
   }
 
   throw new Error(`Trigger run ${runId} timed out after ${Math.round(options.timeoutMs / 1_000)}s.`);
+}
+
+export function nextTriggerPollInterval(currentIntervalMs: number) {
+  return Math.min(Math.ceil(currentIntervalMs * 1.5), 15_000);
 }
 
 async function readJson(response: Response): Promise<Record<string, unknown>> {

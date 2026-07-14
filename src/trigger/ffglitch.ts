@@ -65,7 +65,7 @@ export const ffglitchTask = task({
       const compatibleBytes = await readFile(compatiblePath);
 
       const form = new FormData();
-      form.set("file", new File([copyToArrayBuffer(compatibleBytes)], "ffglitch-input.avi", {
+      form.set("file", new File([compatibleBytes], "ffglitch-input.avi", {
         type: "video/x-msvideo",
       }));
 
@@ -118,7 +118,7 @@ export const ffglitchTask = task({
         const finalBytes = await readFile(finalPath);
         const outputName = `${path.parse(fileName).name || "ffglitch"}-glitched.mp4`;
         const storage = await uploadFileToMediaGateway({
-          file: new File([copyToArrayBuffer(finalBytes)], outputName, { type: "video/mp4" }),
+          file: new File([finalBytes], outputName, { type: "video/mp4" }),
           folder: `media-uploads/generated/ffglitch/${ctx.run.id}`,
         });
         durableOutput = { storage, videoUrl: storage.mediaUrl || storage.publicUrl };
@@ -151,12 +151,6 @@ async function runFfmpeg(args: string[], operation: string) {
     const stderr = error && typeof error === "object" && "stderr" in error ? String(error.stderr) : String(error);
     throw new Error(`${operation} failed: ${stderr.slice(0, 500)}`);
   }
-}
-
-function copyToArrayBuffer(bytes: Uint8Array) {
-  const output = new ArrayBuffer(bytes.byteLength);
-  new Uint8Array(output).set(bytes);
-  return output;
 }
 
 function fileNameFromUrl(value: string) {
