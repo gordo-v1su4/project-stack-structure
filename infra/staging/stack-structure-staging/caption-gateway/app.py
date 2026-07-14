@@ -128,7 +128,10 @@ def caption_scene(
     require_auth(authorization)
     if mode != "smart":
         raise HTTPException(status_code=400, detail="Staging caption gateway only handles smart Qwen3-VL GGUF captions.")
-    raw = image.file.read()
+    try:
+        raw = image.file.read()
+    finally:
+        image.file.close()
     if not raw:
         raise HTTPException(status_code=400, detail="image is empty")
     mime = image.content_type or "image/jpeg"

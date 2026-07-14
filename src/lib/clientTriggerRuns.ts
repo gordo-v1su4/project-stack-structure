@@ -35,7 +35,8 @@ export async function waitForTriggerRunOutput(
       throw new Error(run.error || `Trigger run ${runId} ended with ${run.status}.`);
     }
 
-    await sleep(currentIntervalMs);
+    const elapsedMs = Date.now() - startedAt;
+    await sleep(triggerPollSleepDuration(currentIntervalMs, elapsedMs, options.timeoutMs));
     currentIntervalMs = nextTriggerPollInterval(currentIntervalMs);
   }
 
@@ -44,6 +45,10 @@ export async function waitForTriggerRunOutput(
 
 export function nextTriggerPollInterval(currentIntervalMs: number) {
   return Math.min(Math.ceil(currentIntervalMs * 1.5), 15_000);
+}
+
+export function triggerPollSleepDuration(currentIntervalMs: number, elapsedMs: number, timeoutMs: number) {
+  return Math.max(0, Math.min(currentIntervalMs, timeoutMs - elapsedMs));
 }
 
 async function readJson(response: Response): Promise<Record<string, unknown>> {
