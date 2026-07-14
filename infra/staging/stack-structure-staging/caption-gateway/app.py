@@ -116,7 +116,7 @@ def qwen_stop(authorization: str | None = Header(default=None)):
 
 
 @app.post("/caption/scene")
-async def caption_scene(
+def caption_scene(
     image: UploadFile = File(...),
     prompt: str = Form(""),
     model: str = Form(""),
@@ -128,7 +128,10 @@ async def caption_scene(
     require_auth(authorization)
     if mode != "smart":
         raise HTTPException(status_code=400, detail="Staging caption gateway only handles smart Qwen3-VL GGUF captions.")
-    raw = await image.read()
+    try:
+        raw = image.file.read()
+    finally:
+        image.file.close()
     if not raw:
         raise HTTPException(status_code=400, detail="image is empty")
     mime = image.content_type or "image/jpeg"
