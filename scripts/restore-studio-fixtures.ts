@@ -113,7 +113,7 @@ async function analyzeAndUploadAudio(filePath: string): Promise<BeatJoinAnalysis
     fileName: file.name,
     waveform: [],
     waveformDuration: 0,
-    audioUrl: upload.mediaUrl ?? upload.publicUrl,
+    audioUrl: upload.publicUrl ?? upload.mediaUrl,
   });
   if (!parsed) throw new Error("Essentia returned no usable audio analysis.");
 
@@ -123,7 +123,7 @@ async function analyzeAndUploadAudio(filePath: string): Promise<BeatJoinAnalysis
     storageProvider: "rustfs",
     storageBucket: upload.bucket,
     storagePath: upload.storagePath,
-    storageUrl: upload.mediaUrl ?? upload.publicUrl,
+    storageUrl: upload.publicUrl ?? upload.mediaUrl,
     storageStatus: "uploaded",
     storageError: null,
   };
@@ -139,12 +139,12 @@ async function uploadAndAnalyzeVideo(filePath: string, index: number): Promise<U
     name: file.name,
     duration: probed.duration,
     size: file.size,
-    thumbnailUrl: upload.mediaUrl ?? upload.publicUrl,
-    videoUrl: upload.mediaUrl ?? upload.publicUrl,
+    thumbnailUrl: upload.publicUrl ?? upload.mediaUrl,
+    videoUrl: upload.publicUrl ?? upload.mediaUrl,
     storageProvider: "rustfs",
     storageBucket: upload.bucket,
     storagePath: upload.storagePath,
-    storageUrl: upload.mediaUrl ?? upload.publicUrl,
+    storageUrl: upload.publicUrl ?? upload.mediaUrl,
     storageStatus: "uploaded",
     storageError: null,
     scenes: [],

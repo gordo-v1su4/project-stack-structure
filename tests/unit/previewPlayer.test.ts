@@ -140,6 +140,7 @@ class FakeVideoElement {
   preload = "";
   playsInline = false;
   muted = false;
+  crossOrigin: string | null = null;
   src = "";
   currentSrc = "";
   style: Record<string, string> = {};
@@ -194,6 +195,8 @@ describe("BrowserPreviewPlayer double buffering", () => {
       const front = new FakeVideoElement();
       const back = new FakeVideoElement();
       player.attach(front as unknown as HTMLVideoElement, back as unknown as HTMLVideoElement);
+      expect(front.crossOrigin).toBe("anonymous");
+      expect(back.crossOrigin).toBe("anonymous");
       player.load([
         { videoUrl: "blob:a", startTime: 0, endTime: 1, label: "SEG_01" },
         { videoUrl: "blob:b", startTime: 0, endTime: 1, label: "SEG_02" },

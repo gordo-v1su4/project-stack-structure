@@ -48,7 +48,7 @@ describe("audioAnalysis.parseEssentiaPayload", () => {
 });
 
 describe("audioAnalysis.resolveEssentiaRequestTarget", () => {
-  test("prefers direct browser uploads when public Essentia credentials are available", () => {
+  test("always uses the queued server path even when legacy public credentials exist", () => {
     const previousUrl = process.env.NEXT_PUBLIC_ESSENTIA_API_BASE_URL;
     const previousKey = process.env.NEXT_PUBLIC_ESSENTIA_API_KEY;
 
@@ -57,12 +57,8 @@ describe("audioAnalysis.resolveEssentiaRequestTarget", () => {
 
     try {
       expect(resolveEssentiaRequestTarget()).toEqual({
-        url: "https://essentia.example.dev/analyze/full",
-        transport: "direct",
-        headers: {
-          Authorization: "Bearer public-key",
-          "X-API-Key": "public-key",
-        },
+        url: "/api/essentia/full?mode=fast",
+        transport: "proxy",
       });
     } finally {
       restoreEnvValue("NEXT_PUBLIC_ESSENTIA_API_BASE_URL", previousUrl);

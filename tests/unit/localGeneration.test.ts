@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   buildSwarmTextToImagePayload,
+  chooseSwarmModel,
   extractComfyOutputRefs,
   getComfyHistoryStatus,
   normalizeSwarmAssets,
@@ -86,6 +87,15 @@ describe("local SwarmUI generation helpers", () => {
     expect((payload as Record<string, unknown>).sampler).toBe("euler");
     expect((payload as Record<string, unknown>).scheduler).toBe("simple");
     expect(payload.prompt).toBe("city dance");
+  });
+
+  test("chooses an installed non-FP16 image model when SwarmUI does not provide one", () => {
+    expect(chooseSwarmModel([
+      { name: "video-model-Q8_0.gguf", class: "Wan Video", local: true },
+      { name: "flux1-dev-F16.gguf", class: "Flux.1 Dev", local: true },
+      { name: "Krea-2-Turbo.safetensors", local: true },
+      { name: "z-image-turbo_fp8_scaled_e5m2_KJ.safetensors", class: "Z-Image", compat_class: "z-image", architecture: "z-image", local: true },
+    ])).toBe("z-image-turbo_fp8_scaled_e5m2_KJ.safetensors");
   });
 
   test("normalizes SwarmUI image paths into local proxy URLs", () => {

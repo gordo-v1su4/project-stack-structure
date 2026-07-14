@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { rm } from "node:fs/promises";
 
-import { listMediaFixtures } from "../helpers/mediaFixtures";
+import { hasAudioVideoFixtures, listMediaFixtures, mediaFixtureTest } from "../helpers/mediaFixtures";
 import { probeMediaFile } from "../../src/components/studio/mediaProbe";
 import {
   PreviewGenerationError,
@@ -23,7 +23,7 @@ const testProbeFn: ProbeFn = async (filePath) => {
 };
 
 describe("previewGeneration integration", () => {
-  test("generates a prepared preview asset from a real video fixture", async () => {
+  mediaFixtureTest(hasAudioVideoFixtures())("generates a prepared preview asset from a real video fixture", async () => {
     const inventory = listMediaFixtures();
     const inputPath = inventory.video[0]!;
     const outputPath = createTempPreviewPath("preview-test");
@@ -48,7 +48,7 @@ describe("previewGeneration integration", () => {
     await rm(outputPath, { force: true });
   });
 
-  test("returns metadata that fits a section-scoped request", async () => {
+  mediaFixtureTest(hasAudioVideoFixtures())("returns metadata that fits a section-scoped request", async () => {
     const inventory = listMediaFixtures();
     const inputPath = inventory.video[0]!;
     const outputPath = createTempPreviewPath("preview-section");
@@ -70,7 +70,7 @@ describe("previewGeneration integration", () => {
     await rm(outputPath, { force: true });
   });
 
-  test("fails cleanly on an invalid time window", async () => {
+  mediaFixtureTest(hasAudioVideoFixtures())("fails cleanly on an invalid time window", async () => {
     const inventory = listMediaFixtures();
     const error = await capturePreviewError(() =>
       generateSectionPreview({
@@ -101,7 +101,7 @@ describe("previewGeneration integration", () => {
     expect(error?.code).toBe("missing-input");
   });
 
-  test("rejects audio-only input for video preview generation", async () => {
+  mediaFixtureTest(hasAudioVideoFixtures())("rejects audio-only input for video preview generation", async () => {
     const inventory = listMediaFixtures();
     const error = await capturePreviewError(() =>
       generateSectionPreview({
@@ -118,7 +118,7 @@ describe("previewGeneration integration", () => {
   });
 
 
-  test("matches the requested music window within tolerance", async () => {
+  mediaFixtureTest(hasAudioVideoFixtures())("matches the requested music window within tolerance", async () => {
     const inventory = listMediaFixtures();
     const outputPath = createTempPreviewPath("preview-music-window");
 
@@ -136,7 +136,7 @@ describe("previewGeneration integration", () => {
     await rm(outputPath, { force: true });
   });
 
-  test("ready-only flow swaps only after a generated asset is marked ready", async () => {
+  mediaFixtureTest(hasAudioVideoFixtures())("ready-only flow swaps only after a generated asset is marked ready", async () => {
     const inventory = listMediaFixtures();
     const outputPath = createTempPreviewPath("preview-ready-flow");
     const running = startSectionRecompute(createSectionRecomputeState(), {

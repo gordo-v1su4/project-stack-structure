@@ -15,17 +15,30 @@
     "probe:media": "bun run scripts/probe-media.ts",
     "preview:section": "bun run scripts/preview-section.ts",
     "bench:latency": "bun run scripts/bench-latency.ts",
-    "bench:compare": "bun run scripts/bench-compare.ts"
+    "bench:compare": "bun run scripts/bench-compare.ts",
+    "e2e:media": "bun run scripts/run-full-media-e2e.ts",
+    "secrets:check": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-bws-secrets.ps1 -RequireRuntimeEnv",
+    "trigger:env:check": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-bws-secrets.ps1",
+    "trigger:env:sync": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sync-trigger-production-env.ps1",
+    "trigger:verify:production": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-trigger-staging.ps1 -Production",
+    "trigger:verify:failure": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-trigger-staging.ps1 -Production -RunFailureProbe",
+    "trigger:deploy:env": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sync-trigger-deploy-env-vm100.ps1",
+    "trigger:deploy": "bash ./scripts/deploy-trigger-vm100.sh",
+    "vercel:env:sync": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sync-vercel-production-env.ps1"
   },
   "dependencies": {
     "@huggingface/transformers": "^4.2.0",
+    "@trigger.dev/react-hooks": "4.5.3",
+    "@trigger.dev/sdk": "4.5.3",
     "next": "16.2.1",
+    "next-auth": "^5.0.0-beta.31",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "zustand": "^5.0.14"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@trigger.dev/build": "4.5.3",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",

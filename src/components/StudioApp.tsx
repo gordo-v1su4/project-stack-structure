@@ -12,7 +12,20 @@ import type { VideoSceneUpdate } from "./studio/mediaUpload";
 import { buildEditPlanPreviewSegments, normalizeStoryEditSettings, type EditPlanPreviewSegment, type MusicVideoProject } from "./studio/musicVideoProject";
 import { selectStorySectionCandidate } from "./studio/musicVideoProjectSelection";
 import { buildAutoShaderCues, describeMusicVideoShaderPreset, MUSIC_VIDEO_SHADER_PRESETS, type ShaderEffectCue } from "./studio/shaderEffectPlan";
-import { buildVideoMediaKey, loadStudioProjectDraft, saveStudioProjectDraft } from "./studio/projectPersistence";
+import {
+  ACTIVE_STUDIO_PROJECT_KEY,
+  buildVideoMediaKey,
+  clearStudioProjectDraft,
+  createPersistableStudioProjectDraft,
+  hydrateStudioProjectDraft,
+  loadSavedStudioProject,
+  loadStudioProjectDraft,
+  saveNamedStudioProject,
+  saveServerStudioProjectDraft,
+  saveStudioProjectDraft,
+  type RuntimeStudioProjectDraft,
+} from "./studio/projectPersistence";
+import type { StudioProjectSummary } from "@/lib/studioProjectStore";
 import type { GeneratedStudioAsset } from "./studio/generatedAssets";
 import { createLocalReferenceAsset, uploadReferenceAssetToRustFs, type ReferenceAsset, type ReferenceAssetRole } from "./studio/referenceAssets";
 import { BrowserPreviewPlayer, createPreviewPlayerState, type PreviewPlayerState, type PreviewSegment } from "./studio/previewPlayer";
@@ -33,6 +46,7 @@ import { StudioSidebar } from "./studio/StudioSidebar";
 import { StudioStatusBar } from "./studio/StudioStatusBar";
 import { buildPipelineState } from "./studio/studioPipeline";
 import { buildShuffleQueue } from "./studio/shuffleQueue";
+import { waitForTriggerRunOutput } from "@/lib/clientTriggerRuns";
 import { rankManifestCandidates } from "./studio/manifestRanking";
 import { buildMusicCutEvents, buildSegmentManifest } from "./studio/segmentManifest";
 import {
@@ -148,6 +162,8 @@ export default function StudioApp() {
   const [isShaderCaptureExporting, setIsShaderCaptureExporting] = useState(false);
   const [draftStatus, setDraftStatus] = useState("Project draft will autosave after media or story changes.");
   const [draftRestored, setDraftRestored] = useState(false);
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  const [activeProjectName, setActiveProjectName] = useState("Untitled project");
 
   const audioFileRef = useRef<File | null>(null);
   const videoFilesByMediaKeyRef = useRef(new Map<string, Blob>());
@@ -207,7 +223,16 @@ export default function StudioApp() {
   useEffect(() => {
     let cancelled = false;
 
-    loadStudioProjectDraft()
+    const activeId = window.localStorage.getItem(ACTIVE_STUDIO_PROJECT_KEY);
+    const restore = activeId
+      ? loadSavedStudioProject(activeId).then((saved) => {
+          setActiveProjectId(saved.project.id);
+          setActiveProjectName(saved.project.name);
+          return hydrateStudioProjectDraft({ draft: saved.draft });
+        }).catch(() => loadStudioProjectDraft())
+      : loadStudioProjectDraft();
+
+    restore
       .then((draft) => {
         if (cancelled) return;
         if (!draft) {
@@ -215,39 +240,8 @@ export default function StudioApp() {
           return;
         }
 
-        if (draft.analysis) {
-          setBeatJoinAnalysis(draft.analysis);
-          setAudioStatus(`Restored · ${draft.analysis.sourceLabel}`);
-        }
-        if (draft.videoSources.length) {
-          setVideoSources(draft.videoSources);
-          setVideoStatus(`Restored ${draft.videoSources.length} clip${draft.videoSources.length === 1 ? "" : "s"} from the local draft.`);
-        }
-        setStoryState({
-          ...createDefaultStoryTabState(),
-          ...draft.storyState,
-          editSettings: normalizeStoryEditSettings(draft.storyState.editSettings),
-        });
-        if (draft.captionSettings?.mode) {
-          setCaptionMode(draft.captionSettings.mode);
-        }
-        setMusicVideoProject(draft.musicVideoProject);
-        setReferenceAssets(draft.referenceAssets ?? []);
-        setGeneratedAssets(draft.generatedAssets ?? []);
-        const workflowUi = draft.workflowUiSettings;
-        if (workflowUi?.activeTab && NAV.some((item) => item.key === workflowUi.activeTab)) setTab(workflowUi.activeTab);
-        if (workflowUi?.splitMode) setSplitMode(workflowUi.splitMode);
-        if (isMatchMode(workflowUi?.matchMode)) setMatchMode(workflowUi.matchMode);
-        if (workflowUi?.colorGradient) setColorGradient(workflowUi.colorGradient);
-        if (workflowUi?.matchOnsetDensity !== undefined) setMatchOnsetDensity(workflowUi.matchOnsetDensity);
-        if (workflowUi?.matchLyricCueBlend !== undefined) setMatchLyricCueBlend(workflowUi.matchLyricCueBlend);
-        if (workflowUi?.matchLyricMergeWindow !== undefined) setMatchLyricMergeWindow(workflowUi.matchLyricMergeWindow);
-        if (workflowUi?.shaderPresetId && MUSIC_VIDEO_SHADER_PRESETS.some((preset) => preset.id === workflowUi.shaderPresetId)) {
-          setShaderPresetId(workflowUi.shaderPresetId as (typeof MUSIC_VIDEO_SHADER_PRESETS)[number]["id"]);
-        }
-        if (workflowUi?.useSourceAudio !== undefined) setUseSourceAudio(workflowUi.useSourceAudio);
-        if (workflowUi?.isPreviewExpanded !== undefined) setIsPreviewExpanded(workflowUi.isPreviewExpanded);
-        setDraftStatus(`Restored local draft saved from this browser.`);
+        applyRestoredProjectDraft(draft);
+        setDraftStatus(activeId ? "Restored saved project from RustFS." : "Restored local draft saved from this browser.");
         setDraftRestored(true);
       })
       .catch((error) => {
@@ -267,8 +261,7 @@ export default function StudioApp() {
     if (!draftRestored) return;
 
     const saveTimer = window.setTimeout(() => {
-      void saveStudioProjectDraft(
-        {
+      const params = {
           analysis: beatJoinAnalysis,
           videoSources,
           storyState,
@@ -288,14 +281,20 @@ export default function StudioApp() {
             useSourceAudio,
             isPreviewExpanded,
           },
-        },
-        {
+        };
+      const save = activeProjectId
+        ? saveNamedStudioProject({
+            projectId: activeProjectId,
+            name: activeProjectName,
+            draft: createPersistableStudioProjectDraft(params),
+          }).then((saved) => saved.draft)
+        : saveStudioProjectDraft(params, {
           audioFile: audioFileRef.current,
           videoFilesByMediaKey: videoFilesByMediaKeyRef.current,
-        },
-      )
+        });
+      void save
         .then((draft) => {
-          if (draft) setDraftStatus(`Autosaved local draft · ${new Date(draft.savedAt).toLocaleTimeString()}`);
+          if (draft) setDraftStatus(`Autosaved ${activeProjectId ? "saved project" : "local draft"} · ${new Date(draft.savedAt).toLocaleTimeString()}`);
         })
         .catch((error) => {
           console.warn("[Studio] Could not autosave local project draft", error);
@@ -304,7 +303,7 @@ export default function StudioApp() {
     }, 650);
 
     return () => window.clearTimeout(saveTimer);
-  }, [beatJoinAnalysis, captionMode, colorGradient, draftRestored, generatedAssets, isPreviewExpanded, matchLyricCueBlend, matchLyricMergeWindow, matchMode, matchOnsetDensity, musicVideoProject, referenceAssets, shaderPresetId, splitMode, storyState, tab, useSourceAudio, videoSources]);
+  }, [activeProjectId, activeProjectName, beatJoinAnalysis, captionMode, colorGradient, draftRestored, generatedAssets, isPreviewExpanded, matchLyricCueBlend, matchLyricMergeWindow, matchMode, matchOnsetDensity, musicVideoProject, referenceAssets, shaderPresetId, splitMode, storyState, tab, useSourceAudio, videoSources]);
 
   useEffect(() => {
     referenceAssetsRef.current = referenceAssets;
@@ -318,6 +317,79 @@ export default function StudioApp() {
       }
     };
   }, []);
+
+  function applyRestoredProjectDraft(draft: RuntimeStudioProjectDraft) {
+    audioFileRef.current = null;
+    videoFilesByMediaKeyRef.current.clear();
+    setBeatJoinAnalysis(draft.analysis);
+    setAudioStatus(draft.analysis ? `Restored · ${draft.analysis.sourceLabel}` : "Upload a song to unlock beat sync.");
+    setVideoSources(draft.videoSources);
+    setVideoStatus(draft.videoSources.length
+      ? `Restored ${draft.videoSources.length} clip${draft.videoSources.length === 1 ? "" : "s"} from durable storage.`
+      : "Upload one or more video clips to begin.");
+    setStoryState({
+      ...createDefaultStoryTabState(),
+      ...draft.storyState,
+      editSettings: normalizeStoryEditSettings(draft.storyState.editSettings),
+    });
+    setCaptionMode(draft.captionSettings?.mode ?? "fast");
+    setMusicVideoProject(draft.musicVideoProject);
+    setReferenceAssets(draft.referenceAssets ?? []);
+    setGeneratedAssets(draft.generatedAssets ?? []);
+    const workflowUi = draft.workflowUiSettings;
+    if (workflowUi?.activeTab && NAV.some((item) => item.key === workflowUi.activeTab)) setTab(workflowUi.activeTab);
+    if (workflowUi?.splitMode) setSplitMode(workflowUi.splitMode);
+    if (isMatchMode(workflowUi?.matchMode)) setMatchMode(workflowUi.matchMode);
+    if (workflowUi?.colorGradient) setColorGradient(workflowUi.colorGradient);
+    if (workflowUi?.matchOnsetDensity !== undefined) setMatchOnsetDensity(workflowUi.matchOnsetDensity);
+    if (workflowUi?.matchLyricCueBlend !== undefined) setMatchLyricCueBlend(workflowUi.matchLyricCueBlend);
+    if (workflowUi?.matchLyricMergeWindow !== undefined) setMatchLyricMergeWindow(workflowUi.matchLyricMergeWindow);
+    if (workflowUi?.shaderPresetId && MUSIC_VIDEO_SHADER_PRESETS.some((preset) => preset.id === workflowUi.shaderPresetId)) {
+      setShaderPresetId(workflowUi.shaderPresetId as (typeof MUSIC_VIDEO_SHADER_PRESETS)[number]["id"]);
+    }
+    if (workflowUi?.useSourceAudio !== undefined) setUseSourceAudio(workflowUi.useSourceAudio);
+    if (workflowUi?.isPreviewExpanded !== undefined) setIsPreviewExpanded(workflowUi.isPreviewExpanded);
+    setFinalExportUrl(null);
+    setFinalExportName(null);
+    setDone(false);
+  }
+
+  function handleProjectSelected(project: StudioProjectSummary, draft: RuntimeStudioProjectDraft) {
+    applyRestoredProjectDraft(draft);
+    setActiveProjectId(project.id);
+    setActiveProjectName(project.name);
+    setDraftStatus(`Loaded ${project.name} from RustFS.`);
+  }
+
+  function handleProjectSaved(project: StudioProjectSummary) {
+    setActiveProjectId(project.id);
+    setActiveProjectName(project.name);
+    setDraftStatus(`Saved ${project.name} to RustFS.`);
+  }
+
+  async function handleNewProject() {
+    const confirmed = window.confirm(
+      "Start a new project? This clears the current working draft. Named projects already saved to your Project Library will be kept.",
+    );
+    if (!confirmed) return false;
+
+    const emptyDraft = createPersistableStudioProjectDraft({
+      analysis: null,
+      videoSources: [],
+      storyState: createDefaultStoryTabState(),
+      musicVideoProject: null,
+      referenceAssets: [],
+      generatedAssets: [],
+      workflowUiSettings: { activeTab: "review" },
+    });
+
+    await saveServerStudioProjectDraft(emptyDraft);
+    clearStudioProjectDraft();
+    window.localStorage.removeItem(ACTIVE_STUDIO_PROJECT_KEY);
+    window.localStorage.setItem("svs.studio.activeTab", "review");
+    window.location.reload();
+    return true;
+  }
 
   const sourceClips = useMemo(() => buildSourceClipSpans(videoSources), [videoSources]);
   const splitSegments = useMemo(
@@ -796,21 +868,31 @@ export default function StudioApp() {
       const payload = (await response.json()) as {
         success?: boolean;
         error?: string;
-        asset?: {
-          requestKey: string;
-          assetKey: string;
-          duration: number;
-          generatedAt: string;
-        };
+        runId?: string;
       };
 
-      if (!response.ok || !payload.success || !payload.asset) {
+      if (!response.ok || !payload.success || !payload.runId) {
         throw new Error(payload.error ?? "Preview generation failed.");
       }
 
+      const output = await waitForTriggerRunOutput(payload.runId, { timeoutMs: 10 * 60 * 1_000, pollIntervalMs: 2_000 }) as {
+        requestKey: string;
+        assetKey: string;
+        duration: number;
+        generatedAt: string;
+        videoUrl?: string;
+      };
+      const asset = {
+        requestKey: output.requestKey,
+        assetKey: output.assetKey,
+        duration: output.duration,
+        generatedAt: output.generatedAt,
+        videoUrl: output.videoUrl,
+      };
+
       setProgress(90);
       setPreviewState((current) => updateSectionRecomputeProgress(current, { requestKey, progress: 90 }));
-      setPreviewState((current) => markSectionReady(current, payload.asset!));
+      setPreviewState((current) => markSectionReady(current, asset));
       setPreviewState((current) => swapReadySection(current, requestKey));
       setProgress(100);
       setDone(true);
@@ -891,29 +973,31 @@ export default function StudioApp() {
       const payload = (await response.json()) as {
         success?: boolean;
         error?: string;
-        asset?: {
-          requestKey: string;
-          assetKey: string;
-          duration: number;
-          generatedAt: string;
-          videoUrl?: string;
-          downloadFileName?: string;
-          effectCues?: unknown[];
-        };
+        runId?: string;
       };
 
-      if (!response.ok || !payload.success || !payload.asset) {
+      if (!response.ok || !payload.success || !payload.runId) {
         throw new Error(payload.error ?? "Final export failed.");
       }
+      setFinalExportStatus("Final export queued through Trigger.dev; waiting for the media worker...");
+      const asset = await waitForTriggerRunOutput(payload.runId, { timeoutMs: 30 * 60 * 1_000, pollIntervalMs: 3_000 }) as {
+        requestKey: string;
+        assetKey: string;
+        duration: number;
+        generatedAt: string;
+        videoUrl?: string;
+        downloadFileName?: string;
+        effectCues?: unknown[];
+      };
 
       setProgress(90);
       setPreviewState((current) => updateSectionRecomputeProgress(current, { requestKey, progress: 90 }));
-      setPreviewState((current) => markSectionReady(current, payload.asset!));
+      setPreviewState((current) => markSectionReady(current, asset));
       setPreviewState((current) => swapReadySection(current, requestKey));
-      setFinalExportUrl(payload.asset.videoUrl ?? null);
-      setFinalExportName(payload.asset.downloadFileName ?? "stack-structure-final.mp4");
-      setFinalExportCueCount(payload.asset.effectCues?.length ?? 0);
-      setFinalExportStatus(`Final MP4 ready · ${(payload.asset.duration || 0).toFixed(1)}s · ${payload.asset.effectCues?.length ?? 0} synced shader cues.`);
+      setFinalExportUrl(asset.videoUrl ?? null);
+      setFinalExportName(asset.downloadFileName ?? "stack-structure-final.mp4");
+      setFinalExportCueCount(asset.effectCues?.length ?? 0);
+      setFinalExportStatus(`Final MP4 ready · ${(asset.duration || 0).toFixed(1)}s · ${asset.effectCues?.length ?? 0} synced shader cues.`);
       setProgress(100);
       setDone(true);
     } catch (error) {
@@ -1008,29 +1092,30 @@ export default function StudioApp() {
       const payload = (await response.json()) as {
         success?: boolean;
         error?: string;
-        asset?: {
-          requestKey: string;
-          assetKey: string;
-          duration: number;
-          generatedAt: string;
-          videoUrl?: string;
-          downloadFileName?: string;
-          shaderRenderSource?: string;
-        };
+        runId?: string;
       };
 
-      if (!response.ok || !payload.success || !payload.asset) {
+      if (!response.ok || !payload.success || !payload.runId) {
         throw new Error(payload.error ?? "WebGPU shader capture export failed.");
       }
+      const asset = await waitForTriggerRunOutput(payload.runId, { timeoutMs: 30 * 60 * 1_000, pollIntervalMs: 3_000 }) as {
+        requestKey: string;
+        assetKey: string;
+        duration: number;
+        generatedAt: string;
+        videoUrl?: string;
+        downloadFileName?: string;
+        shaderRenderSource?: string;
+      };
 
       setProgress(95);
       setPreviewState((current) => updateSectionRecomputeProgress(current, { requestKey, progress: 95 }));
-      setPreviewState((current) => markSectionReady(current, payload.asset!));
+      setPreviewState((current) => markSectionReady(current, asset));
       setPreviewState((current) => swapReadySection(current, requestKey));
-      setFinalExportUrl(payload.asset.videoUrl ?? null);
-      setFinalExportName(payload.asset.downloadFileName ?? "stack-structure-webgpu-final.mp4");
+      setFinalExportUrl(asset.videoUrl ?? null);
+      setFinalExportName(asset.downloadFileName ?? "stack-structure-webgpu-final.mp4");
       setFinalExportCueCount(browserPreviewEffectCues.length);
-      setFinalExportStatus(`WebGPU MP4 ready · ${(payload.asset.duration || 0).toFixed(1)}s · ${browserPreviewEffectCues.length} live shader cues captured.`);
+      setFinalExportStatus(`WebGPU MP4 ready · ${(asset.duration || 0).toFixed(1)}s · ${browserPreviewEffectCues.length} live shader cues captured.`);
       setProgress(100);
       setDone(true);
     } catch (error) {
@@ -1103,27 +1188,29 @@ export default function StudioApp() {
       const gatewayPayload = (await gatewayResponse.json()) as {
         success?: boolean;
         error?: string;
-        asset?: {
-          requestKey: string;
-          assetKey: string;
-          duration: number;
-          generatedAt: string;
-          videoUrl?: string;
-        };
+        runId?: string;
       };
 
-      if (!gatewayResponse.ok || !gatewayPayload.success || !gatewayPayload.asset) {
+      if (!gatewayResponse.ok || !gatewayPayload.success || !gatewayPayload.runId) {
         throw new Error(gatewayPayload.error ?? "Gateway preview generation failed.");
       }
+
+      const output = await waitForTriggerRunOutput(gatewayPayload.runId, { timeoutMs: 10 * 60 * 1_000, pollIntervalMs: 2_000 }) as {
+        requestKey: string;
+        assetKey: string;
+        duration: number;
+        generatedAt: string;
+        videoUrl?: string;
+      };
 
       setProgress(90);
       setPreviewState((current) => updateSectionRecomputeProgress(current, { requestKey, progress: 90 }));
 
       const asset = {
-        requestKey: gatewayPayload.asset.requestKey,
-        assetKey: gatewayPayload.asset.assetKey,
-        duration: gatewayPayload.asset.duration,
-        generatedAt: gatewayPayload.asset.generatedAt,
+        requestKey: output.requestKey,
+        assetKey: output.assetKey,
+        duration: output.duration,
+        generatedAt: output.generatedAt,
       };
 
       setPreviewState((current) => markSectionReady(current, asset));
@@ -1489,6 +1576,28 @@ export default function StudioApp() {
     finalExportUrl,
   ]);
 
+  const persistableProjectDraft = useMemo(() => createPersistableStudioProjectDraft({
+    analysis: beatJoinAnalysis,
+    videoSources,
+    storyState,
+    musicVideoProject,
+    referenceAssets,
+    generatedAssets,
+    captionSettings: buildSceneCaptionSettings(captionMode, beatJoinAnalysis, storyState),
+    workflowUiSettings: {
+      activeTab: tab,
+      splitMode,
+      matchMode,
+      matchOnsetDensity,
+      matchLyricCueBlend,
+      matchLyricMergeWindow,
+      colorGradient,
+      shaderPresetId,
+      useSourceAudio,
+      isPreviewExpanded,
+    },
+  }), [beatJoinAnalysis, captionMode, colorGradient, generatedAssets, isPreviewExpanded, matchLyricCueBlend, matchLyricMergeWindow, matchMode, matchOnsetDensity, musicVideoProject, referenceAssets, shaderPresetId, splitMode, storyState, tab, useSourceAudio, videoSources]);
+
   useEffect(() => {
     if (tab === "beatsplit" && committedBeatSplit && !isCommittedBeatSplitCurrent) {
       setDone(false);
@@ -1585,6 +1694,12 @@ export default function StudioApp() {
           stepLabel={pipeline.stages.find((stage) => stage.active) ? `Step ${pipeline.stages.find((stage) => stage.active)!.step} of ${pipeline.stages.length}` : null}
           songLabel={beatJoinAnalysis?.sourceLabel ?? null}
           songDuration={beatJoinAnalysis?.duration ?? null}
+          projectDraft={persistableProjectDraft}
+          activeProjectId={activeProjectId}
+          activeProjectName={activeProjectName}
+          onNewProject={handleNewProject}
+          onProjectSelected={handleProjectSelected}
+          onProjectSaved={handleProjectSaved}
         />
 
         <div className="flex flex-1 flex-col overflow-hidden">

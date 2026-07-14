@@ -98,6 +98,7 @@ export class BrowserPreviewPlayer {
     this.nextSegmentIsLive = false;
     for (const element of this.elements) {
       if (!element) continue;
+      element.crossOrigin = "anonymous";
       element.preload = "auto";
       element.playsInline = true;
     }
@@ -540,6 +541,7 @@ export function getWarmSegmentTargets(params: {
 
 function createWarmVideoElement(videoUrl: string) {
   const video = document.createElement("video");
+  video.crossOrigin = "anonymous";
   video.muted = true;
   video.playsInline = true;
   video.preload = "auto";

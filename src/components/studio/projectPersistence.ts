@@ -1,11 +1,13 @@
 import type { DeepgramTranscriptSummary } from "./deepgramUtils";
-import type { MusicVideoProject, StoryEditSettings, StorySectionDraft } from "./musicVideoProject";
+import { getDefaultStorySectionDrafts, type MusicVideoProject, type StoryEditSettings, type StorySectionDraft } from "./musicVideoProject";
 import { hydrateGeneratedStudioAssets, sanitizeGeneratedStudioAssetForStorage, type GeneratedStudioAsset } from "./generatedAssets";
 import { hydrateReferenceAssets, sanitizeReferenceAssetForStorage, type ReferenceAsset } from "./referenceAssets";
 import type { BeatJoinAnalysis, ColorGradient, SceneCaptionSettings, Tab, UploadedVideoSource } from "./types";
 import type { SplitMode } from "./sourceTimeline";
+import type { SavedStudioProject, StudioProjectSummary } from "@/lib/studioProjectStore";
 
 export const STUDIO_PROJECT_STORAGE_KEY = "project-stack-structure:studio-project:v1";
+export const ACTIVE_STUDIO_PROJECT_KEY = "project-stack-structure:active-project:v1";
 const MEDIA_DB_NAME = "project-stack-structure-studio-media";
 const MEDIA_STORE_NAME = "media";
 
@@ -184,6 +186,10 @@ export async function saveStudioProjectDraft(
   if (!hasBrowserStorage()) return null;
 
   const draft = createPersistableStudioProjectDraft(params);
+  if (isEmptyStudioProjectDraft(draft)) {
+    clearStudioProjectDraft();
+    return null;
+  }
   window.localStorage.setItem(STUDIO_PROJECT_STORAGE_KEY, JSON.stringify(draft));
   void saveServerStudioProjectDraft(draft).catch((error) => {
     console.warn("[Studio] Could not autosave server studio draft", error);
@@ -208,6 +214,10 @@ export async function loadStudioProjectDraft(): Promise<RuntimeStudioProjectDraf
     return null;
   });
   if (serverDraft) {
+    if (isEmptyStudioProjectDraft(serverDraft)) {
+      clearStudioProjectDraft();
+      return null;
+    }
     window.localStorage.setItem(STUDIO_PROJECT_STORAGE_KEY, JSON.stringify(serverDraft));
     return hydrateStudioProjectDraft({ draft: serverDraft });
   }
@@ -217,6 +227,10 @@ export async function loadStudioProjectDraft(): Promise<RuntimeStudioProjectDraf
 
   const draft = parsePersistedDraft(raw);
   if (!draft) return null;
+  if (isEmptyStudioProjectDraft(draft)) {
+    clearStudioProjectDraft();
+    return null;
+  }
 
   const audioBlob = draft.analysis?.mediaKey ? await readMediaBlob(draft.analysis.mediaKey) : null;
   const audioUrl = audioBlob ? URL.createObjectURL(audioBlob) : null;
@@ -235,6 +249,32 @@ export async function loadStudioProjectDraft(): Promise<RuntimeStudioProjectDraf
 export function clearStudioProjectDraft() {
   if (!hasBrowserStorage()) return;
   window.localStorage.removeItem(STUDIO_PROJECT_STORAGE_KEY);
+  window.indexedDB?.deleteDatabase(MEDIA_DB_NAME);
+}
+
+export function isEmptyStudioProjectDraft(draft: PersistedStudioProjectDraft) {
+  return !draft.analysis
+    && draft.videoSources.length === 0
+    && !draft.musicVideoProject
+    && (draft.referenceAssets?.length ?? 0) === 0
+    && (draft.generatedAssets?.length ?? 0) === 0
+    && !draft.storyState.vocalStemName.trim()
+    && !draft.storyState.transcriptSummary
+    && hasOnlyDefaultStoryBeats(draft.storyState.storyBeats)
+    && !draft.storyState.storyGenerated;
+}
+
+function hasOnlyDefaultStoryBeats(beats: PersistedStoryState["storyBeats"]) {
+  const defaults = getDefaultStorySectionDrafts();
+  return beats.length === 0 || (
+    beats.length === defaults.length
+    && beats.every((beat, index) => {
+      const expected = defaults[index];
+      return beat.id === expected?.id
+        && beat.label === expected.label
+        && beat.prompt === expected.prompt;
+    })
+  );
 }
 
 export async function saveServerStudioProjectDraft(draft: PersistedStudioProjectDraft): Promise<PersistedStudioProjectDraft | null> {
@@ -263,6 +303,40 @@ export async function loadServerStudioProjectDraft(): Promise<PersistedStudioPro
   }
 
   return payload.draft ?? null;
+}
+
+export async function listSavedStudioProjects(): Promise<StudioProjectSummary[]> {
+  const response = await fetch("/api/studio/projects", { cache: "no-store" });
+  const payload = await readProjectApiResponse<{ projects?: StudioProjectSummary[] }>(response);
+  if (!response.ok || !payload.success) throw new Error(payload.error || `Project list failed (${response.status})`);
+  return payload.projects ?? [];
+}
+
+export async function loadSavedStudioProject(projectId: string): Promise<SavedStudioProject> {
+  const response = await fetch(`/api/studio/projects/${encodeURIComponent(projectId)}`, { cache: "no-store" });
+  const payload = await readProjectApiResponse<{ saved?: SavedStudioProject }>(response);
+  if (!response.ok || !payload.success || !payload.saved) throw new Error(payload.error || `Project load failed (${response.status})`);
+  window.localStorage.setItem(ACTIVE_STUDIO_PROJECT_KEY, projectId);
+  window.localStorage.setItem(STUDIO_PROJECT_STORAGE_KEY, JSON.stringify(payload.saved.draft));
+  return payload.saved;
+}
+
+export async function saveNamedStudioProject(params: {
+  projectId?: string | null;
+  name: string;
+  draft: PersistedStudioProjectDraft;
+}): Promise<SavedStudioProject> {
+  const projectId = params.projectId?.trim() || null;
+  const response = await fetch(projectId ? `/api/studio/projects/${encodeURIComponent(projectId)}` : "/api/studio/projects", {
+    method: projectId ? "PUT" : "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: params.name, draft: params.draft }),
+  });
+  const payload = await readProjectApiResponse<{ saved?: SavedStudioProject }>(response);
+  if (!response.ok || !payload.success || !payload.saved) throw new Error(payload.error || `Project save failed (${response.status})`);
+  window.localStorage.setItem(ACTIVE_STUDIO_PROJECT_KEY, payload.saved.project.id);
+  window.localStorage.setItem(STUDIO_PROJECT_STORAGE_KEY, JSON.stringify(payload.saved.draft));
+  return payload.saved;
 }
 
 export function buildAudioMediaKey(sourceLabel: string) {
@@ -315,6 +389,16 @@ async function readDraftApiResponse(response: Response): Promise<{ success?: boo
     return JSON.parse(text) as { success?: boolean; draft?: PersistedStudioProjectDraft | null; error?: string };
   } catch {
     return { error: text.slice(0, 300) };
+  }
+}
+
+async function readProjectApiResponse<T>(response: Response): Promise<T & { success?: boolean; error?: string }> {
+  const text = await response.text();
+  if (!text.trim()) return {} as T & { success?: boolean; error?: string };
+  try {
+    return JSON.parse(text) as T & { success?: boolean; error?: string };
+  } catch {
+    return { error: text.slice(0, 300) } as T & { success?: boolean; error?: string };
   }
 }
 

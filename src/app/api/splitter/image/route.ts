@@ -1,4 +1,5 @@
-import { splitImageWithGateway, uploadImageSplitPanelsToMediaGateway } from "@/lib/imageSplitterGateway";
+import { triggerImageSplitter } from "@/lib/triggerOrchestration";
+import { uploadFileToMediaGateway } from "@/lib/mediaGateway";
 
 export const runtime = "nodejs";
 
@@ -16,8 +17,15 @@ export async function POST(request: Request) {
       return Response.json({ error: "Fixed image splitting requires rows and cols." }, { status: 400 });
     }
 
-    const split = await splitImageWithGateway({
+    const source = await uploadFileToMediaGateway({
       file,
+      folder: "media-uploads/generated/image-splits/sources",
+    });
+    const handle = await triggerImageSplitter({
+      bucket: source.bucket,
+      objectKey: source.objectKey,
+      fileName: file.name || "source-image.png",
+      mimeType: file.type || source.mime,
       options: {
         mode: "fixed",
         rows,
@@ -25,9 +33,8 @@ export async function POST(request: Request) {
         gutterPx: readNumber(formData.get("gutter_px") ?? formData.get("gutterPx")),
       },
     });
-    const persisted = await uploadImageSplitPanelsToMediaGateway({ split });
 
-    return Response.json({ success: true, ...persisted });
+    return Response.json({ success: true, orchestration: "trigger.dev", runId: handle.id, status: "queued" }, { status: 202 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Image split failed";
     return Response.json({ error: message }, { status: /Image file is required/i.test(message) ? 400 : 502 });

@@ -1,4 +1,5 @@
 import type { BeatJoinAnalysis, BeatJoinSection } from "./types";
+import { waitForTriggerRunOutput } from "@/lib/clientTriggerRuns";
 
 const DEFAULT_EMPTY_SECTIONS: BeatJoinSection[] = [{ label: "Intro", start: 0, end: 1 }];
 
@@ -30,7 +31,15 @@ export async function fetchEssentiaAnalysis(file: File) {
       body: formData,
     });
 
-    const payload = await readResponsePayload(response);
+    const initialPayload = await readResponsePayload(response);
+    const runId = readStringField(initialPayload, "runId");
+    const payload = response.status === 202 && runId
+      ? mergeOrchestrationResult(
+          await waitForTriggerRunOutput(runId, { timeoutMs: 600_000, pollIntervalMs: 2_000 }),
+          initialPayload,
+          runId,
+        )
+      : initialPayload;
 
     const responseObject = isRecord(payload) ? payload : null;
     const rawPayload = isRecord(responseObject?.raw) ? responseObject.raw : payload;
@@ -65,22 +74,24 @@ export async function fetchEssentiaAnalysis(file: File) {
   }
 }
 
+export function getEssentiaStorageFromPayload(payload: unknown) {
+  if (!isRecord(payload) || !isRecord(payload.storage)) return null;
+  const storage = payload.storage;
+  const storageUrl = readStringField(storage, "storageUrl");
+  const storagePath = readStringField(storage, "storagePath");
+  if (!storageUrl || !storagePath) return null;
+
+  return {
+    storageProvider: "rustfs" as const,
+    storageBucket: readStringField(storage, "storageBucket"),
+    storagePath,
+    storageUrl,
+    storageStatus: "uploaded" as const,
+    storageError: null,
+  };
+}
+
 export function resolveEssentiaRequestTarget(): EssentiaRequestTarget {
-  const directApiUrl =
-    (process.env.NEXT_PUBLIC_ESSENTIA_API_BASE_URL ?? process.env.NEXT_PUBLIC_ESSENTIA_API_URL ?? "").trim().replace(/\/+$/, "");
-  const directApiKey = (process.env.NEXT_PUBLIC_ESSENTIA_API_KEY ?? "").trim();
-
-  if (directApiUrl && directApiKey) {
-    return {
-      url: `${directApiUrl}/analyze/full`,
-      transport: "direct",
-      headers: {
-        Authorization: `Bearer ${directApiKey}`,
-        "X-API-Key": directApiKey,
-      },
-    };
-  }
-
   return {
     url: "/api/essentia/full?mode=fast",
     transport: "proxy",
@@ -320,4 +331,23 @@ function getArrayLength(value: unknown) {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function mergeOrchestrationResult(output: unknown, initialPayload: unknown, runId: string) {
+  const result = isRecord(output) ? output : { output };
+  const initial = isRecord(initialPayload) ? initialPayload : {};
+  return {
+    ...result,
+    storage: initial.storage,
+    orchestration: {
+      provider: "trigger.dev",
+      runId,
+    },
+  };
+}
+
+function readStringField(value: unknown, key: string) {
+  if (!isRecord(value)) return undefined;
+  const candidate = value[key];
+  return typeof candidate === "string" && candidate.trim() ? candidate.trim() : undefined;
 }
