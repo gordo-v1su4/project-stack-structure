@@ -11,6 +11,12 @@ describe("Trigger local generation assets", () => {
     expect(Array.from(new Uint8Array(await file.arrayBuffer()))).toEqual([1, 2, 3, 4]);
   });
 
+  test("decodes percent-encoded base64 payloads before converting them", async () => {
+    const file = dataUrlToFile("data:application/octet-stream;base64,%2B%2B8%3D", "generated");
+
+    expect(Array.from(new Uint8Array(await file.arrayBuffer()))).toEqual([251, 239]);
+  });
+
   test("decodes percent-encoded data URLs", async () => {
     const file = dataUrlToFile("data:text/plain,hello%20world", "generated");
 

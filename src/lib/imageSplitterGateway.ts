@@ -170,7 +170,8 @@ export async function uploadImageSplitPanelsToMediaGateway(args: {
         throw new Error(`Image splitter panel fetch failed (${response.status}): ${text.slice(0, 300)}`);
       }
       const blob = await response.blob();
-      const contentType = response.headers.get("Content-Type") || blob.type || "image/png";
+      const rawContentType = response.headers.get("Content-Type") || blob.type || "image/png";
+      const contentType = rawContentType.split(";")[0].trim();
       file = new File([blob], filename, { type: contentType });
     } else {
       const downloaded = await downloadHttpBytes(sourceUrl);

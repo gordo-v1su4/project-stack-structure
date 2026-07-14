@@ -250,7 +250,7 @@ export function dataUrlToFile(value: string, fallbackName: string) {
   if (!match) throw new Error("Generated data URL is invalid.");
   const mime = match[1] || "application/octet-stream";
   const bytes = match[2]
-    ? Buffer.from(match[3], "base64")
+    ? Buffer.from(decodeURIComponent(match[3]), "base64")
     : new TextEncoder().encode(decodeURIComponent(match[3]));
   return new File([bytes], `${fallbackName}${extensionFromMime(mime)}`, { type: mime });
 }
