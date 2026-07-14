@@ -81,6 +81,16 @@ export interface SwarmImageResult {
   batch_index?: string | number;
 }
 
+export interface SwarmModelCatalogEntry {
+  name?: string;
+  title?: string;
+  class?: string;
+  compat_class?: string;
+  architecture?: string;
+  special_format?: string;
+  local?: boolean;
+}
+
 const DEFAULT_SWARMUI_URL = "http://127.0.0.1:7861";
 const DEFAULT_SWARM_WIDTH = 1280;
 const DEFAULT_SWARM_HEIGHT = 720;
@@ -254,10 +264,17 @@ export async function createSwarmImage(params: {
     };
   }
 
+  const model = await resolveSwarmModel({
+    baseUrl,
+    sessionId: session.session_id,
+    requestedModel: params.request.model,
+    fetchImpl: fetcher,
+  });
+
   const generateResponse = await fetcher(`${baseUrl}/API/GenerateText2Image`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(buildSwarmTextToImagePayload(params.request, session.session_id)),
+    body: JSON.stringify(buildSwarmTextToImagePayload({ ...params.request, model }, session.session_id)),
   });
   const payload = await safeJson(generateResponse) as { images?: Array<string | SwarmImageResult>; error?: string; error_id?: string } | null;
   if (!generateResponse.ok || payload?.error) {
@@ -281,6 +298,61 @@ export async function createSwarmImage(params: {
     message: "SwarmUI returned generated image assets.",
     assets: normalizeSwarmAssets(payload?.images ?? []),
   };
+}
+
+export async function resolveSwarmModel(params: {
+  baseUrl: string;
+  sessionId: string;
+  requestedModel?: string;
+  fetchImpl?: typeof fetch;
+}) {
+  const requestedModel = params.requestedModel?.trim();
+  if (requestedModel) return requestedModel;
+
+  const configuredModel = process.env.LOCAL_SWARMUI_MODEL?.trim() || process.env.SWARMUI_MODEL?.trim();
+  if (configuredModel) return configuredModel;
+
+  const fetcher = params.fetchImpl ?? fetch;
+  const response = await fetcher(`${normalizeLocalGenerationUrl(params.baseUrl)}/API/ListModels`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      session_id: params.sessionId,
+      path: "",
+      depth: 2,
+      subtype: "Stable-Diffusion",
+      sortBy: "Name",
+      allowRemote: false,
+      sortReverse: false,
+      dataImages: false,
+    }),
+  });
+  const payload = await safeJson(response) as { files?: SwarmModelCatalogEntry[]; error?: string } | null;
+  if (!response.ok || payload?.error) {
+    throw new Error(`SwarmUI model catalog failed (${response.status}): ${payload?.error ?? response.statusText}`);
+  }
+
+  const model = chooseSwarmModel(payload?.files ?? []);
+  if (!model) {
+    throw new Error("SwarmUI did not report a usable local image model. Set SWARMUI_MODEL to an installed model name.");
+  }
+  return model;
+}
+
+export function chooseSwarmModel(entries: SwarmModelCatalogEntry[]) {
+  const usable = entries
+    .map((entry) => ({ ...entry, name: entry.name?.trim() }))
+    .filter((entry): entry is SwarmModelCatalogEntry & { name: string } => Boolean(entry.name))
+    .filter((entry) => entry.local !== false)
+    .filter((entry) => !/(video|lora|controlnet|vae|text.?encoder|clip|embedding|upscal|inpaint)/i.test(`${entry.name} ${entry.class ?? ""} ${entry.compat_class ?? ""}`))
+    .filter((entry) => !/(fp16|bf16|fp32|f16)/i.test(entry.name))
+    .filter((entry) => Boolean(entry.class || entry.compat_class || entry.architecture));
+
+  const preferred = usable.find((entry) => /z[-_ ]?image.*turbo/i.test(entry.name))
+    ?? usable.find((entry) => /qwen.*image.*(fp8|q8|gguf)/i.test(entry.name))
+    ?? usable.find((entry) => /flux.*(fp8|q8)/i.test(entry.name))
+    ?? usable.find((entry) => /krea.*turbo/i.test(entry.name));
+  return (preferred ?? usable[0])?.name;
 }
 
 export function buildSwarmTextToImagePayload(request: LocalGenerationRequest, sessionId: string) {

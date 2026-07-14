@@ -1,10 +1,10 @@
-import {
-  applyGlitchWithScript,
-  detectFfglitch,
-  generateGlitchScript,
-  probeFfglitchFeatures,
-  type GlitchMotionVectorParams,
-} from "@/components/studio/ffglitchApi";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+
+import { detectFfglitch } from "@/components/studio/ffglitchApi";
+import { uploadFileToMediaGateway } from "@/lib/mediaGateway";
+import { triggerFfglitch } from "@/lib/triggerOrchestration";
+import type { GlitchMotionVectorParams } from "@/components/studio/ffglitchApi";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,54 +33,6 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const config = getFfmpegGatewayConfig();
-
-  if (config.url) {
-    const payload = (await request.json()) as {
-      action: "probe" | "glitch";
-      inputPath?: string;
-      outputPath?: string;
-      glitchParams?: GlitchMotionVectorParams;
-    };
-
-    if (payload.action === "probe" && payload.inputPath) {
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (config.apiKey) headers["X-API-Key"] = config.apiKey;
-
-      const response = await fetch(`${config.url}/probe`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ inputPath: payload.inputPath }),
-      });
-
-      const result = await response.json();
-      return Response.json(result, { status: response.status });
-    }
-
-    if (payload.action === "glitch" && payload.glitchParams) {
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (config.apiKey) headers["X-API-Key"] = config.apiKey;
-
-      const response = await fetch(`${config.url}/ffglitch/glitch`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          mode: payload.glitchParams.mode,
-          intensity: payload.glitchParams.intensity,
-          beatTimes: payload.glitchParams.beatTimes,
-        }),
-      });
-
-      const result = await response.json();
-      return Response.json(result, { status: response.status });
-    }
-
-    return Response.json(
-      { success: false, error: "Invalid action or missing parameters." },
-      { status: 400 }
-    );
-  }
-
   try {
     const payload = (await request.json()) as {
       action: "probe" | "glitch";
@@ -89,44 +41,49 @@ export async function POST(request: Request) {
       glitchParams?: GlitchMotionVectorParams;
     };
 
-    const capabilities = await detectFfglitch();
-    if (!capabilities.available) {
-      return Response.json(
-        { success: false, error: "FFglitch is not available on this server." },
-        { status: 503 }
-      );
+    if ((payload.action !== "probe" && payload.action !== "glitch") || !payload.inputPath?.trim()) {
+      return Response.json({ success: false, error: "Invalid action or missing inputPath." }, { status: 400 });
+    }
+    if (payload.action === "glitch" && !payload.glitchParams) {
+      return Response.json({ success: false, error: "glitchParams are required for a glitch operation." }, { status: 400 });
     }
 
-    if (payload.action === "probe" && payload.inputPath) {
-      const features = await probeFfglitchFeatures(
-        payload.inputPath,
-        capabilities.ffeditPath ?? undefined
-      );
-      return Response.json({ success: true, features });
-    }
-
-    if (payload.action === "glitch" && payload.inputPath && payload.glitchParams) {
-      const scriptPath = await generateGlitchScript(payload.glitchParams);
-      const outputPath =
-        payload.outputPath ??
-        `${payload.inputPath.replace(/\.[^.]+$/, "")}-glitched${payload.inputPath.match(/\.[^.]+$/)?.[0] ?? ".avi"}`;
-
-      const result = await applyGlitchWithScript(
-        payload.inputPath,
-        scriptPath,
-        outputPath,
-        capabilities.ffeditPath ?? undefined
-      );
-
-      return Response.json({ success: true, ...result });
-    }
-
-    return Response.json(
-      { success: false, error: "Invalid action or missing parameters." },
-      { status: 400 }
-    );
+    const sourceIdentity = payload.inputPath.trim();
+    const source = await resolveDurableInput(sourceIdentity);
+    const handle = await triggerFfglitch({
+      action: payload.action,
+      inputPath: source.url,
+      sourceIdentity,
+      fileName: source.fileName,
+      outputPath: payload.outputPath,
+      glitchParams: payload.glitchParams,
+    });
+    return Response.json({ success: true, orchestration: "trigger.dev", runId: handle.id, status: "queued" }, { status: 202 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown FFglitch error";
     return Response.json({ success: false, error: message }, { status: 500 });
   }
+}
+
+async function resolveDurableInput(inputPath: string) {
+  if (/^https?:\/\//i.test(inputPath)) {
+    const url = new URL(inputPath);
+    return { url: inputPath, fileName: path.basename(url.pathname) || "source.mp4" };
+  }
+
+  const bytes = await readFile(inputPath);
+  const fileName = path.basename(inputPath) || "source.mp4";
+  const uploaded = await uploadFileToMediaGateway({
+    file: new File([bytes], fileName, { type: mediaType(fileName) }),
+    folder: "media-uploads/ffglitch-inputs",
+  });
+  return { url: uploaded.mediaUrl || uploaded.publicUrl, fileName };
+}
+
+function mediaType(fileName: string) {
+  const extension = path.extname(fileName).toLowerCase();
+  if (extension === ".webm") return "video/webm";
+  if (extension === ".avi") return "video/x-msvideo";
+  if (extension === ".mov") return "video/quicktime";
+  return "video/mp4";
 }

@@ -1,4 +1,5 @@
-import { createNanoBananaProGrid, getHiggsfieldAccount, type HiggsfieldInputImage, type HiggsfieldResolution } from "@/lib/higgsfieldGateway";
+import { getHiggsfieldAccount, type HiggsfieldInputImage, type HiggsfieldResolution } from "@/lib/higgsfieldGateway";
+import { triggerHiggsfieldGeneration } from "@/lib/triggerOrchestration";
 
 export const runtime = "nodejs";
 
@@ -30,7 +31,7 @@ export async function POST(request: Request) {
     const inputImages = normalizeInputImages(body.inputImages);
     if (!inputImages.length) return Response.json({ success: false, error: "At least one input image URL is required." }, { status: 400 });
 
-    const asset = await createNanoBananaProGrid({
+    const handle = await triggerHiggsfieldGeneration({
       prompt,
       inputImages,
       characterName: typeof body.characterName === "string" ? body.characterName.trim() : undefined,
@@ -41,7 +42,12 @@ export async function POST(request: Request) {
       splitCols: normalizeInt(body.splitCols, 1, 24) ?? 3,
     });
 
-    return Response.json({ success: true, asset });
+    return Response.json({
+      success: true,
+      orchestration: "trigger.dev",
+      runId: handle.id,
+      status: "queued",
+    }, { status: 202 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Higgsfield generation failed";
     return Response.json({ success: false, error: message }, { status: 502 });

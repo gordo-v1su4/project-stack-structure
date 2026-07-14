@@ -1,10 +1,10 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect } from "bun:test";
 import { rm } from "node:fs/promises";
 
 import { generateMusicVideoExport, type ShaderEffectCue } from "@/components/studio/exportGeneration";
 import { createTempPreviewPath, type ProbeFn } from "@/components/studio/previewGeneration";
 import { probeMediaFile } from "@/components/studio/mediaProbe";
-import { listMediaFixtures } from "../helpers/mediaFixtures";
+import { hasAudioVideoFixtures, listMediaFixtures, mediaFixtureTest } from "../helpers/mediaFixtures";
 
 const exportProbeFn: ProbeFn = async (filePath) => {
   const result = await probeMediaFile(filePath);
@@ -12,7 +12,7 @@ const exportProbeFn: ProbeFn = async (filePath) => {
 };
 
 describe("music video final export integration", () => {
-  test("renders a downloadable video export with master audio and synced shader cues", async () => {
+  mediaFixtureTest(hasAudioVideoFixtures())("renders a downloadable video export with master audio and synced shader cues", async () => {
     const inventory = listMediaFixtures();
     const audioPath = inventory.audio[0];
     const videoPath = inventory.video[0];

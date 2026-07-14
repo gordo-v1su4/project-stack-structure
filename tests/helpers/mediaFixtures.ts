@@ -1,3 +1,4 @@
+import { test } from "bun:test";
 import { existsSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 
@@ -40,6 +41,15 @@ export function listMediaFixtures(dir = getMediaFixturesDir()): MediaFixtureInve
   }
 
   return { rootDir: dir, audio: sortMediaEntries(audio), video: sortMediaEntries(video), other: sortMediaEntries(other) };
+}
+
+export function hasAudioVideoFixtures(inventory = listMediaFixtures()) {
+  return inventory.audio.length > 0 && inventory.video.length > 0;
+}
+
+export function mediaFixtureTest(available: boolean) {
+  if (available) return test;
+  return (test as unknown as { skip: typeof test }).skip;
 }
 
 function collectMediaFixtureFiles(dir: string): string[] {

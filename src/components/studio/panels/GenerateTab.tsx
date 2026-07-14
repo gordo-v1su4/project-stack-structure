@@ -7,6 +7,7 @@ import type { BeatJoinAnalysis, ColorPaletteSwatch, MotionDescriptor } from "../
 import type { GeneratedStudioAsset } from "../generatedAssets";
 import { buildAdaptiveCueMap } from "../adaptiveCueMap";
 import type { MusicVideoProject, TimelineItem, VideoMoment } from "../musicVideoProject";
+import { waitForTriggerRunOutput } from "@/lib/clientTriggerRuns";
 
 type GenerateTabProps = {
   project: MusicVideoProject | null;
@@ -26,7 +27,7 @@ type SlotStatus = "filled" | "weak" | "short" | "missing";
 type GenerationNeed = "b-roll" | "alt-angle" | "extend-start" | "extend-end" | "bridge" | "reroll-match";
 type TimelineZoomMode = "fit" | "section" | "selected";
 
-type GeneratedLocalAsset = { provider: "swarmui"; kind: "image" | "video"; url: string; filename?: string; path?: string };
+type GeneratedLocalAsset = { provider: "swarmui" | "comfyui"; kind: "image" | "video"; url: string; filename?: string; path?: string };
 
 type HiggsfieldGenerationFormState = {
   title: string;
@@ -193,10 +194,13 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
           splitCols: params.splitCols,
         }),
       });
-      const payload = await response.json() as { success?: boolean; error?: string; asset?: GeneratedStudioAsset };
-      if (!response.ok || payload.error || !payload.asset) throw new Error(payload.error ?? `Higgsfield failed with HTTP ${response.status}`);
-      onGeneratedAsset(payload.asset);
-      setHiggsfieldStatus(`Completed ${payload.asset.jobId}. Full grid and ${payload.asset.split?.panels.length ?? 0} panels uploaded to RustFS.`);
+      const payload = await response.json() as { success?: boolean; error?: string; runId?: string };
+      if (!response.ok || payload.error || !payload.runId) throw new Error(payload.error ?? `Higgsfield failed with HTTP ${response.status}`);
+      setHiggsfieldStatus(`Higgsfield job queued through Trigger.dev (${payload.runId})...`);
+      const asset = await waitForTriggerRunOutput(payload.runId, { timeoutMs: 20 * 60 * 1_000, pollIntervalMs: 3_000 }) as GeneratedStudioAsset;
+      if (!asset?.id || asset.provider !== "higgsfield") throw new Error("Higgsfield completed without a valid durable asset.");
+      onGeneratedAsset(asset);
+      setHiggsfieldStatus(`Completed ${asset.jobId}. Full grid and ${asset.split?.panels.length ?? 0} panels uploaded to RustFS.`);
     } catch (error) {
       setHiggsfieldStatus(error instanceof Error ? error.message : "Higgsfield generation failed.");
     } finally {
@@ -232,10 +236,27 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
           batchSize: 1,
         }),
       });
-      const payload = await response.json() as { success?: boolean; error?: string; job?: { status?: string; message?: string; promptId?: string; assets?: GeneratedLocalAsset[] } };
+      const payload = await response.json() as { success?: boolean; error?: string; runId?: string; job?: { status?: string; message?: string; promptId?: string; assets?: GeneratedLocalAsset[] } };
       if (!response.ok || payload.error) throw new Error(payload.error ?? payload.job?.message ?? `Generation failed with HTTP ${response.status}`);
-      setGenerationStatus(payload.job?.promptId ? `${payload.job.message ?? "Generation queued."} prompt=${payload.job.promptId}` : payload.job?.message ?? "Generation request sent.");
-      if (payload.job?.assets?.length) setGeneratedAssets((current) => [...payload.job!.assets!, ...current]);
+      if (!payload.runId) throw new Error("Trigger.dev did not return a local-generation run ID.");
+      setGenerationStatus(`Generation queued through Trigger.dev (${payload.runId}). Waiting for ${kind} output...`);
+      const output = await waitForTriggerRunOutput(payload.runId, { timeoutMs: 30 * 60 * 1_000, pollIntervalMs: 2_000 }) as {
+        assets?: Array<{ provider?: "swarmui" | "comfyui"; kind?: "image" | "video"; filename?: string; storage?: { publicUrl?: string; mediaUrl?: string; objectKey?: string } }>;
+      };
+      const assets = (output.assets ?? []).flatMap((asset) => {
+        const url = asset.storage?.mediaUrl ?? asset.storage?.publicUrl;
+        if (!url || !asset.kind) return [];
+        return [{
+          provider: asset.provider ?? "swarmui",
+          kind: asset.kind,
+          url,
+          filename: asset.filename,
+          path: asset.storage?.objectKey,
+        } satisfies GeneratedLocalAsset];
+      });
+      if (!assets.length) throw new Error("Local generation completed without durable output assets.");
+      setGeneratedAssets((current) => [...assets, ...current]);
+      setGenerationStatus(`Completed ${assets.length} ${kind} asset${assets.length === 1 ? "" : "s"}; persisted to RustFS.`);
     } catch (error) {
       setGenerationStatus(error instanceof Error ? error.message : "Generation request failed.");
     } finally {

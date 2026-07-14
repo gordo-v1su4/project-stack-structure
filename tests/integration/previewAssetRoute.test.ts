@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { GET } from "../../src/app/api/preview/asset/route";
 import { createTempPreviewPath, generateSectionPreview, type ProbeFn } from "../../src/components/studio/previewGeneration";
 import { probeMediaFile } from "../../src/components/studio/mediaProbe";
-import { listMediaFixtures } from "../helpers/mediaFixtures";
+import { hasAudioVideoFixtures, listMediaFixtures, mediaFixtureTest } from "../helpers/mediaFixtures";
 
 const testProbeFn: ProbeFn = async (filePath) => {
   const result = await probeMediaFile(filePath);
@@ -11,7 +11,7 @@ const testProbeFn: ProbeFn = async (filePath) => {
 };
 
 describe("preview asset route", () => {
-  test("serves a generated preview asset from the allowed preview directory", async () => {
+  mediaFixtureTest(hasAudioVideoFixtures())("serves a generated preview asset from the allowed preview directory", async () => {
     const inventory = listMediaFixtures();
     const inputPath = inventory.video[0];
     expect(Boolean(inputPath)).toBe(true);

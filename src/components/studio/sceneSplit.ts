@@ -1,7 +1,7 @@
 import type { ColorPaletteSwatch, DetectedSceneSegment, MotionDescriptor, SceneColorAnalysis, SceneVisualAnalysis } from "./types";
 
 const DEFAULT_POLL_INTERVAL_MS = 2500;
-const DEFAULT_TIMEOUT_MS = 120_000;
+const DEFAULT_TIMEOUT_MS = 3_300_000;
 
 type MediaVideoJobStatus = "queued" | "processing" | "completed" | "failed";
 

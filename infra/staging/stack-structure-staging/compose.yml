@@ -1,0 +1,95 @@
+name: stack-structure-staging
+
+services:
+  qwen-llama:
+    # Pin the verified upstream CUDA server image. The old unversioned
+    # ggerganov namespace alias is no longer published.
+    image: ${LLAMA_CPP_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda13-b9445@sha256:56095506826cc6287d1b3a8448d8e89dbcef739adac92073967e68984d9c7ab5}
+    command:
+      - --host
+      - 0.0.0.0
+      - --port
+      - "18092"
+      - --model
+      - /models/${QWEN_MODEL_FILE:-Qwen3VL-4B-Instruct-Q4_K_M.gguf}
+      - --mmproj
+      - /models/${QWEN_MMPROJ_FILE:-mmproj-Qwen3VL-4B-Instruct-Q8_0.gguf}
+      - --alias
+      - ${QWEN_GGUF_MODEL:-Qwen/Qwen3-VL-4B-Instruct-GGUF:Q4_K_M}
+      - --no-webui
+      - --ctx-size
+      - "8192"
+      - --parallel
+      - "1"
+      - --image-min-tokens
+      - "1024"
+      - --n-gpu-layers
+      - "${QWEN_GPU_LAYERS:-24}"
+    volumes:
+      - type: bind
+        source: ${QWEN_MODEL_DIR:-D:/models/LLM/GGUF/Qwen/Qwen3-VL-4B-Instruct-GGUF}
+        target: /models
+        read_only: true
+    ports:
+      - 127.0.0.1:${QWEN_HOST_PORT:-18092}:18092
+    gpus: all
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:18092/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
+
+  caption-gateway:
+    build:
+      context: ./caption-gateway
+    environment:
+      CAPTION_API_TOKEN: ${CAPTION_API_TOKEN:-}
+      QWEN_GGUF_MODEL: ${QWEN_GGUF_MODEL:-Qwen/Qwen3-VL-4B-Instruct-GGUF:Q4_K_M}
+      QWEN_LLAMA_URL: http://qwen-llama:18092/v1/chat/completions
+      QWEN_LLAMA_HEALTH_URL: http://qwen-llama:18092/health
+      QWEN_MAX_TOKENS: ${QWEN_MAX_TOKENS:-180}
+      QWEN_TEMPERATURE: ${QWEN_TEMPERATURE:-0.2}
+      QWEN_TIMEOUT_SECONDS: ${QWEN_TIMEOUT_SECONDS:-300}
+      QWEN_BACKEND_MODE: container
+      GPU_LOCK_PATH: /gpu-lock/stack-structure-gpu.lock
+      GPU_LOCK_TIMEOUT_SECONDS: ${GPU_LOCK_TIMEOUT_SECONDS:-900}
+    volumes:
+      - ./gpu-lock:/gpu-lock
+    ports:
+      - 127.0.0.1:${CAPTION_HOST_PORT:-18091}:18091
+    depends_on:
+      - qwen-llama
+    restart: unless-stopped
+
+  # Optional local media worker. Set STACK_STRUCTURE_MEDIA_WORKER_IMAGE to the
+  # image built from proxmox-home/infra/rustfs/video-worker when moving media
+  # processing off the existing remote gateway.
+  media-worker:
+    image: ${STACK_STRUCTURE_MEDIA_WORKER_IMAGE:-stack-structure-video-worker:staging}
+    profiles: [media]
+    environment:
+      MEDIA_API_URL: ${MEDIA_API_URL:-https://media.v1su4.dev}
+      MEDIA_API_TOKEN: ${MEDIA_API_TOKEN:-${MEDIA_GATEWAY_TOKEN:-}}
+      WORKER_POLL_SECONDS: ${MEDIA_WORKER_POLL_SECONDS:-3}
+      REQUIRE_GPU: ${MEDIA_WORKER_REQUIRE_GPU:-true}
+      EXTRACT_CLIPS: ${MEDIA_WORKER_EXTRACT_CLIPS:-true}
+      FFMPEG_HWACCEL: ${MEDIA_WORKER_FFMPEG_HWACCEL:-cuda}
+      SOURCE_DOWNLOAD_BACKOFF_SECONDS: ${MEDIA_WORKER_DOWNLOAD_BACKOFF_SECONDS:-1}
+      ARTIFACT_UPLOAD_WORKERS: ${MEDIA_WORKER_ARTIFACT_UPLOAD_WORKERS:-4}
+      GPU_LOCK_PATH: /gpu-lock/stack-structure-gpu.lock
+      GPU_LOCK_TIMEOUT_SECONDS: ${GPU_LOCK_TIMEOUT_SECONDS:-900}
+      WORK_ROOT: /work
+    volumes:
+      - ./gpu-lock:/gpu-lock
+    ports:
+      - 127.0.0.1:${MEDIA_WORKER_HOST_PORT:-18090}:8080
+    gpus: all
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://127.0.0.1:8080/health\", timeout=5).read()'"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped

@@ -1,4 +1,5 @@
 import { exportSRT, type SrtChunk } from "./srtUtils";
+import { waitForTriggerRunOutput } from "@/lib/clientTriggerRuns";
 
 export const DEEPGRAM_DEV_TRANSCRIBE_ENDPOINT = "/deepgram-transcribe";
 
@@ -354,6 +355,14 @@ export async function transcribeAudioWithDeepgram(
   }
 
   console.info(`[Deepgram] response ${response.status}`, payload);
+
+  if (response.ok && payload.queued === true && typeof payload.runId === "string" && payload.runId.trim()) {
+    const runOutput = await waitForTriggerRunOutput(payload.runId, {
+      timeoutMs: 15 * 60 * 1_000,
+      pollIntervalMs: 2_000,
+    });
+    payload = asRecord(runOutput);
+  }
 
   if (!response.ok || payload.ok === false) {
     if (response.status === 401) {

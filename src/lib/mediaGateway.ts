@@ -15,10 +15,64 @@ export type MediaGatewayUploadResult = {
   mime: string;
 };
 
+export type MediaGatewayDownloadResult = {
+  bytes: ArrayBuffer;
+  fileName: string;
+  mime: string;
+};
+
 export function buildMediaGatewayFileUrl(config: Pick<MediaGatewayConfig, "url">, bucket: string, objectKey: string) {
   const safeBucket = encodeURIComponent(bucket);
   const safeKey = normalizeMediaPath(objectKey).split("/").map(encodeURIComponent).join("/");
   return `${config.url}/files/${safeBucket}/${safeKey}`;
+}
+
+export async function downloadMediaGatewayFile(args: {
+  bucket: string;
+  objectKey: string;
+  fileName?: string;
+  env?: Record<string, string | undefined>;
+  fetchImpl?: typeof fetch;
+}): Promise<MediaGatewayDownloadResult> {
+  const config = getMediaGatewayConfig(args.env);
+  if (!config) {
+    throw new Error("Missing RustFS media gateway env. Required: MEDIA_GATEWAY_URL/RUSTFS_MEDIA_API_URL and MEDIA_GATEWAY_TOKEN/MEDIA_API_TOKEN");
+  }
+
+  const fetcher = args.fetchImpl ?? fetch;
+  const response = await fetcher(buildMediaGatewayFileUrl(config, args.bucket, args.objectKey), {
+    headers: { Authorization: `Bearer ${config.token}` },
+    redirect: "follow",
+  });
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`Media gateway download failed (${response.status}): ${text.slice(0, 300)}`);
+  }
+
+  const objectName = normalizeMediaPath(args.objectKey).split("/").pop() || "media.bin";
+  return {
+    bytes: await response.arrayBuffer(),
+    fileName: args.fileName?.trim() || objectName,
+    mime: response.headers.get("content-type")?.split(";")[0]?.trim() || "application/octet-stream",
+  };
+}
+
+export async function downloadJsonFromMediaGateway<T = Record<string, unknown>>(args: {
+  bucket: string;
+  objectKey: string;
+  env?: Record<string, string | undefined>;
+  fetchImpl?: typeof fetch;
+}): Promise<T> {
+  const source = await downloadMediaGatewayFile({
+    ...args,
+    fileName: args.objectKey.split("/").pop() || "manifest.json",
+  });
+  const text = new TextDecoder().decode(source.bytes);
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error(`Media gateway JSON object is invalid: ${args.objectKey}`);
+  }
 }
 
 export function normalizeMediaPath(value: string) {

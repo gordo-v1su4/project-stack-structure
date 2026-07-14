@@ -4,6 +4,7 @@ import {
   buildVideoMediaKey,
   createPersistableStudioProjectDraft,
   hydrateStudioProjectDraft,
+  isEmptyStudioProjectDraft,
 } from "@/components/studio/projectPersistence";
 import type { MusicVideoProject } from "@/components/studio/musicVideoProject";
 import type { ReferenceAsset } from "@/components/studio/referenceAssets";
@@ -78,6 +79,40 @@ const musicVideoProject: MusicVideoProject = {
 };
 
 describe("projectPersistence", () => {
+  test("does not treat the initial empty Studio state as a saved project", () => {
+    const draft = createPersistableStudioProjectDraft({
+      analysis: null,
+      videoSources: [],
+      storyState: {
+        vocalStemName: "",
+        transcriptSummary: null,
+        storyBeats: [
+          { id: "intro", label: "Intro", prompt: "Opening visual / establishing image" },
+          { id: "verse-1", label: "Verse 1", prompt: "Main character, setting, or first visual idea" },
+          { id: "pre-chorus-1", label: "Pre-Chorus", prompt: "Build tension before the first chorus; remove if the song has no pre-chorus" },
+          { id: "chorus-1", label: "Chorus", prompt: "Main repeatable image, hook, or performance motif" },
+          { id: "verse-2", label: "Verse 2", prompt: "Second verse development or new visual variation" },
+          { id: "pre-chorus-2", label: "Pre-Chorus 2", prompt: "Second build before the chorus; remove if unused" },
+          { id: "chorus-2", label: "Chorus 2", prompt: "Return to the main hook with a bigger or altered visual" },
+          { id: "bridge", label: "Bridge", prompt: "Contrast section, breakdown, twist, or emotional turn" },
+          { id: "outro", label: "Final Chorus / Outro", prompt: "Final chorus, outro, last image, or emotional landing" },
+        ],
+        activeBeatId: "intro",
+        storyGenerated: false,
+      },
+      musicVideoProject: null,
+      referenceAssets: [],
+      generatedAssets: [],
+      savedAt: "2026-07-12T00:00:00.000Z",
+    });
+
+    expect(isEmptyStudioProjectDraft(draft)).toBe(true);
+    expect(isEmptyStudioProjectDraft({
+      ...draft,
+      storyState: { ...draft.storyState, vocalStemName: "vox.wav" },
+    })).toBe(false);
+  });
+
   test("creates a persistable draft without runtime object URLs", () => {
     const draft = createPersistableStudioProjectDraft({
       analysis: {

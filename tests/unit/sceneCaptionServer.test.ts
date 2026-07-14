@@ -1,9 +1,35 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 
-import { GET, POST } from "@/app/api/caption/scene/route";
 import { uploadSceneCaptionManifestToRustFs } from "@/components/studio/mediaStorage";
 import { normalizeServerCaptionPayload } from "@/components/studio/sceneCaptioningServer";
 import type { UploadedVideoSource } from "@/components/studio/types";
+
+const triggerSmartSceneCaptionMock = mock(async () => ({ id: "run_caption_123" }));
+mock.module("@/lib/triggerOrchestration", () => ({
+  STACK_STRUCTURE_TRIGGER_TASKS: {
+    mediaVideoPipeline: "media-video-pipeline",
+    mediaSceneDetection: "media-video-scene-detect",
+    mediaSceneCaptionBatch: "qwen-scene-caption-batch",
+    mediaFinalization: "media-video-finalize",
+    essentiaAnalysis: "essentia-analyze-stored-audio",
+    smartSceneCaption: "qwen-smart-scene-caption",
+    localGeneration: "local-ai-generation",
+    higgsfieldGeneration: "higgsfield-nano-banana-pro-grid",
+    deepgramTranscription: "deepgram-transcribe-stored-audio",
+    ffmpegPreview: "ffmpeg-preview-or-concat",
+    finalExport: "ffmpeg-final-music-video-export",
+    shaderCaptureExport: "ffmpeg-shader-capture-export",
+    ffglitch: "ffglitch-transform",
+    imageSplitter: "image-split-grid",
+  },
+  assertTriggerConfigured: () => undefined,
+  triggerSmartSceneCaption: triggerSmartSceneCaptionMock,
+  triggerMediaSceneDetection: mock(async () => ({ id: "run_media_123" })),
+  triggerEssentiaAnalysis: mock(async () => ({ id: "run_essentia_123" })),
+  retrieveTriggerRun: mock(async () => ({})),
+}));
+
+const { GET, POST } = await import("@/app/api/caption/scene/route");
 
 const originalEnv = { ...process.env };
 const originalFetch = globalThis.fetch;
@@ -126,8 +152,7 @@ describe("scene caption server seam", () => {
     }
   });
 
-  test("proxies a frame to the configured self-hosted caption gateway without exposing browser secrets", async () => {
-    const calls: FetchCall[] = [];
+  test("keeps fast captions in browser WebGPU instead of bypassing Trigger", async () => {
     try {
       delete process.env.SCENE_CAPTION_FAST_GATEWAY_URL;
       delete process.env.LFM_CAPTION_GATEWAY_URL;
@@ -141,37 +166,17 @@ describe("scene caption server seam", () => {
       delete process.env.SCENE_CAPTION_SMART_GATEWAY_URL;
       delete process.env.QWEN_CAPTION_GATEWAY_URL;
 
-      globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
-        calls.push({ url: String(_url), init });
-        const form = init?.body as FormData;
-        expect(String(_url)).toBe("https://caption-gateway.local/caption/scene");
-        expect(init?.headers).toMatchObject({ Authorization: "Bearer test-token" });
-        expect(form.get("model")).toBe("LiquidAI/LFM2.5-VL-450M-ONNX");
-        expect(form.get("sceneId")).toBe("7");
-        expect(form.get("image")).toBeInstanceOf(File);
-        return Response.json({
-          ok: true,
-          caption: "Close-up of a singer under blue neon light.",
-          sceneData: {
-            subjects: ["singer"],
-            lighting: "blue neon light",
-          },
-        });
-      }) as unknown as typeof fetch;
-
       const form = new FormData();
       form.set("image", new File([new Uint8Array([1, 2, 3])], "frame.jpg", { type: "image/jpeg" }));
       form.set("sceneId", "7");
 
       const response = await POST(new Request("http://localhost/api/caption/scene", { method: "POST", body: form }));
-      const payload = await response.json() as { ok?: boolean; text?: string; captionSource?: string; meta?: { subjects?: string[] } };
+      const payload = await response.json() as { ok?: boolean; error?: string };
 
-      expect(response.status).toBe(200);
-      expect(payload.ok).toBe(true);
-      expect(payload.text).toBe("Close-up of a singer under blue neon light.");
-      expect(payload.captionSource).toBe("lfm-server");
-      expect(payload.meta?.subjects).toEqual(["singer"]);
-      expect(calls).toHaveLength(1);
+      expect(response.status).toBe(400);
+      expect(payload.ok).toBe(false);
+      expect(payload.error).toContain("browser WebGPU");
+      expect(triggerSmartSceneCaptionMock).not.toHaveBeenCalled();
     } finally {
       restoreGlobals();
     }
@@ -183,26 +188,22 @@ describe("scene caption server seam", () => {
       delete process.env.SCENE_CAPTION_GATEWAY_URL;
       process.env.SCENE_CAPTION_SMART_GATEWAY_URL = "https://qwen-caption.local";
       process.env.SCENE_CAPTION_SMART_GATEWAY_TOKEN = "smart-token";
+      process.env.MEDIA_GATEWAY_URL = "https://media.local";
+      process.env.MEDIA_GATEWAY_TOKEN = "media-token";
+      triggerSmartSceneCaptionMock.mockClear();
 
       globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
         calls.push({ url: String(_url), init });
         const form = init?.body as FormData;
-        expect(String(_url)).toBe("https://qwen-caption.local/caption/scene");
-        expect(init?.headers).toMatchObject({ Authorization: "Bearer smart-token" });
-        expect(form.get("mode")).toBe("smart");
-        expect(form.get("model")).toBe("Qwen/Qwen3-VL-4B-Instruct-GGUF:Q4_K_M");
-        expect(form.get("captionContext")).toBe(JSON.stringify({ lyricExcerpt: "love me tonight", projectIntent: "music video" }));
-        expect(form.get("sceneStart")).toBe("1.5");
-        expect(form.get("image")).toBeInstanceOf(File);
+        expect(String(_url)).toBe("https://media.local/upload");
+        expect(init?.headers).toMatchObject({ Authorization: "Bearer media-token" });
+        expect(form.get("folder")).toBe("media-uploads/caption-frames");
+        expect(form.get("file")).toBeInstanceOf(File);
         return Response.json({
-          ok: true,
-          text: "A couple stands face to face in a dark alley with orange backlight.",
-          meta: {
-            subjects: ["couple"],
-            action: "standing face to face",
-            setting: "dark alley",
-          },
-          model: "Qwen/Qwen3-VL-4B-Instruct-GGUF:Q4_K_M",
+          bucket: "stack-structure",
+          publicUrl: "https://s3.local/stack-structure/caption-frame.jpg",
+          objectKey: "media-uploads/caption-frames/caption-frame.jpg",
+          mime: "image/jpeg",
         });
       }) as unknown as typeof fetch;
 
@@ -213,15 +214,24 @@ describe("scene caption server seam", () => {
       form.set("sceneStart", "1.5");
 
       const response = await POST(new Request("http://localhost/api/caption/scene", { method: "POST", body: form }));
-      const payload = await response.json() as { ok?: boolean; mode?: string; text?: string; captionSource?: string; model?: string; meta?: { setting?: string } };
+      const payload = await response.json() as { ok?: boolean; mode?: string; queued?: boolean; runId?: string; captionSource?: string; model?: string };
 
-      expect(response.status).toBe(200);
+      expect(response.status).toBe(202);
       expect(payload.ok).toBe(true);
       expect(payload.mode).toBe("smart");
+      expect(payload.queued).toBe(true);
+      expect(payload.runId).toBe("run_caption_123");
       expect(payload.captionSource).toBe("qwen3-vl-server");
       expect(payload.model).toBe("Qwen/Qwen3-VL-4B-Instruct-GGUF:Q4_K_M");
-      expect(payload.meta?.setting).toBe("dark alley");
       expect(calls).toHaveLength(1);
+      expect(triggerSmartSceneCaptionMock).toHaveBeenCalledTimes(1);
+      const triggerCalls = triggerSmartSceneCaptionMock.mock.calls as unknown as Array<[Record<string, unknown>, string]>;
+      expect(triggerCalls[0]?.[0]).toMatchObject({
+        bucket: "stack-structure",
+        objectKey: "media-uploads/caption-frames/caption-frame.jpg",
+        captionContext: JSON.stringify({ lyricExcerpt: "love me tonight", projectIntent: "music video" }),
+        sceneStart: "1.5",
+      });
     } finally {
       restoreGlobals();
     }

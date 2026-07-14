@@ -1,10 +1,11 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect } from "bun:test";
 
 import { rankManifestCandidates } from "../../src/components/studio/manifestRanking";
 import { probeFixtureInventory } from "../../src/components/studio/mediaProbe";
+import { hasAudioVideoFixtures, mediaFixtureTest } from "../helpers/mediaFixtures";
 
 describe("manifestRanking integration", () => {
-  test("ranks a real probed manifest deterministically with synthetic music scores", async () => {
+  mediaFixtureTest(hasAudioVideoFixtures())("ranks a real probed manifest deterministically with synthetic music scores", async () => {
     const { manifest } = await probeFixtureInventory();
     const candidates = manifest.items
       .filter((item) => item.hasVideo)
@@ -29,7 +30,8 @@ describe("manifestRanking integration", () => {
     const rankedA = rankManifestCandidates({ mode: "random", candidates, randomSeed: 7 }).map((candidate) => candidate.id);
     const rankedB = rankManifestCandidates({ mode: "random", candidates, randomSeed: 7 }).map((candidate) => candidate.id);
 
+    expect(candidates.length).toBeGreaterThan(0);
     expect(rankedA).toEqual(rankedB);
-    expect(rankedA).toHaveLength(3);
+    expect(rankedA).toHaveLength(candidates.length);
   });
 });

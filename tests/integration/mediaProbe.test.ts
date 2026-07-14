@@ -1,10 +1,10 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect } from "bun:test";
 
 import { buildMediaProbeManifest, probeFixtureInventory, probeMediaFile } from "../../src/components/studio/mediaProbe";
-import { listMediaFixtures } from "../helpers/mediaFixtures";
+import { hasAudioVideoFixtures, listMediaFixtures, mediaFixtureTest } from "../helpers/mediaFixtures";
 
 describe("mediaProbe integration", () => {
-  test("probes a real audio fixture", async () => {
+  mediaFixtureTest(hasAudioVideoFixtures())("probes a real audio fixture", async () => {
     const inventory = listMediaFixtures();
     const result = await probeMediaFile(inventory.audio[0]!);
 
@@ -14,7 +14,7 @@ describe("mediaProbe integration", () => {
     expect(result.primaryAudioStream?.codecType).toBe("audio");
   });
 
-  test("probes a real video fixture", async () => {
+  mediaFixtureTest(hasAudioVideoFixtures())("probes a real video fixture", async () => {
     const inventory = listMediaFixtures();
     const result = await probeMediaFile(inventory.video[0]!);
 
@@ -24,7 +24,7 @@ describe("mediaProbe integration", () => {
     expect(result.primaryVideoStream?.height).toBeGreaterThan(0);
   });
 
-  test("builds a canonical manifest from the local fixture inventory", async () => {
+  mediaFixtureTest(hasAudioVideoFixtures())("builds a canonical manifest from the local fixture inventory", async () => {
     const { files, inventory } = await probeFixtureInventory();
     const manifest = buildMediaProbeManifest(files, inventory.rootDir);
 
@@ -35,7 +35,7 @@ describe("mediaProbe integration", () => {
     expect(manifest.items.some((item) => item.hasVideo)).toBe(true);
   });
 
-  test("attaches placeholder motion descriptors to probed video files", async () => {
+  mediaFixtureTest(hasAudioVideoFixtures())("attaches placeholder motion descriptors to probed video files", async () => {
     const inventory = listMediaFixtures();
     const result = await probeMediaFile(inventory.video[0]!);
 

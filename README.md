@@ -130,6 +130,10 @@ See [tests/README.md](tests/README.md).
 - [Creative production brief](docs/product/creative-production-brief.md)
 - [UI workflow overhaul](docs/product/music-video-ui-workflow-overhaul.md)
 - [Local SwarmUI / ComfyUI generation](docs/local-generation.md)
+- [Trigger.dev Windows staging and migration checklist](docs/architecture/trigger-staging.md)
+- [Temporary local Trigger.dev control plane](docs/architecture/trigger-local.md)
+- [Trigger.dev production operations](docs/operations/trigger-production.md)
+- [Higgsfield API and manual Unlimited provider routing](docs/architecture/higgsfield-provider-routing.md)
 - [Roadmap](docs/roadmap.md)
 
 ### Protocols and benchmarks

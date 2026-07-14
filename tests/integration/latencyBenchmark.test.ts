@@ -2,19 +2,20 @@ import { describe, expect, test } from "bun:test";
 import { rm } from "node:fs/promises";
 
 import { detectHardwareLane, runLatencyBenchmark } from "../../src/components/studio/latencyBenchmark";
-import { listMediaFixtures } from "../helpers/mediaFixtures";
+import { hasAudioVideoFixtures, listMediaFixtures, mediaFixtureTest } from "../helpers/mediaFixtures";
 
 describe("latencyBenchmark integration", () => {
   test("detects the local hardware lane", () => {
-    expect(detectHardwareLane()).toBe("local-macos");
+    const expected = process.env.TEST_HARDWARE_LANE || (process.platform === "darwin" ? "local-macos" : process.platform === "win32" ? "local-windows" : process.platform === "linux" ? "local-linux" : "unknown");
+    expect(detectHardwareLane()).toBe(expected);
   });
 
-  test("returns required timing and output fields on success", async () => {
+  mediaFixtureTest(hasAudioVideoFixtures())("returns required timing and output fields on success", async () => {
     const result = await runLatencyBenchmark({ startTime: 0, endTime: 1, requestKey: "bench-test" });
 
     expect(result.requestKey).toBe("bench-test");
     expect(result.inputPath.length).toBeGreaterThan(0);
-    expect(result.hardwareLane).toBe("local-macos");
+    expect(result.hardwareLane).toBe(process.env.TEST_HARDWARE_LANE || (process.platform === "darwin" ? "local-macos" : process.platform === "win32" ? "local-windows" : "local-linux"));
     expect(result.success).toBe(true);
     expect(result.outputPath).not.toBeNull();
     expect(result.probeStartedAt <= result.probeCompletedAt).toBe(true);
@@ -62,7 +63,7 @@ describe("latencyBenchmark integration", () => {
     expect(result.readyToPlayDurationMs).toBeNull();
   });
 
-  test("reports structured failure for invalid preview window", async () => {
+  mediaFixtureTest(hasAudioVideoFixtures())("reports structured failure for invalid preview window", async () => {
     const result = await runLatencyBenchmark({
       requestKey: "bench-invalid-window",
       startTime: 1,
@@ -74,7 +75,7 @@ describe("latencyBenchmark integration", () => {
     expect(result.outputPath).toBeNull();
   });
 
-  test("reports structured failure for audio-only input", async () => {
+  mediaFixtureTest(hasAudioVideoFixtures())("reports structured failure for audio-only input", async () => {
     const inventory = listMediaFixtures();
     const inputPath = inventory.audio.find((candidate) => /stem|vocal/i.test(candidate)) ?? inventory.audio[0];
     expect(Boolean(inputPath)).toBe(true);

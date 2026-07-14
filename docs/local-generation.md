@@ -17,12 +17,14 @@ From this Mac, the app should use only SwarmUI over Tailscale:
 
 ```bash
 SWARMUI_URL=http://100.73.126.36:7861
+SWARMUI_MODEL=
 ```
 
 If MagicDNS is healthy, this can also be:
 
 ```bash
 SWARMUI_URL=http://desktop-q20uuvd:7861
+SWARMUI_MODEL=
 ```
 
 Do **not** configure the app to call `http://100.73.126.36:7821` directly. SwarmUI owns the backend lifecycle and provides the front-end/API gateway.
@@ -149,8 +151,9 @@ R2C2 · Panel 04
 
 The app exposes a server-side route at `/api/generate/higgsfield`.
 
-- `GET /api/generate/higgsfield` verifies the active Higgsfield account through the project credential file (`.higgsfield-stack-structure.json`) or `HIGGSFIELD_ACCESS_TOKEN`.
-- `POST /api/generate/higgsfield` creates a `nano_banana_2` job, waits for completion, downloads the full grid, uploads the full grid to RustFS, runs the fixed image splitter, and uploads split panels to RustFS.
+- `GET /api/generate/higgsfield` verifies the active account through the official Higgsfield CLI and the configured `HIGGSFIELD_CREDENTIALS_PATH`.
+- `POST /api/generate/higgsfield` queues a Trigger.dev task that uses the official CLI to create a `nano_banana_2` job, waits for completion, downloads the full grid, uploads the full grid to RustFS, runs the fixed image splitter, and uploads split panels to RustFS.
+- Browser-only Unlimited Nano Banana Pro and Seedance work follows the separate Chrome operator runbook in [Higgsfield provider routing](architecture/higgsfield-provider-routing.md); it must not replace or overwrite the Gordo CLI identity.
 
 Default generation settings:
 

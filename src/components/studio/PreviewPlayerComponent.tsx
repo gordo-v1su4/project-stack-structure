@@ -165,6 +165,7 @@ export function PreviewPlayer({
         <div className="relative min-w-0">
           <video
             ref={videoRef}
+            crossOrigin="anonymous"
             preload="auto"
             muted={!useSourceAudio}
             playsInline
@@ -176,6 +177,7 @@ export function PreviewPlayer({
               player swaps opacities at the boundary — no black frame. */}
           <video
             ref={standbyVideoRef}
+            crossOrigin="anonymous"
             preload="auto"
             muted={!useSourceAudio}
             playsInline
@@ -234,6 +236,7 @@ export function PreviewPlayer({
                 key={`source-monitor-${currentSegment.videoUrl}:${currentSegment.startTime}:${state.currentIndex}`}
                 ref={sourceMonitorRef}
                 src={currentSegment.videoUrl}
+                crossOrigin="anonymous"
                 muted
                 playsInline
                 preload="metadata"
@@ -306,6 +309,7 @@ export function PreviewPlayer({
                 <video
                   key={`${currentSegment.videoUrl}:${currentSegment.startTime}:${state.currentIndex}`}
                   src={currentSegment.videoUrl}
+                  crossOrigin="anonymous"
                   muted
                   playsInline
                   preload="metadata"

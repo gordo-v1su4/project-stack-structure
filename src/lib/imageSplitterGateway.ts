@@ -1,3 +1,4 @@
+import { downloadHttpBytes } from "@/lib/httpDownload";
 import { getMediaGatewayConfig, normalizeMediaPath, uploadFileToMediaGateway, type MediaGatewayUploadResult } from "@/lib/mediaGateway";
 
 export type ImageSplitMode = "fixed" | "auto";
@@ -154,20 +155,35 @@ export async function uploadImageSplitPanelsToMediaGateway(args: {
   const fetcher = args.fetchImpl ?? fetch;
   const sourceSlug = buildSourceSlug(args.split.manifest.sourceFilename);
   const folder = normalizeMediaPath(`${config.uploadPrefix}/image-splits/${sourceSlug}/${args.split.manifest.splitId}`);
-  const panels = await Promise.all(args.split.manifest.panels.map(async (panel) => {
+  // Keep panel persistence sequential. Bun 1.3.14 on Windows crashes after
+  // repeated panel fetches in this path, and serial writes also avoid bursting
+  // the RustFS media gateway from a single Trigger queue slot.
+  const panels: ImageSplitPanel[] = [];
+  for (const panel of args.split.manifest.panels) {
     const sourceUrl = buildImageSplitterPanelSourceUrl(baseUrl, args.split.manifest.splitId, panel.assetPath);
-    const response = await fetcher(sourceUrl);
-    if (!response.ok) {
-      const text = await response.text().catch(() => "");
-      throw new Error(`Image splitter panel fetch failed (${response.status}): ${text.slice(0, 300)}`);
+    let bytes: Uint8Array;
+    let contentType: string;
+    if (args.fetchImpl) {
+      const response = await fetcher(sourceUrl);
+      if (!response.ok) {
+        const text = await response.text().catch(() => "");
+        throw new Error(`Image splitter panel fetch failed (${response.status}): ${text.slice(0, 300)}`);
+      }
+      bytes = new Uint8Array(await response.arrayBuffer());
+      contentType = response.headers.get("Content-Type") || "image/png";
+    } else {
+      const downloaded = await downloadHttpBytes(sourceUrl);
+      bytes = new Uint8Array(downloaded.bytes);
+      contentType = downloaded.contentType;
     }
 
-    const blob = await response.blob();
     const filename = buildPanelFilename(panel, args.split.manifest);
-    const file = new File([blob], filename, { type: response.headers.get("Content-Type") || blob.type || "image/png" });
+    const fileBuffer = new ArrayBuffer(bytes.byteLength);
+    new Uint8Array(fileBuffer).set(bytes);
+    const file = new File([fileBuffer], filename, { type: contentType });
     const storage = await uploadFileToMediaGateway({ file, folder, env, fetchImpl: fetcher });
-    return { ...panel, storage };
-  }));
+    panels.push({ ...panel, storage });
+  }
 
   return {
     ...args.split,
