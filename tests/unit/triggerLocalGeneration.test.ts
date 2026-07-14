@@ -23,4 +23,10 @@ describe("Trigger local generation assets", () => {
     expect(file.name).toBe("generated.bin");
     expect(await file.text()).toBe("hello world");
   });
+
+  test("preserves malformed percent sequences instead of throwing a URI error", async () => {
+    const file = dataUrlToFile("data:text/plain,100%", "generated");
+
+    expect(await file.text()).toBe("100%");
+  });
 });
