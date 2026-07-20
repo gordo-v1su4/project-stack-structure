@@ -44,6 +44,7 @@ export function PreviewPlayer({
   const videoRef = useRef<HTMLVideoElement>(null);
   const standbyVideoRef = useRef<HTMLVideoElement>(null);
   const shaderCanvasRef = useRef<HTMLCanvasElement>(null);
+  const shaderFallbackCanvasRef = useRef<HTMLCanvasElement>(null);
   const sourceMonitorRef = useRef<HTMLVideoElement>(null);
   const shaderRendererRef = useRef<StutterWebGpuPreviewRenderer | null>(null);
   const shaderModeRef = useRef<StutterPreviewMode>("disabled");
@@ -67,7 +68,7 @@ export function PreviewPlayer({
   }, [player, segments]);
 
   useEffect(() => {
-    if (!hasShaderCues || !shaderCanvasRef.current) {
+    if (!hasShaderCues || !shaderCanvasRef.current || !shaderFallbackCanvasRef.current) {
       shaderRendererRef.current?.dispose();
       shaderRendererRef.current = null;
       shaderModeRef.current = "disabled";
@@ -77,7 +78,7 @@ export function PreviewPlayer({
     let cancelled = false;
     const renderer = new StutterWebGpuPreviewRenderer();
     shaderRendererRef.current = renderer;
-    renderer.init(shaderCanvasRef.current).then((mode) => {
+    renderer.init(shaderCanvasRef.current, shaderFallbackCanvasRef.current).then((mode) => {
       if (cancelled) return;
       shaderModeRef.current = mode;
       setShaderMode(mode);
@@ -107,7 +108,7 @@ export function PreviewPlayer({
     const plan = selectActiveStutterRuntimePlan(effectCues, state.currentTime);
     renderer.render(video, plan, state.currentTime);
     shaderModeRef.current = renderer.getMode();
-  }, [effectCues, hasShaderCues, player, state.currentIndex, state.currentTime, state.status]);
+  }, [effectCues, hasShaderCues, player, shaderMode, state.currentIndex, state.currentTime, state.status]);
 
   const handlePlay = useCallback(() => {
     if (state.status === "paused") {
@@ -195,16 +196,24 @@ export function PreviewPlayer({
             </div>
           )}
           {hasShaderCues ? (
-            <canvas
-              ref={shaderCanvasRef}
-              data-stutter-shader-preview={shaderMode}
-              className="pointer-events-none absolute inset-0 aspect-video h-full w-full rounded-[2px] border border-[#e05c0020] bg-transparent"
-              aria-hidden="true"
-            />
+            <>
+              <canvas
+                ref={shaderCanvasRef}
+                data-stutter-shader-preview={shaderMode === "webgpu" ? "webgpu" : undefined}
+                className={`${shaderMode === "canvas2d" ? "hidden" : "block"} pointer-events-none absolute inset-0 aspect-video h-full w-full rounded-[2px] border border-[#e05c0020] bg-transparent`}
+                aria-hidden="true"
+              />
+              <canvas
+                ref={shaderFallbackCanvasRef}
+                data-stutter-shader-preview={shaderMode === "canvas2d" ? "canvas2d" : undefined}
+                className={`${shaderMode === "canvas2d" ? "block" : "hidden"} pointer-events-none absolute inset-0 aspect-video h-full w-full rounded-[2px] border border-[#e05c0020] bg-transparent`}
+                aria-hidden="true"
+              />
+            </>
           ) : null}
           {hasShaderCues ? (
             <div className={`${isExpanded ? "left-2 top-2 px-2 py-1 text-[8px]" : "right-1 top-1 max-w-[72px] px-1 py-0.5 text-[6px]"} pointer-events-none absolute rounded-[2px] border border-[#e05c0040] bg-[#050505cc] font-mono uppercase tracking-[0.1em] text-[#e05c00]`}>
-              Live {shaderMode === "webgpu" ? "WebGPU" : "Shader"}
+              Live {shaderMode === "webgpu" ? "WebGPU" : shaderMode === "canvas2d" ? "Canvas FX" : "Shader"}
               {isExpanded && activeShaderLabel ? ` · ${activeShaderLabel}` : ""}
             </div>
           ) : null}
@@ -386,7 +395,7 @@ export function PreviewPlayer({
       <div className={`${isExpanded ? "flex" : "hidden"} items-center justify-between font-mono text-[8px] uppercase tracking-[0.12em] text-[#3f3f3f]`}>
         <span>
           {state.engineMode === "warm-video" ? "Warm native preview" : "Native preview"}
-          {hasShaderCues ? ` · ${shaderMode === "webgpu" ? "WebGPU shader" : shaderError ? "shader error" : "shader initializing"}` : ""}
+          {hasShaderCues ? ` · ${shaderMode === "webgpu" ? "WebGPU shader" : shaderMode === "canvas2d" ? "Canvas FX fallback" : shaderError ? "shader error" : "shader initializing"}` : ""}
         </span>
         <span>
           {state.warmedSourceCount > 0 ? `${state.warmedSourceCount} hot source${state.warmedSourceCount === 1 ? "" : "s"}` : "no prewarm"}

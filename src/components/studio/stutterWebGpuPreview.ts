@@ -7,7 +7,15 @@ import {
   type StutterShaderRuntimePlan,
 } from "./stutterShaderCatalog";
 
-export type StutterPreviewMode = "disabled" | "webgpu";
+export type StutterPreviewMode = "disabled" | "webgpu" | "canvas2d";
+
+export interface StutterCanvas2dStyle {
+  filter: string;
+  scale: number;
+  translateX: number;
+  translateY: number;
+  scanlineOpacity: number;
+}
 
 const STUTTER_VERTEX_SHADER = /* wgsl */ `
 struct VertexOutput {
@@ -163,69 +171,135 @@ export function buildStutterUniforms(
   ]);
 }
 
+export function buildStutterCanvas2dStyle(
+  plan: StutterShaderRuntimePlan | null,
+  outputTime: number,
+): StutterCanvas2dStyle {
+  if (!plan) {
+    return { filter: "none", scale: 1, translateX: 0, translateY: 0, scanlineOpacity: 0 };
+  }
+
+  const color = getColumn(plan.columns, "color");
+  const space = getColumn(plan.columns, "space");
+  const generate = getColumn(plan.columns, "generate");
+  const timeInCue = Math.max(0, outputTime - plan.start);
+  const intensity = clamp(plan.intensity, 0, 1);
+  const colorMix = clamp((color?.mix ?? 0) * intensity, 0, 1);
+  const generateMix = clamp((generate?.mix ?? 0) * intensity, 0, 1);
+  const filters: string[] = [];
+
+  if (color?.effect === "grade") {
+    filters.push(`brightness(${1 + ((color.params.gain ?? 1) - 1) * colorMix})`);
+    filters.push(`contrast(${1 + (color.params.contrast ?? 0) * colorMix})`);
+  } else if (color?.effect === "brightness-contrast") {
+    filters.push(`brightness(${1 + (color.params.brightness ?? 0) * colorMix})`);
+    filters.push(`contrast(${1 + (color.params.contrast ?? 0) * colorMix})`);
+  } else if (color?.effect === "hue-saturation") {
+    filters.push(`hue-rotate(${(color.params.hue ?? 0) * colorMix * 180}deg)`);
+    filters.push(`saturate(${1 + (color.params.saturation ?? 0) * colorMix})`);
+  } else if (color?.effect === "vignette") {
+    filters.push(`brightness(${1 - (color.params.vignetteDarkness ?? 0.5) * colorMix * 0.25})`);
+    filters.push(`contrast(${1 + colorMix * 0.18})`);
+  }
+
+  if (generate) {
+    if (generate.effect === "glitch" || generate.effect === "chromatic-aberration") {
+      filters.push(`saturate(${1 + generateMix * 0.9})`);
+      filters.push(`hue-rotate(${Math.sin(outputTime * 34) * generateMix * 12}deg)`);
+    } else if (generate.effect === "vhs") {
+      filters.push(`contrast(${1 + generateMix * 0.28})`);
+      filters.push(`saturate(${1 - generateMix * 0.22})`);
+    } else if (generate.effect === "feedback") {
+      filters.push(`contrast(${1 + generateMix * 0.22})`);
+      filters.push(`hue-rotate(${generateMix * 18}deg)`);
+    } else if (generate.effect === "particles") {
+      filters.push(`brightness(${1 + generateMix * 0.12})`);
+    }
+  }
+
+  const spaceValues = computeSpaceValues(space, timeInCue, intensity);
+  const glitchOffset = generate?.effect === "glitch"
+    ? Math.sin(outputTime * 73) * generateMix * 0.018
+    : 0;
+
+  return {
+    filter: filters.length ? filters.join(" ") : "none",
+    scale: space?.effect === "crop" ? 1 + spaceValues.x * 2 : spaceValues.zoom,
+    translateX: spaceValues.x + glitchOffset,
+    translateY: spaceValues.y,
+    scanlineOpacity: generate?.effect === "scanline" || generate?.effect === "vhs"
+      ? generateMix * (generate.params.scanlineIntensity ?? 0.3)
+      : 0,
+  };
+}
+
 export class StutterWebGpuPreviewRenderer {
   private canvas: HTMLCanvasElement | null = null;
   private device: GpuDeviceLike | null = null;
   private context: GpuCanvasContextLike | null = null;
+  private context2d: CanvasRenderingContext2D | null = null;
   private pipeline: GpuRenderPipelineLike | null = null;
   private sampler: unknown = null;
   private uniformBuffer: unknown = null;
   private mode: StutterPreviewMode = "disabled";
   private initialized = false;
 
-  async init(canvas: HTMLCanvasElement): Promise<StutterPreviewMode> {
+  async init(
+    webGpuCanvas: HTMLCanvasElement,
+    canvas2dFallback: HTMLCanvasElement,
+  ): Promise<StutterPreviewMode> {
     this.dispose();
-    this.canvas = canvas;
-    resizeCanvasToDisplaySize(canvas);
+    this.canvas = webGpuCanvas;
+    resizeCanvasToDisplaySize(webGpuCanvas);
 
     const globals = globalThis as typeof globalThis & WebGpuGlobals;
     const gpu = (navigator as GpuNavigator).gpu;
     const bufferUsage = globals.GPUBufferUsage;
     const textureUsage = globals.GPUTextureUsage;
     if (!gpu || !bufferUsage || !textureUsage) {
-      this.mode = "disabled";
-      throw new Error("WebGPU globals unavailable.");
+      return this.enableCanvas2dFallback(canvas2dFallback);
     }
 
-    const adapter = await gpu.requestAdapter();
-    const device = await adapter?.requestDevice();
-    const context = canvas.getContext("webgpu") as unknown as GpuCanvasContextLike | null;
-    if (!device || !context) {
-      this.mode = "disabled";
-      throw new Error("WebGPU device/context unavailable.");
+    try {
+      const adapter = await gpu.requestAdapter();
+      const device = await adapter?.requestDevice();
+      const context = webGpuCanvas.getContext("webgpu") as unknown as GpuCanvasContextLike | null;
+      if (!device || !context) return this.enableCanvas2dFallback(canvas2dFallback);
+
+      const format = gpu.getPreferredCanvasFormat();
+      context.configure({
+        device,
+        format,
+        alphaMode: "opaque",
+        usage: textureUsage.RENDER_ATTACHMENT,
+      });
+
+      this.device = device;
+      this.context = context;
+      this.sampler = device.createSampler({ magFilter: "linear", minFilter: "linear" });
+      this.uniformBuffer = device.createBuffer({
+        size: 128,
+        usage: bufferUsage.UNIFORM | bufferUsage.COPY_DST,
+      });
+      this.pipeline = device.createRenderPipeline({
+        layout: "auto",
+        vertex: {
+          module: device.createShaderModule({ code: STUTTER_VERTEX_SHADER }),
+          entryPoint: "main",
+        },
+        fragment: {
+          module: device.createShaderModule({ code: STUTTER_WGSL_COMPOSITOR_SOURCE }),
+          entryPoint: "stutterCompositor",
+          targets: [{ format }],
+        },
+        primitive: { topology: "triangle-list" },
+      });
+      this.mode = "webgpu";
+      this.initialized = true;
+      return this.mode;
+    } catch {
+      return this.enableCanvas2dFallback(canvas2dFallback);
     }
-
-    const format = gpu.getPreferredCanvasFormat();
-    context.configure({
-      device,
-      format,
-      alphaMode: "opaque",
-      usage: textureUsage.RENDER_ATTACHMENT,
-    });
-
-    this.device = device;
-    this.context = context;
-    this.sampler = device.createSampler({ magFilter: "linear", minFilter: "linear" });
-    this.uniformBuffer = device.createBuffer({
-      size: 128,
-      usage: bufferUsage.UNIFORM | bufferUsage.COPY_DST,
-    });
-    this.pipeline = device.createRenderPipeline({
-      layout: "auto",
-      vertex: {
-        module: device.createShaderModule({ code: STUTTER_VERTEX_SHADER }),
-        entryPoint: "main",
-      },
-      fragment: {
-        module: device.createShaderModule({ code: STUTTER_WGSL_COMPOSITOR_SOURCE }),
-        entryPoint: "stutterCompositor",
-        targets: [{ format }],
-      },
-      primitive: { topology: "triangle-list" },
-    });
-    this.mode = "webgpu";
-    this.initialized = true;
-    return this.mode;
   }
 
   getMode(): StutterPreviewMode {
@@ -275,13 +349,35 @@ export class StutterWebGpuPreviewRenderer {
       return;
     }
 
+    if (
+      this.mode === "canvas2d" &&
+      this.context2d &&
+      video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA
+    ) {
+      const style = buildStutterCanvas2dStyle(plan, outputTime);
+      const width = this.canvas.width;
+      const height = this.canvas.height;
+      const context = this.context2d;
+      context.save();
+      context.clearRect(0, 0, width, height);
+      context.filter = style.filter;
+      context.translate(width * (0.5 + style.translateX), height * (0.5 + style.translateY));
+      context.scale(style.scale, style.scale);
+      context.drawImage(video, -width / 2, -height / 2, width, height);
+      context.restore();
+
+      if (style.scanlineOpacity > 0) {
+        context.save();
+        context.globalAlpha = style.scanlineOpacity;
+        context.fillStyle = "#000";
+        for (let y = 0; y < height; y += 4) context.fillRect(0, y, width, 1);
+        context.restore();
+      }
+    }
   }
 
   clear() {
-    if (this.canvas) {
-      const context = this.canvas.getContext("2d");
-      context?.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    }
+    if (this.canvas && this.context2d) this.context2d.clearRect(0, 0, this.canvas.width, this.canvas.height);
   }
 
   dispose() {
@@ -289,11 +385,26 @@ export class StutterWebGpuPreviewRenderer {
     this.canvas = null;
     this.device = null;
     this.context = null;
+    this.context2d = null;
     this.pipeline = null;
     this.sampler = null;
     this.uniformBuffer = null;
     this.initialized = false;
     this.mode = "disabled";
+  }
+
+  private enableCanvas2dFallback(canvas: HTMLCanvasElement): StutterPreviewMode {
+    this.canvas = canvas;
+    resizeCanvasToDisplaySize(canvas);
+    const context = canvas.getContext("2d");
+    if (!context) {
+      this.mode = "disabled";
+      throw new Error("WebGPU and Canvas 2D preview contexts unavailable.");
+    }
+    this.context2d = context;
+    this.mode = "canvas2d";
+    this.initialized = true;
+    return this.mode;
   }
 }
 
