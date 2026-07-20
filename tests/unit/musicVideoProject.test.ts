@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   buildStorySections,
   createMusicVideoProject,
+  getDefaultStorySectionDrafts,
   normalizeLyricChunks,
   validateMusicVideoProject,
   buildEditPlanPreviewSegments,
@@ -50,6 +51,109 @@ describe("musicVideoProject story sections", () => {
       [0, 0, "missing-analysis"],
       [0, 0, "missing-analysis"],
     ]);
+  });
+
+  test("maps detected musical roles to matching story templates instead of array positions", () => {
+    const sections = buildStorySections({
+      analysis: mockAnalysis({
+        duration: 128,
+        sections: [
+          { label: "intro", start: 0, end: 12 },
+          { label: "verse", start: 12, end: 45 },
+          { label: "chorus", start: 45, end: 77 },
+          { label: "bridge", start: 77, end: 109 },
+          { label: "outro", start: 109, end: 128 },
+        ],
+      }),
+      duration: 128,
+      drafts: getDefaultStorySectionDrafts(),
+    });
+
+    expect(sections.map((section) => [section.id, section.label, section.start, section.end])).toEqual([
+      ["intro", "Intro", 0, 12],
+      ["verse-1", "Verse", 12, 45],
+      ["chorus-1", "Chorus", 45, 77],
+      ["bridge", "Bridge", 77, 109],
+      ["outro", "Outro", 109, 128],
+    ]);
+  });
+
+  test("numbers repeated roles and gives ambiguous detected sections neutral part labels", () => {
+    const sections = buildStorySections({
+      analysis: mockAnalysis({
+        duration: 20,
+        sections: [
+          { label: "verse", start: 0, end: 4 },
+          { label: "chorus", start: 4, end: 8 },
+          { label: "verse", start: 8, end: 12 },
+          { label: "chorus", start: 12, end: 16 },
+          { label: "section", start: 16, end: 20 },
+        ],
+      }),
+      duration: 20,
+      drafts: getDefaultStorySectionDrafts(),
+    });
+
+    expect(sections.map((section) => section.label)).toEqual(["Verse 1", "Chorus 1", "Verse 2", "Chorus 2", "Part A"]);
+  });
+
+  test("uses explicit edited timing as the canonical downstream story plan", () => {
+    const sections = buildStorySections({
+      analysis: mockAnalysis({ sections: [{ label: "verse", start: 0, end: 8 }] }),
+      duration: 8,
+      drafts: [
+        { id: "verse-1", label: "Verse 1", start: 0, end: 4, timingSource: "manual" },
+        { id: "chorus-1", label: "Chorus 1", start: 4, end: 8, timingSource: "manual" },
+      ],
+    });
+
+    expect(sections.map((section) => [section.id, section.start, section.end, section.source])).toEqual([
+      ["verse-1", 0, 4, "manual"],
+      ["chorus-1", 4, 8, "manual"],
+    ]);
+  });
+
+  test("does not drop untimed sections from a partially timed saved plan", () => {
+    const sections = buildStorySections({
+      analysis: mockAnalysis({
+        sections: [
+          { label: "verse", start: 0, end: 4 },
+          { label: "chorus", start: 4, end: 8 },
+        ],
+      }),
+      duration: 8,
+      drafts: [
+        { id: "verse-1", label: "Verse 1", start: 0, end: 4, timingSource: "manual" },
+        { id: "chorus-1", label: "Chorus 1" },
+      ],
+    });
+
+    expect(sections.map((section) => [section.id, section.start, section.end])).toEqual([
+      ["verse-1", 0, 4],
+      ["chorus-1", 4, 8],
+    ]);
+  });
+
+  test("keeps extra planned cards when partial timing and detection counts differ", () => {
+    const sections = buildStorySections({
+      analysis: mockAnalysis({
+        sections: [
+          { label: "verse", start: 0, end: 4 },
+          { label: "chorus", start: 4, end: 8 },
+        ],
+      }),
+      duration: 8,
+      drafts: [
+        { id: "verse-1", label: "Verse 1", start: 0, end: 4, timingSource: "manual" },
+        { id: "part-1", label: "Part A" },
+        { id: "chorus-1", label: "Chorus 1" },
+      ],
+    });
+
+    expect(sections.map((section) => section.id)).toEqual(["verse-1", "part-1", "chorus-1"]);
+    expect(sections[0]?.start).toBe(0);
+    expect(sections.at(-1)?.end).toBe(8);
+    expect(sections.every((section, index) => index === 0 || section.start === sections[index - 1]?.end)).toBe(true);
   });
 });
 

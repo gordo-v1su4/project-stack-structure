@@ -190,7 +190,7 @@ describe("clean music-video ingest contract", () => {
     expect(chorus?.semanticMatch?.score).toBeGreaterThan(0.4);
     expect(chorus?.semanticMatch?.reasons.length).toBeGreaterThan(0);
 
-    const outro = project.storySections.find((section) => section.id === "pre-chorus-2");
+    const outro = project.storySections.find((section) => section.label === "Outro");
     expect(outro?.semanticMatch?.momentId).toBe("scene-moment-2-1");
 
     const previewSegments = buildEditPlanPreviewSegments({

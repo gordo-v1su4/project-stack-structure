@@ -6,12 +6,21 @@ export interface StorySectionDraft {
   id?: string;
   label: string;
   prompt?: string;
+  start?: number;
+  end?: number;
+  timingSource?: "analysis" | "manual";
+  detectedLabel?: string;
 }
+
+export type StoryPlanDraft = StorySectionDraft & {
+  id: string;
+  prompt: string;
+};
 
 export interface StorySection extends BeatJoinSection {
   id: string;
   prompt: string;
-  source: "analysis" | "missing-analysis";
+  source: "analysis" | "manual" | "missing-analysis";
   lyricChunkIds: string[];
   videoMomentIds: string[];
   semanticMatch?: SemanticClipMatch;
@@ -127,7 +136,7 @@ export interface MusicVideoProject {
   reviewFindings: ReviewFinding[];
 }
 
-const DEFAULT_SECTION_DRAFTS: StorySectionDraft[] = [
+const DEFAULT_SECTION_DRAFTS: StoryPlanDraft[] = [
   { id: "intro", label: "Intro", prompt: "Opening visual / establishing image" },
   { id: "verse-1", label: "Verse 1", prompt: "Main character, setting, or first visual idea" },
   { id: "pre-chorus-1", label: "Pre-Chorus", prompt: "Build tension before the first chorus; remove if the song has no pre-chorus" },
@@ -139,7 +148,7 @@ const DEFAULT_SECTION_DRAFTS: StorySectionDraft[] = [
   { id: "outro", label: "Final Chorus / Outro", prompt: "Final chorus, outro, last image, or emotional landing" },
 ];
 
-export function getDefaultStorySectionDrafts(): StorySectionDraft[] {
+export function getDefaultStorySectionDrafts(): StoryPlanDraft[] {
   return DEFAULT_SECTION_DRAFTS.map((draft) => ({ ...draft }));
 }
 
@@ -172,25 +181,159 @@ export function buildStorySections(params: {
   const duration = Math.max(0, Number(params.duration) || params.analysis?.duration || 0);
   const analysisSections = normalizeAnalysisSections(params.analysis?.sections ?? [], duration);
 
-  return drafts.map((draft, index) => {
-    const analysisSection = analysisSections[index];
-    const hasAnalysisWindow = Boolean(analysisSection);
-    const start = hasAnalysisWindow ? analysisSection!.start : 0;
-    const end = hasAnalysisWindow ? analysisSection!.end : 0;
+  const explicitlyTimedDrafts = drafts.filter(hasExplicitStoryTiming);
+  if (explicitlyTimedDrafts.length === drafts.length) {
+    return explicitlyTimedDrafts.map((draft, index) => buildStorySection({
+      draft,
+      index,
+      start: draft.start,
+      end: draft.end,
+      energy: findOverlappingAnalysisSection(analysisSections, draft.start, draft.end)?.energy,
+      source: draft.timingSource ?? "manual",
+    }));
+  }
 
-    return {
-      id: draft.id || slugify(draft.label, index),
-      label: draft.label || analysisSection?.label || `Section ${index + 1}`,
-      prompt: draft.prompt || "Describe the visual idea for this song section",
+  if (explicitlyTimedDrafts.length) {
+    return distributeStoryDraftsAcrossDuration(drafts, duration, analysisSections);
+  }
+
+  if (analysisSections.length) {
+    return mapDetectedSectionsToStoryDrafts(analysisSections, drafts);
+  }
+
+  return drafts.map((draft, index) => {
+    return buildStorySection({ draft, index, start: 0, end: 0, source: "missing-analysis" });
+  });
+}
+
+function distributeStoryDraftsAcrossDuration(
+  drafts: StorySectionDraft[],
+  duration: number,
+  analysisSections: BeatJoinSection[],
+) {
+  const sectionDuration = drafts.length > 0 ? duration / drafts.length : 0;
+  return drafts.map((draft, index) => {
+    const start = roundTime(sectionDuration * index);
+    const end = index === drafts.length - 1 ? roundTime(duration) : roundTime(sectionDuration * (index + 1));
+    return buildStorySection({
+      draft,
+      index,
       start,
       end,
-      energy: analysisSection?.energy,
-      source: hasAnalysisWindow ? "analysis" : "missing-analysis",
-      lyricChunkIds: [],
-      videoMomentIds: [],
-      candidateMatches: [],
-    } satisfies StorySection;
+      energy: findOverlappingAnalysisSection(analysisSections, start, end)?.energy,
+      source: "manual",
+    });
   });
+}
+
+type SongSectionRole = "intro" | "verse" | "pre-chorus" | "chorus" | "bridge" | "outro";
+
+function mapDetectedSectionsToStoryDrafts(analysisSections: BeatJoinSection[], drafts: StorySectionDraft[]) {
+  const roleCounts = new Map<SongSectionRole, number>();
+  for (const section of analysisSections) {
+    const role = getSongSectionRole(section.label);
+    if (role) roleCounts.set(role, (roleCounts.get(role) ?? 0) + 1);
+  }
+
+  const roleOccurrences = new Map<SongSectionRole, number>();
+  let ambiguousPartIndex = 0;
+
+  return analysisSections.map((analysisSection, index) => {
+    const role = getSongSectionRole(analysisSection.label);
+    if (!role) {
+      const partLabel = `Part ${alphabeticIndex(ambiguousPartIndex)}`;
+      ambiguousPartIndex += 1;
+      return buildStorySection({
+        draft: {
+          id: `part-${ambiguousPartIndex}`,
+          label: partLabel,
+          prompt: "Describe the visual idea for this detected song part",
+          detectedLabel: analysisSection.label,
+        },
+        index,
+        start: analysisSection.start,
+        end: analysisSection.end,
+        energy: analysisSection.energy,
+        source: "analysis",
+      });
+    }
+
+    const occurrence = (roleOccurrences.get(role) ?? 0) + 1;
+    roleOccurrences.set(role, occurrence);
+    const matchingDrafts = drafts.filter((draft) => getSongSectionRole(draft.label) === role);
+    const matchedDraft = matchingDrafts[occurrence - 1] ?? matchingDrafts[0];
+    const label = formatDetectedRoleLabel(role, occurrence, roleCounts.get(role) ?? 1);
+    return buildStorySection({
+      draft: {
+        ...matchedDraft,
+        id: matchedDraft?.id ?? `${role}-${occurrence}`,
+        label,
+        detectedLabel: analysisSection.label,
+      },
+      index,
+      start: analysisSection.start,
+      end: analysisSection.end,
+      energy: analysisSection.energy,
+      source: "analysis",
+    });
+  });
+}
+
+function buildStorySection(params: {
+  draft: StorySectionDraft;
+  index: number;
+  start: number;
+  end: number;
+  energy?: number;
+  source: StorySection["source"];
+}) {
+  return {
+    id: params.draft.id || slugify(params.draft.label, params.index),
+    label: params.draft.label || `Section ${params.index + 1}`,
+    prompt: params.draft.prompt || "Describe the visual idea for this song section",
+    start: roundTime(params.start),
+    end: roundTime(params.end),
+    energy: params.energy,
+    source: params.source,
+    lyricChunkIds: [],
+    videoMomentIds: [],
+    candidateMatches: [],
+  } satisfies StorySection;
+}
+
+function hasExplicitStoryTiming(draft: StorySectionDraft): draft is StorySectionDraft & { start: number; end: number } {
+  return Number.isFinite(draft.start) && Number.isFinite(draft.end) && (draft.end ?? 0) > (draft.start ?? 0);
+}
+
+function findOverlappingAnalysisSection(sections: BeatJoinSection[], start: number, end: number) {
+  return sections.find((section) => overlaps(section.start, section.end, start, end));
+}
+
+function getSongSectionRole(label: string): SongSectionRole | null {
+  const normalized = label.toLowerCase().replace(/[_–—-]+/g, " ").replace(/\s+/g, " ").trim();
+  if (/\bpre chorus\b/.test(normalized)) return "pre-chorus";
+  if (/\bintro(?:duction)?\b/.test(normalized)) return "intro";
+  if (/\bverse\b/.test(normalized)) return "verse";
+  if (/\boutro\b/.test(normalized)) return "outro";
+  if (/\bchorus\b/.test(normalized)) return "chorus";
+  if (/\bbridge\b/.test(normalized)) return "bridge";
+  return null;
+}
+
+function formatDetectedRoleLabel(role: SongSectionRole, occurrence: number, count: number) {
+  const baseLabels: Record<SongSectionRole, string> = {
+    intro: "Intro",
+    verse: "Verse",
+    "pre-chorus": "Pre-Chorus",
+    chorus: "Chorus",
+    bridge: "Bridge",
+    outro: "Outro",
+  };
+  return count > 1 ? `${baseLabels[role]} ${occurrence}` : baseLabels[role];
+}
+
+function alphabeticIndex(index: number) {
+  return String.fromCharCode(65 + (index % 26));
 }
 
 export function buildVideoMomentsFromStudioSources(params: {

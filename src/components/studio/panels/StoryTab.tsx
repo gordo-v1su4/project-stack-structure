@@ -4,23 +4,29 @@ import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateActio
 import { transcribeAudioWithDeepgram, type DeepgramTranscriptSummary } from "../deepgramUtils";
 import { fmt } from "../math";
 import {
+  buildStorySections,
   createMusicVideoProject,
   DEFAULT_STORY_EDIT_SETTINGS,
   getDefaultStorySectionDrafts,
   normalizeStoryEditSettings,
   type MusicVideoProject,
+  type StoryPlanDraft,
   type StoryEditSettings,
   type StorySectionDraft,
 } from "../musicVideoProject";
+import { StoryPlanEditor, StoryStructureRuler } from "../StoryStructurePlanner";
+import {
+  insertStoryTemplateInSongOrder,
+  moveStorySectionBoundary,
+  removeTimedStorySection,
+  splitStorySectionWithTemplate,
+  toTimedStoryDrafts,
+} from "../storyStructure";
 import { ParamSlider } from "../ParamSlider";
 import { UploadControl } from "../UploadControl";
 import type { BeatJoinAnalysis, SegmentPreview, UploadedVideoSource } from "../types";
 
-export type StoryBeatDraft = StorySectionDraft & {
-  id: string;
-  label: string;
-  prompt: string;
-};
+export type StoryBeatDraft = StoryPlanDraft;
 
 export type StoryTabState = {
   vocalStemName: string;
@@ -47,7 +53,7 @@ const DEFAULT_STORY_BEATS: StoryBeatDraft[] = getDefaultStorySectionDrafts().map
   prompt: draft.prompt ?? "Describe the visual idea for this song section",
 }));
 
-const SECTION_LABELS = DEFAULT_STORY_BEATS.map((beat) => beat.label);
+const STORY_SECTION_TEMPLATES = getDefaultStorySectionDrafts();
 
 export function createDefaultStoryTabState(): StoryTabState {
   return {
@@ -94,6 +100,14 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews,
   const videoDuration = videoSources.reduce((sum, source) => sum + source.duration, 0);
   const totalDuration = transcriptDuration ?? analysisDuration ?? videoDuration;
   const srtChunkCount = transcriptSummary?.chunks.length ?? 0;
+  const hasTimedStoryPlan = storyBeats.every(hasStoryTiming);
+  const detectedStoryPlan = useMemo(
+    () => analysis?.sections.length && totalDuration > 0
+      ? toTimedStoryDrafts(buildStorySections({ analysis, duration: totalDuration, drafts: storyBeats }))
+      : [],
+    [analysis, storyBeats, totalDuration],
+  );
+  const plannedStoryBeats = hasTimedStoryPlan ? storyBeats : detectedStoryPlan.length ? detectedStoryPlan : storyBeats;
 
   const musicVideoProject = useMemo(
     () =>
@@ -101,11 +115,11 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews,
         analysis,
         duration: totalDuration || 0,
         lyricChunks: transcriptSummary?.chunks ?? [],
-        storyDrafts: storyBeats,
+        storyDrafts: plannedStoryBeats,
         videoSources,
         segmentPreviews,
       }),
-    [analysis, segmentPreviews, storyBeats, totalDuration, transcriptSummary?.chunks, videoSources],
+    [analysis, plannedStoryBeats, segmentPreviews, totalDuration, transcriptSummary?.chunks, videoSources],
   );
 
   const storyRail = musicVideoProject.storySections;
@@ -120,6 +134,18 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews,
   useEffect(() => {
     onProjectChange?.(musicVideoProject);
   }, [musicVideoProject, onProjectChange]);
+
+  useEffect(() => {
+    if (hasTimedStoryPlan || !detectedStoryPlan.length) return;
+    onStateChange((current) => ({
+      ...current,
+      storyBeats: detectedStoryPlan.map((draft) => ({ ...draft })),
+      activeBeatId: detectedStoryPlan.some((draft) => draft.id === current.activeBeatId)
+        ? current.activeBeatId
+        : detectedStoryPlan[0]?.id ?? current.activeBeatId,
+      storyGenerated: false,
+    }));
+  }, [detectedStoryPlan, hasTimedStoryPlan, onStateChange]);
 
   async function handleVocalStemUpload(files: File[]) {
     const file = files[0];
@@ -162,27 +188,61 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews,
     }
   }
 
-  function addStoryBeat() {
-    const nextIndex = storyBeats.length + 1;
-    const next = { id: `section-${Date.now()}`, label: SECTION_LABELS[nextIndex - 1] || `Section ${nextIndex}`, prompt: "Describe the visual idea for this song section" };
-    updateState({ storyBeats: [...storyBeats, next], activeBeatId: next.id, storyGenerated: false });
+  function updatePlannedStoryBeats(next: StoryPlanDraft[], nextActiveBeatId = activeBeatId) {
+    updateState({ storyBeats: next, activeBeatId: nextActiveBeatId, storyGenerated: false });
   }
 
-  function updateStoryBeat(id: string, patch: Partial<StoryBeatDraft>) {
-    updateState({
-      storyBeats: storyBeats.map((beat) => (beat.id === id ? { ...beat, ...patch } : beat)),
-      storyGenerated: false,
-    });
+  function updateStoryBeat(id: string, patch: Partial<StorySectionDraft>) {
+    updatePlannedStoryBeats(plannedStoryBeats.map((beat) => (beat.id === id ? { ...beat, ...patch } : beat)));
   }
 
   function removeStoryBeat(id: string) {
-    if (storyBeats.length <= 1) return;
-    const next = storyBeats.filter((beat) => beat.id !== id);
-    updateState({
-      storyBeats: next,
-      activeBeatId: activeBeatId === id ? next[0]?.id ?? "intro" : activeBeatId,
-      storyGenerated: false,
+    const next = removeTimedStorySection(plannedStoryBeats, id);
+    const nextActiveId = activeBeatId === id ? next[Math.max(0, plannedStoryBeats.findIndex((beat) => beat.id === id) - 1)]?.id ?? next[0]?.id ?? "intro" : activeBeatId;
+    updatePlannedStoryBeats(next, nextActiveId);
+  }
+
+  function insertStoryTemplate(template: StoryPlanDraft) {
+    const next = insertStoryTemplateInSongOrder({
+      drafts: plannedStoryBeats,
+      template,
+      cueTimes: getStoryBoundaryCues(analysis, transcriptSummary),
     });
+    if (next === plannedStoryBeats) return;
+    updatePlannedStoryBeats(next, template.id ?? activeBeatId);
+  }
+
+  function addStoryPart() {
+    const partNumber = plannedStoryBeats.filter((beat) => /^part\b/i.test(beat.label)).length;
+    const partLabel = `Part ${String.fromCharCode(65 + (partNumber % 26))}`;
+    const part = {
+      id: `part-manual-${Date.now()}`,
+      label: partLabel,
+      prompt: "Describe the visual idea for this song part",
+    };
+    const next = splitStorySectionWithTemplate({
+      drafts: plannedStoryBeats,
+      activeId: activeBeatId,
+      template: part,
+      cueTimes: getStoryBoundaryCues(analysis, transcriptSummary),
+    });
+    if (next === plannedStoryBeats) return;
+    updatePlannedStoryBeats(next, part.id);
+  }
+
+  function moveStoryBoundary(boundaryIndex: number, time: number) {
+    updatePlannedStoryBeats(moveStorySectionBoundary({ drafts: plannedStoryBeats, boundaryIndex, time }));
+  }
+
+  function resetStoryPlanFromDetection() {
+    if (!analysis?.sections.length) return;
+    const next = toTimedStoryDrafts(buildStorySections({
+      analysis,
+      duration: totalDuration,
+      drafts: STORY_SECTION_TEMPLATES,
+    }));
+    if (!next.length) return;
+    updatePlannedStoryBeats(next, next[0]?.id ?? activeBeatId);
   }
 
   function generateStoryLayout() {
@@ -192,51 +252,18 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews,
   return (
     <div className="space-y-3">
       <section className="grid gap-3 xl:grid-cols-[minmax(380px,0.9fr)_minmax(560px,1.45fr)]">
-        <div className="rounded-[2px] border border-[#1a1a1a] bg-[#0b0b0b] p-3">
-          <div className="mb-3 flex items-start justify-between gap-3">
-            <div>
-              <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Song section story plan</div>
-              <div className="mt-1 text-[11px] text-[#6d6d6d]">
-                These are editable song sections, not literal beat counts. Start from the common structure: intro, verse, optional pre-chorus, chorus, verse 2, optional pre-chorus 2, chorus 2, bridge, final chorus/outro.
-              </div>
-            </div>
-            <button type="button" onClick={addStoryBeat} className="rounded-[2px] border border-[#2a2a2a] px-2 py-1 text-[9px] uppercase tracking-[0.14em] text-[#bdbdbd] hover:border-[#e05c00]">
-              Add Section
-            </button>
-          </div>
-
-          <div className="space-y-2">
-            {storyRail.map((beat, index) => (
-              <div
-                key={beat.id}
-                className={`rounded-[2px] border p-2 transition-colors ${activeBeatId === beat.id ? "border-[#e05c00] bg-[#140c07]" : "border-[#171717] bg-[#080808]"}`}
-              >
-                <button type="button" onClick={() => setActiveBeatId(beat.id)} className="mb-2 flex w-full items-center justify-between gap-2 text-left">
-                  <span className="font-mono text-[9px] text-[#6a6a6a]">{String(index + 1).padStart(2, "0")}</span>
-                  <span className="flex-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#c9c9c9]">{beat.label}</span>
-                  <span className="font-mono text-[9px] text-[#4f4f4f]">{fmt(beat.start)}–{fmt(beat.end)}</span>
-                </button>
-                <div className="grid gap-2 md:grid-cols-[132px_1fr_auto]">
-                  <input
-                    aria-label={`${beat.label} name`}
-                    value={storyBeats[index]?.label ?? beat.label}
-                    onChange={(event) => updateStoryBeat(beat.id, { label: event.target.value })}
-                    className="rounded-[2px] border border-[#191919] bg-[#050505] px-2 py-2 text-[10px] text-[#bdbdbd] outline-none focus:border-[#3a3a3a]"
-                  />
-                  <textarea
-                    aria-label={`${beat.label} prompt`}
-                    value={storyBeats[index]?.prompt ?? ""}
-                    onChange={(event) => updateStoryBeat(beat.id, { prompt: event.target.value })}
-                    className="h-14 resize-none rounded-[2px] border border-[#191919] bg-[#050505] p-2 text-[11px] leading-4 text-[#bdbdbd] outline-none placeholder:text-[#3d3d3d] focus:border-[#3a3a3a]"
-                  />
-                  <button type="button" onClick={() => removeStoryBeat(beat.id)} className="rounded-[2px] border border-[#202020] px-2 text-[9px] uppercase tracking-[0.12em] text-[#5f5f5f] hover:text-[#b96c43]">
-                    Remove
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+        <StoryPlanEditor
+          plannedSections={storyRail}
+          templates={STORY_SECTION_TEMPLATES}
+          activeSectionId={activeBeatId}
+          onSelect={setActiveBeatId}
+          onUpdate={updateStoryBeat}
+          onInsertTemplate={insertStoryTemplate}
+          onAddPart={addStoryPart}
+          onRemove={removeStoryBeat}
+          onMoveBoundary={moveStoryBoundary}
+          onResetFromDetection={resetStoryPlanFromDetection}
+        />
 
         <div className="rounded-[2px] border border-[#1a1a1a] bg-[#0b0b0b] p-3">
           <div className="mb-3">
@@ -350,30 +377,13 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews,
           </button>
         </div>
 
-        <div className="mb-3 rounded-[2px] border border-[#171717] bg-[#070707] p-3">
-          <div className="mb-2 flex items-center justify-between text-[9px] uppercase tracking-[0.16em] text-[#4a4a4a]">
-            <span>Shared song-time ruler</span>
-            <span>{fmt(totalDuration || 0)}</span>
-          </div>
-          <div className="relative h-20 overflow-hidden rounded-[2px] border border-[#141414] bg-[#030303]">
-            {storyRail.map((beat) => {
-              const left = totalDuration ? (beat.start / totalDuration) * 100 : 0;
-              const width = totalDuration ? Math.max(3, ((beat.end - beat.start) / totalDuration) * 100) : 100 / Math.max(1, storyRail.length);
-              return (
-                <button
-                  key={beat.id}
-                  type="button"
-                  onClick={() => setActiveBeatId(beat.id)}
-                  className={`absolute inset-y-0 border-r border-[#101010] p-2 text-left transition-colors ${activeBeatId === beat.id ? "bg-[#e05c001f]" : "bg-[#0a0a0a] hover:bg-[#101010]"}`}
-                  style={{ left: `${left}%`, width: `${width}%` }}
-                >
-                  <div className="truncate text-[9px] font-semibold uppercase tracking-[0.12em] text-[#cfcfcf]">{beat.label}</div>
-                  <div className="mt-1 truncate font-mono text-[8px] text-[#6a6a6a]">{fmt(beat.start)} → {fmt(beat.end)}</div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        <StoryStructureRuler
+          detectedSections={analysis?.sections ?? []}
+          plannedSections={storyRail}
+          duration={totalDuration || 0}
+          activeSectionId={activeBeatId}
+          onSelect={setActiveBeatId}
+        />
 
         {storyGenerated ? (
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -451,6 +461,19 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews,
       </section>
     </div>
   );
+}
+
+function hasStoryTiming(draft: StorySectionDraft) {
+  return Number.isFinite(draft.start) && Number.isFinite(draft.end) && (draft.end ?? 0) > (draft.start ?? 0);
+}
+
+function getStoryBoundaryCues(analysis: BeatJoinAnalysis | null, transcriptSummary: DeepgramTranscriptSummary | null) {
+  return Array.from(new Set([
+    ...(analysis?.beats ?? []),
+    ...(analysis?.onsets ?? []),
+    ...(analysis?.sections.flatMap((section) => [section.start, section.end]) ?? []),
+    ...(transcriptSummary?.chunks.flatMap((chunk) => [chunk.start, chunk.end]) ?? []),
+  ])).sort((left, right) => left - right);
 }
 
 function Metric({ label, value }: { label: string; value: string }) {

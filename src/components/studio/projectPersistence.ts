@@ -1,5 +1,5 @@
 import type { DeepgramTranscriptSummary } from "./deepgramUtils";
-import { getDefaultStorySectionDrafts, type MusicVideoProject, type StoryEditSettings, type StorySectionDraft } from "./musicVideoProject";
+import { getDefaultStorySectionDrafts, type MusicVideoProject, type StoryEditSettings, type StoryPlanDraft } from "./musicVideoProject";
 import { hydrateGeneratedStudioAssets, sanitizeGeneratedStudioAssetForStorage, type GeneratedStudioAsset } from "./generatedAssets";
 import { hydrateReferenceAssets, sanitizeReferenceAssetForStorage, type ReferenceAsset } from "./referenceAssets";
 import type { BeatJoinAnalysis, ColorGradient, SceneCaptionSettings, Tab, UploadedVideoSource } from "./types";
@@ -14,7 +14,7 @@ const MEDIA_STORE_NAME = "media";
 export type PersistedStoryState = {
   vocalStemName: string;
   transcriptSummary: DeepgramTranscriptSummary | null;
-  storyBeats: Array<StorySectionDraft & { id: string; label: string; prompt: string }>;
+  storyBeats: StoryPlanDraft[];
   activeBeatId: string;
   storyGenerated: boolean;
   editSettings?: StoryEditSettings;
