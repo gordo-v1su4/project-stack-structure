@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
 
-import { groupActivityRuns, summarizeActivityRuns, workActivityTokenRefreshDelay } from "@/lib/workActivity";
+import {
+  groupActivityRuns,
+  summarizeActivityRuns,
+  workActivityReconnectDelay,
+  workActivityTokenRefreshDelay,
+  WORK_ACTIVITY_RETRY_MS,
+} from "@/lib/workActivity";
 import { workActivityReadScopeForUser, workActivityTagForUser } from "@/lib/workActivityAuth";
 
 describe("work activity", () => {
@@ -13,6 +19,11 @@ describe("work activity", () => {
 
   test("refreshes a 15 minute credential before it expires", () => {
     expect(workActivityTokenRefreshDelay(15 * 60_000, 0)).toBe(13.5 * 60_000);
+  });
+
+  test("backs off authentication failures instead of creating a zero-delay token loop", () => {
+    expect(workActivityReconnectDelay("Request failed with status 401")).toBe(WORK_ACTIVITY_RETRY_MS);
+    expect(workActivityReconnectDelay("Public access token is invalid")).toBe(WORK_ACTIVITY_RETRY_MS);
   });
 
   test("groups queued children below their media parent and measures progress", () => {

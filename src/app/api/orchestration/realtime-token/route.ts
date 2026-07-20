@@ -19,6 +19,7 @@ export async function GET() {
   assertTriggerConfigured();
   const accessToken = await triggerAuth.createPublicToken({
     scopes: workActivityReadScopeForUser(userId),
+    realtime: { skipColumns: ["payload", "output"] },
     expirationTime: "15m",
   });
   return Response.json({

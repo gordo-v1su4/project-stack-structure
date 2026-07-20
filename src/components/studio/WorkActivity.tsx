@@ -21,10 +21,14 @@ type ActivityCredentials = {
   expiresAt: number;
 };
 
+type ActiveActivityCredentials = ActivityCredentials & {
+  version: number;
+};
+
 export function WorkActivity() {
   const [open, setOpen] = useState(false);
-  const [credentials, setCredentials] = useState<ActivityCredentials>();
-  const [credentialVersion, setCredentialVersion] = useState(0);
+  const [credentials, setCredentials] = useState<ActiveActivityCredentials>();
+  const credentialVersion = useRef(0);
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [requiresSignIn, setRequiresSignIn] = useState(false);
   const [connectionError, setConnectionError] = useState<string>();
@@ -39,7 +43,11 @@ export function WorkActivity() {
         const response = await fetch("/api/orchestration/realtime-token", { cache: "no-store" });
         const body = await response.json() as Partial<ActivityCredentials> & { error?: string };
         if (response.status === 401) {
-          if (!cancelled) setRequiresSignIn(true);
+          if (!cancelled) {
+            credentialVersion.current += 1;
+            setCredentials(undefined);
+            setRequiresSignIn(true);
+          }
           return;
         }
         if (!response.ok || !body.accessToken || !body.baseURL || !body.tag || !body.expiresAt) {
@@ -47,10 +55,11 @@ export function WorkActivity() {
         }
         if (cancelled) return;
         const next = body as ActivityCredentials;
-        setCredentials(next);
+        const version = credentialVersion.current + 1;
+        credentialVersion.current = version;
+        setCredentials({ ...next, version });
         setRequiresSignIn(false);
         setConnectionError(undefined);
-        setCredentialVersion((value) => value + 1);
         timer = window.setTimeout(refresh, workActivityTokenRefreshDelay(next.expiresAt));
       } catch (error) {
         if (cancelled) return;
@@ -74,9 +83,14 @@ export function WorkActivity() {
     return () => window.clearTimeout(timer);
   }, [connectionError, requiresSignIn]);
 
-  const onSnapshot = useCallback((next: ActivityRunInput[], error?: string) => {
+  const onSnapshot = useCallback((version: number, next: ActivityRunInput[], error?: string) => {
+    if (version !== credentialVersion.current) return;
     setRuns(next);
     setConnectionError(error);
+    if (error) {
+      credentialVersion.current += 1;
+      setCredentials(undefined);
+    }
   }, []);
   const activity = useMemo(() => groupActivityRuns(runs, now), [runs, now]);
   const summary = useMemo(() => summarizeActivityRuns(activity), [activity]);
@@ -94,9 +108,9 @@ export function WorkActivity() {
     <div className="relative">
       {credentials ? (
         <WorkActivitySubscription
-          key={credentialVersion}
+          key={credentials.version}
           credentials={credentials}
-          subscriptionId={`stack-structure-work-${credentialVersion}`}
+          subscriptionId={`stack-structure-work-${credentials.version}`}
           onSnapshot={onSnapshot}
         />
       ) : null}
@@ -155,11 +169,11 @@ function WorkActivitySubscription({
   subscriptionId,
   onSnapshot,
 }: {
-  credentials: ActivityCredentials;
+  credentials: ActiveActivityCredentials;
   subscriptionId: string;
-  onSnapshot: (runs: ActivityRunInput[], error?: string) => void;
+  onSnapshot: (version: number, runs: ActivityRunInput[], error?: string) => void;
 }) {
-  const { runs, error } = useRealtimeRunsWithTag(credentials.tag, {
+  const { runs, error, stop } = useRealtimeRunsWithTag(credentials.tag, {
     id: subscriptionId,
     accessToken: credentials.accessToken,
     baseURL: credentials.baseURL,
@@ -171,6 +185,9 @@ function WorkActivitySubscription({
   const flushTimer = useRef<number | undefined>(undefined);
   const snapshotKey = JSON.stringify(runs);
   useEffect(() => {
+    if (error) stop();
+  }, [error, stop]);
+  useEffect(() => {
     pendingSnapshot.current = {
       runs: runs as unknown as ActivityRunInput[],
       error: error?.message,
@@ -178,10 +195,10 @@ function WorkActivitySubscription({
     if (flushTimer.current !== undefined) return;
     flushTimer.current = window.setTimeout(() => {
       flushTimer.current = undefined;
-      onSnapshot(pendingSnapshot.current.runs, pendingSnapshot.current.error);
+      onSnapshot(credentials.version, pendingSnapshot.current.runs, pendingSnapshot.current.error);
     }, 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [error?.message, onSnapshot, snapshotKey]);
+  }, [credentials.version, error?.message, onSnapshot, snapshotKey]);
   useEffect(() => () => {
     if (flushTimer.current !== undefined) {
       window.clearTimeout(flushTimer.current);

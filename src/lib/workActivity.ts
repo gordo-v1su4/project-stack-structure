@@ -77,9 +77,8 @@ export function workActivityTokenRefreshDelay(expiresAt: number, now = Date.now(
 }
 
 export function workActivityReconnectDelay(error: string) {
-  return /(?:\b401\b|public access token is invalid|token (?:is )?expired)/i.test(error)
-    ? 0
-    : WORK_ACTIVITY_RETRY_MS;
+  void error;
+  return WORK_ACTIVITY_RETRY_MS;
 }
 
 export function groupActivityRuns(runs: ActivityRunInput[], now = Date.now()) {
