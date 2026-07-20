@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { startTransition, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { transcribeAudioWithDeepgram, type DeepgramTranscriptSummary } from "../deepgramUtils";
 import { fmt } from "../math";
 import {
@@ -231,7 +231,8 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews,
   }
 
   function moveStoryBoundary(boundaryIndex: number, time: number) {
-    updatePlannedStoryBeats(moveStorySectionBoundary({ drafts: plannedStoryBeats, boundaryIndex, time }));
+    const next = moveStorySectionBoundary({ drafts: plannedStoryBeats, boundaryIndex, time });
+    startTransition(() => updatePlannedStoryBeats(next));
   }
 
   function resetStoryPlanFromDetection() {

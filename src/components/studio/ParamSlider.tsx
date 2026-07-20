@@ -1,6 +1,6 @@
 "use client";
 
-import type { CSSProperties, PointerEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 
 type ParamSliderProps = {
   label: string;
@@ -11,6 +11,7 @@ type ParamSliderProps = {
   unit?: string;
   accent?: string;
   layout?: "row" | "stack";
+  commitOnRelease?: boolean;
   onChange: (v: number) => void;
 };
 
@@ -23,9 +24,14 @@ export function ParamSlider({
   unit = "",
   accent = "#e05c00",
   layout = "row",
+  commitOnRelease = false,
   onChange,
 }: ParamSliderProps) {
-  const normalizedValue = normalizeSliderValue(value, min, max, step);
+  const [previewValue, setPreviewValue] = useState<number | null>(null);
+  const previewValueRef = useRef<number | null>(null);
+  const committedValueRef = useRef<number | null>(null);
+  const normalizedPropValue = normalizeSliderValue(value, min, max, step);
+  const normalizedValue = previewValue ?? normalizedPropValue;
   const pct = ((normalizedValue - min) / (max - min)) * 100;
   const dv = Math.abs(max - min) >= 10 ? normalizedValue.toFixed(step < 1 ? 1 : 0) : normalizedValue.toFixed(2);
   const sliderStyle = {
@@ -33,16 +39,31 @@ export function ParamSlider({
     "--slider-pct": `${pct}%`,
   } as CSSProperties;
   const nudge = (direction: -1 | 1) => onChange(normalizeSliderValue(normalizedValue + direction * step, min, max, step));
-  const handlePointerDown = (event: PointerEvent<HTMLInputElement>) => {
-    const bounds = event.currentTarget.getBoundingClientRect();
-    if (bounds.width <= 0) return;
-    const thumbX = bounds.left + (pct / 100) * bounds.width;
-    const pointerX = event.clientX;
-    const thumbGrabWindow = 18;
-    if (Math.abs(pointerX - thumbX) <= thumbGrabWindow) return;
-    event.preventDefault();
-    nudge(pointerX < thumbX ? -1 : 1);
+  const previewChange = (nextValue: number) => {
+    const update = resolveSliderUpdate({ deferred: commitOnRelease, phase: "input", value: nextValue });
+    if (commitOnRelease) {
+      committedValueRef.current = null;
+      previewValueRef.current = update.previewValue;
+      setPreviewValue(update.previewValue);
+    }
+    if (update.publishValue !== null) onChange(update.publishValue);
   };
+  const commitPreview = () => {
+    const pendingValue = previewValueRef.current;
+    if (pendingValue === null) return;
+    const update = resolveSliderUpdate({ deferred: commitOnRelease, phase: "commit", value: pendingValue });
+    previewValueRef.current = null;
+    committedValueRef.current = update.retainPreview ? pendingValue : null;
+    if (!update.retainPreview) setPreviewValue(null);
+    if (update.publishValue !== null) onChange(update.publishValue);
+  };
+
+  useEffect(() => {
+    if (committedValueRef.current !== normalizedPropValue) return;
+    committedValueRef.current = null;
+    const clearPreviewTimer = window.setTimeout(() => setPreviewValue(null), 0);
+    return () => window.clearTimeout(clearPreviewTimer);
+  }, [normalizedPropValue]);
   const input = (
     <input
       type="range"
@@ -51,8 +72,11 @@ export function ParamSlider({
       max={max}
       step={step}
       value={normalizedValue}
-      onPointerDown={handlePointerDown}
-      onChange={(e) => onChange(normalizeSliderValue(Number(e.target.value), min, max, step))}
+      onChange={(event) => previewChange(normalizeSliderValue(Number(event.target.value), min, max, step))}
+      onPointerUp={commitPreview}
+      onPointerCancel={commitPreview}
+      onKeyUp={commitPreview}
+      onBlur={commitPreview}
       className="studio-range-input h-8 min-w-0 flex-1 cursor-pointer"
       style={sliderStyle}
     />
@@ -91,6 +115,14 @@ export function ParamSlider({
       </span>
     </div>
   );
+}
+
+export function resolveSliderUpdate({ deferred, phase, value }: { deferred: boolean; phase: "input" | "commit"; value: number }) {
+  return {
+    previewValue: value,
+    publishValue: deferred && phase === "input" ? null : value,
+    retainPreview: deferred,
+  };
 }
 
 function normalizeSliderValue(value: number, min: number, max: number, step: number) {

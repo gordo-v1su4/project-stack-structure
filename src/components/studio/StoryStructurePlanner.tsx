@@ -119,6 +119,7 @@ export function StoryPlanEditor({
                     max={Math.max(section.start + 0.75, next.end - 0.5)}
                     step={0.25}
                     unit="s"
+                    commitOnRelease
                     onChange={(time) => onMoveBoundary(index, time)}
                   />
                 </div>
