@@ -435,7 +435,7 @@ function clampNumber(value: number | undefined, min: number, max: number) {
 
 function sanitizeCaptionSettings(settings: SceneCaptionSettings | undefined): SceneCaptionSettings {
   return {
-    mode: settings?.mode === "smart" ? "smart" : "fast",
+    mode: settings?.mode === "fast" ? "fast" : "smart",
     context: settings?.context,
   };
 }

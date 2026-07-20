@@ -17,7 +17,7 @@ export async function prepareVideoSources(
   files: File[],
   onSceneUpdate?: (update: VideoSceneUpdate) => void,
   onStorageUpdate?: (update: VideoStorageUpdate) => void,
-  captionSettings: SceneCaptionSettings = { mode: "fast" },
+  captionSettings: SceneCaptionSettings = { mode: "smart" },
 ) {
   const videoFiles = files.filter((file) => file.type.startsWith("video/"));
 

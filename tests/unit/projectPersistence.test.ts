@@ -174,7 +174,20 @@ describe("projectPersistence", () => {
     expect(hydrated.videoSources).toHaveLength(1);
     expect(hydrated.videoSources[0].videoUrl).toBe("blob:restored-video");
     expect(hydrated.storyState.storyGenerated).toBe(true);
-    expect(hydrated.captionSettings?.mode).toBe("fast");
+    expect(hydrated.captionSettings?.mode).toBe("smart");
+  });
+
+  test("preserves an explicitly saved fast caption mode", () => {
+    const draft = createPersistableStudioProjectDraft({
+      analysis: null,
+      videoSources: [],
+      storyState,
+      musicVideoProject: null,
+      captionSettings: { mode: "fast" },
+      savedAt: "2026-06-18T00:00:00.000Z",
+    });
+
+    expect(hydrateStudioProjectDraft({ draft }).captionSettings?.mode).toBe("fast");
   });
 
   test("hydrates a persisted draft from durable RustFS URL when local media cache is absent", () => {

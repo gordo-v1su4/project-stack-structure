@@ -43,7 +43,7 @@ export function sceneCaptionMatchesMode(scene: DetectedSceneSegment, mode: Scene
 export async function captionDetectedScenes(
   source: UploadedVideoSource,
   scenes: DetectedSceneSegment[],
-  settings: SceneCaptionSettings = { mode: "fast" },
+  settings: SceneCaptionSettings = { mode: "smart" },
   onProgress?: (progress: SceneCaptionProgress, scenes: DetectedSceneSegment[]) => void,
   options: SceneCaptionOptions = {},
 ): Promise<DetectedSceneSegment[]> {

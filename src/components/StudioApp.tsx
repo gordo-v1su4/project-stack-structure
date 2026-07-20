@@ -149,7 +149,7 @@ export default function StudioApp() {
   } | null>(null);
   const [storyState, setStoryState] = useState(createDefaultStoryTabState);
   const [musicVideoProject, setMusicVideoProject] = useState<MusicVideoProject | null>(null);
-  const [captionMode, setCaptionMode] = useState<SceneCaptionMode>("fast");
+  const [captionMode, setCaptionMode] = useState<SceneCaptionMode>("smart");
   const [referenceAssets, setReferenceAssets] = useState<ReferenceAsset[]>([]);
   const [generatedAssets, setGeneratedAssets] = useState<GeneratedStudioAsset[]>([]);
   const [shaderPresetId, setShaderPresetId] = useState(MUSIC_VIDEO_SHADER_PRESETS[0].id);
@@ -332,7 +332,7 @@ export default function StudioApp() {
       ...draft.storyState,
       editSettings: normalizeStoryEditSettings(draft.storyState.editSettings),
     });
-    setCaptionMode(draft.captionSettings?.mode ?? "fast");
+    setCaptionMode(draft.captionSettings?.mode ?? "smart");
     setMusicVideoProject(draft.musicVideoProject);
     setReferenceAssets(draft.referenceAssets ?? []);
     setGeneratedAssets(draft.generatedAssets ?? []);
