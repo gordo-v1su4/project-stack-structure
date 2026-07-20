@@ -63,6 +63,8 @@ export function WorkActivity() {
         timer = window.setTimeout(refresh, workActivityTokenRefreshDelay(next.expiresAt));
       } catch (error) {
         if (cancelled) return;
+        credentialVersion.current += 1;
+        setCredentials(undefined);
         setConnectionError(error instanceof Error ? error.message : String(error));
         timer = window.setTimeout(refresh, WORK_ACTIVITY_RETRY_MS);
       }
