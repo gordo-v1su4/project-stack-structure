@@ -1,8 +1,10 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { NextConfig } from "next";
+import { localAuthOriginRedirects } from "./src/lib/authRequest";
 
 const projectRoot = path.dirname(fileURLToPath(import.meta.url));
+const configuredAuthUrl = process.env.AUTH_URL ?? process.env.NEXTAUTH_URL;
 const publicEssentiaApiBaseUrl = (
   process.env.NEXT_PUBLIC_ESSENTIA_API_BASE_URL ??
   process.env.NEXT_PUBLIC_ESSENTIA_API_URL ??
@@ -25,6 +27,9 @@ const serverFfmpegGatewayApiKey = (
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: ["127.0.0.1"],
+  async redirects() {
+    return localAuthOriginRedirects(configuredAuthUrl);
+  },
   env: {
     NEXT_PUBLIC_ESSENTIA_API_BASE_URL: publicEssentiaApiBaseUrl,
     NEXT_PUBLIC_ESSENTIA_API_URL: publicEssentiaApiBaseUrl,

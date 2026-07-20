@@ -1,10 +1,18 @@
 import NextAuth from "next-auth";
+import type { NextAuthConfig } from "next-auth";
 import GitHub from "next-auth/providers/github";
+import { authRedirectProxyUrl, canonicalAuthRedirect } from "@/lib/authRequest";
 
-export const { handlers, auth, signIn, signOut } = NextAuth({
+const configuredAuthUrl = process.env.AUTH_URL ?? process.env.NEXTAUTH_URL;
+
+export const authConfig = {
   providers: [GitHub],
+  redirectProxyUrl: authRedirectProxyUrl(configuredAuthUrl),
   session: { strategy: "jwt" },
   callbacks: {
+    redirect({ url, baseUrl }) {
+      return canonicalAuthRedirect(url, baseUrl, configuredAuthUrl);
+    },
     jwt({ token, profile }) {
       if (profile?.id !== undefined) token.ownerId = `github-${profile.id}`;
       if (typeof profile?.login === "string") token.login = profile.login;
@@ -18,4 +26,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       return session;
     },
   },
-});
+} satisfies NextAuthConfig;
+
+export const { handlers, auth, signIn, signOut } = NextAuth(authConfig);
