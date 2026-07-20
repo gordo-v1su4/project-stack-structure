@@ -27,7 +27,20 @@ export function ProjectLibrary({ draft, activeProjectId, activeProjectName, onNe
   const [busy, setBusy] = useState(false);
   const githubIdentity = user?.login || user?.name || "GitHub user";
 
+  function beginGitHubSignIn() {
+    void signIn("github", { redirectTo: "/?projects=open" });
+  }
+
   useEffect(() => setName(activeProjectName), [activeProjectName]);
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("projects") !== "open") return;
+
+    setOpen(true);
+    url.searchParams.delete("projects");
+    window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -55,7 +68,7 @@ export function ProjectLibrary({ draft, activeProjectId, activeProjectName, onNe
   }, []);
 
   async function saveProject(createNew = false) {
-    if (!user) return void signIn("github", { redirectTo: "/" });
+    if (!user) return beginGitHubSignIn();
     setBusy(true);
     setStatus("Saving project to RustFS...");
     try {
@@ -119,14 +132,26 @@ export function ProjectLibrary({ draft, activeProjectId, activeProjectName, onNe
           </span>
         </div>
       ) : null}
-      <button
-        type="button"
-        onClick={() => setOpen((current) => !current)}
-        className="min-w-[150px] rounded-[2px] border border-[#292929] bg-[#111] px-2.5 py-1 text-left text-[10px] text-[#b8b8b8] hover:border-[#464646]"
-      >
-        <span className="block text-[8px] uppercase tracking-[0.16em] text-[#555]">Project</span>
-        <span className="block max-w-[180px] truncate">{activeProjectName}</span>
-      </button>
+      {user ? (
+        <button
+          type="button"
+          onClick={() => setOpen((current) => !current)}
+          className="min-w-[150px] rounded-[2px] border border-[#292929] bg-[#111] px-2.5 py-1 text-left text-[10px] text-[#b8b8b8] hover:border-[#464646]"
+        >
+          <span className="block text-[8px] uppercase tracking-[0.16em] text-[#555]">Project</span>
+          <span className="block max-w-[180px] truncate">{activeProjectName}</span>
+        </button>
+      ) : (
+        <button
+          type="button"
+          disabled={!sessionChecked}
+          onClick={beginGitHubSignIn}
+          className="min-w-[170px] rounded-[2px] border border-[#4f260d] bg-[#170b04] px-2.5 py-1 text-left text-[10px] text-[#ff7a1a] shadow-[inset_2px_0_0_#ff6a00] hover:border-[#7a3b16] disabled:border-[#292929] disabled:bg-[#111] disabled:text-[#666] disabled:shadow-none"
+        >
+          <span className="block text-[8px] uppercase tracking-[0.16em] text-[#7a3b16]">GitHub projects</span>
+          <span className="block truncate">{sessionChecked ? "Sign in / load projects" : "Checking session..."}</span>
+        </button>
+      )}
 
       {open ? (
         <div className="absolute right-0 top-[calc(100%+8px)] z-50 w-[360px] rounded-[3px] border border-[#292929] bg-[#0d0d0d] p-3 shadow-2xl shadow-black/70">
@@ -148,7 +173,7 @@ export function ProjectLibrary({ draft, activeProjectId, activeProjectName, onNe
             <div className="rounded-[2px] border border-[#252525] bg-[#101010] p-3">
               <div className="text-[11px] text-[#bbb]">Sign in with GitHub</div>
               <p className="mt-1 text-[9px] leading-4 text-[#666]">This creates an owner ID so the same projects can be loaded from another device.</p>
-              <button type="button" onClick={() => signIn("github", { redirectTo: "/" })} className="mt-3 w-full rounded-[2px] bg-[#e05c00] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-black">Continue with GitHub</button>
+              <button type="button" onClick={beginGitHubSignIn} className="mt-3 w-full rounded-[2px] bg-[#e05c00] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-black">Continue with GitHub</button>
             </div>
           ) : null}
 
