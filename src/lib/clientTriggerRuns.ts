@@ -15,12 +15,24 @@ export async function waitForTriggerRunOutput(
 ) {
   const startedAt = Date.now();
   let currentIntervalMs = options.pollIntervalMs ?? 1_500;
+  let lastTransportError: string | undefined;
 
   while (Date.now() - startedAt <= options.timeoutMs) {
-    const response = await fetch(`/api/orchestration/runs/${encodeURIComponent(runId)}`, {
-      cache: "no-store",
-      signal: AbortSignal.timeout(10_000),
-    });
+    let response: Response;
+    try {
+      response = await fetch(`/api/orchestration/runs/${encodeURIComponent(runId)}`, {
+        cache: "no-store",
+        signal: AbortSignal.timeout(10_000),
+      });
+    } catch (error) {
+      if (!isRetryableTriggerTransportError(error)) throw error;
+      lastTransportError = transportErrorMessage(error);
+      const elapsedMs = Date.now() - startedAt;
+      await sleep(triggerPollSleepDuration(currentIntervalMs, elapsedMs, options.timeoutMs));
+      currentIntervalMs = nextTriggerPollInterval(currentIntervalMs);
+      continue;
+    }
+
     const payload = await readJson(response);
     if (!response.ok) {
       throw new Error(readError(payload) || `Trigger run lookup failed (${response.status})`);
@@ -40,7 +52,13 @@ export async function waitForTriggerRunOutput(
     currentIntervalMs = nextTriggerPollInterval(currentIntervalMs);
   }
 
-  throw new Error(`Trigger run ${runId} timed out after ${Math.round(options.timeoutMs / 1_000)}s.`);
+  const cause = lastTransportError ? ` Last transport error: ${lastTransportError}.` : "";
+  throw new Error(`Trigger run ${runId} timed out after ${Math.round(options.timeoutMs / 1_000)}s.${cause}`);
+}
+
+export function isRetryableTriggerTransportError(error: unknown) {
+  if (error instanceof DOMException) return error.name === "AbortError" || error.name === "TimeoutError";
+  return error instanceof TypeError;
 }
 
 export function nextTriggerPollInterval(currentIntervalMs: number) {
@@ -67,6 +85,11 @@ async function readJson(response: Response): Promise<Record<string, unknown>> {
 function readError(payload: Record<string, unknown>) {
   const error = payload.error;
   return typeof error === "string" && error.trim() ? error.trim() : undefined;
+}
+
+function transportErrorMessage(error: unknown) {
+  if (error instanceof Error && error.message.trim()) return error.message.trim();
+  return String(error);
 }
 
 function sleep(ms: number) {

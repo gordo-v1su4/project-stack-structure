@@ -7,7 +7,7 @@ import { uploadAudioFileToRustFs } from "./studio/audioStorage";
 import { buildArrangementSegments } from "./studio/arrangementBuilder";
 import type { ArrangementSegment } from "./studio/arrangementBuilder";
 import { NAV } from "./studio/constants";
-import { mergeUploadedVideoSourceUpdate, prepareVideoSources, rerunSourceSceneAnalysis, revokePreparedVideoSources, selectSceneRetrySources } from "./studio/mediaUpload";
+import { mergeUploadedVideoSourceUpdate, needsSceneDetectionRetry, prepareVideoSources, rerunSourceSceneAnalysis, revokePreparedVideoSources, selectSceneRetrySources } from "./studio/mediaUpload";
 import type { VideoSceneUpdate } from "./studio/mediaUpload";
 import { buildEditPlanPreviewSegments, normalizeStoryEditSettings, type EditPlanPreviewSegment, type MusicVideoProject } from "./studio/musicVideoProject";
 import { selectStorySectionCandidate } from "./studio/musicVideoProjectSelection";
@@ -637,8 +637,9 @@ export default function StudioApp() {
 
     const targets = videoSources.filter((source) => {
       if (!source.storageBucket || !source.storagePath) return false;
+      if (source.sceneStatus === "detecting") return false;
       if (scope === "all") return true;
-      return source.sceneStatus === "failed" || !(source.scenes?.length);
+      return needsSceneDetectionRetry(source);
     });
     if (!targets.length) return;
 

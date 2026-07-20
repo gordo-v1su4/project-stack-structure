@@ -4,8 +4,15 @@ import { createTriggerIdempotencyKey } from "@/lib/triggerIdempotency";
 import {
   STACK_STRUCTURE_TRIGGER_TASKS,
 } from "@/lib/triggerOrchestration";
+import { MEDIA_ASSEMBLY_MACHINE } from "@/trigger/queues";
+import { resolvePreviewSegments } from "@/trigger/ffmpeg";
+import { resolveExportSegments } from "@/trigger/export";
 
 describe("Trigger orchestration", () => {
+  test("allocates the no-credit self-hosted large machine for media assembly", () => {
+    expect(MEDIA_ASSEMBLY_MACHINE).toBe("large-1x");
+  });
+
   test("builds stable scoped idempotency keys without exposing source paths", () => {
     const first = createTriggerIdempotencyKey("media-scene-detect", [
       "stack-structure",
@@ -45,6 +52,35 @@ describe("Trigger orchestration", () => {
       ffglitch: "ffglitch-transform",
       imageSplitter: "image-split-grid",
     });
+  });
+
+  test("maps concat segments to their materialized source instead of one gateway upload", () => {
+    expect(resolvePreviewSegments([
+      { startTime: 1, endTime: 2, sourceIndex: 1 },
+      { startTime: 3, endTime: 4, sourceIndex: 0 },
+    ], ["/tmp/source-0.mp4", "/tmp/source-1.mp4"])).toEqual([
+      { startTime: 1, endTime: 2, inputPath: "/tmp/source-1.mp4" },
+      { startTime: 3, endTime: 4, inputPath: "/tmp/source-0.mp4" },
+    ]);
+  });
+
+  test("rejects out-of-range preview and export source indexes", () => {
+    let previewError: unknown;
+    try {
+      resolvePreviewSegments([{ startTime: 1, endTime: 2, sourceIndex: 2 }], ["/tmp/source-0.mp4"]);
+    } catch (caught) {
+      previewError = caught;
+    }
+
+    let exportError: unknown;
+    try {
+      resolveExportSegments([{ startTime: 1, endTime: 2, sourceIndex: -1 }], ["/tmp/source-0.mp4"]);
+    } catch (caught) {
+      exportError = caught;
+    }
+
+    expect(previewError instanceof Error ? previewError.message : "").toContain("invalid sourceIndex 2");
+    expect(exportError instanceof Error ? exportError.message : "").toContain("invalid sourceIndex -1");
   });
 
 });

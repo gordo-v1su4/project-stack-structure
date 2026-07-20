@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { groupActivityRuns, workActivityTokenRefreshDelay } from "@/lib/workActivity";
+import { groupActivityRuns, summarizeActivityRuns, workActivityTokenRefreshDelay } from "@/lib/workActivity";
 import { workActivityReadScopeForUser, workActivityTagForUser } from "@/lib/workActivityAuth";
 
 describe("work activity", () => {
@@ -42,5 +42,36 @@ describe("work activity", () => {
     expect(items[0]?.queuedMs).toBe(60_000);
     expect(items[0]?.children.map((child) => child.id)).toEqual(["run_child"]);
     expect(items[0]?.children[0]?.progressPercent).toBe(100);
+  });
+
+  test("summarizes root runs into complete, active, queued, and failed counts", () => {
+    const items = groupActivityRuns([
+      { id: "complete", taskIdentifier: "media-video-pipeline", status: "COMPLETED" },
+      { id: "active", taskIdentifier: "media-video-pipeline", status: "EXECUTING" },
+      { id: "queued", taskIdentifier: "media-video-pipeline", status: "QUEUED" },
+      {
+        id: "failed",
+        taskIdentifier: "media-video-pipeline",
+        status: "FAILED",
+        metadata: { providerStatus: "running" },
+      },
+      { id: "canceled", taskIdentifier: "media-video-pipeline", status: "CANCELED" },
+      {
+        id: "child",
+        taskIdentifier: "media-video-scene-detect",
+        status: "COMPLETED",
+        metadata: { parentRunId: "active" },
+      },
+    ]);
+
+    expect(summarizeActivityRuns(items)).toEqual({
+      completed: 1,
+      active: 1,
+      queued: 1,
+      failed: 2,
+      total: 5,
+    });
+    expect(items.find((item) => item.id === "failed")?.providerStatus).toBe(undefined);
+    expect(items.find((item) => item.id === "canceled")?.failed).toBe(true);
   });
 });

@@ -174,8 +174,8 @@ export async function triggerDeepgramTranscription(payload: DeepgramStoredAudioP
 
 export async function triggerFfmpegPreview(payload: FfmpegPreviewPayload) {
   assertTriggerConfigured();
-  const dispatch = await buildDispatchContext(["stack-structure", "ffmpeg", "preview", "vm100-heavy"], {
-    stageLabel: "Waiting for VM100 preview capacity",
+  const dispatch = await buildDispatchContext(["stack-structure", "ffmpeg", "preview", "media-assembly"], {
+    stageLabel: "Waiting for media assembly capacity",
     progressMode: "indeterminate",
   });
   return tasks.trigger<typeof ffmpegPreviewTask>(STACK_STRUCTURE_TRIGGER_TASKS.ffmpegPreview, payload, {
@@ -196,8 +196,8 @@ export async function triggerFfmpegPreview(payload: FfmpegPreviewPayload) {
 
 export async function triggerFinalExport(payload: FinalExportPayload) {
   assertTriggerConfigured();
-  const dispatch = await buildDispatchContext(["stack-structure", "ffmpeg", "export", "vm100-heavy"], {
-    stageLabel: "Waiting for VM100 export capacity",
+  const dispatch = await buildDispatchContext(["stack-structure", "ffmpeg", "export", "media-assembly"], {
+    stageLabel: "Waiting for media assembly capacity",
     progressMode: "indeterminate",
   });
   return tasks.trigger<typeof finalExportTask>(STACK_STRUCTURE_TRIGGER_TASKS.finalExport, payload, {
@@ -220,8 +220,8 @@ export async function triggerFinalExport(payload: FinalExportPayload) {
 
 export async function triggerShaderCaptureExport(payload: ShaderCaptureExportPayload) {
   assertTriggerConfigured();
-  const dispatch = await buildDispatchContext(["stack-structure", "ffmpeg", "shader-capture", "vm100-heavy"], {
-    stageLabel: "Waiting for VM100 shader export capacity",
+  const dispatch = await buildDispatchContext(["stack-structure", "ffmpeg", "shader-capture", "media-assembly"], {
+    stageLabel: "Waiting for media assembly capacity",
     progressMode: "indeterminate",
   });
   return tasks.trigger<typeof shaderCaptureExportTask>(STACK_STRUCTURE_TRIGGER_TASKS.shaderCaptureExport, payload, {

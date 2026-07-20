@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { fmt } from "../math";
+import { needsSceneDetectionRetry } from "../mediaUpload";
 import { sceneCaptionMatchesMode } from "../sceneCaptioning";
 import { SourceVideoLibrary } from "../SourceVideoLibrary";
 import { UploadControl } from "../UploadControl";
@@ -71,10 +72,7 @@ export function IngestTab({
   const captionTone: ReadinessTone = stats.captionFailed > 0 ? "failed" : stats.captionTotal > 0 && stats.captionReady === stats.captionTotal ? "ready" : stats.captioning > 0 ? "processing" : "waiting";
   const storageTone: ReadinessTone = stats.storageFailed > 0 ? "failed" : stats.storageUploaded === videoSources.length && videoSources.length > 0 ? "ready" : videoSources.length > 0 ? "processing" : "waiting";
   const rerunFailedCount = useMemo(
-    () =>
-      videoSources.filter(
-        (source) => Boolean(source.storageBucket && source.storagePath) && (source.sceneStatus === "failed" || !(source.scenes?.length)),
-      ).length,
+    () => videoSources.filter(needsSceneDetectionRetry).length,
     [videoSources],
   );
   const mismatchedCaptionCount = useMemo(

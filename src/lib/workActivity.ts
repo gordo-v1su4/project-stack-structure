@@ -33,6 +33,14 @@ export type WorkActivityItem = {
   children: WorkActivityItem[];
 };
 
+export type WorkActivitySummary = {
+  completed: number;
+  active: number;
+  queued: number;
+  failed: number;
+  total: number;
+};
+
 export const WORK_ACTIVITY_RETRY_MS = 30_000;
 
 const terminalStatuses = new Set([
@@ -40,7 +48,10 @@ const terminalStatuses = new Set([
   "EXPIRED", "INTERRUPTED", "TIMED_OUT",
 ]);
 const failedStatuses = new Set([
-  "FAILED", "CRASHED", "SYSTEM_FAILURE", "EXPIRED", "INTERRUPTED", "TIMED_OUT",
+  "FAILED", "CRASHED", "SYSTEM_FAILURE", "CANCELED", "EXPIRED", "INTERRUPTED", "TIMED_OUT",
+]);
+const queuedStatuses = new Set([
+  "QUEUED", "DELAYED", "PENDING_VERSION", "PENDING_EXECUTION", "WAITING_FOR_DEPLOY",
 ]);
 
 const taskLabels: Record<string, string> = {
@@ -84,6 +95,25 @@ export function groupActivityRuns(runs: ActivityRunInput[], now = Date.now()) {
   return roots.sort((a, b) => b.timestamp - a.timestamp);
 }
 
+export function summarizeActivityRuns(items: WorkActivityItem[]): WorkActivitySummary {
+  const summary: WorkActivitySummary = {
+    completed: 0,
+    active: 0,
+    queued: 0,
+    failed: 0,
+    total: items.length,
+  };
+
+  for (const item of items) {
+    if (item.status === "COMPLETED") summary.completed += 1;
+    else if (terminalStatuses.has(item.status)) summary.failed += 1;
+    else if (queuedStatuses.has(item.status)) summary.queued += 1;
+    else summary.active += 1;
+  }
+
+  return summary;
+}
+
 export function normalizeActivityRun(run: ActivityRunInput, now = Date.now()): WorkActivityItem {
   const values = run.metadata ?? {};
   const queuedAt = timestamp(run.queuedAt ?? run.createdAt);
@@ -92,6 +122,7 @@ export function normalizeActivityRun(run: ActivityRunInput, now = Date.now()): W
   const completedItems = finiteNumber(values.completedItems);
   const totalItems = finiteNumber(values.totalItems);
   const terminal = terminalStatuses.has(run.status);
+  const providerStatus = stringValue(values.providerStatus);
   const progressPercent = totalItems && completedItems !== undefined
     ? Math.max(0, Math.min(100, Math.round((completedItems / totalItems) * 100)))
     : terminal && run.status === "COMPLETED" ? 100 : undefined;
@@ -103,7 +134,7 @@ export function normalizeActivityRun(run: ActivityRunInput, now = Date.now()): W
     progressPercent,
     completedItems,
     totalItems,
-    providerStatus: stringValue(values.providerStatus),
+    providerStatus: terminal && providerStatus?.toLowerCase() === "running" ? undefined : providerStatus,
     providerMessage: stringValue(values.providerMessage),
     parentRunId: stringValue(values.parentRunId),
     queuedMs: queuedAt !== undefined && startedAt !== undefined ? Math.max(0, startedAt - queuedAt) : undefined,

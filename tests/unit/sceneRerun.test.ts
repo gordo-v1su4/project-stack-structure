@@ -100,6 +100,16 @@ describe("selectSceneRetrySources", () => {
 
     expect(selectSceneRetrySources(sources, "smart").map((source) => source.id)).toEqual([1, 2]);
   });
+
+  test("keeps stored clips with active scene detection out of the retry queue", () => {
+    const stored = { storageBucket: "b", storagePath: "p" };
+    const sources = [
+      makeSource({ id: 0, ...stored, sceneStatus: "detecting", scenes: [] }),
+      makeSource({ id: 1, ...stored, sceneStatus: "failed", scenes: [] }),
+    ];
+
+    expect(selectSceneRetrySources(sources, "smart").map((source) => source.id)).toEqual([1]);
+  });
 });
 
 describe("rerunSourceSceneAnalysis", () => {

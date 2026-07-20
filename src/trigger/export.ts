@@ -11,7 +11,7 @@ import {
 import { probeMediaFile } from "@/components/studio/mediaProbe";
 import { downloadMediaGatewayFile, uploadFileToMediaGateway, type MediaGatewayUploadResult } from "@/lib/mediaGateway";
 
-import { vm100HeavyQueue } from "./queues";
+import { MEDIA_ASSEMBLY_MACHINE, mediaAssemblyQueue } from "./queues";
 import { markWorkCompleted, markWorkRunning } from "./workMetadata";
 
 export type StoredExportInput = {
@@ -63,7 +63,8 @@ type DurableExportAsset = {
 
 export const finalExportTask = task({
   id: "ffmpeg-final-music-video-export",
-  queue: vm100HeavyQueue,
+  queue: mediaAssemblyQueue,
+  machine: MEDIA_ASSEMBLY_MACHINE,
   maxDuration: 1_800,
   retry: { maxAttempts: 1 },
   run: async (payload: FinalExportPayload, { ctx }): Promise<DurableExportAsset> => {
@@ -72,7 +73,10 @@ export const finalExportTask = task({
     const workspace = await mkdtemp(path.join(os.tmpdir(), "stack-structure-export-"));
     try {
       const audioPath = await materializeStoredInput(payload.audio, workspace, "audio");
-      const videoPaths = await Promise.all(payload.videos.map((input, index) => materializeStoredInput(input, workspace, `video-${index}`)));
+      const videoPaths: string[] = [];
+      for (const [index, input] of payload.videos.entries()) {
+        videoPaths.push(await materializeStoredInput(input, workspace, `video-${index}`));
+      }
       const probeFn = async (filePath: string) => {
         const result = await probeMediaFile(filePath);
         return { duration: result.duration, hasVideo: result.hasVideo, hasAudio: result.hasAudio };
@@ -80,10 +84,7 @@ export const finalExportTask = task({
       const asset = await generateMusicVideoExport({
         requestKey: payload.requestKey,
         audioPath,
-        segments: payload.segments.map((segment) => ({
-          ...segment,
-          inputPath: videoPaths[segment.sourceIndex ?? 0] ?? videoPaths[0]!,
-        })),
+        segments: resolveExportSegments(payload.segments, videoPaths),
         effectCues: payload.effectCues as import("@/components/studio/shaderEffectPlan").ShaderEffectCue[] | undefined,
         beats: payload.beats,
         lyricChunks: payload.lyricChunks,
@@ -109,7 +110,8 @@ export const finalExportTask = task({
 
 export const shaderCaptureExportTask = task({
   id: "ffmpeg-shader-capture-export",
-  queue: vm100HeavyQueue,
+  queue: mediaAssemblyQueue,
+  machine: MEDIA_ASSEMBLY_MACHINE,
   maxDuration: 1_200,
   retry: { maxAttempts: 1 },
   run: async (payload: ShaderCaptureExportPayload, { ctx }): Promise<DurableExportAsset> => {
@@ -185,6 +187,17 @@ function validateExportPayload(payload: FinalExportPayload) {
   if (!payload.audio || !payload.videos?.length || !payload.segments?.length) {
     throw new AbortTaskRunError("Final export requires audio, videos, and segments.");
   }
+}
+
+export function resolveExportSegments(payloadSegments: FinalExportPayload["segments"], videoPaths: string[]) {
+  if (!videoPaths.length) throw new AbortTaskRunError("Final export requires materialized video files.");
+  return payloadSegments.map((segment, index) => {
+    const sourceIndex = segment.sourceIndex ?? 0;
+    if (!Number.isInteger(sourceIndex) || sourceIndex < 0 || sourceIndex >= videoPaths.length) {
+      throw new AbortTaskRunError(`Final export segment ${index + 1} has invalid sourceIndex ${sourceIndex}.`);
+    }
+    return { ...segment, inputPath: videoPaths[sourceIndex]! };
+  });
 }
 
 function sanitize(value: string) {

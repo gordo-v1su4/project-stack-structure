@@ -5,8 +5,43 @@ import {
   downloadMediaGatewayFile,
   getMediaGatewayConfig,
   normalizeMediaGatewayUploadResult,
+  uploadFileToMediaGateway,
   uploadJsonToMediaGateway,
 } from "@/lib/mediaGateway";
+
+async function captureUploadFolder(args: {
+  folder?: string;
+  uploadPrefix?: string;
+}) {
+  let submittedFolder = "";
+
+  await uploadFileToMediaGateway({
+    file: new File(["audio"], "song.wav", { type: "audio/wav" }),
+    folder: args.folder,
+    env: {
+      MEDIA_GATEWAY_URL: "https://media.local",
+      MEDIA_GATEWAY_TOKEN: "media-token",
+      MEDIA_GATEWAY_UPLOAD_PREFIX: args.uploadPrefix,
+    },
+    fetchImpl: async (_url, init) => {
+      const body = init?.body;
+      expect(body).toBeInstanceOf(FormData);
+      if (!(body instanceof FormData)) {
+        throw new Error("Expected a multipart media upload request.");
+      }
+
+      submittedFolder = String(body.get("folder"));
+      return Response.json({
+        bucket: "stack-structure",
+        objectKey: `${submittedFolder}/song.wav`,
+        publicUrl: `https://media.local/files/stack-structure/${submittedFolder}/song.wav`,
+        mime: "audio/wav",
+      });
+    },
+  });
+
+  return submittedFolder;
+}
 
 describe("mediaGateway", () => {
   test("uses the stack-structure RustFS bucket without duplicating the bucket prefix", () => {
@@ -41,6 +76,47 @@ describe("mediaGateway", () => {
   test("builds a Pindeck-style dated folder under the RustFS media prefix", () => {
     expect(buildStudioMediaFolder({ uploadPrefix: "media-uploads" }, new Date("2026-06-18T12:00:00.000Z")))
       .toBe("media-uploads/2026/06_18");
+  });
+
+  test("builds implicit dated video folders beneath an upload-prefix override", () => {
+    expect(buildStudioMediaFolder(
+      { uploadPrefix: "media-uploads/e2e-redline-X" },
+      new Date("2026-06-18T12:00:00.000Z"),
+    )).toBe("media-uploads/e2e-redline-X/2026/06_18");
+  });
+
+  test("preserves an explicit canonical audio folder when no override is configured", async () => {
+    expect(await captureUploadFolder({
+      folder: "media-uploads/source-audio",
+    })).toBe("media-uploads/source-audio");
+  });
+
+  test("rebases an explicit canonical audio folder beneath an upload-prefix override", async () => {
+    expect(await captureUploadFolder({
+      folder: "media-uploads/source-audio",
+      uploadPrefix: "media-uploads/e2e-redline-X",
+    })).toBe("media-uploads/e2e-redline-X/source-audio");
+  });
+
+  test("rebases an explicit canonical Deepgram folder beneath an upload-prefix override", async () => {
+    expect(await captureUploadFolder({
+      folder: "media-uploads/source-audio/deepgram",
+      uploadPrefix: "media-uploads/e2e-redline-X",
+    })).toBe("media-uploads/e2e-redline-X/source-audio/deepgram");
+  });
+
+  test("does not double-prefix an explicit folder already beneath the override", async () => {
+    expect(await captureUploadFolder({
+      folder: "media-uploads/e2e-redline-X/source-audio/deepgram",
+      uploadPrefix: "media-uploads/e2e-redline-X",
+    })).toBe("media-uploads/e2e-redline-X/source-audio/deepgram");
+  });
+
+  test("keeps bucket-prefix normalization compatible with explicit folder rebasing", async () => {
+    expect(await captureUploadFolder({
+      folder: "media-uploads/source-audio",
+      uploadPrefix: "stack-structure/media-uploads/e2e-redline-X",
+    })).toBe("media-uploads/e2e-redline-X/source-audio");
   });
 
   test("normalizes current and documented media gateway upload payload shapes", () => {

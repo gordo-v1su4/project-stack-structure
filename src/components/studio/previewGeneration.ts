@@ -161,10 +161,12 @@ export async function generateConcatPreview(params: {
   await mkdir(path.dirname(outputPath), { recursive: true });
 
   const segmentPaths: string[] = [];
+  const outputDir = path.dirname(outputPath);
   for (let index = 0; index < segments.length; index++) {
     const segment = segments[index]!;
     const segmentOutputPath = buildPreviewOutputPath({
       requestKey: `${sanitizeFileName(params.requestKey)}-part${index}`,
+      outputDir,
     });
     await mkdir(path.dirname(segmentOutputPath), { recursive: true });
 
@@ -198,6 +200,7 @@ export async function generateConcatPreview(params: {
 
   const concatListPath = buildPreviewOutputPath({
     requestKey: `${sanitizeFileName(params.requestKey)}-concat-list`,
+    outputDir,
     extension: ".txt",
   });
 

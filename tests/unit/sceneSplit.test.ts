@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { detectScenesFromStoredVideo, mergeSceneIntoPrevious, mergeShortSceneCuts, normalizeSplitterManifest } from "../../src/components/studio/sceneSplit";
+import { detectScenesFromStoredVideo, mergeSceneIntoPrevious, mergeShortSceneCuts, nextScenePollInterval, normalizeSplitterManifest } from "../../src/components/studio/sceneSplit";
 import type { DetectedSceneSegment } from "../../src/components/studio/types";
 
 function makeScene(id: number, start: number, end: number, overrides: Partial<DetectedSceneSegment> = {}): DetectedSceneSegment {
@@ -154,6 +154,13 @@ describe("sceneSplit.normalizeSplitterManifest", () => {
 });
 
 describe("sceneSplit.detectScenesFromStoredVideo", () => {
+  test("backs off status polling to a bounded interval", () => {
+    expect(nextScenePollInterval(2_500)).toBe(3_750);
+    expect(nextScenePollInterval(10_000)).toBe(15_000);
+    expect(nextScenePollInterval(15_000)).toBe(15_000);
+    expect(nextScenePollInterval(0)).toBe(0);
+  });
+
   test("queues media gateway jobs from stored RustFS object references only", async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = [];
     const previousFetch = globalThis.fetch;
@@ -196,6 +203,55 @@ describe("sceneSplit.detectScenesFromStoredVideo", () => {
         mode: "scene-detect",
         profile: "pyscenedetect-adaptive",
       });
+    } finally {
+      globalThis.fetch = previousFetch;
+    }
+  });
+
+  test("keeps polling long-running processing jobs without dispatching a duplicate", async () => {
+    const calls: string[] = [];
+    const previousFetch = globalThis.fetch;
+    let processingReads = 0;
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      const href = String(url);
+      calls.push(href);
+
+      if (href === "/api/media/video/jobs") {
+        return Response.json({
+          job: {
+            job_id: "video-job-long-running",
+            status: "queued",
+            stage: "trigger-queued",
+          },
+        });
+      }
+
+      if (href === "/api/media/video/jobs/video-job-long-running") {
+        processingReads += 1;
+        return Response.json({
+          job_id: "video-job-long-running",
+          status: processingReads > 30 ? "completed" : "processing",
+          stage: processingReads > 30 ? "pipeline-completed" : "trigger-executing",
+        });
+      }
+
+      if (href === "/api/media/video/jobs/video-job-long-running/result") {
+        return Response.json({ manifest: mediaSceneManifest });
+      }
+
+      return Response.json({ error: `unexpected ${href}` }, { status: 500 });
+    }) as typeof fetch;
+
+    try {
+      const scenes = await detectScenesFromStoredVideo({
+        bucket: "stack-structure",
+        objectKey: "media-uploads/2026/long-running.mp4",
+      }, 5, { timeoutMs: 1_000, pollIntervalMs: 0 });
+
+      expect(scenes).toHaveLength(2);
+      expect(calls.filter((href) => href === "/api/media/video/jobs")).toHaveLength(1);
+      expect(calls.filter((href) => href === "/api/media/video/jobs/video-job-long-running")).toHaveLength(31);
+      expect(calls.at(-1)).toBe("/api/media/video/jobs/video-job-long-running/result");
     } finally {
       globalThis.fetch = previousFetch;
     }

@@ -150,9 +150,15 @@ export function revokePreparedVideoSources(sources: UploadedVideoSource[]) {
 export function selectSceneRetrySources(sources: UploadedVideoSource[], mode: SceneCaptionSettings["mode"]): UploadedVideoSource[] {
   return sources.filter((source) => {
     if (!source.storageBucket || !source.storagePath) return false;
-    if (source.sceneStatus === "failed" || !(source.scenes?.length)) return true;
-    return source.scenes.some((scene) => !sceneCaptionMatchesMode(scene, mode));
+    if (source.sceneStatus === "detecting") return false;
+    if (needsSceneDetectionRetry(source)) return true;
+    return (source.scenes ?? []).some((scene) => !sceneCaptionMatchesMode(scene, mode));
   });
+}
+
+export function needsSceneDetectionRetry(source: UploadedVideoSource): boolean {
+  if (!source.storageBucket || !source.storagePath) return false;
+  return source.sceneStatus !== "detecting" && (source.sceneStatus === "failed" || !(source.scenes?.length));
 }
 
 /**

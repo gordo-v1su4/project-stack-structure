@@ -21,6 +21,8 @@ export type MediaGatewayDownloadResult = {
   mime: string;
 };
 
+const DEFAULT_MEDIA_UPLOAD_PREFIX = "media-uploads";
+
 export function buildMediaGatewayFileUrl(config: Pick<MediaGatewayConfig, "url">, bucket: string, objectKey: string) {
   const safeBucket = encodeURIComponent(bucket);
   const safeKey = normalizeMediaPath(objectKey).split("/").map(encodeURIComponent).join("/");
@@ -88,7 +90,7 @@ export function getMediaGatewayConfig(env: Record<string, string | undefined> = 
   const token = env.MEDIA_GATEWAY_TOKEN || env.MEDIA_API_TOKEN;
   const userId = env.MEDIA_GATEWAY_USER_ID || env.STACK_STRUCTURE_MEDIA_USER_ID || "stack-structure";
   const bucket = env.MEDIA_GATEWAY_BUCKET || "stack-structure";
-  const configuredPrefix = env.MEDIA_GATEWAY_UPLOAD_PREFIX || "media-uploads";
+  const configuredPrefix = env.MEDIA_GATEWAY_UPLOAD_PREFIX || DEFAULT_MEDIA_UPLOAD_PREFIX;
   const normalizedPrefix = normalizeMediaPath(configuredPrefix);
   const duplicatedBucketPrefix = `${bucket}/media-uploads`;
   const uploadPrefix = normalizedPrefix === duplicatedBucketPrefix || normalizedPrefix.startsWith(`${duplicatedBucketPrefix}/`)
@@ -102,7 +104,7 @@ export function getMediaGatewayConfig(env: Record<string, string | undefined> = 
     token,
     userId,
     bucket,
-    uploadPrefix: uploadPrefix || "media-uploads",
+    uploadPrefix: uploadPrefix || DEFAULT_MEDIA_UPLOAD_PREFIX,
   };
 }
 
@@ -111,6 +113,21 @@ export function buildStudioMediaFolder(config: Pick<MediaGatewayConfig, "uploadP
   const month = String(now.getUTCMonth() + 1).padStart(2, "0");
   const day = String(now.getUTCDate()).padStart(2, "0");
   return normalizeMediaPath(`${config.uploadPrefix}/${year}/${month}_${day}`);
+}
+
+function resolveMediaGatewayUploadFolder(
+  config: Pick<MediaGatewayConfig, "uploadPrefix">,
+  explicitFolder?: string,
+) {
+  const folder = normalizeMediaPath(explicitFolder || buildStudioMediaFolder(config));
+  const uploadPrefix = normalizeMediaPath(config.uploadPrefix) || DEFAULT_MEDIA_UPLOAD_PREFIX;
+
+  if (folder === uploadPrefix || folder.startsWith(`${uploadPrefix}/`)) return folder;
+  if (folder === DEFAULT_MEDIA_UPLOAD_PREFIX || folder.startsWith(`${DEFAULT_MEDIA_UPLOAD_PREFIX}/`)) {
+    return normalizeMediaPath(`${uploadPrefix}/${folder.slice(DEFAULT_MEDIA_UPLOAD_PREFIX.length)}`);
+  }
+
+  return folder;
 }
 
 export async function uploadFileToMediaGateway(args: {
@@ -127,7 +144,7 @@ export async function uploadFileToMediaGateway(args: {
   const formData = new FormData();
   formData.append("userId", config.userId);
   formData.append("bucket", config.bucket);
-  formData.append("folder", normalizeMediaPath(args.folder || buildStudioMediaFolder(config)));
+  formData.append("folder", resolveMediaGatewayUploadFolder(config, args.folder));
   formData.append("file", args.file, args.file.name);
 
   const fetcher = args.fetchImpl ?? fetch;

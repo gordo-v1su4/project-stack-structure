@@ -1,11 +1,12 @@
 "use client";
 
 import { useRealtimeRunsWithTag } from "@trigger.dev/react-hooks";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   formatActivityDuration,
   groupActivityRuns,
+  summarizeActivityRuns,
   workActivityReconnectDelay,
   workActivityTokenRefreshDelay,
   WORK_ACTIVITY_RETRY_MS,
@@ -78,14 +79,16 @@ export function WorkActivity() {
     setConnectionError(error);
   }, []);
   const activity = useMemo(() => groupActivityRuns(runs, now), [runs, now]);
-  const activeCount = activity.filter((item) => item.active).length;
-  const failedCount = activity.filter((item) => item.failed).length;
+  const summary = useMemo(() => summarizeActivityRuns(activity), [activity]);
+  const summaryLabel = summary.total
+    ? `${summary.completed}/${summary.total} complete · ${summary.active} active · ${summary.queued} queued${summary.failed ? ` · ${summary.failed} failed` : ""}`
+    : "realtime";
 
   useEffect(() => {
-    if (!activeCount) return;
+    if (!summary.active && !summary.queued) return;
     const timer = window.setInterval(() => setNow(Date.now()), 1_000);
     return () => window.clearInterval(timer);
-  }, [activeCount]);
+  }, [summary.active, summary.queued]);
 
   return (
     <div className="relative">
@@ -102,13 +105,14 @@ export function WorkActivity() {
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
         aria-controls="stack-structure-work-activity"
-        className={`min-w-[76px] rounded-[2px] border px-2.5 py-1 text-left ${
-          activeCount ? "border-[#6c3210] bg-[#1a100b]" : failedCount ? "border-[#552020] bg-[#170b0b]" : "border-[#292929] bg-[#111]"
+        aria-label={`Work activity: ${summaryLabel}`}
+        className={`min-w-[76px] max-w-[240px] rounded-[2px] border px-2.5 py-1 text-left ${
+          summary.active ? "border-[#6c3210] bg-[#1a100b]" : summary.failed ? "border-[#552020] bg-[#170b0b]" : "border-[#292929] bg-[#111]"
         }`}
       >
         <span className="block text-[8px] uppercase tracking-[0.16em] text-[#555]">Work</span>
-        <span className="block font-mono text-[10px] text-[#c4c4c4]">
-          {activeCount ? `${activeCount} active` : failedCount ? `${failedCount} failed` : "realtime"}
+        <span className="block truncate whitespace-nowrap font-mono text-[9px] text-[#c4c4c4]" title={summaryLabel}>
+          {summaryLabel}
         </span>
       </button>
 
@@ -163,13 +167,27 @@ function WorkActivitySubscription({
     skipColumns: ["payload", "output"],
     throttleInMs: 100,
   });
+  const pendingSnapshot = useRef<{ runs: ActivityRunInput[]; error?: string }>({ runs: [] });
+  const flushTimer = useRef<number | undefined>(undefined);
   const snapshotKey = JSON.stringify(runs);
   useEffect(() => {
-    onSnapshot(runs as unknown as ActivityRunInput[], error?.message);
-    // The hook can return a new array reference for unchanged content. The
-    // serialized snapshot prevents a parent/child state feedback loop.
+    pendingSnapshot.current = {
+      runs: runs as unknown as ActivityRunInput[],
+      error: error?.message,
+    };
+    if (flushTimer.current !== undefined) return;
+    flushTimer.current = window.setTimeout(() => {
+      flushTimer.current = undefined;
+      onSnapshot(pendingSnapshot.current.runs, pendingSnapshot.current.error);
+    }, 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [error?.message, onSnapshot, snapshotKey]);
+  useEffect(() => () => {
+    if (flushTimer.current !== undefined) {
+      window.clearTimeout(flushTimer.current);
+      flushTimer.current = undefined;
+    }
+  }, []);
   return null;
 }
 

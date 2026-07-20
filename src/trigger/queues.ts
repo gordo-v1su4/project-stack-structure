@@ -1,5 +1,7 @@
 import { queue } from "@trigger.dev/sdk";
 
+export const MEDIA_ASSEMBLY_MACHINE = "large-1x" as const;
+
 export const serviceHealthQueue = queue({
   name: "service-health",
   concurrencyLimit: 2,
@@ -15,7 +17,11 @@ export const mediaFinalizationQueue = queue({
   concurrencyLimit: 2,
 });
 
-// Essentia, FFmpeg/NVENC, Qwen, and ComfyUI share the VM100 RTX 4090.
+export const mediaAssemblyQueue = queue({
+  name: "media-assembly",
+  concurrencyLimit: 2,
+});
+
 export const vm100HeavyQueue = queue({
   name: "vm100-heavy",
   concurrencyLimit: 1,

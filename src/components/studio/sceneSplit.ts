@@ -1,6 +1,7 @@
 import type { ColorPaletteSwatch, DetectedSceneSegment, MotionDescriptor, SceneColorAnalysis, SceneVisualAnalysis } from "./types";
 
 const DEFAULT_POLL_INTERVAL_MS = 2500;
+const MAX_POLL_INTERVAL_MS = 15_000;
 const DEFAULT_TIMEOUT_MS = 3_300_000;
 
 type MediaVideoJobStatus = "queued" | "processing" | "completed" | "failed";
@@ -264,6 +265,11 @@ async function sleep(ms: number) {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+export function nextScenePollInterval(currentIntervalMs: number): number {
+  if (currentIntervalMs <= 0) return 0;
+  return Math.min(MAX_POLL_INTERVAL_MS, Math.ceil(currentIntervalMs * 1.5));
+}
+
 export const MIN_SCENE_CUT_SECONDS = 0.9;
 
 /**
@@ -359,7 +365,7 @@ export async function detectScenesFromStoredVideo(
   if (!jobId || !created.job) throw new Error("Media gateway did not return a video job id.");
 
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
+  let pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
   const startedAt = Date.now();
   let state: MediaVideoJobState = created.job;
 
@@ -373,6 +379,7 @@ export async function detectScenesFromStoredVideo(
 
     await sleep(pollIntervalMs);
     state = await readJsonResponse(await fetch(`/api/media/video/jobs/${encodeURIComponent(jobId)}`)) as MediaVideoJobState;
+    pollIntervalMs = nextScenePollInterval(pollIntervalMs);
   }
 
   const result = await readJsonResponse(await fetch(`/api/media/video/jobs/${encodeURIComponent(jobId)}/result`));
