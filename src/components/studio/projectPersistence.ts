@@ -8,6 +8,7 @@ import type { SavedStudioProject, StudioProjectSummary } from "@/lib/studioProje
 
 export const STUDIO_PROJECT_STORAGE_KEY = "project-stack-structure:studio-project:v1";
 export const ACTIVE_STUDIO_PROJECT_KEY = "project-stack-structure:active-project:v1";
+export const STUDIO_AUTOSAVE_INTERVAL_MS = 5 * 60 * 1_000;
 const MEDIA_DB_NAME = "project-stack-structure-studio-media";
 const MEDIA_STORE_NAME = "media";
 

@@ -14,6 +14,7 @@ import { selectStorySectionCandidate } from "./studio/musicVideoProjectSelection
 import { buildAutoShaderCues, describeMusicVideoShaderPreset, MUSIC_VIDEO_SHADER_PRESETS, type ShaderEffectCue } from "./studio/shaderEffectPlan";
 import {
   ACTIVE_STUDIO_PROJECT_KEY,
+  STUDIO_AUTOSAVE_INTERVAL_MS,
   buildVideoMediaKey,
   clearStudioProjectDraft,
   createPersistableStudioProjectDraft,
@@ -82,6 +83,12 @@ import type {
   Tab,
   UploadedVideoSource,
 } from "./studio/types";
+
+type PendingStudioAutosave = {
+  readonly projectId: string | null;
+  readonly projectName: string;
+  readonly params: Parameters<typeof createPersistableStudioProjectDraft>[0];
+};
 
 export default function StudioApp() {
   const videoSourcesRef = useRef<UploadedVideoSource[]>([]);
@@ -160,10 +167,12 @@ export default function StudioApp() {
   const [finalExportCueCount, setFinalExportCueCount] = useState(0);
   const [isFinalExporting, setIsFinalExporting] = useState(false);
   const [isShaderCaptureExporting, setIsShaderCaptureExporting] = useState(false);
-  const [draftStatus, setDraftStatus] = useState("Project draft will autosave after media or story changes.");
+  const [draftStatus, setDraftStatus] = useState("Project draft autosaves every 5 minutes after changes.");
   const [draftRestored, setDraftRestored] = useState(false);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [activeProjectName, setActiveProjectName] = useState("Untitled project");
+  const pendingAutosaveRef = useRef<PendingStudioAutosave | null>(null);
+  const autosaveInFlightRef = useRef(false);
 
   const audioFileRef = useRef<File | null>(null);
   const videoFilesByMediaKeyRef = useRef(new Map<string, Blob>());
@@ -260,50 +269,71 @@ export default function StudioApp() {
   useEffect(() => {
     if (!draftRestored) return;
 
-    const saveTimer = window.setTimeout(() => {
-      const params = {
-          analysis: beatJoinAnalysis,
-          videoSources,
-          storyState,
-          musicVideoProject,
-          referenceAssets,
-          generatedAssets,
-          captionSettings: buildSceneCaptionSettings(captionMode, beatJoinAnalysis, storyState),
-          workflowUiSettings: {
-            activeTab: tab,
-            splitMode,
-            matchMode,
-            matchOnsetDensity,
-            matchLyricCueBlend,
-            matchLyricMergeWindow,
-            colorGradient,
-            shaderPresetId,
-            useSourceAudio,
-            isPreviewExpanded,
-          },
-        };
-      const save = activeProjectId
-        ? saveNamedStudioProject({
-            projectId: activeProjectId,
-            name: activeProjectName,
-            draft: createPersistableStudioProjectDraft(params),
-          }).then((saved) => saved.draft)
-        : saveStudioProjectDraft(params, {
-          audioFile: audioFileRef.current,
-          videoFilesByMediaKey: videoFilesByMediaKeyRef.current,
-        });
-      void save
-        .then((draft) => {
-          if (draft) setDraftStatus(`Autosaved ${activeProjectId ? "saved project" : "local draft"} · ${new Date(draft.savedAt).toLocaleTimeString()}`);
-        })
-        .catch((error) => {
-          console.warn("[Studio] Could not autosave local project draft", error);
-          setDraftStatus("Autosave unavailable for this browser session.");
-        });
-    }, 650);
-
-    return () => window.clearTimeout(saveTimer);
+    pendingAutosaveRef.current = {
+      projectId: activeProjectId,
+      projectName: activeProjectName,
+      params: {
+        analysis: beatJoinAnalysis,
+        videoSources,
+        storyState,
+        musicVideoProject,
+        referenceAssets,
+        generatedAssets,
+        captionSettings: buildSceneCaptionSettings(captionMode, beatJoinAnalysis, storyState),
+        workflowUiSettings: {
+          activeTab: tab,
+          splitMode,
+          matchMode,
+          matchOnsetDensity,
+          matchLyricCueBlend,
+          matchLyricMergeWindow,
+          colorGradient,
+          shaderPresetId,
+          useSourceAudio,
+          isPreviewExpanded,
+        },
+      },
+    };
   }, [activeProjectId, activeProjectName, beatJoinAnalysis, captionMode, colorGradient, draftRestored, generatedAssets, isPreviewExpanded, matchLyricCueBlend, matchLyricMergeWindow, matchMode, matchOnsetDensity, musicVideoProject, referenceAssets, shaderPresetId, splitMode, storyState, tab, useSourceAudio, videoSources]);
+
+  useEffect(() => {
+    if (!draftRestored) return;
+
+    const flushPendingAutosave = async () => {
+      if (autosaveInFlightRef.current) return;
+      const pending = pendingAutosaveRef.current;
+      if (!pending) return;
+
+      pendingAutosaveRef.current = null;
+      autosaveInFlightRef.current = true;
+      try {
+        const draft = pending.projectId
+          ? await saveNamedStudioProject({
+              projectId: pending.projectId,
+              name: pending.projectName,
+              draft: createPersistableStudioProjectDraft(pending.params),
+            }).then((saved) => saved.draft)
+          : await saveStudioProjectDraft(pending.params, {
+              audioFile: audioFileRef.current,
+              videoFilesByMediaKey: videoFilesByMediaKeyRef.current,
+            });
+        if (draft) {
+          setDraftStatus(`Autosaved ${pending.projectId ? "saved project" : "local draft"} · ${new Date(draft.savedAt).toLocaleTimeString()}`);
+        }
+      } catch (error) {
+        if (!pendingAutosaveRef.current) pendingAutosaveRef.current = pending;
+        console.warn("[Studio] Could not autosave local project draft", error instanceof Error ? error : String(error));
+        setDraftStatus("Autosave unavailable for this browser session; it will retry in 5 minutes.");
+      } finally {
+        autosaveInFlightRef.current = false;
+      }
+    };
+
+    const saveTimer = window.setInterval(() => {
+      void flushPendingAutosave();
+    }, STUDIO_AUTOSAVE_INTERVAL_MS);
+    return () => window.clearInterval(saveTimer);
+  }, [draftRestored]);
 
   useEffect(() => {
     referenceAssetsRef.current = referenceAssets;

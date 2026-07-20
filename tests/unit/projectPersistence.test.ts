@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  STUDIO_AUTOSAVE_INTERVAL_MS,
   buildVideoMediaKey,
   createPersistableStudioProjectDraft,
   hydrateStudioProjectDraft,
@@ -79,6 +80,10 @@ const musicVideoProject: MusicVideoProject = {
 };
 
 describe("projectPersistence", () => {
+  test("uses a five-minute autosave cadence", () => {
+    expect(STUDIO_AUTOSAVE_INTERVAL_MS).toBe(5 * 60 * 1_000);
+  });
+
   test("does not treat the initial empty Studio state as a saved project", () => {
     const draft = createPersistableStudioProjectDraft({
       analysis: null,
