@@ -173,8 +173,8 @@ describe("Next route Trigger.dev dispatch boundary", () => {
         mimeType: "audio/wav",
         size: 3 * 1024 * 1024 + 1,
         chunks: [
-          { bucket: "stack-structure", objectKey: "media-uploads/source-audio/chunks/github-test-user/87f25c0c-90f0-4c8d-8451-e7a08d56f57a/00000.part" },
-          { bucket: "stack-structure", objectKey: "media-uploads/source-audio/chunks/github-test-user/87f25c0c-90f0-4c8d-8451-e7a08d56f57a/00001.part" },
+          { bucket: "stack-structure", objectKey: "media-uploads/source-audio/chunks/github-test-user/87f25c0c-90f0-4c8d-8451-e7a08d56f57a/1784709256001-00000.part" },
+          { bucket: "stack-structure", objectKey: "media-uploads/source-audio/chunks/github-test-user/87f25c0c-90f0-4c8d-8451-e7a08d56f57a/1784709256002-00001.part" },
         ],
       }),
     }));
@@ -189,8 +189,8 @@ describe("Next route Trigger.dev dispatch boundary", () => {
       size: 3 * 1024 * 1024 + 1,
       mode: "fast",
       chunks: [
-        { bucket: "stack-structure", objectKey: "media-uploads/source-audio/chunks/github-test-user/87f25c0c-90f0-4c8d-8451-e7a08d56f57a/00000.part" },
-        { bucket: "stack-structure", objectKey: "media-uploads/source-audio/chunks/github-test-user/87f25c0c-90f0-4c8d-8451-e7a08d56f57a/00001.part" },
+        { bucket: "stack-structure", objectKey: "media-uploads/source-audio/chunks/github-test-user/87f25c0c-90f0-4c8d-8451-e7a08d56f57a/1784709256001-00000.part" },
+        { bucket: "stack-structure", objectKey: "media-uploads/source-audio/chunks/github-test-user/87f25c0c-90f0-4c8d-8451-e7a08d56f57a/1784709256002-00001.part" },
       ],
     });
   });

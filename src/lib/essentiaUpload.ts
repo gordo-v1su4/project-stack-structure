@@ -42,7 +42,7 @@ export function validateEssentiaAudioChunks(args: {
   const prefix = normalizePath(args.uploadPrefix);
   const ownerSegment = essentiaUploadOwnerSegment(args.ownerId);
   const pattern = new RegExp(
-    `^${escapeRegExp(prefix)}/source-audio/chunks/${escapeRegExp(ownerSegment)}/(${UUID_V4_SOURCE})/(\\d{5})\\.part$`,
+    `^${escapeRegExp(prefix)}/source-audio/chunks/${escapeRegExp(ownerSegment)}/(${UUID_V4_SOURCE})/\\d+-(\\d{5})\\.part$`,
     "i",
   );
   let uploadId: string | null = null;
