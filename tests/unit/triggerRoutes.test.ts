@@ -10,9 +10,26 @@ const uploadFileToMediaGatewayMock = mock(async ({ file, folder }: { file: File;
 }));
 
 const triggerMocks = {
+  STACK_STRUCTURE_TRIGGER_TASKS: {
+    mediaVideoPipeline: "media-video-pipeline",
+    mediaSceneDetection: "media-video-scene-detect",
+    mediaSceneCaptionBatch: "qwen-scene-caption-batch",
+    mediaFinalization: "media-video-finalize",
+    essentiaAnalysis: "essentia-analyze-stored-audio",
+    smartSceneCaption: "qwen-smart-scene-caption",
+    localGeneration: "local-ai-generation",
+    higgsfieldGeneration: "higgsfield-nano-banana-pro-grid",
+    deepgramTranscription: "deepgram-transcribe-stored-audio",
+    ffmpegPreview: "ffmpeg-preview-or-concat",
+    finalExport: "ffmpeg-final-music-video-export",
+    shaderCaptureExport: "ffmpeg-shader-capture-export",
+    ffglitch: "ffglitch-transform",
+    imageSplitter: "image-split-grid",
+  },
   triggerLocalGeneration: mock(async () => ({ id: "run-local-123" })),
   triggerHiggsfieldGeneration: mock(async () => ({ id: "run-higgsfield-123" })),
   triggerDeepgramTranscription: mock(async () => ({ id: "run-deepgram-123" })),
+  triggerEssentiaAnalysis: mock(async (_payload: unknown) => ({ id: "run-essentia-123" })),
   triggerMediaSceneDetection: mock(async () => ({ id: "run-media-123" })),
   triggerFfmpegPreview: mock(async () => ({ id: "run-preview-123" })),
   triggerFinalExport: mock(async () => ({ id: "run-export-123" })),
@@ -49,6 +66,7 @@ mock.module("@/components/studio/ffglitchApi", () => ({
 const { POST: postLocalGeneration } = await import("@/app/api/generate/local/route");
 const { POST: postHiggsfield } = await import("@/app/api/generate/higgsfield/route");
 const { POST: postDeepgram } = await import("@/app/api/deepgram/transcribe/route");
+const { POST: postEssentia } = await import("@/app/api/essentia/full/route");
 const { POST: postMediaJob } = await import("@/app/api/media/video/jobs/route");
 const { POST: postPreviewGateway } = await import("@/app/api/preview/gateway/route");
 const { POST: postFinalExport } = await import("@/app/api/export/final/route");
@@ -70,7 +88,9 @@ function audioFile(name = "master.wav") {
 
 function resetMocks() {
   uploadFileToMediaGatewayMock.mockClear();
-  for (const trigger of Object.values(triggerMocks)) trigger.mockClear();
+  for (const trigger of Object.values(triggerMocks)) {
+    if (typeof trigger === "function" && "mockClear" in trigger) trigger.mockClear();
+  }
 }
 
 async function jsonResponse(response: Response) {
@@ -120,6 +140,38 @@ describe("Next route Trigger.dev dispatch boundary", () => {
     expect(payload.runId).toBe("run-deepgram-123");
     expect(uploadFileToMediaGatewayMock).toHaveBeenCalledTimes(1);
     expect(triggerMocks.triggerDeepgramTranscription).toHaveBeenCalledTimes(1);
+  });
+
+  test("queues oversized Essentia audio from uploaded chunk references", async () => {
+    resetMocks();
+    const response = await postEssentia(new Request("http://localhost/api/essentia/full?mode=fast", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        sourceLabel: "master.wav",
+        mimeType: "audio/wav",
+        size: 9,
+        chunks: [
+          { bucket: "stack-structure", objectKey: "media-uploads/source-audio/chunks/upload/00000.part" },
+          { bucket: "stack-structure", objectKey: "media-uploads/source-audio/chunks/upload/00001.part" },
+        ],
+      }),
+    }));
+    const payload = await jsonResponse(response);
+
+    expect(response.status).toBe(202);
+    expect(payload.runId).toBe("run-essentia-123");
+    expect(uploadFileToMediaGatewayMock).toHaveBeenCalledTimes(0);
+    expect(triggerMocks.triggerEssentiaAnalysis.mock.calls[0]?.[0]).toEqual({
+      sourceLabel: "master.wav",
+      mimeType: "audio/wav",
+      size: 9,
+      mode: "fast",
+      chunks: [
+        { bucket: "stack-structure", objectKey: "media-uploads/source-audio/chunks/upload/00000.part" },
+        { bucket: "stack-structure", objectKey: "media-uploads/source-audio/chunks/upload/00001.part" },
+      ],
+    });
   });
 
   test("queues media scene detection from a durable object reference", async () => {

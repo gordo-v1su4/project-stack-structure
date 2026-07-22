@@ -62,10 +62,13 @@ export async function triggerEssentiaAnalysis(payload: EssentiaStoredAudioPayloa
   });
   return tasks.trigger<typeof essentiaStoredAudioTask>(STACK_STRUCTURE_TRIGGER_TASKS.essentiaAnalysis, payload, {
     idempotencyKey: createTriggerIdempotencyKey("essentia", [
-      payload.bucket,
-      payload.objectKey,
+      ...(payload.chunks?.map((chunk) => `${chunk.bucket}:${chunk.objectKey}`) ?? [
+        payload.bucket ?? "",
+        payload.objectKey ?? "",
+      ]),
+      payload.size ?? "",
       payload.mode ?? "fast",
-      "compact-output-v1",
+      "chunked-source-v1",
     ]),
     idempotencyKeyTTL: "24h",
     maxAttempts: 2,

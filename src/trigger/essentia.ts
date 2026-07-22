@@ -1,15 +1,18 @@
 import { createHash } from "node:crypto";
 import { logger, task } from "@trigger.dev/sdk";
 
-import { downloadMediaGatewayFile, uploadJsonToMediaGateway } from "@/lib/mediaGateway";
+import { downloadMediaGatewayFile, uploadFileToMediaGateway, uploadJsonToMediaGateway } from "@/lib/mediaGateway";
 
 import { vm100HeavyQueue } from "./queues";
 import { markWorkCompleted, markWorkRunning } from "./workMetadata";
 
 export type EssentiaStoredAudioPayload = {
-  bucket: string;
-  objectKey: string;
+  bucket?: string;
+  objectKey?: string;
+  chunks?: Array<{ bucket: string; objectKey: string }>;
   sourceLabel: string;
+  mimeType?: string;
+  size?: number;
   mode?: "fast" | "full";
 };
 
@@ -26,11 +29,7 @@ export const essentiaStoredAudioTask = task({
   },
   run: async (payload: EssentiaStoredAudioPayload, { ctx }) => {
     markWorkRunning("analyzing", "Analyzing master audio", { progressMode: "indeterminate" });
-    const source = await downloadMediaGatewayFile({
-      bucket: payload.bucket,
-      objectKey: payload.objectKey,
-      fileName: payload.sourceLabel,
-    });
+    const { source, sourceStorage, sourceIdentity } = await loadAudioSource(payload);
 
     const apiUrl = (process.env.ESSENTIA_API_URL || "http://192.168.8.222:18000").replace(/\/+$/, "");
     const apiKey = requireEnv("ESSENTIA_API_KEY", "VITE_ESSENTIA_API_KEY");
@@ -55,7 +54,7 @@ export const essentiaStoredAudioTask = task({
     const normalized = normalizeEssentiaResult(raw, payload.sourceLabel);
     const analysisStorage = await uploadJsonToMediaGateway({
       data: normalized,
-      fileName: durableFileName(payload.sourceLabel, `${payload.bucket}:${payload.objectKey}`, "essentia"),
+      fileName: durableFileName(payload.sourceLabel, sourceIdentity, "essentia"),
       folder: "media-uploads/analysis/essentia",
     });
 
@@ -74,9 +73,63 @@ export const essentiaStoredAudioTask = task({
       // interactive timeline without overflowing the run result.
       energy: downsampleSeries(normalized.energy, 1_200),
       analysisStorage,
+      sourceStorage,
     };
   },
 });
+
+export function concatenateAudioChunks(chunks: ArrayBuffer[]) {
+  const byteLength = chunks.reduce((total, chunk) => total + chunk.byteLength, 0);
+  const output = new Uint8Array(byteLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    output.set(new Uint8Array(chunk), offset);
+    offset += chunk.byteLength;
+  }
+  return output.buffer;
+}
+
+async function loadAudioSource(payload: EssentiaStoredAudioPayload) {
+  if (payload.bucket && payload.objectKey) {
+    return {
+      source: await downloadMediaGatewayFile({
+        bucket: payload.bucket,
+        objectKey: payload.objectKey,
+        fileName: payload.sourceLabel,
+      }),
+      sourceIdentity: `${payload.bucket}:${payload.objectKey}`,
+      sourceStorage: undefined,
+    };
+  }
+
+  if (!payload.chunks?.length) throw new Error("Essentia requires stored audio or uploaded chunk references.");
+  const downloaded = await Promise.all(payload.chunks.map((chunk) => downloadMediaGatewayFile({
+    bucket: chunk.bucket,
+    objectKey: chunk.objectKey,
+  })));
+  const bytes = concatenateAudioChunks(downloaded.map((chunk) => chunk.bytes));
+  if (payload.size && bytes.byteLength !== payload.size) {
+    throw new Error(`Reassembled audio size mismatch: expected ${payload.size}, received ${bytes.byteLength}.`);
+  }
+
+  const mime = payload.mimeType || "application/octet-stream";
+  const uploaded = await uploadFileToMediaGateway({
+    file: new File([bytes], payload.sourceLabel, { type: mime }),
+    folder: "media-uploads/source-audio",
+  });
+  return {
+    source: { bytes, fileName: payload.sourceLabel, mime },
+    sourceIdentity: payload.chunks.map((chunk) => `${chunk.bucket}:${chunk.objectKey}`).join("|"),
+    sourceStorage: {
+      storageProvider: "rustfs",
+      storageBucket: uploaded.bucket,
+      storagePath: uploaded.objectKey,
+      storageUrl: uploaded.mediaUrl || uploaded.publicUrl,
+      storageStatus: "uploaded",
+      storageError: null,
+    },
+  };
+}
 
 function safeFileName(value: string) {
   return value.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "audio";

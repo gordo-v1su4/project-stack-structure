@@ -2,8 +2,7 @@
 
 import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import { extractWaveformData, fetchEssentiaAnalysis, parseEssentiaPayload } from "./studio/audioAnalysis";
-import { uploadAudioFileToRustFs } from "./studio/audioStorage";
+import { extractWaveformData, fetchEssentiaAnalysis, getEssentiaStorageFromPayload, parseEssentiaPayload } from "./studio/audioAnalysis";
 import { buildArrangementSegments } from "./studio/arrangementBuilder";
 import type { ArrangementSegment } from "./studio/arrangementBuilder";
 import { NAV } from "./studio/constants";
@@ -807,24 +806,10 @@ export default function StudioApp() {
         throw new Error("Essentia returned no usable beats/onsets/sections.");
       }
 
-      setAudioStatus(`Uploading ${file.name} to RustFS...`);
-      let parsedWithStorage: BeatJoinAnalysis = parsed;
-      try {
-        const storage = await uploadAudioFileToRustFs(file);
-        parsedWithStorage = {
-          ...parsed,
-          ...storage,
-          audioUrl: storage.storageUrl ?? parsed.audioUrl,
-        };
-      } catch (storageError) {
-        const message = storageError instanceof Error ? storageError.message : "RustFS audio upload failed";
-        parsedWithStorage = {
-          ...parsed,
-          storageProvider: "local",
-          storageStatus: "failed",
-          storageError: message,
-        };
-      }
+      const storage = getEssentiaStorageFromPayload(response);
+      const parsedWithStorage: BeatJoinAnalysis = storage
+        ? { ...parsed, ...storage, audioUrl: storage.storageUrl }
+        : { ...parsed, storageProvider: "local", storageStatus: "failed", storageError: "Essentia completed without durable source storage." };
 
       audioFileRef.current = file;
 

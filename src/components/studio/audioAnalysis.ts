@@ -5,9 +5,16 @@ const DEFAULT_EMPTY_SECTIONS: BeatJoinSection[] = [{ label: "Intro", start: 0, e
 
 interface EssentiaRequestTarget {
   headers?: HeadersInit;
-  transport: "direct" | "proxy";
+  transport: "direct" | "proxy" | "chunked-proxy";
   url: string;
 }
+
+const AUDIO_UPLOAD_CHUNK_SIZE = 3 * 1024 * 1024;
+
+type AudioChunkReference = {
+  bucket: string;
+  objectKey: string;
+};
 
 export async function fetchEssentiaAnalysis(file: File) {
   const startedAt = performance.now();
@@ -21,14 +28,21 @@ export async function fetchEssentiaAnalysis(file: File) {
     url: requestTarget.url,
   });
 
-  const formData = new FormData();
-  formData.append("file", file);
-
   try {
+    const chunked = file.size > AUDIO_UPLOAD_CHUNK_SIZE;
+    const body = chunked
+      ? JSON.stringify({
+          sourceLabel: file.name,
+          mimeType: file.type || "application/octet-stream",
+          size: file.size,
+          chunks: await uploadAudioChunks(file),
+        })
+      : createAudioFormData(file);
+    const transport = chunked ? "chunked-proxy" : requestTarget.transport;
     const response = await fetch(requestTarget.url, {
       method: "POST",
-      headers: requestTarget.headers,
-      body: formData,
+      headers: chunked ? { "content-type": "application/json" } : requestTarget.headers,
+      body,
     });
 
     const initialPayload = await readResponsePayload(response);
@@ -62,7 +76,7 @@ export async function fetchEssentiaAnalysis(file: File) {
         payload,
         status: response.status,
         statusText: response.statusText,
-        transport: requestTarget.transport,
+        transport,
       });
       console.error("[Essentia] Request failed", payload);
       throw new Error(message);
@@ -98,6 +112,18 @@ export function resolveEssentiaRequestTarget(): EssentiaRequestTarget {
   };
 }
 
+export function buildAudioChunkRanges(size: number, chunkSize = AUDIO_UPLOAD_CHUNK_SIZE) {
+  if (!Number.isSafeInteger(size) || size < 0 || !Number.isSafeInteger(chunkSize) || chunkSize <= 0) {
+    throw new Error("Audio size and chunk size must be valid byte counts.");
+  }
+
+  const ranges: Array<{ index: number; start: number; end: number }> = [];
+  for (let start = 0, index = 0; start < size; start += chunkSize, index += 1) {
+    ranges.push({ index, start, end: Math.min(size, start + chunkSize) });
+  }
+  return ranges;
+}
+
 export function getEssentiaErrorMessage(params: {
   payload: unknown;
   status: number;
@@ -108,9 +134,9 @@ export function getEssentiaErrorMessage(params: {
   const detail = extractErrorText(payload);
 
   if (status === 413) {
-    if (transport === "proxy") {
+    if (transport !== "direct") {
       return detail ??
-        "The audio upload was rejected by this deployment before Essentia received it. This usually means the host's request-size limit was exceeded. Configure NEXT_PUBLIC_ESSENTIA_API_BASE_URL and NEXT_PUBLIC_ESSENTIA_API_KEY for direct uploads, or try a smaller/compressed file.";
+        "The audio upload was rejected by this deployment before Essentia received it. Try the upload again or use a smaller/compressed file.";
     }
 
     return detail ?? "Essentia rejected the uploaded audio because the file is too large. Try a compressed MP3/M4A or a shorter excerpt.";
@@ -338,12 +364,44 @@ function mergeOrchestrationResult(output: unknown, initialPayload: unknown, runI
   const initial = isRecord(initialPayload) ? initialPayload : {};
   return {
     ...result,
-    storage: initial.storage,
+    storage: initial.storage ?? result.sourceStorage ?? result.storage,
     orchestration: {
       provider: "trigger.dev",
       runId,
     },
   };
+}
+
+function createAudioFormData(file: File) {
+  const formData = new FormData();
+  formData.append("file", file);
+  return formData;
+}
+
+async function uploadAudioChunks(file: File): Promise<AudioChunkReference[]> {
+  const uploadId = crypto.randomUUID();
+  const folder = `media-uploads/source-audio/chunks/${uploadId}`;
+  const chunks: AudioChunkReference[] = [];
+
+  for (const range of buildAudioChunkRanges(file.size)) {
+    const partName = `${String(range.index).padStart(5, "0")}.part`;
+    const part = new File([file.slice(range.start, range.end)], partName, {
+      type: "application/octet-stream",
+    });
+    const formData = new FormData();
+    formData.set("file", part);
+    formData.set("folder", folder);
+    const response = await fetch("/api/storage/upload", { method: "POST", body: formData });
+    const payload = await readResponsePayload(response);
+    const bucket = readStringField(payload, "bucket");
+    const objectKey = readStringField(payload, "objectKey") ?? readStringField(payload, "storagePath");
+    if (!response.ok || !bucket || !objectKey) {
+      throw new Error(extractErrorText(payload) ?? `Audio chunk ${range.index + 1} failed to upload.`);
+    }
+    chunks.push({ bucket, objectKey });
+  }
+
+  return chunks;
 }
 
 function readStringField(value: unknown, key: string) {

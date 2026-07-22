@@ -35,6 +35,10 @@ type StudioProjectIndex = {
 const PROJECTS_FOLDER = "media-uploads/projects";
 const LOCAL_PROJECTS_FOLDER = path.join(process.cwd(), ".tmp", "studio-projects");
 
+export function studioProjectReadSources(env: Record<string, string | undefined> = process.env) {
+  return env.NODE_ENV === "production" ? ["remote"] as const : ["local", "remote"] as const;
+}
+
 export async function listStudioProjects(ownerId: string) {
   return (await readProjectIndex(ownerId)).projects.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
@@ -42,13 +46,18 @@ export async function listStudioProjects(ownerId: string) {
 export async function readStudioProject(ownerId: string, projectId: string): Promise<SavedStudioProject | null> {
   const safeOwnerId = normalizeIdentity(ownerId);
   const safeProjectId = normalizeProjectId(projectId);
-  const local = await readLocalJson<SavedStudioProject>(localProjectPath(safeOwnerId, safeProjectId));
-  if (isSavedStudioProject(local, safeOwnerId, safeProjectId)) return local;
-
-  const remote = await readRemoteJson<SavedStudioProject>(projectObjectPath(safeOwnerId, safeProjectId));
-  if (!isSavedStudioProject(remote, safeOwnerId, safeProjectId)) return null;
-  await writeLocalJson(localProjectPath(safeOwnerId, safeProjectId), remote);
-  return remote;
+  const readSources = studioProjectReadSources();
+  for (const source of readSources) {
+    const project = source === "local"
+      ? await readLocalJson<SavedStudioProject>(localProjectPath(safeOwnerId, safeProjectId))
+      : await readRemoteJson<SavedStudioProject>(projectObjectPath(safeOwnerId, safeProjectId));
+    if (!isSavedStudioProject(project, safeOwnerId, safeProjectId)) continue;
+    if (source === "remote" && readSources[0] === "local") {
+      await writeLocalJson(localProjectPath(safeOwnerId, safeProjectId), project);
+    }
+    return project;
+  }
+  return null;
 }
 
 export async function saveStudioProject(params: {
@@ -127,12 +136,18 @@ function localIndexPath(ownerId: string) {
 
 async function readProjectIndex(ownerId: string): Promise<StudioProjectIndex> {
   const safeOwnerId = normalizeIdentity(ownerId);
-  const local = await readLocalJson<StudioProjectIndex>(localIndexPath(safeOwnerId));
-  if (isProjectIndex(local, safeOwnerId)) return local;
-  const remote = await readRemoteJson<StudioProjectIndex>(indexObjectPath(safeOwnerId));
-  if (!isProjectIndex(remote, safeOwnerId)) return { version: 1, projects: [] };
-  await writeLocalJson(localIndexPath(safeOwnerId), remote);
-  return remote;
+  const readSources = studioProjectReadSources();
+  for (const source of readSources) {
+    const index = source === "local"
+      ? await readLocalJson<StudioProjectIndex>(localIndexPath(safeOwnerId))
+      : await readRemoteJson<StudioProjectIndex>(indexObjectPath(safeOwnerId));
+    if (!isProjectIndex(index, safeOwnerId)) continue;
+    if (source === "remote" && readSources[0] === "local") {
+      await writeLocalJson(localIndexPath(safeOwnerId), index);
+    }
+    return index;
+  }
+  return { version: 1, projects: [] };
 }
 
 async function readRemoteJson<T>(objectKey: string): Promise<T | null> {

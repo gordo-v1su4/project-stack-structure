@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import {
+  buildAudioChunkRanges,
   getEssentiaErrorMessage,
+  getEssentiaStorageFromPayload,
   parseEssentiaPayload,
   resolveEssentiaRequestTarget,
 } from "../../src/components/studio/audioAnalysis";
@@ -82,6 +84,33 @@ describe("audioAnalysis.resolveEssentiaRequestTarget", () => {
       restoreEnvValue("NEXT_PUBLIC_ESSENTIA_API_BASE_URL", previousUrl);
       restoreEnvValue("NEXT_PUBLIC_ESSENTIA_API_KEY", previousKey);
     }
+  });
+});
+
+describe("audioAnalysis large upload planning", () => {
+  test("splits oversized audio below the deployment request ceiling without gaps", () => {
+    expect(buildAudioChunkRanges(10, 4)).toEqual([
+      { index: 0, start: 0, end: 4 },
+      { index: 1, start: 4, end: 8 },
+      { index: 2, start: 8, end: 10 },
+    ]);
+  });
+
+  test("reads durable source storage returned by chunked Trigger analysis", () => {
+    expect(getEssentiaStorageFromPayload({
+      storage: {
+        storageBucket: "stack-structure",
+        storagePath: "media-uploads/source-audio/song.wav",
+        storageUrl: "https://media.test/song.wav",
+      },
+    })).toEqual({
+      storageProvider: "rustfs",
+      storageBucket: "stack-structure",
+      storagePath: "media-uploads/source-audio/song.wav",
+      storageUrl: "https://media.test/song.wav",
+      storageStatus: "uploaded",
+      storageError: null,
+    });
   });
 });
 
