@@ -89,7 +89,16 @@ never granted to every preview deployment.
 Production task images must be built on VM100 Linux so the worker supervisor
 can pull them from its loopback registry. Do not deploy from Docker Desktop.
 
-1. Fetch the intended branch on VM100 and verify its commit.
+The production checkout is `/home/gordo/project-stack-structure`. Deploy as
+`gordo`; non-login shells can call Bun explicitly as `/home/gordo/.bun/bin/bun`.
+The deploy environment is already materialized at
+`/home/gordo/.config/project-stack-structure/trigger-deploy.env` with mode
+`600`. BWS remains the canonical secret source; the VM file is the deployment
+runtime copy, and `proxmox-home/secrets/credentials.private.md` is only the
+gitignored bootstrap/recovery fallback. Never print either file.
+
+1. Fetch the intended branch in `/home/gordo/project-stack-structure` and
+   verify its commit.
 2. Materialize the BWS deployment pointers into mode-`600`
    `~/.config/project-stack-structure/trigger-deploy.env` with
    `bun run trigger:deploy:env` from the trusted workstation.
@@ -102,6 +111,30 @@ can pull them from its loopback registry. Do not deploy from Docker Desktop.
 The deploy script refuses non-Linux hosts, pins CLI `4.5.3`, uses
 `--local-build`, identifies the deployed version/code, and pushes that exact
 image to VM100's Trigger registry.
+
+### VM100 access and failure triage
+
+Use the first working path; they all reach the same VM and are not independent
+service replicas:
+
+1. `tailscale ssh root@app-vm` (`100.118.78.13`)
+2. LAN SSH `gordo@192.168.8.222` (private credential fallback until the
+   workstation key is installed)
+3. `tailscale ssh root@pve-node0`, then `qm guest exec 100 -- ...`
+4. Hostinger Dockhand environment `3` (`app-vm`) for container inventory
+
+If SSH resets or times out while `qm guest exec 100 -- /bin/true` returns
+`Input/output error`, stop retrying credentials. That combination means the
+guest execution/filesystem layer is unhealthy even though Proxmox, Tailscale,
+and stored credentials may all be correct. Follow
+`proxmox-home/docs/app-vm-boot-recovery.md`: capture diagnostics, take a
+protective snapshot, attempt a normal reboot, then use the documented forced
+stop/start or offline filesystem repair only as required. Recheck Trigger,
+Essentia, NocoDB, SSH, and `systemctl is-system-running` before deploying.
+
+Pindeck shares the Trigger control plane but not this checkout, project,
+credentials, task inventory, queues, or deployment. A Stack Structure recovery
+or deploy must not modify `/opt/pindeck`.
 
 ## Acceptance gate
 
