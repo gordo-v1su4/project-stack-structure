@@ -16,9 +16,11 @@ const LOCAL_DRAFT_PATH = path.join(process.cwd(), ".tmp", "studio-drafts", DRAFT
 
 export async function GET() {
   try {
-    const localDraft = await readLocalDraft();
-    if (localDraft) {
-      return Response.json({ success: true, draft: localDraft, storagePath: getDraftStoragePath(), source: "local-cache" });
+    if (studioDraftLocalCacheEnabled()) {
+      const localDraft = await readLocalDraft();
+      if (localDraft) {
+        return Response.json({ success: true, draft: localDraft, storagePath: getDraftStoragePath(), source: "local-cache" });
+      }
     }
 
     const config = getMediaGatewayConfig();
@@ -75,7 +77,9 @@ async function saveDraft(request: Request) {
       ...draft,
       savedAt: new Date().toISOString(),
     };
-    await writeLocalDraft(savedDraft);
+    if (studioDraftLocalCacheEnabled()) {
+      await writeLocalDraft(savedDraft);
+    }
 
     const uploaded = await uploadJsonToMediaGateway({
       data: savedDraft,
@@ -89,6 +93,10 @@ async function saveDraft(request: Request) {
     const status = /Missing RustFS media gateway env/i.test(message) ? 503 : 500;
     return Response.json({ success: false, error: message }, { status });
   }
+}
+
+export function studioDraftLocalCacheEnabled(env: Record<string, string | undefined> = process.env) {
+  return env.NODE_ENV !== "production";
 }
 
 function getDraftStoragePath() {

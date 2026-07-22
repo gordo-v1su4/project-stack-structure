@@ -36,7 +36,11 @@ const PROJECTS_FOLDER = "media-uploads/projects";
 const LOCAL_PROJECTS_FOLDER = path.join(process.cwd(), ".tmp", "studio-projects");
 
 export function studioProjectReadSources(env: Record<string, string | undefined> = process.env) {
-  return env.NODE_ENV === "production" ? ["remote"] as const : ["local", "remote"] as const;
+  return studioProjectLocalCacheEnabled(env) ? ["local", "remote"] as const : ["remote"] as const;
+}
+
+export function studioProjectLocalCacheEnabled(env: Record<string, string | undefined> = process.env) {
+  return env.NODE_ENV !== "production";
 }
 
 export async function listStudioProjects(ownerId: string) {
@@ -86,7 +90,9 @@ export async function saveStudioProject(params: {
   };
   const saved: SavedStudioProject = { version: 1, project, draft };
 
-  await writeLocalJson(localProjectPath(ownerId, projectId), saved);
+  if (studioProjectLocalCacheEnabled()) {
+    await writeLocalJson(localProjectPath(ownerId, projectId), saved);
+  }
   await uploadJsonToMediaGateway({
     data: saved,
     fileName: "project.json",
@@ -97,7 +103,9 @@ export async function saveStudioProject(params: {
   const projects = [project, ...index.projects.filter((entry) => entry.id !== projectId)]
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   const nextIndex: StudioProjectIndex = { version: 1, projects };
-  await writeLocalJson(localIndexPath(ownerId), nextIndex);
+  if (studioProjectLocalCacheEnabled()) {
+    await writeLocalJson(localIndexPath(ownerId), nextIndex);
+  }
   await uploadJsonToMediaGateway({
     data: nextIndex,
     fileName: "index.json",
