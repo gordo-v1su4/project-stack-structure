@@ -314,18 +314,25 @@ function getLastSectionEnd(value: unknown) {
 }
 
 function extractErrorText(payload: unknown) {
-  if (typeof payload === "string" && payload.trim()) return payload.trim();
+  if (typeof payload === "string" && payload.trim()) return normalizeErrorText(payload);
   if (!payload || typeof payload !== "object") return null;
 
   if ("error" in payload && typeof payload.error === "string" && payload.error.trim()) {
-    return payload.error.trim();
+    return normalizeErrorText(payload.error);
   }
 
   if ("detail" in payload && typeof payload.detail === "string" && payload.detail.trim()) {
-    return payload.detail.trim();
+    return normalizeErrorText(payload.detail);
   }
 
   return null;
+}
+
+function normalizeErrorText(value: string) {
+  const text = value.trim();
+  if (!/<(?:!doctype|html)\b/i.test(text)) return text;
+  const status = /\b(5\d{2})\b/.exec(text)?.[1];
+  return `Essentia service is temporarily unavailable${status ? ` (${status})` : ""}.`;
 }
 
 function lastValue(values: number[]) {

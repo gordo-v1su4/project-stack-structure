@@ -132,6 +132,15 @@ describe("audioAnalysis.getEssentiaErrorMessage", () => {
       }),
     ).toBe("Remote limit hit");
   });
+
+  test("collapses upstream HTML gateway errors into a concise message", () => {
+    expect(
+      getEssentiaErrorMessage({
+        payload: { error: "502 <!DOCTYPE html><html><title>Bad gateway</title></html>" },
+        status: 500,
+      }),
+    ).toBe("Essentia service is temporarily unavailable (502).");
+  });
 });
 
 function restoreEnvValue(key: string, value: string | undefined) {
