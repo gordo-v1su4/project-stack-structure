@@ -29,7 +29,10 @@ const triggerMocks = {
   triggerLocalGeneration: mock(async () => ({ id: "run-local-123" })),
   triggerHiggsfieldGeneration: mock(async () => ({ id: "run-higgsfield-123" })),
   triggerDeepgramTranscription: mock(async () => ({ id: "run-deepgram-123" })),
-  triggerEssentiaAnalysis: mock(async (_payload: unknown) => ({ id: "run-essentia-123" })),
+  triggerEssentiaAnalysis: mock(async (payload: unknown) => {
+    void payload;
+    return { id: "run-essentia-123" };
+  }),
   triggerMediaSceneDetection: mock(async () => ({ id: "run-media-123" })),
   triggerFfmpegPreview: mock(async () => ({ id: "run-preview-123" })),
   triggerFinalExport: mock(async () => ({ id: "run-export-123" })),
