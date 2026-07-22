@@ -120,17 +120,15 @@ describe("audioAnalysis.getEssentiaErrorMessage", () => {
       getEssentiaErrorMessage({
         payload: null,
         status: 413,
-        transport: "proxy",
       }),
     ).toContain("deployment");
   });
 
-  test("surfaces direct Essentia error details when present", () => {
+  test("surfaces upstream Essentia error details when present", () => {
     expect(
       getEssentiaErrorMessage({
         payload: { detail: "Remote limit hit" },
         status: 413,
-        transport: "direct",
       }),
     ).toBe("Remote limit hit");
   });

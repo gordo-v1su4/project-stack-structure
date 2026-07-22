@@ -1,20 +1,30 @@
 import { createHash } from "node:crypto";
 import { logger, task } from "@trigger.dev/sdk";
 
-import { downloadMediaGatewayFile, uploadFileToMediaGateway, uploadJsonToMediaGateway } from "@/lib/mediaGateway";
+import { ESSENTIA_AUDIO_CHUNK_SIZE_BYTES, type EssentiaAudioChunkReference } from "@/lib/essentiaUpload";
+import { deleteMediaGatewayFiles, downloadMediaGatewayFile, uploadFileToMediaGateway, uploadJsonToMediaGateway } from "@/lib/mediaGateway";
 
 import { vm100HeavyQueue } from "./queues";
 import { markWorkCompleted, markWorkRunning } from "./workMetadata";
 
-export type EssentiaStoredAudioPayload = {
-  bucket?: string;
-  objectKey?: string;
-  chunks?: Array<{ bucket: string; objectKey: string }>;
+type EssentiaBasePayload = {
   sourceLabel: string;
-  mimeType?: string;
-  size?: number;
   mode?: "fast" | "full";
 };
+
+export type EssentiaStoredAudioPayload = EssentiaBasePayload & ({
+  bucket: string;
+  objectKey: string;
+  chunks?: never;
+  mimeType?: never;
+  size?: never;
+} | {
+  bucket?: never;
+  objectKey?: never;
+  chunks: EssentiaAudioChunkReference[];
+  mimeType: string;
+  size: number;
+});
 
 export const essentiaStoredAudioTask = task({
   id: "essentia-analyze-stored-audio",
@@ -57,6 +67,7 @@ export const essentiaStoredAudioTask = task({
       fileName: durableFileName(payload.sourceLabel, sourceIdentity, "essentia"),
       folder: "media-uploads/analysis/essentia",
     });
+    await cleanupTemporaryChunks(payload);
 
     logger.info("Essentia analysis completed", {
       triggerRunId: ctx.run.id,
@@ -78,19 +89,39 @@ export const essentiaStoredAudioTask = task({
   },
 });
 
-export function concatenateAudioChunks(chunks: ArrayBuffer[]) {
-  const byteLength = chunks.reduce((total, chunk) => total + chunk.byteLength, 0);
-  const output = new Uint8Array(byteLength);
-  let offset = 0;
-  for (const chunk of chunks) {
-    output.set(new Uint8Array(chunk), offset);
-    offset += chunk.byteLength;
+async function cleanupTemporaryChunks(payload: EssentiaStoredAudioPayload) {
+  if (!payload.chunks?.length) return;
+
+  const chunksByBucket = new Map<string, string[]>();
+  for (const chunk of payload.chunks) {
+    const objectKeys = chunksByBucket.get(chunk.bucket) ?? [];
+    objectKeys.push(chunk.objectKey);
+    chunksByBucket.set(chunk.bucket, objectKeys);
   }
-  return output.buffer;
+
+  for (const [bucket, objectKeys] of chunksByBucket) {
+    try {
+      await deleteMediaGatewayFiles({ bucket, objectKeys });
+    } catch (error) {
+      logger.warn("Essentia temporary chunk cleanup failed", {
+        bucket,
+        objectCount: objectKeys.length,
+        error: error instanceof Error ? error.message : "Unknown cleanup failure",
+      });
+    }
+  }
+}
+
+export function copyAudioChunk(target: Uint8Array, chunk: ArrayBuffer, offset: number) {
+  if (!Number.isSafeInteger(offset) || offset < 0 || offset + chunk.byteLength > target.byteLength) {
+    throw new Error("Audio chunk exceeds declared audio size.");
+  }
+  target.set(new Uint8Array(chunk), offset);
+  return offset + chunk.byteLength;
 }
 
 async function loadAudioSource(payload: EssentiaStoredAudioPayload) {
-  if (payload.bucket && payload.objectKey) {
+  if ("bucket" in payload && payload.bucket && payload.objectKey) {
     return {
       source: await downloadMediaGatewayFile({
         bucket: payload.bucket,
@@ -102,24 +133,36 @@ async function loadAudioSource(payload: EssentiaStoredAudioPayload) {
     };
   }
 
-  if (!payload.chunks?.length) throw new Error("Essentia requires stored audio or uploaded chunk references.");
-  const downloaded = await Promise.all(payload.chunks.map((chunk) => downloadMediaGatewayFile({
-    bucket: chunk.bucket,
-    objectKey: chunk.objectKey,
-  })));
-  const bytes = concatenateAudioChunks(downloaded.map((chunk) => chunk.bytes));
-  if (payload.size && bytes.byteLength !== payload.size) {
-    throw new Error(`Reassembled audio size mismatch: expected ${payload.size}, received ${bytes.byteLength}.`);
+  const { chunks, mimeType, size } = payload;
+  if (!chunks?.length || !mimeType || !size) {
+    throw new Error("Essentia requires stored audio or a complete chunk manifest.");
   }
 
-  const mime = payload.mimeType || "application/octet-stream";
+  const output = new Uint8Array(size);
+  let offset = 0;
+  for (let index = 0; index < chunks.length; index += 1) {
+    const chunk = chunks[index];
+    if (!chunk) throw new Error(`Missing audio chunk ${index}.`);
+    const downloaded = await downloadMediaGatewayFile({
+      bucket: chunk.bucket,
+      objectKey: chunk.objectKey,
+    });
+    const expectedSize = Math.min(ESSENTIA_AUDIO_CHUNK_SIZE_BYTES, size - offset);
+    if (downloaded.bytes.byteLength !== expectedSize) {
+      throw new Error(`Audio chunk ${index} size mismatch: expected ${expectedSize}, received ${downloaded.bytes.byteLength}.`);
+    }
+    offset = copyAudioChunk(output, downloaded.bytes, offset);
+  }
+  if (offset !== size) throw new Error(`Reassembled audio size mismatch: expected ${size}, received ${offset}.`);
+
+  const bytes = output.buffer;
   const uploaded = await uploadFileToMediaGateway({
-    file: new File([bytes], payload.sourceLabel, { type: mime }),
+    file: new File([bytes], payload.sourceLabel, { type: mimeType }),
     folder: "media-uploads/source-audio",
   });
   return {
-    source: { bytes, fileName: payload.sourceLabel, mime },
-    sourceIdentity: payload.chunks.map((chunk) => `${chunk.bucket}:${chunk.objectKey}`).join("|"),
+    source: { bytes, fileName: payload.sourceLabel, mime: mimeType },
+    sourceIdentity: chunks.map((chunk) => `${chunk.bucket}:${chunk.objectKey}`).join("|"),
     sourceStorage: {
       storageProvider: "rustfs",
       storageBucket: uploaded.bucket,

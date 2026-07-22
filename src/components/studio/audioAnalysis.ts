@@ -1,35 +1,39 @@
 import type { BeatJoinAnalysis, BeatJoinSection } from "./types";
 import { waitForTriggerRunOutput } from "@/lib/clientTriggerRuns";
+import {
+  buildAudioChunkRanges,
+  ESSENTIA_AUDIO_CHUNK_SIZE_BYTES,
+  ESSENTIA_MAX_AUDIO_SIZE_BYTES,
+  type EssentiaAudioChunkReference,
+} from "@/lib/essentiaUpload";
+
+export { buildAudioChunkRanges } from "@/lib/essentiaUpload";
 
 const DEFAULT_EMPTY_SECTIONS: BeatJoinSection[] = [{ label: "Intro", start: 0, end: 1 }];
 
 interface EssentiaRequestTarget {
   headers?: HeadersInit;
-  transport: "direct" | "proxy" | "chunked-proxy";
+  transport: "proxy" | "chunked-proxy";
   url: string;
 }
-
-const AUDIO_UPLOAD_CHUNK_SIZE = 3 * 1024 * 1024;
-
-type AudioChunkReference = {
-  bucket: string;
-  objectKey: string;
-};
 
 export async function fetchEssentiaAnalysis(file: File) {
   const startedAt = performance.now();
   const requestTarget = resolveEssentiaRequestTarget();
+  const chunked = file.size > ESSENTIA_AUDIO_CHUNK_SIZE_BYTES;
+  if (file.size > ESSENTIA_MAX_AUDIO_SIZE_BYTES) {
+    throw new Error(`Audio files larger than ${Math.round(ESSENTIA_MAX_AUDIO_SIZE_BYTES / 1024 / 1024)} MiB are not supported.`);
+  }
   console.groupCollapsed("[Essentia] Upload analysis");
   console.info("[Essentia] Request started", {
     fileName: file.name,
     fileSize: file.size,
     mimeType: file.type || "unknown",
-    transport: requestTarget.transport,
+    transport: chunked ? "chunked-proxy" : requestTarget.transport,
     url: requestTarget.url,
   });
 
   try {
-    const chunked = file.size > AUDIO_UPLOAD_CHUNK_SIZE;
     const body = chunked
       ? JSON.stringify({
           sourceLabel: file.name,
@@ -38,7 +42,6 @@ export async function fetchEssentiaAnalysis(file: File) {
           chunks: await uploadAudioChunks(file),
         })
       : createAudioFormData(file);
-    const transport = chunked ? "chunked-proxy" : requestTarget.transport;
     const response = await fetch(requestTarget.url, {
       method: "POST",
       headers: chunked ? { "content-type": "application/json" } : requestTarget.headers,
@@ -76,7 +79,6 @@ export async function fetchEssentiaAnalysis(file: File) {
         payload,
         status: response.status,
         statusText: response.statusText,
-        transport,
       });
       console.error("[Essentia] Request failed", payload);
       throw new Error(message);
@@ -112,34 +114,17 @@ export function resolveEssentiaRequestTarget(): EssentiaRequestTarget {
   };
 }
 
-export function buildAudioChunkRanges(size: number, chunkSize = AUDIO_UPLOAD_CHUNK_SIZE) {
-  if (!Number.isSafeInteger(size) || size < 0 || !Number.isSafeInteger(chunkSize) || chunkSize <= 0) {
-    throw new Error("Audio size and chunk size must be valid byte counts.");
-  }
-
-  const ranges: Array<{ index: number; start: number; end: number }> = [];
-  for (let start = 0, index = 0; start < size; start += chunkSize, index += 1) {
-    ranges.push({ index, start, end: Math.min(size, start + chunkSize) });
-  }
-  return ranges;
-}
-
 export function getEssentiaErrorMessage(params: {
   payload: unknown;
   status: number;
   statusText?: string;
-  transport: EssentiaRequestTarget["transport"];
 }) {
-  const { payload, status, statusText, transport } = params;
+  const { payload, status, statusText } = params;
   const detail = extractErrorText(payload);
 
   if (status === 413) {
-    if (transport !== "direct") {
-      return detail ??
-        "The audio upload was rejected by this deployment before Essentia received it. Try the upload again or use a smaller/compressed file.";
-    }
-
-    return detail ?? "Essentia rejected the uploaded audio because the file is too large. Try a compressed MP3/M4A or a shorter excerpt.";
+    return detail ??
+      "The audio upload was rejected by this deployment before Essentia received it. Try the upload again or use a smaller/compressed file.";
   }
 
   const normalizedStatusText = statusText?.trim();
@@ -378,10 +363,10 @@ function createAudioFormData(file: File) {
   return formData;
 }
 
-async function uploadAudioChunks(file: File): Promise<AudioChunkReference[]> {
+async function uploadAudioChunks(file: File): Promise<EssentiaAudioChunkReference[]> {
   const uploadId = crypto.randomUUID();
   const folder = `media-uploads/source-audio/chunks/${uploadId}`;
-  const chunks: AudioChunkReference[] = [];
+  const chunks: EssentiaAudioChunkReference[] = [];
 
   for (const range of buildAudioChunkRanges(file.size)) {
     const partName = `${String(range.index).padStart(5, "0")}.part`;

@@ -21,6 +21,11 @@ export type MediaGatewayDownloadResult = {
   mime: string;
 };
 
+export type MediaGatewayDeleteResult = {
+  deleted: number;
+  failed: number;
+};
+
 const DEFAULT_MEDIA_UPLOAD_PREFIX = "media-uploads";
 
 export function buildMediaGatewayFileUrl(config: Pick<MediaGatewayConfig, "url">, bucket: string, objectKey: string) {
@@ -57,6 +62,41 @@ export async function downloadMediaGatewayFile(args: {
     fileName: args.fileName?.trim() || objectName,
     mime: response.headers.get("content-type")?.split(";")[0]?.trim() || "application/octet-stream",
   };
+}
+
+export async function deleteMediaGatewayFiles(args: {
+  bucket: string;
+  objectKeys: string[];
+  env?: Record<string, string | undefined>;
+  fetchImpl?: typeof fetch;
+}): Promise<MediaGatewayDeleteResult> {
+  const config = getMediaGatewayConfig(args.env);
+  if (!config) {
+    throw new Error("Missing RustFS media gateway env. Required: MEDIA_GATEWAY_URL/RUSTFS_MEDIA_API_URL and MEDIA_GATEWAY_TOKEN/MEDIA_API_TOKEN");
+  }
+
+  const objectKeys = [...new Set(args.objectKeys.map(normalizeMediaPath).filter(Boolean))];
+  if (!args.bucket.trim() || !objectKeys.length) return { deleted: 0, failed: 0 };
+
+  const fetcher = args.fetchImpl ?? fetch;
+  const response = await fetcher(`${config.url}/delete`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${config.token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ bucket: args.bucket.trim(), objectKeys }),
+  });
+  const payload = await readGatewayJson(response);
+  if (!response.ok) {
+    throw new Error(`Media gateway delete failed (${response.status}): ${JSON.stringify(payload).slice(0, 300)}`);
+  }
+
+  const result = isRecord(payload) ? payload : {};
+  const deleted = typeof result.deleted === "number" ? result.deleted : 0;
+  const failed = typeof result.failed === "number" ? result.failed : 0;
+  if (failed > 0) throw new Error(`Media gateway failed to delete ${failed} temporary object${failed === 1 ? "" : "s"}.`);
+  return { deleted, failed };
 }
 
 export async function downloadJsonFromMediaGateway<T = Record<string, unknown>>(args: {

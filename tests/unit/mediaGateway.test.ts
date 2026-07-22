@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   buildStudioMediaFolder,
+  deleteMediaGatewayFiles,
   downloadMediaGatewayFile,
   getMediaGatewayConfig,
   normalizeMediaGatewayUploadResult,
@@ -167,6 +168,33 @@ describe("mediaGateway", () => {
     expect(result.fileName).toBe("song.wav");
     expect(result.mime).toBe("audio/wav");
     expect(Array.from(new Uint8Array(result.bytes))).toEqual([1, 2, 3]);
+  });
+
+  test("deletes temporary objects through the authenticated batch endpoint", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const result = await deleteMediaGatewayFiles({
+      bucket: "stack-structure",
+      objectKeys: ["media-uploads/chunks/00000.part", "media-uploads/chunks/00000.part", "media-uploads/chunks/00001.part"],
+      env: {
+        MEDIA_GATEWAY_URL: "https://media.local",
+        MEDIA_GATEWAY_TOKEN: "media-token",
+      },
+      fetchImpl: (async (url: string | URL | Request, init?: RequestInit) => {
+        calls.push({ url: String(url), init });
+        return Response.json({ deleted: 2, failed: 0 });
+      }) as typeof fetch,
+    });
+
+    expect(result).toEqual({ deleted: 2, failed: 0 });
+    expect(calls[0]?.url).toBe("https://media.local/delete");
+    expect(calls[0]?.init?.headers).toEqual({
+      Authorization: "Bearer media-token",
+      "Content-Type": "application/json",
+    });
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
+      bucket: "stack-structure",
+      objectKeys: ["media-uploads/chunks/00000.part", "media-uploads/chunks/00001.part"],
+    });
   });
 
   test("persists JSON analysis results through the authenticated upload contract", async () => {

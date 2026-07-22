@@ -1,5 +1,8 @@
 import { describe, expect, mock, test } from "bun:test";
 
+let authenticatedUserId: string | null = "github-test-user";
+const authMock = mock(async () => authenticatedUserId ? { user: { id: authenticatedUserId } } : null);
+
 const uploadFileToMediaGatewayMock = mock(async ({ file, folder }: { file: File; folder: string }) => ({
   bucket: "stack-structure",
   objectKey: `${folder}/${file.name}`,
@@ -8,6 +11,15 @@ const uploadFileToMediaGatewayMock = mock(async ({ file, folder }: { file: File;
   mediaUrl: `https://media.test/${encodeURIComponent(file.name)}`,
   mime: file.type || "application/octet-stream",
 }));
+const uploadJsonToMediaGatewayMock = mock(async () => ({
+  bucket: "stack-structure",
+  objectKey: "media-uploads/analysis/result.json",
+  storagePath: "media-uploads/analysis/result.json",
+  publicUrl: "https://media.test/result.json",
+  mediaUrl: "https://media.test/result.json",
+  mime: "application/json",
+}));
+const deleteMediaGatewayFilesMock = mock(async () => ({ deleted: 0, failed: 0 }));
 
 const triggerMocks = {
   STACK_STRUCTURE_TRIGGER_TASKS: {
@@ -55,9 +67,12 @@ mock.module("@/lib/mediaGateway", () => ({
     fileName: "source.bin",
     mime: "application/octet-stream",
   })),
+  deleteMediaGatewayFiles: deleteMediaGatewayFilesMock,
   uploadFileToMediaGateway: uploadFileToMediaGatewayMock,
+  uploadJsonToMediaGateway: uploadJsonToMediaGatewayMock,
 }));
 
+mock.module("@/auth", () => ({ auth: authMock }));
 mock.module("@/lib/triggerOrchestration", () => triggerMocks);
 mock.module("@/lib/higgsfieldGateway", () => ({
   getHiggsfieldAccount: mock(async () => ({ balance: 0 })),
@@ -70,6 +85,7 @@ const { POST: postLocalGeneration } = await import("@/app/api/generate/local/rou
 const { POST: postHiggsfield } = await import("@/app/api/generate/higgsfield/route");
 const { POST: postDeepgram } = await import("@/app/api/deepgram/transcribe/route");
 const { POST: postEssentia } = await import("@/app/api/essentia/full/route");
+const { POST: postStorageUpload } = await import("@/app/api/storage/upload/route");
 const { POST: postMediaJob } = await import("@/app/api/media/video/jobs/route");
 const { POST: postPreviewGateway } = await import("@/app/api/preview/gateway/route");
 const { POST: postFinalExport } = await import("@/app/api/export/final/route");
@@ -90,6 +106,8 @@ function audioFile(name = "master.wav") {
 }
 
 function resetMocks() {
+  authenticatedUserId = "github-test-user";
+  authMock.mockClear();
   uploadFileToMediaGatewayMock.mockClear();
   for (const trigger of Object.values(triggerMocks)) {
     if (typeof trigger === "function" && "mockClear" in trigger) trigger.mockClear();
@@ -153,10 +171,10 @@ describe("Next route Trigger.dev dispatch boundary", () => {
       body: JSON.stringify({
         sourceLabel: "master.wav",
         mimeType: "audio/wav",
-        size: 9,
+        size: 3 * 1024 * 1024 + 1,
         chunks: [
-          { bucket: "stack-structure", objectKey: "media-uploads/source-audio/chunks/upload/00000.part" },
-          { bucket: "stack-structure", objectKey: "media-uploads/source-audio/chunks/upload/00001.part" },
+          { bucket: "stack-structure", objectKey: "media-uploads/source-audio/chunks/github-test-user/87f25c0c-90f0-4c8d-8451-e7a08d56f57a/00000.part" },
+          { bucket: "stack-structure", objectKey: "media-uploads/source-audio/chunks/github-test-user/87f25c0c-90f0-4c8d-8451-e7a08d56f57a/00001.part" },
         ],
       }),
     }));
@@ -168,13 +186,112 @@ describe("Next route Trigger.dev dispatch boundary", () => {
     expect(triggerMocks.triggerEssentiaAnalysis.mock.calls[0]?.[0]).toEqual({
       sourceLabel: "master.wav",
       mimeType: "audio/wav",
-      size: 9,
+      size: 3 * 1024 * 1024 + 1,
       mode: "fast",
       chunks: [
-        { bucket: "stack-structure", objectKey: "media-uploads/source-audio/chunks/upload/00000.part" },
-        { bucket: "stack-structure", objectKey: "media-uploads/source-audio/chunks/upload/00001.part" },
+        { bucket: "stack-structure", objectKey: "media-uploads/source-audio/chunks/github-test-user/87f25c0c-90f0-4c8d-8451-e7a08d56f57a/00000.part" },
+        { bucket: "stack-structure", objectKey: "media-uploads/source-audio/chunks/github-test-user/87f25c0c-90f0-4c8d-8451-e7a08d56f57a/00001.part" },
       ],
     });
+  });
+
+  test("scopes Essentia chunk uploads to the authenticated user", async () => {
+    resetMocks();
+    const form = new FormData();
+    form.set("file", new File([new Uint8Array([1, 2, 3])], "00000.part"));
+    form.set("folder", "media-uploads/source-audio/chunks/87f25c0c-90f0-4c8d-8451-e7a08d56f57a");
+
+    const response = await postStorageUpload(new Request("http://localhost/api/storage/upload", {
+      method: "POST",
+      body: form,
+    }));
+
+    expect(response.status).toBe(200);
+    expect(uploadFileToMediaGatewayMock.mock.calls[0]?.[0]).toMatchObject({
+      folder: "media-uploads/source-audio/chunks/github-test-user/87f25c0c-90f0-4c8d-8451-e7a08d56f57a",
+    });
+  });
+
+  test("rejects anonymous Essentia chunk uploads", async () => {
+    resetMocks();
+    authenticatedUserId = null;
+    const form = new FormData();
+    form.set("file", new File([new Uint8Array([1, 2, 3])], "00000.part"));
+    form.set("folder", "media-uploads/source-audio/chunks/87f25c0c-90f0-4c8d-8451-e7a08d56f57a");
+
+    const response = await postStorageUpload(new Request("http://localhost/api/storage/upload", {
+      method: "POST",
+      body: form,
+    }));
+
+    expect(response.status).toBe(401);
+    expect(uploadFileToMediaGatewayMock).toHaveBeenCalledTimes(0);
+  });
+
+  test("rejects anonymous Essentia analysis requests", async () => {
+    resetMocks();
+    authenticatedUserId = null;
+
+    const response = await postEssentia(new Request("http://localhost/api/essentia/full?mode=fast", {
+      method: "POST",
+      body: new FormData(),
+    }));
+
+    expect(response.status).toBe(401);
+    expect(triggerMocks.triggerEssentiaAnalysis).toHaveBeenCalledTimes(0);
+  });
+
+  test("rejects chunk references outside the authenticated user's audio folder", async () => {
+    resetMocks();
+    const response = await postEssentia(new Request("http://localhost/api/essentia/full?mode=fast", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        sourceLabel: "master.wav",
+        mimeType: "audio/wav",
+        size: 3 * 1024 * 1024 + 1,
+        chunks: [
+          { bucket: "stack-structure", objectKey: "media-uploads/source-audio/chunks/github-other-user/87f25c0c-90f0-4c8d-8451-e7a08d56f57a/00000.part" },
+          { bucket: "stack-structure", objectKey: "media-uploads/source-audio/chunks/github-other-user/87f25c0c-90f0-4c8d-8451-e7a08d56f57a/00001.part" },
+        ],
+      }),
+    }));
+
+    expect(response.status).toBe(400);
+    expect(triggerMocks.triggerEssentiaAnalysis).toHaveBeenCalledTimes(0);
+  });
+
+  test("rejects incomplete or out-of-order Essentia chunk manifests", async () => {
+    resetMocks();
+    const response = await postEssentia(new Request("http://localhost/api/essentia/full?mode=fast", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        sourceLabel: "master.wav",
+        mimeType: "audio/wav",
+        size: 6 * 1024 * 1024 + 1,
+        chunks: [
+          { bucket: "stack-structure", objectKey: "media-uploads/source-audio/chunks/github-test-user/87f25c0c-90f0-4c8d-8451-e7a08d56f57a/00000.part" },
+          { bucket: "stack-structure", objectKey: "media-uploads/source-audio/chunks/github-test-user/87f25c0c-90f0-4c8d-8451-e7a08d56f57a/00002.part" },
+          { bucket: "stack-structure", objectKey: "media-uploads/source-audio/chunks/github-test-user/87f25c0c-90f0-4c8d-8451-e7a08d56f57a/00001.part" },
+        ],
+      }),
+    }));
+
+    expect(response.status).toBe(400);
+    expect(triggerMocks.triggerEssentiaAnalysis).toHaveBeenCalledTimes(0);
+  });
+
+  test("returns 400 for malformed Essentia JSON", async () => {
+    resetMocks();
+    const response = await postEssentia(new Request("http://localhost/api/essentia/full?mode=fast", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{",
+    }));
+
+    expect(response.status).toBe(400);
+    expect(triggerMocks.triggerEssentiaAnalysis).toHaveBeenCalledTimes(0);
   });
 
   test("queues media scene detection from a durable object reference", async () => {

@@ -7,7 +7,7 @@ import {
 import { MEDIA_ASSEMBLY_MACHINE } from "@/trigger/queues";
 import { resolvePreviewSegments } from "@/trigger/ffmpeg";
 import { resolveExportSegments } from "@/trigger/export";
-import { concatenateAudioChunks } from "@/trigger/essentia";
+import { copyAudioChunk } from "@/trigger/essentia";
 
 describe("Trigger orchestration", () => {
   test("allocates the no-credit self-hosted large machine for media assembly", () => {
@@ -84,12 +84,21 @@ describe("Trigger orchestration", () => {
     expect(exportError instanceof Error ? exportError.message : "").toContain("invalid sourceIndex -1");
   });
 
-  test("reassembles uploaded audio chunks byte-for-byte before Essentia analysis", () => {
-    expect(Array.from(new Uint8Array(concatenateAudioChunks([
-      new Uint8Array([1, 2]).buffer,
-      new Uint8Array([3]).buffer,
-      new Uint8Array([4, 5]).buffer,
-    ])))).toEqual([1, 2, 3, 4, 5]);
+  test("copies uploaded audio chunks into a bounded target buffer", () => {
+    const target = new Uint8Array(5);
+    let offset = copyAudioChunk(target, new Uint8Array([1, 2]).buffer, 0);
+    offset = copyAudioChunk(target, new Uint8Array([3]).buffer, offset);
+    offset = copyAudioChunk(target, new Uint8Array([4, 5]).buffer, offset);
+
+    expect(offset).toBe(5);
+    expect(Array.from(target)).toEqual([1, 2, 3, 4, 5]);
+    let copyError: unknown;
+    try {
+      copyAudioChunk(target, new Uint8Array([6]).buffer, offset);
+    } catch (error) {
+      copyError = error;
+    }
+    expect(copyError instanceof Error ? copyError.message : "").toContain("exceeds declared audio size");
   });
 
 });

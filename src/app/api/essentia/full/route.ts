@@ -1,4 +1,6 @@
-import { uploadFileToMediaGateway } from "@/lib/mediaGateway";
+import { auth } from "@/auth";
+import { ESSENTIA_MAX_AUDIO_SIZE_BYTES, validateEssentiaAudioChunks } from "@/lib/essentiaUpload";
+import { getMediaGatewayConfig, uploadFileToMediaGateway } from "@/lib/mediaGateway";
 import { triggerEssentiaAnalysis } from "@/lib/triggerOrchestration";
 
 export const runtime = "nodejs";
@@ -6,17 +8,34 @@ export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
   try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return Response.json({ error: "Sign in with GitHub to analyze audio." }, { status: 401 });
+    }
+
     const mode = new URL(request.url).searchParams.get("mode") === "full" ? "full" : "fast";
     if (request.headers.get("content-type")?.includes("application/json")) {
-      const payload = await request.json() as Record<string, unknown>;
-      const sourceLabel = readRequiredString(payload.sourceLabel);
-      const mimeType = readRequiredString(payload.mimeType);
+      const payload = await readJsonObject(request);
+      if (!payload) return Response.json({ error: "A valid JSON request body is required." }, { status: 400 });
+
+      const sourceLabel = readRequiredString(payload.sourceLabel, 255);
+      const mimeType = readRequiredString(payload.mimeType, 127);
       const size = typeof payload.size === "number" && Number.isSafeInteger(payload.size) && payload.size > 0
         ? payload.size
         : null;
-      const chunks = readAudioChunks(payload.chunks);
-      if (!sourceLabel || !mimeType || !size || !chunks) {
-        return Response.json({ error: "Valid sourceLabel, mimeType, size, and chunk references are required." }, { status: 400 });
+      const config = getMediaGatewayConfig();
+      if (!config) throw new Error("Missing RustFS media gateway env.");
+      const chunks = size ? validateEssentiaAudioChunks({
+        value: payload.chunks,
+        size,
+        bucket: config.bucket,
+        uploadPrefix: config.uploadPrefix,
+        ownerId: session.user.id,
+      }) : null;
+      if (!sourceLabel || !isAudioMimeType(mimeType) || !size || !chunks) {
+        return Response.json({
+          error: `Valid audio metadata and contiguous chunk references are required. Maximum audio size is ${ESSENTIA_MAX_AUDIO_SIZE_BYTES} bytes.`,
+        }, { status: 400 });
       }
 
       const handle = await triggerEssentiaAnalysis({ sourceLabel, mimeType, size, mode, chunks });
@@ -66,20 +85,21 @@ function queuedResponse(runId: string, extra: Record<string, unknown> = {}) {
   }, { status: 202 });
 }
 
-function readRequiredString(value: unknown) {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
+async function readJsonObject(request: Request) {
+  try {
+    const value = await request.json() as unknown;
+    return value && typeof value === "object" && !Array.isArray(value)
+      ? value as Record<string, unknown>
+      : null;
+  } catch {
+    return null;
+  }
 }
 
-function readAudioChunks(value: unknown) {
-  if (!Array.isArray(value) || value.length === 0 || value.length > 256) return null;
-  const chunks = value.map((entry) => {
-    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
-    const chunk = entry as Record<string, unknown>;
-    const bucket = readRequiredString(chunk.bucket);
-    const objectKey = readRequiredString(chunk.objectKey);
-    return bucket && objectKey ? { bucket, objectKey } : null;
-  });
-  return chunks.every((chunk) => chunk !== null)
-    ? chunks as Array<{ bucket: string; objectKey: string }>
-    : null;
+function readRequiredString(value: unknown, maxLength: number) {
+  return typeof value === "string" && value.trim() && value.trim().length <= maxLength ? value.trim() : null;
+}
+
+function isAudioMimeType(value: string | null): value is string {
+  return Boolean(value && (value.startsWith("audio/") || value === "application/octet-stream"));
 }
