@@ -1,24 +1,16 @@
 {
-  "//": "Example ACL sketch — adapt to your tailnet policy format. Hermes should replace hostnames/ports with actual values.",
+  "//": "Merge this fragment into the existing Tailscale policy; do not replace the whole policy.",
   "tagOwners": {
     "tag:cursor-agent": ["autogroup:admin"]
+  },
+  "hosts": {
+    "desktop-q20uuvd": "100.73.126.36"
   },
   "acls": [
     {
       "action": "accept",
       "src": ["tag:cursor-agent"],
-      "dst": [
-        "racknerd5:443",
-        "racknerd5:8080",
-        "desktop-q20uuvd:7861"
-      ],
-      "//dst-notes": "Add media gateway, caption gateway, and any tailnet-only service host:port pairs"
-    }
-  ],
-  "nodeAttrs": [
-    {
-      "target": ["tag:cursor-agent"],
-      "attr": ["funnel-off"]
+      "dst": ["desktop-q20uuvd:7861"]
     }
   ]
 }

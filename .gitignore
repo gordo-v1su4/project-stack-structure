@@ -36,7 +36,7 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
+# env files (the value-free template is intentionally tracked)
 .env*
 !.env.example
 
@@ -49,7 +49,6 @@ next-env.d.ts
 
 # local Higgsfield dedicated account credentials
 .higgsfield-stack-structure.json
-
 .higgsfield-stack-structure.json.lock
 .tmp/
 .trigger/

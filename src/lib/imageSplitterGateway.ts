@@ -144,6 +144,7 @@ export async function uploadImageSplitPanelsToMediaGateway(args: {
   split: ImageSplitResponse;
   env?: Record<string, string | undefined>;
   fetchImpl?: typeof fetch;
+  uploadFileImpl?: typeof uploadFileToMediaGateway;
 }): Promise<ImageSplitPersistedResponse> {
   const env = args.env ?? process.env;
   const config = getMediaGatewayConfig(env);
@@ -153,6 +154,7 @@ export async function uploadImageSplitPanelsToMediaGateway(args: {
 
   const baseUrl = getImageSplitterBaseUrl(env);
   const fetcher = args.fetchImpl ?? fetch;
+  const uploadFile = args.uploadFileImpl ?? uploadFileToMediaGateway;
   const sourceSlug = buildSourceSlug(args.split.manifest.sourceFilename);
   const folder = normalizeMediaPath(`${config.uploadPrefix}/image-splits/${sourceSlug}/${args.split.manifest.splitId}`);
   // Keep panel persistence sequential. Bun 1.3.14 on Windows crashes after
@@ -178,7 +180,7 @@ export async function uploadImageSplitPanelsToMediaGateway(args: {
       file = new File([downloaded.bytes], filename, { type: downloaded.contentType });
     }
 
-    const storage = await uploadFileToMediaGateway({ file, folder, env, fetchImpl: fetcher });
+    const storage = await uploadFile({ file, folder, env, fetchImpl: fetcher });
     panels.push({ ...panel, storage });
   }
 
