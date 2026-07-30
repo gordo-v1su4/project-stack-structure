@@ -8,6 +8,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 - Cursor automatically loads the repository-root `.cursor/environment.json`.
 - Cloud startup is `scripts/cloud-agent-start.sh`; do not create `.env` files in the agent VM.
+- The installer pins Node 24.18.1 LTS. Startup enforces Node 24.5+, launches Next.js explicitly with Node for environment-proxy-aware server `fetch()`, and isolates the app in a process group for reliable cleanup.
 - Private desktop generation goes through SwarmUI at `SWARMUI_URL=http://100.73.126.36:7861` over Tailscale. Do not call ComfyUI port `7821` directly.
 - `TS_AUTHKEY` belongs only in Cursor environment-scoped Runtime Secrets.
 - Secret mode is explicit: either provide both `BWS_ACCESS_TOKEN` and `BWS_PROJECT_ID`, or provide app variables as Cursor environment-scoped secrets. Never give Cursor the broad Hermes Bitwarden token.

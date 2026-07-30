@@ -118,3 +118,5 @@ SwarmUI must be running on the desktop. The standard persistent task is `SwarmUI
 - Keep Tailscale access limited to the exact private services required.
 - Public service URLs do not need Tailnet ACL entries.
 - Cloud tool downloads are pinned to exact versions and verified against repository-pinned official SHA-256 digests before extraction or execution.
+- The installer pins Node 24.18.1 LTS; startup enforces Node 24.5+ and launches Next.js explicitly with Node so server-side `fetch()` honors the userspace Tailscale proxy.
+- Next.js runs in its own process group so Cursor stop/restart cleans up all descendants and releases port 3000.

@@ -3,13 +3,18 @@ set -euo pipefail
 
 export PATH="$HOME/.bun/bin:$PATH"
 TAILSCALED_PID=""
-APP_PID=""
+APP_PGID=""
 TAILSCALE_SOCKET="/tmp/tailscaled-cursor-stack.sock"
 TAILSCALE_STATE="/tmp/tailscaled-cursor-stack.state"
 
 cleanup() {
-  if [[ -n "$APP_PID" ]] && kill -0 "$APP_PID" 2>/dev/null; then
-    kill "$APP_PID" 2>/dev/null || true
+  if [[ -n "$APP_PGID" ]] && kill -0 -- "-$APP_PGID" 2>/dev/null; then
+    kill -TERM -- "-$APP_PGID" 2>/dev/null || true
+    for _ in $(seq 1 10); do
+      kill -0 -- "-$APP_PGID" 2>/dev/null || break
+      sleep 0.2
+    done
+    kill -KILL -- "-$APP_PGID" 2>/dev/null || true
   fi
   if [[ -n "$TAILSCALED_PID" ]] && sudo kill -0 "$TAILSCALED_PID" 2>/dev/null; then
     sudo kill "$TAILSCALED_PID" 2>/dev/null || true
@@ -68,6 +73,28 @@ start_tailscale() {
   echo "[cloud-agent] Tailscale userspace networking is ready."
 }
 
+validate_node_runtime() {
+  command -v node >/dev/null 2>&1 || {
+    echo "[cloud-agent] Node.js is not installed." >&2
+    exit 1
+  }
+  command -v setsid >/dev/null 2>&1 || {
+    echo "[cloud-agent] setsid is not installed." >&2
+    exit 1
+  }
+  node -e '
+    const [major, minor] = process.versions.node.split(".").map(Number);
+    if (major !== 24 || minor < 5) {
+      console.error("[cloud-agent] Node 24.5+ is required for environment-proxy-aware fetch; found " + process.version + ".");
+      process.exit(1);
+    }
+  '
+  [[ -f node_modules/next/dist/bin/next ]] || {
+    echo "[cloud-agent] Next.js is not installed; run the Cursor install step first." >&2
+    exit 1
+  }
+}
+
 validate_secret_mode() {
   local have_token=0
   local have_project=0
@@ -97,18 +124,26 @@ validate_secret_mode() {
 
 start_app() {
   local mode="$1"
+  local status=0
+  local -a app_command=(
+    node node_modules/next/dist/bin/next dev
+    --hostname 0.0.0.0 --port 3000
+  )
   if [[ "$mode" == "bws" ]]; then
     echo "[cloud-agent] Starting SVS Studio with Bitwarden-injected app secrets."
-    bws run --project-id "$BWS_PROJECT_ID" -- \
-      bun run dev --hostname 0.0.0.0 --port 3000 &
+    setsid bws run --project-id "$BWS_PROJECT_ID" -- "${app_command[@]}" &
   else
     echo "[cloud-agent] Starting SVS Studio with Cursor environment-scoped secrets."
-    bun run dev --hostname 0.0.0.0 --port 3000 &
+    setsid "${app_command[@]}" &
   fi
-  APP_PID=$!
-  wait "$APP_PID"
+  APP_PGID=$!
+  wait "$APP_PGID" || status=$?
+  cleanup
+  APP_PGID=""
+  return "$status"
 }
 
 start_tailscale
+validate_node_runtime
 secret_mode="$(validate_secret_mode)"
 start_app "$secret_mode"
