@@ -90,13 +90,11 @@ python3 -m json.tool .cursor/environment.json >/dev/null
 bash -n .cursor/install-cloud-tools.sh
 bash -n scripts/cloud-agent-start.sh
 shellcheck .cursor/install-cloud-tools.sh scripts/cloud-agent-start.sh
-bun run lint
-bun run typecheck
-bun test tests/unit
+bun run check
 bun run build
 ```
 
-`bun run check` also runs media integration tests. Those require `.local-fixtures/media` with real audio/video and include a local-hardware-lane assertion; run them only after those fixtures are mounted in the environment.
+The test runner skips fixture-dependent media tests when `.local-fixtures/media` is unavailable and reports those skips explicitly; mount real fixtures before running the full media E2E lane.
 
 ### Cursor Cloud setup run
 
