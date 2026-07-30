@@ -26,6 +26,14 @@ mock.module("@/lib/triggerOrchestration", () => ({
   triggerSmartSceneCaption: triggerSmartSceneCaptionMock,
   triggerMediaSceneDetection: mock(async () => ({ id: "run_media_123" })),
   triggerEssentiaAnalysis: mock(async () => ({ id: "run_essentia_123" })),
+  triggerLocalGeneration: mock(async () => ({ id: "run-local-123" })),
+  triggerHiggsfieldGeneration: mock(async () => ({ id: "run-higgsfield-123" })),
+  triggerDeepgramTranscription: mock(async () => ({ id: "run-deepgram-123" })),
+  triggerFfmpegPreview: mock(async () => ({ id: "run-preview-123" })),
+  triggerFinalExport: mock(async () => ({ id: "run-export-123" })),
+  triggerShaderCaptureExport: mock(async () => ({ id: "run-shader-123" })),
+  triggerFfglitch: mock(async () => ({ id: "run-ffglitch-123" })),
+  triggerImageSplitter: mock(async () => ({ id: "run-splitter-123" })),
   retrieveTriggerRun: mock(async () => ({})),
 }));
 

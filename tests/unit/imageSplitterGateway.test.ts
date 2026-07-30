@@ -70,6 +70,19 @@ describe("imageSplitterGateway", () => {
         MEDIA_GATEWAY_UPLOAD_PREFIX: "media-uploads",
       },
       fetchImpl: fetchImpl as typeof fetch,
+      uploadFileImpl: async ({ file, folder }) => {
+        const objectKey = `${folder}/${file.name}`;
+        uploadedObjectKeys.push(objectKey);
+        uploadedMimeTypes.push(file.type);
+        return {
+          bucket: "stack-structure",
+          publicUrl: `https://s3.example.test/stack-structure/${objectKey}`,
+          objectKey,
+          storagePath: objectKey,
+          mediaUrl: `https://s3.example.test/stack-structure/${objectKey}`,
+          mime: file.type,
+        };
+      },
     });
 
     expect(persisted.rustfsUploaded).toBe(true);
