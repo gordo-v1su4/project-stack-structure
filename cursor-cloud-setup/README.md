@@ -117,3 +117,4 @@ SwarmUI must be running on the desktop. The standard persistent task is `SwarmUI
 - Do not give Cursor the existing broad Hermes Bitwarden token.
 - Keep Tailscale access limited to the exact private services required.
 - Public service URLs do not need Tailnet ACL entries.
+- Cloud tool downloads are pinned to exact versions and verified against repository-pinned official SHA-256 digests before extraction or execution.

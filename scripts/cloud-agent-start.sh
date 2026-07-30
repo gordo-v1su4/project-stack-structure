@@ -25,13 +25,19 @@ start_tailscale() {
     return 0
   fi
 
-  command -v tailscaled >/dev/null 2>&1 || {
+  local tailscaled_bin
+  local tailscale_bin
+  tailscaled_bin="$(command -v tailscaled)" || {
     echo "[cloud-agent] tailscaled is not installed." >&2
+    exit 1
+  }
+  tailscale_bin="$(command -v tailscale)" || {
+    echo "[cloud-agent] tailscale is not installed." >&2
     exit 1
   }
 
   sudo rm -f "$TAILSCALE_SOCKET"
-  sudo tailscaled \
+  sudo "$tailscaled_bin" \
     --state="$TAILSCALE_STATE" \
     --socket="$TAILSCALE_SOCKET" \
     --tun=userspace-networking \
@@ -48,7 +54,7 @@ start_tailscale() {
     exit 1
   }
 
-  sudo tailscale --socket="$TAILSCALE_SOCKET" up \
+  sudo "$tailscale_bin" --socket="$TAILSCALE_SOCKET" up \
     --auth-key="$TS_AUTHKEY" \
     --hostname=cursor-stack-structure \
     --accept-dns=true
