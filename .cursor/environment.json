@@ -1,0 +1,10 @@
+{
+  "install": "bash .cursor/install-cloud-tools.sh",
+  "start": "bash scripts/cloud-agent-start.sh",
+  "ports": [
+    {
+      "name": "SVS Studio",
+      "port": 3000
+    }
+  ]
+}
