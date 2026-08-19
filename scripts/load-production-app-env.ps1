@@ -19,7 +19,11 @@ $manifest = Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json
 $parsedRecords = bws secret list $manifest.bwsProjectId --output json 2>$null | ConvertFrom-Json
 $byName = @{}
 foreach ($record in $parsedRecords) {
-  if ($record.key -and $record.id) { $byName[[string]$record.key] = [string]$record.id }
+  if ($record.key -and $record.id) {
+    $name = [string]$record.key
+    if ($byName.ContainsKey($name)) { throw "Duplicate BWS secret name is ambiguous: $name" }
+    $byName[$name] = [string]$record.id
+  }
 }
 
 function Read-BwsValue([string]$name) {

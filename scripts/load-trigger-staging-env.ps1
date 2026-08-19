@@ -57,6 +57,9 @@ foreach ($record in $records) {
   }
   $name = $name.Trim()
   if ($name -and $record.id) {
+    if ($byName.ContainsKey($name)) {
+      throw "Duplicate BWS secret name is ambiguous: $name"
+    }
     $byName[$name] = [string]$record.id
   }
 }
@@ -89,7 +92,9 @@ $envValues = @{
   QWEN_CAPTION_GATEWAY_TOKEN = if ($LocalTrigger) { $localCaptionToken } else { $remoteCaptionToken }
   MEDIA_WORKER_URL = if ($LocalTrigger) { "http://127.0.0.1:18090" } else { "" }
   DEEPGRAM_API_KEY = Get-BwsSecretValue "DEEPGRAM_API_KEY" $byName
-  HIGGSFIELD_ACCESS_TOKEN = if ($LocalTrigger) { "" } else { Get-BwsSecretValue "HIGGSFIELD_ACCESS_TOKEN" $byName }
+  # The historical BWS bearer is expired. Local Higgsfield uses the isolated
+  # official CLI credential file; do not inject the stale bearer elsewhere.
+  HIGGSFIELD_ACCESS_TOKEN = ""
   HIGGSFIELD_CREDENTIALS_PATH = if ($LocalTrigger) { $LocalHiggsfieldCredentialsPath } else { "" }
   HIGGSFIELD_CLI_PATH = if ($LocalTrigger) { Join-Path $env:APPDATA "npm\node_modules\@higgsfield\cli\vendor\hf.exe" } else { "" }
   ESSENTIA_API_URL = if ($LocalTrigger) { $LocalEssentiaApiUrl } else { Get-BwsSecretValue "ESSENTIA_API_URL" $byName }

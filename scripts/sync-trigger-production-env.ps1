@@ -17,6 +17,14 @@ if (-not (Get-Command bws -ErrorAction SilentlyContinue)) {
 }
 
 $manifest = Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json
+$variableNames = @($manifest.triggerProduction | ForEach-Object { [string]$_.env })
+if ($DryRun) {
+  Write-Host "Project: $($manifest.triggerProjectRef)"
+  Write-Host "Production variables: $($variableNames -join ', ')"
+  Write-Host "Dry run completed; BWS was not queried and no values were changed."
+  exit 0
+}
+
 $parsedRecords = bws secret list $manifest.bwsProjectId --output json 2>$null | ConvertFrom-Json
 $records = @()
 foreach ($record in $parsedRecords) { $records += $record }
@@ -27,7 +35,10 @@ if ($LASTEXITCODE -ne 0 -or -not $records.Count) {
 $byName = @{}
 foreach ($record in $records) {
   $name = [string]$record.key
-  if ($name -and $record.id) { $byName[$name] = [string]$record.id }
+  if ($name -and $record.id) {
+    if ($byName.ContainsKey($name)) { throw "Duplicate BWS secret name is ambiguous: $name" }
+    $byName[$name] = [string]$record.id
+  }
 }
 
 function Read-BwsValue([string]$name) {
@@ -35,14 +46,6 @@ function Read-BwsValue([string]$name) {
   $record = bws secret get $byName[$name] --output json 2>$null | ConvertFrom-Json
   if ($LASTEXITCODE -ne 0 -or -not $record.value) { throw "Unable to read BWS secret: $name" }
   return [string]$record.value
-}
-
-$variableNames = @($manifest.triggerProduction | ForEach-Object { [string]$_.env })
-if ($DryRun) {
-  Write-Host "Project: $($manifest.triggerProjectRef)"
-  Write-Host "Production variables: $($variableNames -join ', ')"
-  Write-Host "Dry run completed; no values were read or changed."
-  exit 0
 }
 
 $variables = @{}

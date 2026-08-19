@@ -18,7 +18,11 @@ if (-not (Get-Command bws -ErrorAction SilentlyContinue)) {
 $manifest = Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json
 $secrets = bws secret list $manifest.bwsProjectId -o json | ConvertFrom-Json
 $available = @{}
-foreach ($secret in $secrets) { $available[[string]$secret.key] = $true }
+foreach ($secret in $secrets) {
+  $name = [string]$secret.key
+  if ($available.ContainsKey($name)) { throw "Duplicate BWS secret name is ambiguous: $name" }
+  $available[$name] = $true
+}
 
 $runtimeValues = @{}
 if (Test-Path -LiteralPath $manifest.runtimeEnv) {

@@ -26,7 +26,11 @@ $records = @()
 foreach ($record in $parsedRecords) { $records += $record }
 $byName = @{}
 foreach ($record in $records) {
-  if ($record.key -and $record.id) { $byName[[string]$record.key] = [string]$record.id }
+  if ($record.key -and $record.id) {
+    $name = [string]$record.key
+    if ($byName.ContainsKey($name)) { throw "Duplicate BWS secret name is ambiguous: $name" }
+    $byName[$name] = [string]$record.id
+  }
 }
 
 function Read-BwsValue([string]$name) {
@@ -41,8 +45,6 @@ function Set-VercelValue([string]$name, [string]$value, [switch]$Sensitive) {
   if ($Environment -eq "preview") { $arguments += $GitBranch }
   $arguments += @("--force", "--yes", "--no-color")
   $arguments += $(if ($Sensitive) { "--sensitive" } else { "--no-sensitive" })
-  $arguments += @("--value", $value)
-
   $npx = (Get-Command npx.cmd -ErrorAction Stop).Source
   $argumentText = ($arguments | ForEach-Object { '"' + ([string]$_).Replace('"', '\"') + '"' }) -join " "
   $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
@@ -52,8 +54,11 @@ function Set-VercelValue([string]$name, [string]$value, [switch]$Sensitive) {
   $startInfo.CreateNoWindow = $true
   $startInfo.RedirectStandardOutput = $true
   $startInfo.RedirectStandardError = $true
+  $startInfo.RedirectStandardInput = $true
 
   $process = [System.Diagnostics.Process]::Start($startInfo)
+  $process.StandardInput.WriteLine($value)
+  $process.StandardInput.Close()
   $stdout = $process.StandardOutput.ReadToEnd()
   $stderr = $process.StandardError.ReadToEnd()
   $process.WaitForExit()

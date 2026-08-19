@@ -12,14 +12,17 @@ if ([string]::IsNullOrWhiteSpace($ManifestPath)) {
   $ManifestPath = Join-Path $PSScriptRoot "..\config\secrets.manifest.json"
 }
 if (-not (Get-Command bws -ErrorAction SilentlyContinue)) { throw "BWS CLI is required." }
-if (-not (Get-Command scp -ErrorAction SilentlyContinue)) { throw "scp is required." }
 if (-not (Get-Command ssh -ErrorAction SilentlyContinue)) { throw "ssh is required." }
 
 $manifest = Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json
 $parsedRecords = bws secret list $manifest.bwsProjectId --output json 2>$null | ConvertFrom-Json
 $byName = @{}
 foreach ($record in $parsedRecords) {
-  if ($record.key -and $record.id) { $byName[[string]$record.key] = [string]$record.id }
+  if ($record.key -and $record.id) {
+    $name = [string]$record.key
+    if ($byName.ContainsKey($name)) { throw "Duplicate BWS secret name is ambiguous: $name" }
+    $byName[$name] = [string]$record.id
+  }
 }
 
 function Read-BwsValue([string]$name) {
@@ -39,20 +42,11 @@ $lines = foreach ($mapping in $manifest.triggerDeployment) {
   "$name=$(ConvertTo-ShellLiteral $value)"
 }
 
-$temporaryPath = Join-Path ([System.IO.Path]::GetTempPath()) "stack-structure-trigger-deploy-$([guid]::NewGuid().ToString('N')).env"
 $remoteTemporaryPath = "$RemotePath.tmp"
-try {
-  [System.IO.File]::WriteAllLines($temporaryPath, [string[]]$lines, [System.Text.UTF8Encoding]::new($false))
-  $remoteDirectory = $RemotePath.Substring(0, $RemotePath.LastIndexOf('/'))
-  & ssh $SshTarget "mkdir -p '$remoteDirectory' && chmod 700 '$remoteDirectory'"
-  if ($LASTEXITCODE -ne 0) { throw "Unable to prepare the VM100 deployment directory." }
-  & scp -q $temporaryPath "${SshTarget}:$remoteTemporaryPath"
-  if ($LASTEXITCODE -ne 0) { throw "Unable to copy the VM100 deployment environment." }
-  & ssh $SshTarget "chmod 600 '$remoteTemporaryPath' && mv '$remoteTemporaryPath' '$RemotePath'"
-  if ($LASTEXITCODE -ne 0) { throw "Unable to activate the VM100 deployment environment." }
-} finally {
-  if (Test-Path -LiteralPath $temporaryPath) { Remove-Item -LiteralPath $temporaryPath -Force }
-}
+$remoteDirectory = $RemotePath.Substring(0, $RemotePath.LastIndexOf('/'))
+$payload = ([string[]]$lines) -join "`n"
+$payload | & ssh $SshTarget "umask 077 && mkdir -p '$remoteDirectory' && cat > '$remoteTemporaryPath' && chmod 600 '$remoteTemporaryPath' && mv '$remoteTemporaryPath' '$RemotePath'"
+if ($LASTEXITCODE -ne 0) { throw "Unable to stream the VM100 deployment environment." }
 
 Write-Host "Synced the BWS-backed Trigger deployment pointers to VM100 with mode 600."
 Write-Host "Secret values were not printed."
