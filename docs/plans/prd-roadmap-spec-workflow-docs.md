@@ -4,12 +4,12 @@
 - Updated: 2026-06-18 UTC
 - Status: current draft for user review
 - Active repo: `project-stack-structure`
-- Source spec: `.omx/specs/deep-interview-roadmap-spec-workflow-docs.md`
+- Source spec: `docs/plans/deep-interview-roadmap-spec-workflow-docs.md`
 
 ## 0. Document Purpose
 This PRD defines the current product requirements for `project-stack-structure`. It replaces stale April planning assumptions with the current goal: a web-first, music-first auto music-video editor with deterministic prepared section previews, music-first ranking, and agent-ready implementation slices.
 
-This PRD is the source of truth for product intent. `docs/roadmap.md`, `docs/architecture/media-pipeline.md`, and `.omx/plans/prd-implementation-buildout.md` should stay aligned with it.
+This PRD is the source of truth for product intent. `docs/roadmap.md`, `docs/architecture/media-pipeline.md`, and `docs/plans/prd-implementation-buildout.md` should stay aligned with it.
 
 ## 1. Vision
 The product is a smart auto music-video editor. A creator supplies a song and video clips; the app analyzes musical structure, probes and segments video, ranks candidate joins, prepares section previews, and lets the user iterate while preserving musical alignment.
@@ -214,7 +214,7 @@ Consequences:
 ### 4.9 Agent Workflow
 
 #### FR-19: Keep PRD/roadmap/test spec current
-Planning artifacts in `.omx` and `docs/` remain synchronized with implementation reality.
+Planning artifacts in `docs/plans/` remain synchronized with implementation reality (relocated from `.omx` on 2026-08-23).
 
 Consequences:
 - Agents update specs when product decisions change.

@@ -3,8 +3,8 @@
 ## Metadata
 - Updated: 2026-06-18 UTC
 - Status: current implementation roadmap
-- Source PRD: `.omx/plans/prd-roadmap-spec-workflow-docs.md`
-- Source test spec: `.omx/plans/test-spec-roadmap-spec-workflow-docs.md`
+- Source PRD: `docs/plans/prd-roadmap-spec-workflow-docs.md`
+- Source test spec: `docs/plans/test-spec-roadmap-spec-workflow-docs.md`
 - Active repo: `project-stack-structure`
 
 ## Purpose
@@ -52,25 +52,25 @@ Current verification scripts exist in `package.json`:
 
 **FRs:** FR-19, FR-20
 
-Goal: Make `.omx` and `docs/` agree on the current active goal.
+Goal: Keep the canonical planning artifacts in `docs/plans/` aligned with the current active goal.
 
 Tasks:
-1. Replace stale `.omx` PRD/spec/test/buildout artifacts with current versions.
+1. Keep the PRD/spec/test/buildout artifacts in `docs/plans/` current (relocated from `.omx` on 2026-08-23).
 2. Update `docs/roadmap.md` to point to the current PRD and remove stale “recommended future scripts” language that is now implemented.
 3. Update `README.md` planning section if needed.
 4. Run docs sanity checks and `git status`.
 
 Acceptance:
-- `.omx/plans/prd-roadmap-spec-workflow-docs.md` is current.
-- `.omx/plans/test-spec-roadmap-spec-workflow-docs.md` is current.
-- `.omx/plans/prd-implementation-buildout.md` is current.
+- `docs/plans/prd-roadmap-spec-workflow-docs.md` is current.
+- `docs/plans/test-spec-roadmap-spec-workflow-docs.md` is current.
+- `docs/plans/prd-implementation-buildout.md` is current.
 - `docs/roadmap.md` does not contradict current PRD.
 - Active repo is clearly `project-stack-structure`.
 
 Verification:
 - `git status --short --branch`
-- `grep -R "svelte-video-shaders" .omx/plans docs README.md` should mention it only as a reference repo, if at all.
-- `grep -R "recommended future scripts" docs .omx/plans` should not imply missing scripts that now exist.
+- `grep -R "svelte-video-shaders" docs/plans docs README.md` should mention it only as a reference repo, if at all.
+- `grep -R "recommended future scripts" docs docs/plans` should not imply missing scripts that now exist.
 
 ### Slice 2 — Contract audit against current code
 
@@ -202,10 +202,10 @@ Verification:
 A safe first commit is documentation-only:
 
 ```bash
-git add .omx/specs/deep-interview-roadmap-spec-workflow-docs.md \
-  .omx/plans/prd-roadmap-spec-workflow-docs.md \
-  .omx/plans/test-spec-roadmap-spec-workflow-docs.md \
-  .omx/plans/prd-implementation-buildout.md
+git add docs/plans/deep-interview-roadmap-spec-workflow-docs.md \
+  docs/plans/prd-roadmap-spec-workflow-docs.md \
+  docs/plans/test-spec-roadmap-spec-workflow-docs.md \
+  docs/plans/prd-implementation-buildout.md
 
 git commit -m "docs: refresh music video product specs"
 ```

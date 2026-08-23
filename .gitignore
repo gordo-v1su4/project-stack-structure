@@ -52,3 +52,10 @@ next-env.d.ts
 .higgsfield-stack-structure.json.lock
 .tmp/
 .trigger/
+
+# tool/QA artifacts (untracked 2026-08-23 deslop)
+/.omx/
+/output/
+/test-results/
+/public/qa-media/
+.next-dev*.log

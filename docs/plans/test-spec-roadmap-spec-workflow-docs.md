@@ -3,7 +3,7 @@
 ## Metadata
 - Updated: 2026-06-18 UTC
 - Status: current verification spec
-- Source PRD: `.omx/plans/prd-roadmap-spec-workflow-docs.md`
+- Source PRD: `docs/plans/prd-roadmap-spec-workflow-docs.md`
 - Active repo: `project-stack-structure`
 
 ## Verification Goals
