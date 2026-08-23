@@ -314,5 +314,11 @@ async function buildDispatchContext(
 
 async function currentApplicationUserId() {
   const session = await applicationAuth();
-  return session?.user?.id?.trim() || "anonymous";
+  const userId = session?.user?.id?.trim();
+  // SECURITY: never fall back to a shared identity. Anonymous jobs all share one
+  // Trigger user-tag, which would let any caller read every other caller's runs.
+  if (!userId) {
+    throw new Error("Sign in with GitHub before dispatching Trigger tasks.");
+  }
+  return userId;
 }
