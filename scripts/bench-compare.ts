@@ -1,9 +1,9 @@
 import { compareBenchmarkFiles } from "../src/components/studio/benchmarkComparison";
 
-const localPath = process.argv[2] ?? ".omx/benchmarks/local-latency-latest.json";
+const localPath = process.argv[2];
 const remotePath = process.argv[3];
 
-if (!remotePath) {
+if (!localPath || !remotePath) {
   throw new Error("Usage: bun run scripts/bench-compare.ts <local-json> <remote-json>");
 }
 

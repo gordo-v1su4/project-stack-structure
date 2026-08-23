@@ -69,7 +69,7 @@ Current verification scripts:
 ## Phase 0 — Planning Source Cleanup
 
 ### Goal
-Keep `docs/plans/` as the single canonical planning home so agents do not follow stale April planning or reference-repo assumptions; the gitignored `.omx/` tree is tool cache only and never authoritative.
+Keep `docs/plans/` as the single canonical planning home so agents do not follow stale April planning or reference-repo assumptions; tool-local working trees are disposable cache and never authoritative.
 
 ### Deliverables
 - Current source spec in `docs/plans/`.

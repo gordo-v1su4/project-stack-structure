@@ -78,8 +78,10 @@ Every future feature spec for this app should include:
 docs/plans/        # canonical, tracked: context snapshots, interview
                    # summaries, specs, PRDs, test specs
 docs/              # durable docs (roadmap, architecture, protocols)
-.omx/              # gitignored tool-local cache only; never canonical
 ```
+
+No tool-local directory is canonical; anything not in `docs/plans/` or
+`docs/` is disposable cache.
 
 Recommended durable docs:
 ```text

@@ -54,7 +54,6 @@ next-env.d.ts
 .trigger/
 
 # tool/QA artifacts (untracked 2026-08-23 deslop)
-/.omx/
 /.omo/
 /output/
 /test-results/
