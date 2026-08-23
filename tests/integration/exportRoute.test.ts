@@ -1,6 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 
-import { POST } from "@/app/api/export/final/route";
+mock.module("@/auth", () => ({ auth: async () => ({ user: { id: "github-test-user" } }) }));
+
+const { POST } = await import("@/app/api/export/final/route");
 
 describe("POST /api/export/final", () => {
   test("rejects an incomplete export before dispatching Trigger.dev", async () => {

@@ -1,8 +1,8 @@
-import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { detectFfglitch } from "@/components/studio/ffglitchApi";
-import { uploadFileToMediaGateway } from "@/lib/mediaGateway";
+import { getMediaGatewayConfig } from "@/lib/mediaGateway";
+import { getSessionUser, unauthorizedResponse } from "@/lib/session";
 import { triggerFfglitch } from "@/lib/triggerOrchestration";
 import type { GlitchMotionVectorParams } from "@/components/studio/ffglitchApi";
 
@@ -15,7 +15,34 @@ function getFfmpegGatewayConfig() {
   return { url, apiKey };
 }
 
+// SECURITY: glitch inputs must be durable gateway objects. Local server paths are
+// never accepted (serverless has none; they enable arbitrary reads) and remote
+// fetches are restricted to allowlisted media hosts.
+function addAllowedHost(hosts: Set<string>, candidate: string | undefined) {
+  if (!candidate?.trim()) return;
+  try {
+    const value = candidate.trim();
+    hosts.add(new URL(value.includes("://") ? value : `https://${value}`).host);
+  } catch {
+    // Malformed env values are ignored rather than failing startup.
+  }
+}
+
+function allowedInputHosts(): string[] {
+  const config = getMediaGatewayConfig();
+  const publicUrl = process.env.MEDIA_GATEWAY_PUBLIC_URL?.trim();
+  const extras = (process.env.FFGLITCH_ALLOWED_INPUT_HOSTS ?? "").split(",");
+  const hosts = new Set<string>();
+  addAllowedHost(hosts, config?.url);
+  addAllowedHost(hosts, publicUrl);
+  for (const extra of extras) addAllowedHost(hosts, extra);
+  return [...hosts];
+}
+
 export async function GET() {
+  const user = await getSessionUser();
+  if (!user) return unauthorizedResponse("Sign in with GitHub to check FFglitch capabilities.");
+
   const config = getFfmpegGatewayConfig();
 
   if (config.url) {
@@ -33,6 +60,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const user = await getSessionUser();
+  if (!user) return unauthorizedResponse("Sign in with GitHub to run FFglitch jobs.");
   try {
     const payload = (await request.json()) as {
       action: "probe" | "glitch";
@@ -49,7 +78,13 @@ export async function POST(request: Request) {
     }
 
     const sourceIdentity = payload.inputPath.trim();
-    const source = await resolveDurableInput(sourceIdentity);
+    const source = resolveDurableInput(sourceIdentity);
+    if (!source) {
+      return Response.json(
+        { success: false, error: "inputPath must be an https URL on an allowed media host." },
+        { status: 400 },
+      );
+    }
     const handle = await triggerFfglitch({
       action: payload.action,
       inputPath: source.url,
@@ -61,29 +96,17 @@ export async function POST(request: Request) {
     return Response.json({ success: true, orchestration: "trigger.dev", runId: handle.id, status: "queued" }, { status: 202 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown FFglitch error";
-    return Response.json({ success: false, error: message }, { status: 500 });
+    return Response.json({ success: false, error: message }, { status: /sign in with github/i.test(message) ? 401 : 500 });
   }
 }
 
-async function resolveDurableInput(inputPath: string) {
-  if (/^https?:\/\//i.test(inputPath)) {
+function resolveDurableInput(inputPath: string): { url: string; fileName: string } | null {
+  if (!/^https:\/\//i.test(inputPath)) return null;
+  try {
     const url = new URL(inputPath);
+    if (!allowedInputHosts().includes(url.host)) return null;
     return { url: inputPath, fileName: path.basename(url.pathname) || "source.mp4" };
+  } catch {
+    return null;
   }
-
-  const bytes = await readFile(inputPath);
-  const fileName = path.basename(inputPath) || "source.mp4";
-  const uploaded = await uploadFileToMediaGateway({
-    file: new File([bytes], fileName, { type: mediaType(fileName) }),
-    folder: "media-uploads/ffglitch-inputs",
-  });
-  return { url: uploaded.mediaUrl || uploaded.publicUrl, fileName };
-}
-
-function mediaType(fileName: string) {
-  const extension = path.extname(fileName).toLowerCase();
-  if (extension === ".webm") return "video/webm";
-  if (extension === ".avi") return "video/x-msvideo";
-  if (extension === ".mov") return "video/quicktime";
-  return "video/mp4";
 }

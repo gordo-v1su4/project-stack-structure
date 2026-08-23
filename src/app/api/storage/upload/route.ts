@@ -1,17 +1,29 @@
 import { auth } from "@/auth";
 import { scopeEssentiaChunkUploadFolder } from "@/lib/essentiaUpload";
 import { uploadFileToMediaGateway } from "@/lib/mediaGateway";
+import { getSessionUser, unauthorizedResponse } from "@/lib/session";
 
 export const runtime = "nodejs";
 
+const MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024;
+
 export async function POST(request: Request) {
+  const user = await getSessionUser();
+  if (!user) return unauthorizedResponse("Sign in with GitHub to upload media.");
   try {
+    const contentLength = Number(request.headers.get("content-length") ?? "0");
+    if (Number.isFinite(contentLength) && contentLength > MAX_UPLOAD_BYTES) {
+      return Response.json({ error: "Upload exceeds the maximum allowed size." }, { status: 413 });
+    }
     const formData = await request.formData();
     const file = formData.get("file");
     const folder = formData.get("folder");
 
     if (!(file instanceof File)) {
       return Response.json({ error: "file required" }, { status: 400 });
+    }
+    if (file.size > MAX_UPLOAD_BYTES) {
+      return Response.json({ error: "Upload exceeds the maximum allowed size." }, { status: 413 });
     }
 
     const requestedFolder = typeof folder === "string" ? folder : undefined;

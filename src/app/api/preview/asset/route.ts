@@ -4,10 +4,13 @@ import path from "node:path";
 import { Readable } from "node:stream";
 
 import { resolveAllowedPreviewAssetPath } from "@/components/studio/previewAssetPath";
+import { getSessionUser, unauthorizedResponse } from "@/lib/session";
 
 export const runtime = "nodejs";
 
 export async function GET(request: Request) {
+  const user = await getSessionUser();
+  if (!user) return unauthorizedResponse("Sign in with GitHub to load preview assets.");
   const url = new URL(request.url);
   const assetKey = url.searchParams.get("assetKey");
 

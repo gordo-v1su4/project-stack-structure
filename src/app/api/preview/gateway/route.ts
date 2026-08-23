@@ -1,4 +1,5 @@
 import { uploadFileToMediaGateway } from "@/lib/mediaGateway";
+import { getSessionUser, unauthorizedResponse } from "@/lib/session";
 import { triggerFfmpegPreview } from "@/lib/triggerOrchestration";
 
 export const runtime = "nodejs";
@@ -10,6 +11,8 @@ type GatewaySegment = {
 };
 
 export async function POST(request: Request) {
+  const user = await getSessionUser();
+  if (!user) return unauthorizedResponse("Sign in with GitHub to render previews.");
   try {
     const formData = await request.formData();
     const primary = formData.get("file");

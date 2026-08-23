@@ -1,3 +1,4 @@
+import { getSessionUser, unauthorizedResponse } from "@/lib/session";
 import { retrieveTriggerRun } from "@/lib/triggerOrchestration";
 
 export const runtime = "nodejs";
@@ -5,6 +6,8 @@ export const runtime = "nodejs";
 type Params = { params: Promise<{ jobId: string }> };
 
 export async function GET(_request: Request, context: Params) {
+  const user = await getSessionUser();
+  if (!user) return unauthorizedResponse("Sign in with GitHub to check video job status.");
   try {
     const { jobId } = await context.params;
     const run = await retrieveTriggerRun(jobId);

@@ -1,6 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 
-import { GET } from "@/app/api/ffglitch/route";
+mock.module("@/auth", () => ({ auth: async () => ({ user: { id: "github-test-user" } }) }));
+
+const { GET } = await import("@/app/api/ffglitch/route");
 
 const originalEnv = { ...process.env };
 const originalFetch = globalThis.fetch;

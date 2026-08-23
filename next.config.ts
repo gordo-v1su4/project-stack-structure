@@ -5,37 +5,25 @@ import { localAuthOriginRedirects } from "./src/lib/authRequest";
 
 const projectRoot = path.dirname(fileURLToPath(import.meta.url));
 const configuredAuthUrl = process.env.AUTH_URL ?? process.env.NEXTAUTH_URL;
-const publicEssentiaApiBaseUrl = (
-  process.env.NEXT_PUBLIC_ESSENTIA_API_BASE_URL ??
-  process.env.NEXT_PUBLIC_ESSENTIA_API_URL ??
-  ""
-).trim();
-const publicEssentiaApiKey = (
-  process.env.NEXT_PUBLIC_ESSENTIA_API_KEY ??
-  ""
-).trim();
 
-const serverFfmpegGatewayUrl = (
-  process.env.FFMPEG_GATEWAY_URL ??
-  ""
-).trim().replace(/\/+$/, "");
-
-const serverFfmpegGatewayApiKey = (
-  process.env.FFMPEG_GATEWAY_API_KEY ??
-  ""
-).trim();
+// SECURITY: never re-expose server credentials through nextConfig.env — it
+// inlines values into the browser bundle (FFMPEG_GATEWAY_API_KEY and
+// NEXT_PUBLIC_ESSENTIA_API_KEY previously shipped to every client).
+const securityHeaders = [
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "X-Frame-Options", value: "SAMEORIGIN" },
+  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+  { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+  { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
+];
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: ["127.0.0.1"],
   async redirects() {
     return localAuthOriginRedirects(configuredAuthUrl);
   },
-  env: {
-    NEXT_PUBLIC_ESSENTIA_API_BASE_URL: publicEssentiaApiBaseUrl,
-    NEXT_PUBLIC_ESSENTIA_API_URL: publicEssentiaApiBaseUrl,
-    NEXT_PUBLIC_ESSENTIA_API_KEY: publicEssentiaApiKey,
-    FFMPEG_GATEWAY_URL: serverFfmpegGatewayUrl,
-    FFMPEG_GATEWAY_API_KEY: serverFfmpegGatewayApiKey,
+  async headers() {
+    return [{ source: "/:path*", headers: securityHeaders }];
   },
   turbopack: {
     root: projectRoot,

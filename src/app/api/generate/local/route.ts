@@ -3,19 +3,30 @@ import {
   normalizeLocalGenerationUrl,
   type LocalGenerationRequest,
 } from "@/components/studio/localGeneration";
+import { getSessionUser, unauthorizedResponse } from "@/lib/session";
 import { triggerLocalGeneration } from "@/lib/triggerOrchestration";
 
 export const runtime = "nodejs";
 
 export async function GET() {
+  const user = await getSessionUser();
+  if (!user) return unauthorizedResponse("Sign in with GitHub to check local generation providers.");
   const [swarm, comfy] = await Promise.all([
     checkSwarmUiStatus({ baseUrl: getSwarmUrl() }),
     checkDirectComfyStatus(),
   ]);
-  return Response.json({ success: true, providers: [swarm, comfy] });
+  return Response.json({
+    success: true,
+    providers: [
+      { provider: swarm.provider, configured: swarm.configured, reachable: swarm.reachable },
+      { provider: comfy.provider, configured: comfy.configured, reachable: comfy.reachable },
+    ],
+  });
 }
 
 export async function POST(request: Request) {
+  const user = await getSessionUser();
+  if (!user) return unauthorizedResponse("Sign in with GitHub to run local generation.");
   try {
     const body = await request.json() as Partial<LocalGenerationRequest>;
     const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";

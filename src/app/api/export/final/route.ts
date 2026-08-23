@@ -1,9 +1,12 @@
 import { uploadFileToMediaGateway } from "@/lib/mediaGateway";
+import { getSessionUser, unauthorizedResponse } from "@/lib/session";
 import { triggerFinalExport } from "@/lib/triggerOrchestration";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
+  const user = await getSessionUser();
+  if (!user) return unauthorizedResponse("Sign in with GitHub to run final exports.");
   try {
     const formData = await request.formData();
     const audioFile = formData.get("audio");

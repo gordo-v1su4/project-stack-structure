@@ -33,6 +33,10 @@ type PreparedVideo = {
 
 const baseUrl = (process.env.STACK_STRUCTURE_E2E_URL || "http://127.0.0.1:3000").replace(/\/+$/, "");
 const runKey = process.env.STACK_STRUCTURE_E2E_RUN_KEY || `full-media-e2e-${new Date().toISOString().replace(/[:.]/g, "-")}`;
+// SECURITY: every API route requires an authenticated session, so the cookie is
+// attached to all requests. Dispatch and polling identities must match for the
+// Trigger user-tag authorization to accept run lookups.
+const e2eCookie = process.env.STACK_STRUCTURE_E2E_COOKIE || "";
 const workspace = path.resolve(process.cwd(), ".tmp", "e2e-validation", runKey);
 const fixtureRoot = path.resolve(process.cwd(), ".local-fixtures", "media");
 const reportPath = path.join(workspace, "report.json");
@@ -381,7 +385,9 @@ async function getJson(endpoint: string) {
 }
 
 async function requestJson(endpoint: string, init: RequestInit): Promise<JsonRecord> {
-  const response = await fetch(`${baseUrl}${endpoint}`, { ...init, signal: AbortSignal.timeout(10 * 60_000) });
+  const headers = new Headers(init.headers);
+  if (e2eCookie) headers.set("cookie", e2eCookie);
+  const response = await fetch(`${baseUrl}${endpoint}`, { ...init, headers, signal: AbortSignal.timeout(10 * 60_000) });
   const text = await response.text();
   let payload: unknown = {};
   try {

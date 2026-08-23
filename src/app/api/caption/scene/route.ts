@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { LFM_SCENE_CAPTION_PROMPT } from "@/review/lib/analysis/scene-caption-format";
 import type { SceneCaptionMode, SceneCaptionSource } from "@/components/studio/types";
 import { uploadFileToMediaGateway } from "@/lib/mediaGateway";
+import { getSessionUser, unauthorizedResponse } from "@/lib/session";
 import { triggerSmartSceneCaption } from "@/lib/triggerOrchestration";
 
 export const runtime = "nodejs";
@@ -11,6 +12,7 @@ export const dynamic = "force-dynamic";
 const DEFAULT_SMART_MODEL_ID = "Qwen/Qwen3-VL-4B-Instruct-GGUF:Q4_K_M";
 const DEFAULT_FAST_MODEL_ID = "LiquidAI/LFM2.5-VL-450M-ONNX";
 const HEALTH_TIMEOUT_MS = 2_500;
+const MAX_CAPTION_IMAGE_BYTES = 25 * 1024 * 1024;
 
 type CaptionGatewayConfig = {
   configured: boolean;
@@ -108,6 +110,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const user = await getSessionUser();
+  if (!user) return unauthorizedResponse("Sign in with GitHub to run server captions.");
   try {
     const formData = await request.formData();
     const mode = readCaptionMode(formData.get("mode"));
@@ -125,15 +129,16 @@ export async function POST(request: Request) {
         ok: false,
         configured: false,
         mode,
-        error: mode === "smart"
-          ? "Smart Qwen3-VL scene caption gateway is not configured; set SCENE_CAPTION_SMART_GATEWAY_URL or QWEN_CAPTION_GATEWAY_URL."
-          : "Fast server scene caption gateway is not configured; set SCENE_CAPTION_FAST_GATEWAY_URL, LFM_CAPTION_GATEWAY_URL, or SCENE_CAPTION_GATEWAY_URL.",
+        error: "Smart Qwen3-VL scene caption gateway is not configured; set SCENE_CAPTION_SMART_GATEWAY_URL.",
       }, { status: 503 });
     }
 
     const image = formData.get("image");
     if (!(image instanceof File)) {
       return Response.json({ ok: false, error: "image file is required" }, { status: 400 });
+    }
+    if (image.size > MAX_CAPTION_IMAGE_BYTES) {
+      return Response.json({ ok: false, error: "Caption image exceeds the maximum allowed size." }, { status: 413 });
     }
     const bytes = await image.arrayBuffer();
     const imageDigest = createHash("sha256").update(new Uint8Array(bytes)).digest("hex");
