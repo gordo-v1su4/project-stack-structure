@@ -4,7 +4,7 @@
 - Updated: 2026-06-18 UTC
 - Status: current draft for user review
 - Active repo: `project-stack-structure`
-- Source spec: `.omx/specs/deep-interview-roadmap-spec-workflow-docs.md`
+- Source spec: `docs/plans/deep-interview-roadmap-spec-workflow-docs.md`
 
 ## 0. Document Purpose
 This PRD defines the current product requirements for `project-stack-structure`. It replaces stale April planning assumptions with the current goal: a web-first, music-first auto music-video editor with deterministic prepared section previews, music-first ranking, and agent-ready implementation slices.
