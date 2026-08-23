@@ -1,14 +1,22 @@
 import { triggerImageSplitter } from "@/lib/triggerOrchestration";
 import { uploadFileToMediaGateway } from "@/lib/mediaGateway";
+import { getSessionUser, unauthorizedResponse } from "@/lib/session";
 
 export const runtime = "nodejs";
 
+const MAX_SPLIT_IMAGE_BYTES = 50 * 1024 * 1024;
+
 export async function POST(request: Request) {
+  const user = await getSessionUser();
+  if (!user) return unauthorizedResponse("Sign in with GitHub to split images.");
   try {
     const formData = await request.formData();
     const file = formData.get("file");
     if (!(file instanceof File)) {
       return Response.json({ error: "Image file is required." }, { status: 400 });
+    }
+    if (file.size > MAX_SPLIT_IMAGE_BYTES) {
+      return Response.json({ error: "Image exceeds the maximum allowed size." }, { status: 413 });
     }
 
     const rows = readNumber(formData.get("rows"));
