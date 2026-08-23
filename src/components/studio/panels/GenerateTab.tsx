@@ -743,17 +743,32 @@ function FrameExtensionPanel({
     assets: referenceAssets,
     selection: referenceSelection,
   });
-  const prompt = buildSuggestedPrompt(slot, moment, referencePlan.instructions);
   const selectedPreset = presets.find((preset) => preset.title === selectedPresetTitle) ?? presets[0];
-  const [higgsfieldForm, setHiggsfieldForm] = useState<HiggsfieldGenerationFormState>(() => ({
-    title: "Feng vampire night grid",
-    characterName: "Feng",
+  const character1Asset = referenceAssets.find((asset) => asset.id === referenceSelection.character1Id);
+  const character2Asset = referenceAssets.find((asset) => asset.id === referenceSelection.character2Id);
+  const environmentAsset = referenceAssets.find((asset) => asset.id === referenceSelection.environmentId);
+  const characterNames = [character1Asset?.displayName, character2Asset?.displayName].filter(Boolean) as string[];
+  const defaultCharacterName = characterNames.join(" & ") || "Character";
+  const gridPrompt = buildStoryboardGridPrompt({
+    slot,
+    moment,
+    characterNames,
+    environmentName: environmentAsset?.displayName,
+    referenceInstructions: referencePlan.instructions,
+  });
+  const gridTitle = `${slot?.item.label ?? "storyboard"} grid`;
+  const [editedForm, setEditedForm] = useState<Partial<HiggsfieldGenerationFormState>>({});
+  const higgsfieldForm: HiggsfieldGenerationFormState = {
+    title: gridTitle,
+    characterName: defaultCharacterName,
     resolution: "2k",
     splitRows: 3,
     splitCols: 3,
     extraReferenceUrls: "",
-    prompt: buildDefaultHiggsfieldPrompt("Feng"),
-  }));
+    prompt: gridPrompt,
+    ...editedForm,
+  };
+  const setHiggsfieldForm = (update: Partial<HiggsfieldGenerationFormState>) => setEditedForm((current) => ({ ...current, ...update }));
   const higgsfieldInputCount = buildHiggsfieldInputImages(referenceAssets, referenceSelection, higgsfieldForm.extraReferenceUrls).length;
 
   return (
@@ -773,8 +788,11 @@ function FrameExtensionPanel({
         ))}
       </div>
       <div className="rounded-[2px] border border-[#1f1f1f] bg-[#070707] p-2">
-        <div className="mb-1 text-[8px] uppercase tracking-[0.16em] text-[#555]">AI suggested prompt draft</div>
-        <div className="text-[11px] leading-5 text-[#b0b0b0]">{prompt}</div>
+        <div className="mb-1 flex items-center justify-between gap-2">
+          <div className="text-[8px] uppercase tracking-[0.16em] text-[#555]">AI suggested prompt draft</div>
+          <button type="button" onClick={() => setHiggsfieldForm({ prompt: gridPrompt, title: gridTitle })} className="rounded-[2px] border border-[#2a2a2a] px-2 py-1 text-[8px] uppercase tracking-[0.12em] text-[#aaa] hover:border-[#e05c00] hover:text-[#e05c00]">Use in grid form</button>
+        </div>
+        <div className="text-[11px] leading-5 text-[#b0b0b0]">{gridPrompt}</div>
       </div>
       <div className="rounded-[2px] border border-[#1f1f1f] bg-[#070707] p-2">
         <div className="mb-2 flex items-center justify-between gap-2">
@@ -810,12 +828,12 @@ function FrameExtensionPanel({
         </div>
         <div className="grid gap-2 sm:grid-cols-[1fr_130px_90px]">
           <label className="block">
-            <span className="mb-1 block text-[8px] uppercase tracking-[0.14em] text-[#666]">Character name</span>
-            <input value={higgsfieldForm.characterName} onChange={(event) => setHiggsfieldForm((current) => ({ ...current, characterName: event.target.value }))} className="w-full rounded-[2px] border border-[#202020] bg-[#050505] px-2 py-1.5 font-mono text-[9px] text-[#9a9a9a] outline-none focus:border-[#e05c00]" />
+            <span className="mb-1 block text-[8px] uppercase tracking-[0.14em] text-[#666]">Character name (from selected refs)</span>
+            <input value={higgsfieldForm.characterName} onChange={(event) => setHiggsfieldForm({ characterName: event.target.value })} className="w-full rounded-[2px] border border-[#202020] bg-[#050505] px-2 py-1.5 font-mono text-[9px] text-[#9a9a9a] outline-none focus:border-[#e05c00]" />
           </label>
           <label className="block">
             <span className="mb-1 block text-[8px] uppercase tracking-[0.14em] text-[#666]">Resolution</span>
-            <select value={higgsfieldForm.resolution} onChange={(event) => setHiggsfieldForm((current) => ({ ...current, resolution: event.target.value as HiggsfieldGenerationFormState["resolution"] }))} className="w-full rounded-[2px] border border-[#202020] bg-[#050505] px-2 py-1.5 font-mono text-[9px] text-[#9a9a9a] outline-none focus:border-[#e05c00]">
+            <select value={higgsfieldForm.resolution} onChange={(event) => setHiggsfieldForm({ resolution: event.target.value as HiggsfieldGenerationFormState["resolution"] })} className="w-full rounded-[2px] border border-[#202020] bg-[#050505] px-2 py-1.5 font-mono text-[9px] text-[#9a9a9a] outline-none focus:border-[#e05c00]">
               <option value="1k">1k</option>
               <option value="2k">2k</option>
               <option value="4k">4k</option>
@@ -825,7 +843,7 @@ function FrameExtensionPanel({
             <span className="mb-1 block text-[8px] uppercase tracking-[0.14em] text-[#666]">Grid</span>
             <select value={`${higgsfieldForm.splitRows}x${higgsfieldForm.splitCols}`} onChange={(event) => {
               const [rows, cols] = event.target.value.split("x").map(Number);
-              setHiggsfieldForm((current) => ({ ...current, splitRows: rows, splitCols: cols }));
+              setHiggsfieldForm({ splitRows: rows, splitCols: cols });
             }} className="w-full rounded-[2px] border border-[#202020] bg-[#050505] px-2 py-1.5 font-mono text-[9px] text-[#9a9a9a] outline-none focus:border-[#e05c00]">
               <option value="3x3">3x3</option>
               <option value="2x2">2x2</option>
@@ -834,19 +852,19 @@ function FrameExtensionPanel({
         </div>
         <label className="mt-2 block">
           <span className="mb-1 block text-[8px] uppercase tracking-[0.14em] text-[#666]">Title / storage slug</span>
-          <input value={higgsfieldForm.title} onChange={(event) => setHiggsfieldForm((current) => ({ ...current, title: event.target.value }))} className="w-full rounded-[2px] border border-[#202020] bg-[#050505] px-2 py-1.5 font-mono text-[9px] text-[#9a9a9a] outline-none focus:border-[#e05c00]" />
+          <input value={higgsfieldForm.title} onChange={(event) => setHiggsfieldForm({ title: event.target.value })} className="w-full rounded-[2px] border border-[#202020] bg-[#050505] px-2 py-1.5 font-mono text-[9px] text-[#9a9a9a] outline-none focus:border-[#e05c00]" />
         </label>
         <label className="mt-2 block">
           <span className="mb-1 block text-[8px] uppercase tracking-[0.14em] text-[#666]">Extra reference URLs, one per line, appended after selected refs</span>
-          <textarea value={higgsfieldForm.extraReferenceUrls} onChange={(event) => setHiggsfieldForm((current) => ({ ...current, extraReferenceUrls: event.target.value }))} rows={2} className="w-full resize-y rounded-[2px] border border-[#202020] bg-[#050505] px-2 py-1.5 font-mono text-[9px] leading-4 text-[#9a9a9a] outline-none focus:border-[#e05c00]" />
+          <textarea value={higgsfieldForm.extraReferenceUrls} onChange={(event) => setHiggsfieldForm({ extraReferenceUrls: event.target.value })} rows={2} className="w-full resize-y rounded-[2px] border border-[#202020] bg-[#050505] px-2 py-1.5 font-mono text-[9px] leading-4 text-[#9a9a9a] outline-none focus:border-[#e05c00]" />
         </label>
         <label className="mt-2 block">
           <span className="mb-1 block text-[8px] uppercase tracking-[0.14em] text-[#666]">Prompt</span>
-          <textarea value={higgsfieldForm.prompt} onChange={(event) => setHiggsfieldForm((current) => ({ ...current, prompt: event.target.value }))} rows={10} className="w-full resize-y rounded-[2px] border border-[#202020] bg-[#050505] px-2 py-1.5 font-mono text-[9px] leading-4 text-[#c0c0c0] outline-none focus:border-[#e05c00]" />
+          <textarea value={higgsfieldForm.prompt} onChange={(event) => setHiggsfieldForm({ prompt: event.target.value })} rows={10} className="w-full resize-y rounded-[2px] border border-[#202020] bg-[#050505] px-2 py-1.5 font-mono text-[9px] leading-4 text-[#c0c0c0] outline-none focus:border-[#e05c00]" />
         </label>
         <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_auto]">
           <div className="rounded-[2px] border border-[#151515] bg-[#050505] p-2 font-mono text-[8px] leading-4 text-[#777]">{higgsfieldStatus}</div>
-          <button type="button" disabled={isHiggsfieldGenerating || !higgsfieldInputCount} onClick={() => onRunHiggsfield(higgsfieldForm)} className="rounded-[2px] border border-[#6e3425] bg-[#160905] px-3 py-2 text-[8px] uppercase tracking-[0.12em] text-[#d26c42] disabled:cursor-not-allowed disabled:opacity-45">Run + split</button>
+          <button type="button" disabled={isHiggsfieldGenerating || !higgsfieldInputCount} onClick={() => onRunHiggsfield(higgsfieldForm)} className="rounded-[2px] border border-[#6e3425] bg-[#160905] px-3 py-2 text-[8px] uppercase tracking-[0.12em] text-[#d26c42] disabled:cursor-not-allowed disabled:opacity-45">Generate grid → split into panels</button>
         </div>
         {persistedGeneratedAssets.length ? <GeneratedHiggsfieldAssetGrid assets={persistedGeneratedAssets} /> : null}
       </div>
@@ -918,27 +936,53 @@ function buildHiggsfieldInputImages(assets: ReferenceAsset[], selection: Generat
   return [...selected, ...extra];
 }
 
-function buildDefaultHiggsfieldPrompt(characterName: string) {
-  return `Character: ${characterName}.
+function buildStoryboardGridPrompt(args: {
+  slot?: CoverageSlot;
+  moment?: VideoMoment;
+  characterNames: string[];
+  environmentName?: string;
+  referenceInstructions: string[];
+}) {
+  const { slot, moment, characterNames, environmentName, referenceInstructions } = args;
+  const cast = characterNames.length ? characterNames.join(" and ") : "the lead character";
+  const sectionLine = slot
+    ? `This grid continues the section "${slot.item.label}" (${fmt(slot.item.start)}\u2013${fmt(slot.item.end)}). Story intent: ${slot.item.prompt}`
+    : "This grid continues the current music-video section.";
+  const caption = getMomentCaption(moment);
+  const captionLine = caption ? ` The current frame captures: ${caption}` : "";
+  const settingLine = environmentName
+    ? `Setting: ${environmentName} (use its reference image for the location and mood).`
+    : "Setting: keep the location consistent with the source frame.";
+  const castLine = characterNames.length
+    ? `Cast: ${characterNames.join(", ")} \u2014 keep faces, hair, and wardrobe consistent with their character reference images.`
+    : "Cast: keep the on-screen subject consistent with the reference images.";
+  const imageMap: string[] = [];
+  let imageIndex = 1;
+  imageMap.push(`Use image ${imageIndex} as the current frame \u2014 the grid shows what happens NEXT, continuing its action, framing, and lighting.`);
+  imageIndex += 1;
+  for (const name of characterNames) {
+    imageMap.push(`Use image ${imageIndex} as the character reference for ${name}.`);
+    imageIndex += 1;
+  }
+  if (environmentName) {
+    imageMap.push(`Use image ${imageIndex} as the environment/location reference.`);
+    imageIndex += 1;
+  }
+  for (const instruction of referenceInstructions.slice(characterNames.length + (environmentName ? 1 : 0))) {
+    imageMap.push(instruction);
+  }
 
-Use image 1 and image 2 as character references for ${characterName}.
-Use image 3 as the detail reference for ${characterName}.
-Use image 4 as the cinematic style reference.
+  return `Storyboard continuation grid for ${cast}.
 
-Create a photorealistic 3x3 cinematic image grid showing one secret vampire night in ${characterName}'s life as a normal college kid. The story happens over the course of one night: campus, dorm corridors, party rooms, stairwells, rooftop, and dawn. Nobody around ${characterName} knows ${characterName} is a vampire. Keep ${characterName} grounded and believable, dressed like a college student, with the vampire truth mostly hidden except for subtle gold fang teeth, predatory stillness, and strange moments in the lighting. 16:9 widescreen panels, no labels, no numbers, no text.
+${imageMap.join("\n")}
 
-Panel beats:
-1. ${characterName} crosses a wet college courtyard at dusk, backpack on one shoulder, students blurred around ${characterName}, low tracking angle, first red party lights glowing in the distance.
-2. ${characterName} stands under fluorescent dorm hallway lights while friends laugh nearby, ${characterName}'s expression calm and unreadable, handheld medium shot with motion behind ${characterName}.
-3. ${characterName} enters a packed red-lit apartment party, the camera pushing through bodies toward ${characterName}, saturated practical lights and kinetic motion.
-4. ${characterName} pauses in a bathroom mirror with gold fang teeth barely visible for one instant, extreme close-up, condensation and red light reflections.
-5. ${characterName} moves through a stairwell faster than everyone else, dynamic tilted angle, motion blur, one student turning as if sensing something impossible.
-6. ${characterName} leans close to a partygoer in conversation, charming and normal on the surface, but ${characterName}'s eyes catch a strange glint from the red light.
-7. ${characterName} bursts onto a rooftop after midnight, city lights and campus buildings below, wind pulling at ${characterName}'s hoodie, wide anamorphic shot.
-8. ${characterName} crouches beside a glowing vending machine in an empty corridor at 3 a.m., gold teeth catching the light, secret hunger implied but not shown.
-9. ${characterName} walks alone at dawn past silent dorm windows, the night behind ${characterName}, face calm, secret still hidden, final cinematic wide close-up.
+${sectionLine}.${captionLine}
+${settingLine}
+${castLine}
 
-Keep the grid very dynamic: low angles, push-ins, tilted handheld frames, over-the-shoulder shots, macro details, motion blur, shallow depth of field. Cohesive red practical light, teal-black shadows, warm skin highlights, deep crushed blacks, 35mm film grain, subtle anamorphic flares, oval bokeh, realistic college-night atmosphere.`;
+Create a 3x3 grid of nine sequential cinematic shots that read left-to-right, top-to-bottom as ONE continuing action: image 1 is the current moment, and each following panel advances to the next logical beat \u2014 reaction, movement, escalation, turn, consequence, approach, climax, settle, and a final forward-moving beat into the next section. Stay in the same scene; do not jump to unrelated moments.
+
+Keep every panel 16:9 widescreen with consistent lighting, color palette, and lens language. Vary shot size and angle between panels (wide, medium, close-up, insert, over-the-shoulder) with motion continuity. No labels, no numbers, no text, no borders.`;
 }
 
 function GeneratedHiggsfieldAssetGrid({ assets }: { assets: GeneratedStudioAsset[] }) {
