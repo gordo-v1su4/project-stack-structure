@@ -49,3 +49,92 @@ export function sliceWavFromSeconds(bytes: Uint8Array, startSeconds: number): Ui
 
   return null;
 }
+
+/**
+ * Merges byte-split WAV parts back into one valid RIFF stream. Chunked uploads
+ * cut the file at arbitrary offsets, so every part after the first carries a
+ * stale header; only the first header is kept and the data sizes are summed.
+ * Returns null when the parts are not PCM WAV (callers fall back to raw
+ * concatenation for opaque formats).
+ */
+export function concatWavChunks(parts: Uint8Array[]): Uint8Array | null {
+  if (!parts.length) return null;
+
+  const first = parts[0]!;
+  if (first.length < 44) return null;
+  const firstView = new DataView(first.buffer, first.byteOffset, first.byteLength);
+  const readTag = (source: Uint8Array, offset: number) =>
+    String.fromCharCode(source[offset]!, source[offset + 1]!, source[offset + 2]!, source[offset + 3]!);
+
+  if (readTag(first, 0) !== "RIFF" || readTag(first, 8) !== "WAVE") return null;
+
+  let headerSize = 0;
+  let dataSize = 0;
+  let dataHeaderOffset = -1;
+  {
+    let offset = 12;
+    while (offset + 8 <= first.length) {
+      const tag = readTag(first, offset);
+      const chunkSize = firstView.getUint32(offset + 4, true);
+      const chunkStart = offset + 8;
+      if (tag === "data") {
+        headerSize = chunkStart;
+        dataHeaderOffset = offset;
+        dataSize = chunkSize;
+        break;
+      }
+      offset = chunkStart + chunkSize + (chunkSize % 2);
+    }
+  }
+  if (dataHeaderOffset < 0 || headerSize <= 0) return null;
+
+  const firstDataSize = Math.min(dataSize, first.length - headerSize);
+  let totalData = firstDataSize;
+  for (let partIndex = 1; partIndex < parts.length; partIndex += 1) {
+    const part = parts[partIndex]!;
+    const partView = new DataView(part.buffer, part.byteOffset, part.byteLength);
+    let offset = 12;
+    let partData = 0;
+    let matched = false;
+    while (offset + 8 <= part.length) {
+      const tag = readTag(part, offset);
+      const chunkSize = partView.getUint32(offset + 4, true);
+      const chunkStart = offset + 8;
+      if (tag === "data") {
+        partData = Math.min(chunkSize, part.length - chunkStart);
+        matched = true;
+        break;
+      }
+      offset = chunkStart + chunkSize + (chunkSize % 2);
+    }
+    if (!matched) return null;
+    totalData += partData;
+  }
+
+  const out = new Uint8Array(headerSize + totalData);
+  out.set(first.subarray(0, headerSize), 0);
+  out.set(first.subarray(headerSize, headerSize + firstDataSize), headerSize);
+  let cursor = headerSize + firstDataSize;
+  for (let partIndex = 1; partIndex < parts.length; partIndex += 1) {
+    const part = parts[partIndex]!;
+    const partView = new DataView(part.buffer, part.byteOffset, part.byteLength);
+    let offset = 12;
+    while (offset + 8 <= part.length) {
+      const tag = readTag(part, offset);
+      const chunkSize = partView.getUint32(offset + 4, true);
+      const chunkStart = offset + 8;
+      if (tag === "data") {
+        const partData = Math.min(chunkSize, part.length - chunkStart);
+        out.set(part.subarray(chunkStart, chunkStart + partData), cursor);
+        cursor += partData;
+        break;
+      }
+      offset = chunkStart + chunkSize + (chunkSize % 2);
+    }
+  }
+
+  const outView = new DataView(out.buffer);
+  outView.setUint32(4, out.length - 8, true);
+  outView.setUint32(dataHeaderOffset + 4, totalData, true);
+  return out;
+}

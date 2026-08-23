@@ -166,7 +166,11 @@ export async function triggerDeepgramTranscription(payload: DeepgramStoredAudioP
     progressMode: "provider",
   });
   return tasks.trigger<typeof deepgramTranscriptionTask>(STACK_STRUCTURE_TRIGGER_TASKS.deepgramTranscription, payload, {
-    idempotencyKey: createTriggerIdempotencyKey("deepgram", [payload.bucket, payload.objectKey, payload.sourceLabel]),
+    idempotencyKey: createTriggerIdempotencyKey("deepgram", [
+      payload.bucket ?? "chunks",
+      payload.objectKey ?? String(payload.size ?? payload.chunks?.length ?? 0),
+      payload.sourceLabel,
+    ]),
     idempotencyKeyTTL: "24h",
     maxAttempts: 1,
     tags: dispatch.tags,

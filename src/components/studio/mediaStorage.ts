@@ -1,9 +1,13 @@
+import { uploadFileInChunks } from "./chunkedUploadClient";
 import type { UploadedVideoSource } from "./types";
 
 export type UploadedVideoStorage = Pick<
   UploadedVideoSource,
   "storageProvider" | "storageBucket" | "storagePath" | "storageUrl" | "storageStatus" | "storageError"
->;
+> & {
+  /** Set when the file traveled as ordered gateway chunks (Vercel body cap). */
+  uploadChunks?: { size: number; chunks: Array<{ bucket: string; objectKey: string }> } | null;
+};
 
 type StorageUploadResponse = {
   storageProvider?: string;
@@ -17,6 +21,19 @@ type StorageUploadResponse = {
 };
 
 export async function uploadVideoFileToRustFs(file: File): Promise<UploadedVideoStorage> {
+  const chunked = await uploadFileInChunks(file, "media-uploads/video-source");
+  if (chunked) {
+    return {
+      storageProvider: "rustfs",
+      storageBucket: chunked.chunks[0]?.bucket ?? "",
+      storagePath: chunked.chunks[0]?.objectKey ?? "",
+      storageUrl: "",
+      storageStatus: "uploaded",
+      storageError: null,
+      uploadChunks: { size: chunked.size, chunks: chunked.chunks },
+    };
+  }
+
   const formData = new FormData();
   formData.append("file", file, file.name);
 

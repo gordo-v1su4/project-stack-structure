@@ -7,15 +7,18 @@ import {
   mergeDeepgramTailResponse,
   pickRicherDeepgramResponse,
 } from "@/components/studio/deepgramUtils";
+import { concatWavChunks, sliceWavFromSeconds } from "@/lib/wavSlice";
 import { downloadMediaGatewayFile, uploadJsonToMediaGateway } from "@/lib/mediaGateway";
-import { sliceWavFromSeconds } from "@/lib/wavSlice";
 
 import { externalProviderQueue } from "./queues";
 import { markWorkCompleted, markWorkRunning } from "./workMetadata";
 
 export type DeepgramStoredAudioPayload = {
-  bucket: string;
-  objectKey: string;
+  bucket?: string;
+  objectKey?: string;
+  /** Chunked-upload path: ordered gateway parts reassembled before transcription. */
+  chunks?: Array<{ bucket: string; objectKey: string }>;
+  size?: number;
   sourceLabel: string;
   contentType?: string;
 };
@@ -32,13 +35,43 @@ export const deepgramTranscriptionTask = task({
     const apiKey = process.env.DEEPGRAM_API_KEY || process.env.DEEPGRAM_TOKEN;
     if (!apiKey) throw new AbortTaskRunError("DEEPGRAM_API_KEY/DEEPGRAM_TOKEN is not configured for the Trigger worker.");
 
-    const source = await downloadMediaGatewayFile({
-      bucket: payload.bucket,
-      objectKey: payload.objectKey,
-      fileName: payload.sourceLabel,
-    });
-    const rawBytes = new Uint8Array(source.bytes);
-    const contentType = payload.contentType || source.mime || "application/octet-stream";
+    let sourceBytes: Uint8Array<ArrayBuffer>;
+    let sourceMime: string | undefined;
+    if (payload.chunks?.length) {
+      markWorkRunning("transcribing", "Reassembling uploaded audio", { progressMode: "indeterminate" });
+      const parts: Uint8Array[] = [];
+      for (const [index, ref] of payload.chunks.entries()) {
+        const part = await downloadMediaGatewayFile({
+          bucket: ref.bucket,
+          objectKey: ref.objectKey,
+          fileName: `part-${String(index).padStart(5, "0")}.part`,
+        });
+        parts.push(new Uint8Array(part.bytes));
+        sourceMime = sourceMime ?? part.mime;
+      }
+      const contentType = payload.contentType || sourceMime || "application/octet-stream";
+      const merged = /wav/i.test(contentType) ? concatWavChunks(parts) : null;
+      sourceBytes = new Uint8Array(merged ?? Buffer.concat(parts.map((part) => Buffer.from(part))));
+      logger.info("Reassembled chunked audio for transcription", {
+        triggerRunId: ctx.run.id,
+        parts: parts.length,
+        bytes: sourceBytes.byteLength,
+        wavAware: Boolean(merged),
+      });
+    } else {
+      if (!payload.bucket || !payload.objectKey) {
+        throw new AbortTaskRunError("Deepgram payload requires either objectKey or a chunk manifest.");
+      }
+      const source = await downloadMediaGatewayFile({
+        bucket: payload.bucket,
+        objectKey: payload.objectKey,
+        fileName: payload.sourceLabel,
+      });
+      sourceBytes = new Uint8Array(source.bytes);
+      sourceMime = source.mime;
+    }
+    const rawBytes = sourceBytes;
+    const contentType = payload.contentType || sourceMime || "application/octet-stream";
     const model = process.env.DEEPGRAM_MODEL || "nova-3";
     const language = process.env.DEEPGRAM_LANGUAGE || "en";
     const query = new URLSearchParams({

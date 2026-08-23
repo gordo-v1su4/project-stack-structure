@@ -10,6 +10,7 @@ interface StoredVideoSceneReference {
   bucket?: string;
   objectKey?: string;
   storagePath?: string;
+  uploadChunks?: { size: number; chunks: Array<{ bucket: string; objectKey: string }> } | null;
 }
 
 interface MediaVideoJobState {
@@ -358,6 +359,7 @@ export async function detectScenesFromStoredVideo(
       objectKey,
       mode: "scene-detect",
       profile: "pyscenedetect-adaptive",
+      uploadChunks: storage.uploadChunks ?? undefined,
     }),
   })) as MediaVideoJobCreatedResponse;
 
