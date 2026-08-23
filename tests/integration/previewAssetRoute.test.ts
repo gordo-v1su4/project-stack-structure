@@ -1,6 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 
-import { GET } from "../../src/app/api/preview/asset/route";
+mock.module("@/auth", () => ({ auth: async () => ({ user: { id: "github-test-user" } }) }));
+
+const { GET } = await import("../../src/app/api/preview/asset/route");
 import { createTempPreviewPath, generateSectionPreview, type ProbeFn } from "../../src/components/studio/previewGeneration";
 import { probeMediaFile } from "../../src/components/studio/mediaProbe";
 import { hasAudioVideoFixtures, listMediaFixtures, mediaFixtureTest } from "../helpers/mediaFixtures";

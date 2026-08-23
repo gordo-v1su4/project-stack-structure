@@ -1,6 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 
-import { POST } from "@/app/api/export/shader-capture/route";
+mock.module("@/auth", () => ({ auth: async () => ({ user: { id: "github-test-user" } }) }));
+
+const { POST } = await import("@/app/api/export/shader-capture/route");
 
 describe("POST /api/export/shader-capture", () => {
   test("rejects an incomplete capture export before dispatching Trigger.dev", async () => {

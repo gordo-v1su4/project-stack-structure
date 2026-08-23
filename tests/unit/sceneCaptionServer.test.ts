@@ -5,6 +5,7 @@ import { normalizeServerCaptionPayload } from "@/components/studio/sceneCaptioni
 import type { UploadedVideoSource } from "@/components/studio/types";
 
 const triggerSmartSceneCaptionMock = mock(async () => ({ id: "run_caption_123" }));
+mock.module("@/auth", () => ({ auth: async () => ({ user: { id: "github-test-user" } }) }));
 mock.module("@/lib/triggerOrchestration", () => ({
   STACK_STRUCTURE_TRIGGER_TASKS: {
     mediaVideoPipeline: "media-video-pipeline",
