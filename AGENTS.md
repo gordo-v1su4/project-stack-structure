@@ -31,6 +31,7 @@ bun run e2e:media  # full pipeline e2e — see "E2E harness" below
 - **Trigger dispatch rejects anonymous callers.** `currentApplicationUserId()` in `src/lib/triggerOrchestration.ts` throws without a session; never reintroduce a shared fallback identity (`user:anonymous` let any caller read any other caller's runs).
 - **Never expose server credentials to the browser.** `nextConfig.env` inlines values into the client bundle — this leaked `FFMPEG_GATEWAY_API_KEY` once (rotated 2026-08-23). Server routes read `process.env` directly.
 - Filesystem and SSRF rules: routes accept only durable media-gateway references (`bucket` pinned to the configured bucket) or https URLs on allowlisted hosts (`MEDIA_GATEWAY_PUBLIC_URL`, `FFGLITCH_ALLOWED_INPUT_HOSTS`, `HIGGSFIELD_ALLOWED_IMAGE_HOSTS`). No client-supplied server paths.
+- **After any `AUTH_*` env change, verify interactive sign-in with a real browser click-through on production.** The e2e harness mints session JWTs directly and bypasses the entire OAuth dance — harness-green proves nothing about the browser flow (2026-08-23 incident: a deployment served "Server error" on every real sign-in while all scripted checks passed). `vercel redeploy <url>` re-bakes env without a code change.
 - Full history + rationale: `docs/security/api-hardening.md`.
 
 ## E2E harness
