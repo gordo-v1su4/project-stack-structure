@@ -6,6 +6,7 @@ import {
   normalizeMediaPath,
   uploadJsonToMediaGateway,
 } from "@/lib/mediaGateway";
+import { getSessionUser, unauthorizedResponse } from "@/lib/session";
 import type { PersistedStudioProjectDraft } from "@/components/studio/projectPersistence";
 
 export const runtime = "nodejs";
@@ -14,19 +15,25 @@ const DRAFT_FOLDER = "media-uploads/studio-drafts";
 const DRAFT_FILE_NAME = "default.json";
 const LOCAL_DRAFT_PATH = path.join(process.cwd(), ".tmp", "studio-drafts", DRAFT_FILE_NAME);
 
+function draftStoragePath(userId: string) {
+  return normalizeMediaPath(`${DRAFT_FOLDER}/${encodeURIComponent(userId)}.json`);
+}
+
 export async function GET() {
+  const user = await getSessionUser();
+  if (!user) return unauthorizedResponse("Sign in with GitHub to load the studio draft.");
   try {
     if (studioDraftLocalCacheEnabled()) {
       const localDraft = await readLocalDraft();
       if (localDraft) {
-        return Response.json({ success: true, draft: localDraft, storagePath: getDraftStoragePath(), source: "local-cache" });
+        return Response.json({ success: true, draft: localDraft, storagePath: draftStoragePath(user.id), source: "local-cache" });
       }
     }
 
     const config = getMediaGatewayConfig();
     if (!config) return missingGatewayResponse();
 
-    const storagePath = getDraftStoragePath();
+    const storagePath = draftStoragePath(user.id);
     const response = await fetch(buildMediaGatewayFileUrl(config, config.bucket, storagePath), {
       headers: { Authorization: `Bearer ${config.token}` },
       cache: "no-store",
@@ -65,6 +72,8 @@ export async function POST(request: Request) {
 }
 
 async function saveDraft(request: Request) {
+  const user = await getSessionUser();
+  if (!user) return unauthorizedResponse("Sign in with GitHub to save the studio draft.");
   try {
     const body = await request.json() as { draft?: unknown } | unknown;
     const draft = isDraftEnvelope(body) ? body.draft : body;
@@ -82,8 +91,8 @@ async function saveDraft(request: Request) {
     }
 
     const uploaded = await uploadJsonToMediaGateway({
-      data: savedDraft,
-      fileName: DRAFT_FILE_NAME,
+      data: { ...savedDraft, ownerId: user.id },
+      fileName: `${encodeURIComponent(user.id)}.json`,
       folder: DRAFT_FOLDER,
     });
 
@@ -97,10 +106,6 @@ async function saveDraft(request: Request) {
 
 export function studioDraftLocalCacheEnabled(env: Record<string, string | undefined> = process.env) {
   return env.NODE_ENV !== "production";
-}
-
-function getDraftStoragePath() {
-  return normalizeMediaPath(`${DRAFT_FOLDER}/${DRAFT_FILE_NAME}`);
 }
 
 function parseDraft(text: string): PersistedStudioProjectDraft | null {
