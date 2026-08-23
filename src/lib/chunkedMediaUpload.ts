@@ -54,7 +54,9 @@ export function validateOrderedChunkManifest(args: {
 
   const prefix = args.expectedPrefix.split("/").map((part) => part.trim()).filter(Boolean).join("/");
   if (!prefix) return null;
-  const pattern = new RegExp(`^${escapeRegExp(prefix)}/(${UUID_V4_SOURCE})/(\\d{5})\\.part$`, "i");
+  // The gateway may prefix stored filenames with a timestamp
+  // (e.g. 1787524663125-00000.part), so only the trailing index is authoritative.
+  const pattern = new RegExp(`^${escapeRegExp(prefix)}/(${UUID_V4_SOURCE})/(?:[0-9]+-)?(\\d{5})\\.part$`, "i");
 
   let uploadId: string | null = null;
   const chunks: UploadChunkReference[] = [];

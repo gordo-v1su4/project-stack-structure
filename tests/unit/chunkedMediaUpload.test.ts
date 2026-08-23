@@ -46,6 +46,22 @@ describe("validateOrderedChunkManifest", () => {
     expect(validated).toBeNull();
   });
 
+  test("accepts gateway timestamp-prefixed part names", () => {
+    const uuid = "9a1b2c3d-4e5f-4a6b-8c7d-1e2f3a4b5c6d";
+    const chunks = [
+      { bucket: BUCKET, objectKey: `${PREFIX}/${uuid}/1787524663125-00000.part` },
+      { bucket: BUCKET, objectKey: `${PREFIX}/${uuid}/1787524663789-00001.part` },
+    ];
+    const validated = validateOrderedChunkManifest({
+      value: chunks,
+      size: LARGE_UPLOAD_CHUNK_BYTES * 2,
+      bucket: BUCKET,
+      expectedPrefix: PREFIX,
+    });
+    expect(validated).not.toBeNull();
+    expect(validated?.length).toBe(2);
+  });
+
   test("rejects out-of-order part indexes", () => {
     const manifest = makeManifest(LARGE_UPLOAD_CHUNK_BYTES * 2);
     const swapped = [manifest.chunks[1], manifest.chunks[0]];

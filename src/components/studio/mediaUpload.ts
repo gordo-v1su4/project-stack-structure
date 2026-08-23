@@ -76,6 +76,7 @@ export async function prepareVideoSources(
               return detectScenesFromStoredVideo({
                 bucket: storage.storageBucket,
                 objectKey: storage.storagePath,
+                uploadChunks: storage.uploadChunks ?? undefined,
               }, index)
                 .then(async (scenes) => {
                   const readySource = {
@@ -213,7 +214,7 @@ export async function rerunSourceSceneAnalysis(
 
     try {
       const scenes = await detectScenesFromStoredVideo(
-        { bucket: source.storageBucket, objectKey: source.storagePath },
+        { bucket: source.storageBucket, objectKey: source.storagePath, uploadChunks: source.uploadChunks ?? undefined },
         source.id,
       );
       workingSource = { ...workingSource, scenes, sceneStatus: "ready", sceneError: null };

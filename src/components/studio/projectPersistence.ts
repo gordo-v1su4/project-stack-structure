@@ -110,6 +110,7 @@ export function createPersistableStudioProjectDraft(params: {
       storageUrl: stripRuntimeUrl(source.storageUrl),
       storageStatus: source.storageStatus,
       storageError: source.storageError,
+      uploadChunks: source.uploadChunks ?? null,
       scenes: source.scenes?.map((scene) => ({
         ...scene,
         thumbnailUrl: stripRuntimeUrl(scene.thumbnailUrl),

@@ -179,6 +179,7 @@ export interface UploadedVideoSource {
   storageUrl?: string;
   storageStatus?: MediaStorageStatus;
   storageError?: string | null;
+  uploadChunks?: { size: number; chunks: Array<{ bucket: string; objectKey: string }> } | null;
   scenes?: DetectedSceneSegment[];
   sceneStatus?: SceneSplitStatus;
   sceneJobId?: string;
