@@ -35,13 +35,16 @@ export async function GET(request: Request) {
   });
 }
 
-// SECURITY: assets must come from the configured SwarmUI origin only. Resolve the
-// caller-supplied reference relative to that base; never accept absolute URLs.
+// SECURITY: assets must come from the configured SwarmUI origin only. Resolve
+// the caller-supplied reference relative to that base and verify the resolved
+// origin afterwards — backslash authority references would otherwise escape it.
 function buildSwarmViewUrl(searchParams: URLSearchParams, swarmBase: string) {
   const path = searchParams.get("path");
   if (!path || path.startsWith("data:") || /^[a-z][a-z0-9+.-]*:/i.test(path)) return null;
   try {
-    return new URL(path.replace(/^\/+/, ""), `${swarmBase}/`).toString();
+    const base = new URL(`${swarmBase}/`);
+    const target = new URL(path.replace(/^\/+/, ""), base);
+    return target.origin === base.origin ? target.toString() : null;
   } catch {
     return null;
   }

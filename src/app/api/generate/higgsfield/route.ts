@@ -5,20 +5,24 @@ import { triggerHiggsfieldGeneration } from "@/lib/triggerOrchestration";
 
 export const runtime = "nodejs";
 
-function allowedImageHosts(): string[] {
-  const hosts = new Set<string>();
-  const config = getMediaGatewayConfig();
+function addAllowedHost(hosts: Set<string>, candidate: string | undefined) {
+  if (!candidate?.trim()) return;
   try {
-    if (config?.url) hosts.add(new URL(config.url).host);
-    const publicUrl = process.env.MEDIA_GATEWAY_PUBLIC_URL?.trim();
-    if (publicUrl) hosts.add(new URL(publicUrl).host);
-    for (const extra of (process.env.HIGGSFIELD_ALLOWED_IMAGE_HOSTS ?? "").split(",")) {
-      const candidate = extra.trim();
-      if (candidate) hosts.add(new URL(candidate.includes("://") ? candidate : `https://${candidate}`).host);
-    }
+    const value = candidate.trim();
+    hosts.add(new URL(value.includes("://") ? value : `https://${value}`).host);
   } catch {
-    // Malformed env values simply contribute nothing to the allowlist.
+    // Malformed env values are ignored rather than failing startup.
   }
+}
+
+function allowedImageHosts(): string[] {
+  const config = getMediaGatewayConfig();
+  const publicUrl = process.env.MEDIA_GATEWAY_PUBLIC_URL?.trim();
+  const extras = (process.env.HIGGSFIELD_ALLOWED_IMAGE_HOSTS ?? "").split(",");
+  const hosts = new Set<string>();
+  addAllowedHost(hosts, config?.url);
+  addAllowedHost(hosts, publicUrl);
+  for (const extra of extras) addAllowedHost(hosts, extra);
   return [...hosts];
 }
 
