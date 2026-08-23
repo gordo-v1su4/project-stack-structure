@@ -1,9 +1,4 @@
 import { createHash } from "node:crypto";
-import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
-import { promisify } from "node:util";
 import { logger, metadata, task, tasks, wait } from "@trigger.dev/sdk";
 
 import {
@@ -312,53 +307,33 @@ export const mediaVideoPipelineTask = task({
   },
 });
 
-const execFileAsync = promisify(execFile);
-
 async function assembleChunkedSource(payload: MediaSceneDetectionPayload, triggerRunId: string) {
   const chunkRefs = payload.uploadChunks?.chunks ?? [];
   if (!chunkRefs.length) return payload;
   metadata.set("stageLabel", "Reassembling chunked upload");
-  const workspace = await mkdtemp(path.join(os.tmpdir(), "stack-structure-source-"));
-  try {
-    for (const [index, ref] of chunkRefs.entries()) {
-      const part = await downloadMediaGatewayFile({
-        bucket: ref.bucket,
-        objectKey: ref.objectKey,
-        fileName: `part-${String(index).padStart(5, "0")}.mp4`,
-      });
-      await writeFile(path.join(workspace, `part-${String(index).padStart(5, "0")}.mp4`), Buffer.from(part.bytes));
-    }
-    const listPath = path.join(workspace, "parts.txt");
-    await writeFile(
-      listPath,
-      chunkRefs.map((_, index) => `file '${path.join(workspace, `part-${String(index).padStart(5, "0")}.mp4`)}'`).join("\n"),
-    );
-    const outputPath = path.join(workspace, "assembled.mp4");
-    const ffmpegPath = process.env.FFMPEG_PATH ?? "ffmpeg";
-    try {
-      await execFileAsync(ffmpegPath, ["-y", "-f", "concat", "-safe", "0", "-i", listPath, "-c", "copy", outputPath]);
-    } catch {
-      await execFileAsync(ffmpegPath, [
-        "-y", "-f", "concat", "-safe", "0", "-i", listPath,
-        "-c:v", "libx264", "-preset", "veryfast", "-c:a", "aac",
-        outputPath,
-      ]);
-    }
-    const output = await readFile(outputPath);
-    const storage = await uploadFileToMediaGateway({
-      file: new File([output], "assembled.mp4", { type: "video/mp4" }),
-      folder: "media-uploads/video-source/assembled",
+  const parts: Buffer[] = [];
+  for (const [index, ref] of chunkRefs.entries()) {
+    const part = await downloadMediaGatewayFile({
+      bucket: ref.bucket,
+      objectKey: ref.objectKey,
+      fileName: `part-${String(index).padStart(5, "0")}.part`,
     });
-    logger.info("Assembled chunked video source", {
-      triggerRunId,
-      parts: chunkRefs.length,
-      bytes: output.byteLength,
-      objectKey: storage.objectKey,
-    });
-    return { ...payload, bucket: storage.bucket, objectKey: storage.objectKey, uploadChunks: undefined };
-  } finally {
-    await rm(workspace, { recursive: true, force: true });
+    parts.push(Buffer.from(part.bytes));
   }
+  // Parts are contiguous byte-slices of one original file — binary concat
+  // reproduces it exactly. No container-level concat is possible here.
+  const assembled = Buffer.concat(parts);
+  const storage = await uploadFileToMediaGateway({
+    file: new File([assembled], "assembled.mp4", { type: "video/mp4" }),
+    folder: "media-uploads/video-source/assembled",
+  });
+  logger.info("Assembled chunked video source", {
+    triggerRunId,
+    parts: chunkRefs.length,
+    bytes: assembled.byteLength,
+    objectKey: storage.objectKey,
+  });
+  return { ...payload, bucket: storage.bucket, objectKey: storage.objectKey, uploadChunks: undefined };
 }
 
 async function runQueuedMediaWorker(payload: MediaSceneDetectionPayload, triggerRunId: string) {
