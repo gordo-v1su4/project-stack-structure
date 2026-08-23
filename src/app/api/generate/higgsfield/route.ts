@@ -1,19 +1,50 @@
 import { getHiggsfieldAccount, type HiggsfieldInputImage, type HiggsfieldResolution } from "@/lib/higgsfieldGateway";
+import { getMediaGatewayConfig } from "@/lib/mediaGateway";
+import { getSessionUser, unauthorizedResponse } from "@/lib/session";
 import { triggerHiggsfieldGeneration } from "@/lib/triggerOrchestration";
 
 export const runtime = "nodejs";
 
-export async function GET() {
+function allowedImageHosts(): string[] {
+  const hosts = new Set<string>();
+  const config = getMediaGatewayConfig();
   try {
-    const account = await getHiggsfieldAccount();
-    return Response.json({ success: true, account });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Higgsfield account check failed";
-    return Response.json({ success: false, error: message }, { status: /Missing Higgsfield auth/i.test(message) ? 503 : 502 });
+    if (config?.url) hosts.add(new URL(config.url).host);
+    const publicUrl = process.env.MEDIA_GATEWAY_PUBLIC_URL?.trim();
+    if (publicUrl) hosts.add(new URL(publicUrl).host);
+    for (const extra of (process.env.HIGGSFIELD_ALLOWED_IMAGE_HOSTS ?? "").split(",")) {
+      const candidate = extra.trim();
+      if (candidate) hosts.add(new URL(candidate.includes("://") ? candidate : `https://${candidate}`).host);
+    }
+  } catch {
+    // Malformed env values simply contribute nothing to the allowlist.
+  }
+  return [...hosts];
+}
+
+function isAllowedImageUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && allowedImageHosts().includes(url.host);
+  } catch {
+    return false;
+  }
+}
+
+export async function GET() {
+  const user = await getSessionUser();
+  if (!user) return unauthorizedResponse("Sign in with GitHub to check generation providers.");
+  try {
+    await getHiggsfieldAccount();
+    return Response.json({ success: true, configured: true });
+  } catch {
+    return Response.json({ success: true, configured: false });
   }
 }
 
 export async function POST(request: Request) {
+  const user = await getSessionUser();
+  if (!user) return unauthorizedResponse("Sign in with GitHub to run paid generations.");
   try {
     const body = await request.json() as {
       prompt?: unknown;
@@ -60,7 +91,7 @@ function normalizeInputImages(value: unknown): HiggsfieldInputImage[] {
     if (!item || typeof item !== "object") return [];
     const record = item as Record<string, unknown>;
     const url = typeof record.url === "string" ? record.url.trim() : "";
-    if (!url) return [];
+    if (!url || !isAllowedImageUrl(url)) return [];
     return [{
       id: typeof record.id === "string" ? record.id.trim() : undefined,
       url,
