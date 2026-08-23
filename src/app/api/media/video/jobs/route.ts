@@ -5,7 +5,11 @@ import { triggerMediaSceneDetection } from "@/lib/triggerOrchestration";
 
 export const runtime = "nodejs";
 
-const VIDEO_CHUNK_PREFIX = "media-uploads/video-source";
+const VIDEO_CHUNK_FOLDER_BASE = "media-uploads/video-source";
+
+function chunkManifestPrefix(uploadPrefix: string) {
+  return normalizeMediaPath(`${normalizeMediaPath(uploadPrefix)}/video-source`);
+}
 
 export async function POST(request: Request) {
   const user = await getSessionUser();
@@ -42,7 +46,7 @@ export async function POST(request: Request) {
           value: payload.uploadChunks.chunks,
           size,
           bucket: config.bucket,
-          expectedPrefix: VIDEO_CHUNK_PREFIX,
+          expectedPrefix: chunkManifestPrefix(config.uploadPrefix),
         })
         : null;
       if (!chunks) {

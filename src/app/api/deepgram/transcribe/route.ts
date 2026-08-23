@@ -1,14 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { normalizeChunkedContentType, validateOrderedChunkManifest } from "@/lib/chunkedMediaUpload";
-import { getMediaGatewayConfig, uploadFileToMediaGateway } from "@/lib/mediaGateway";
+import { getMediaGatewayConfig, normalizeMediaPath, uploadFileToMediaGateway } from "@/lib/mediaGateway";
 import { getSessionUser, unauthorizedResponse } from "@/lib/session";
 import { triggerDeepgramTranscription } from "@/lib/triggerOrchestration";
 
 export const runtime = "nodejs";
 
 const MAX_AUDIO_BYTES = 500 * 1024 * 1024;
-const CHUNK_PREFIX = "media-uploads/source-audio/deepgram-chunks";
+
+function chunkManifestPrefix(uploadPrefix: string) {
+  return normalizeMediaPath(`${normalizeMediaPath(uploadPrefix)}/source-audio/deepgram-chunks`);
+}
 
 export async function POST(request: NextRequest) {
   const user = await getSessionUser();
@@ -31,7 +34,12 @@ export async function POST(request: NextRequest) {
       const config = getMediaGatewayConfig();
       if (!config) throw new Error("Missing RustFS media gateway env.");
       const chunks = size && size <= MAX_AUDIO_BYTES
-        ? validateOrderedChunkManifest({ value: payload.chunks, size, bucket: config.bucket, expectedPrefix: CHUNK_PREFIX })
+        ? validateOrderedChunkManifest({
+          value: payload.chunks,
+          size,
+          bucket: config.bucket,
+          expectedPrefix: chunkManifestPrefix(config.uploadPrefix),
+        })
         : null;
       if (!sourceLabel || !size || !chunks) {
         return NextResponse.json({

@@ -59,3 +59,7 @@ next-env.d.ts
 /test-results/
 /public/qa-media/
 .next-dev*.log
+
+# e2e browser artifacts + local test media (never tracked)
+.playwright-mcp/
+media-to-test-with/
