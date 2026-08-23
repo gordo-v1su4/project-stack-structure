@@ -1,5 +1,6 @@
 import { exportSRT, type SrtChunk } from "./srtUtils";
 import { waitForTriggerRunOutput } from "@/lib/clientTriggerRuns";
+import { uploadFileInChunks } from "./chunkedUploadClient";
 
 export const DEEPGRAM_DEV_TRANSCRIBE_ENDPOINT = "/deepgram-transcribe";
 
@@ -337,14 +338,30 @@ export async function transcribeAudioWithDeepgram(
   if (!file) throw new Error("Select a song before transcription.");
   const endpoint = options.endpoint || DEEPGRAM_DEV_TRANSCRIBE_ENDPOINT;
   console.info(`[Deepgram] POST ${endpoint}`, { file: file.name, size: file.size, type: file.type || "application/octet-stream" });
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": file.type || "application/octet-stream",
-      "X-Audio-Filename": encodeURIComponent(file.name || "song-audio"),
-    },
-    body: file,
-  });
+
+  const chunked = await uploadFileInChunks(file, "media-uploads/source-audio/deepgram-chunks");
+  const response = chunked
+    ? await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Audio-Filename": encodeURIComponent(file.name || "song-audio"),
+        },
+        body: JSON.stringify({
+          sourceLabel: file.name || "vocal-stem",
+          contentType: chunked.contentType,
+          size: chunked.size,
+          chunks: chunked.chunks,
+        }),
+      })
+    : await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": file.type || "application/octet-stream",
+          "X-Audio-Filename": encodeURIComponent(file.name || "song-audio"),
+        },
+        body: file,
+      });
 
   const text = await response.text();
   let payload: JsonRecord;
