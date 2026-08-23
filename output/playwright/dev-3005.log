@@ -1,9 +1,0 @@
-$ next dev --port "3005"
-▲ Next.js 16.2.1 (Turbopack)
-- Local:         http://localhost:3005
-- Network:       http://192.168.8.120:3005
-- Environments: .env.local, .env
-✓ Ready in 374ms
-
- GET / 200 in 666ms (next.js: 462ms, application-code: 204ms)
- GET / 200 in 684ms (next.js: 611ms, application-code: 72ms)
