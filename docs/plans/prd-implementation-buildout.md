@@ -52,10 +52,10 @@ Current verification scripts exist in `package.json`:
 
 **FRs:** FR-19, FR-20
 
-Goal: Make `.omx` and `docs/` agree on the current active goal.
+Goal: Keep the canonical planning artifacts in `docs/plans/` aligned with the current active goal.
 
 Tasks:
-1. Replace stale `.omx` PRD/spec/test/buildout artifacts with current versions.
+1. Keep the PRD/spec/test/buildout artifacts in `docs/plans/` current (relocated from `.omx` on 2026-08-23).
 2. Update `docs/roadmap.md` to point to the current PRD and remove stale “recommended future scripts” language that is now implemented.
 3. Update `README.md` planning section if needed.
 4. Run docs sanity checks and `git status`.

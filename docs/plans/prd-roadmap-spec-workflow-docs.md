@@ -214,7 +214,7 @@ Consequences:
 ### 4.9 Agent Workflow
 
 #### FR-19: Keep PRD/roadmap/test spec current
-Planning artifacts in `.omx` and `docs/` remain synchronized with implementation reality.
+Planning artifacts in `docs/plans/` remain synchronized with implementation reality (relocated from `.omx` on 2026-08-23).
 
 Consequences:
 - Agents update specs when product decisions change.
