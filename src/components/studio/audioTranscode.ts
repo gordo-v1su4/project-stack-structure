@@ -1,4 +1,4 @@
-import { Mp3Encoder } from "lamejs";
+import { Mp3Encoder } from "@breezystack/lamejs";
 
 /**
  * Vocal stems are only a transcription reference for Deepgram — the original
