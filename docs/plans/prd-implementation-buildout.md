@@ -69,8 +69,8 @@ Acceptance:
 
 Verification:
 - `git status --short --branch`
-- `grep -R "svelte-video-shaders" .omx/plans docs README.md` should mention it only as a reference repo, if at all.
-- `grep -R "recommended future scripts" docs .omx/plans` should not imply missing scripts that now exist.
+- `grep -R "svelte-video-shaders" docs/plans docs README.md` should mention it only as a reference repo, if at all.
+- `grep -R "recommended future scripts" docs docs/plans` should not imply missing scripts that now exist.
 
 ### Slice 2 — Contract audit against current code
 

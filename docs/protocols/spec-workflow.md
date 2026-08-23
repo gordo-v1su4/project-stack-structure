@@ -17,9 +17,9 @@ No implementation should start until the work has:
 Use deep interview when the request is broad, cross-cutting, or easy to misinterpret.
 
 Expected output:
-- context snapshot in `docs/plans/` (tracked; tool-local copies remain gitignored under `.omx/`)
-- interview summary in `.omx/interviews/`
-- execution-ready spec in `.omx/specs/`
+- context snapshot in `docs/plans/`
+- interview summary in `docs/plans/`
+- execution-ready spec in `docs/plans/`
 
 For this project, deep interview clarified:
 - musical alignment is the top priority,
@@ -32,8 +32,8 @@ For this project, deep interview clarified:
 Use `$ralplan` once ambiguity is low enough that architectural and test planning can proceed.
 
 Expected output:
-- PRD in `.omx/plans/prd-*.md`
-- test spec in `.omx/plans/test-spec-*.md`
+- PRD in `docs/plans/prd-*.md`
+- test spec in `docs/plans/test-spec-*.md`
 
 A valid PRD/test-spec pair must include:
 - requirements summary,
@@ -75,11 +75,10 @@ Every future feature spec for this app should include:
 
 ## Artifact Map
 ```text
-.omx/context/
-.omx/interviews/
-.omx/specs/
-.omx/plans/
-docs/
+docs/plans/        # canonical, tracked: context snapshots, interview
+                   # summaries, specs, PRDs, test specs
+docs/              # durable docs (roadmap, architecture, protocols)
+.omx/              # gitignored tool-local cache only; never canonical
 ```
 
 Recommended durable docs:
