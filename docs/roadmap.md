@@ -6,10 +6,10 @@ This roadmap turns the current PRD into a phased delivery path for `project-stac
 Canonical planning source:
 
 - `docs/product/creative-production-brief.md`
-- `.omx/specs/deep-interview-roadmap-spec-workflow-docs.md`
-- `.omx/plans/prd-roadmap-spec-workflow-docs.md`
-- `.omx/plans/test-spec-roadmap-spec-workflow-docs.md`
-- `.omx/plans/prd-implementation-buildout.md`
+- `docs/plans/deep-interview-roadmap-spec-workflow-docs.md`
+- `docs/plans/prd-roadmap-spec-workflow-docs.md`
+- `docs/plans/test-spec-roadmap-spec-workflow-docs.md`
+- `docs/plans/prd-implementation-buildout.md`
 
 ## Current Product Goal
 Build a web-first smart auto music-video editor where the user supplies a song and video clips, the app analyzes musical structure, probes and segments video, ranks candidate segments by musical alignment first and motion continuity second, prepares section previews, and only plays ready preview assets.
@@ -72,10 +72,10 @@ Current verification scripts:
 Make `.omx` and `docs/` agree on the active product goal so agents do not follow stale April planning or reference-repo assumptions.
 
 ### Deliverables
-- Current source spec in `.omx/specs/`.
-- Current PRD in `.omx/plans/prd-roadmap-spec-workflow-docs.md`.
-- Current test spec in `.omx/plans/test-spec-roadmap-spec-workflow-docs.md`.
-- Current implementation buildout in `.omx/plans/prd-implementation-buildout.md`.
+- Current source spec in `docs/plans/`.
+- Current PRD in `docs/plans/prd-roadmap-spec-workflow-docs.md`.
+- Current test spec in `docs/plans/test-spec-roadmap-spec-workflow-docs.md`.
+- Current implementation buildout in `docs/plans/prd-implementation-buildout.md`.
 - Current public roadmap in `docs/roadmap.md`.
 
 ### Exit criteria

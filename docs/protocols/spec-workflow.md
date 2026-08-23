@@ -17,7 +17,7 @@ No implementation should start until the work has:
 Use deep interview when the request is broad, cross-cutting, or easy to misinterpret.
 
 Expected output:
-- context snapshot in `.omx/context/`
+- context snapshot in `docs/plans/` (tracked; tool-local copies remain gitignored under `.omx/`)
 - interview summary in `.omx/interviews/`
 - execution-ready spec in `.omx/specs/`
 
