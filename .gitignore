@@ -55,6 +55,7 @@ next-env.d.ts
 
 # tool/QA artifacts (untracked 2026-08-23 deslop)
 /.omx/
+/.omo/
 /output/
 /test-results/
 /public/qa-media/
