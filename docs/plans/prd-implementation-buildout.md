@@ -3,8 +3,8 @@
 ## Metadata
 - Updated: 2026-06-18 UTC
 - Status: current implementation roadmap
-- Source PRD: `.omx/plans/prd-roadmap-spec-workflow-docs.md`
-- Source test spec: `.omx/plans/test-spec-roadmap-spec-workflow-docs.md`
+- Source PRD: `docs/plans/prd-roadmap-spec-workflow-docs.md`
+- Source test spec: `docs/plans/test-spec-roadmap-spec-workflow-docs.md`
 - Active repo: `project-stack-structure`
 
 ## Purpose
@@ -61,9 +61,9 @@ Tasks:
 4. Run docs sanity checks and `git status`.
 
 Acceptance:
-- `.omx/plans/prd-roadmap-spec-workflow-docs.md` is current.
-- `.omx/plans/test-spec-roadmap-spec-workflow-docs.md` is current.
-- `.omx/plans/prd-implementation-buildout.md` is current.
+- `docs/plans/prd-roadmap-spec-workflow-docs.md` is current.
+- `docs/plans/test-spec-roadmap-spec-workflow-docs.md` is current.
+- `docs/plans/prd-implementation-buildout.md` is current.
 - `docs/roadmap.md` does not contradict current PRD.
 - Active repo is clearly `project-stack-structure`.
 
@@ -202,10 +202,10 @@ Verification:
 A safe first commit is documentation-only:
 
 ```bash
-git add .omx/specs/deep-interview-roadmap-spec-workflow-docs.md \
-  .omx/plans/prd-roadmap-spec-workflow-docs.md \
-  .omx/plans/test-spec-roadmap-spec-workflow-docs.md \
-  .omx/plans/prd-implementation-buildout.md
+git add docs/plans/deep-interview-roadmap-spec-workflow-docs.md \
+  docs/plans/prd-roadmap-spec-workflow-docs.md \
+  docs/plans/test-spec-roadmap-spec-workflow-docs.md \
+  docs/plans/prd-implementation-buildout.md
 
 git commit -m "docs: refresh music video product specs"
 ```
