@@ -1,155 +1,78 @@
 # Project Stack Structure
 
-Smart auto music-video editor: **upload your song and footage**, get a **musically aligned rough cut**, then **optionally fill gaps** with AI-generated shots.
+Upload a song and your footage → get a **musically aligned rough cut**, then optionally fill gaps with AI-generated shots.
 
-**Next steps:** [NEXT_STEPS.md](NEXT_STEPS.md)
+**Live app:** https://project-stack-structure.vercel.app · **Status:** [docs/roadmap.md](docs/roadmap.md)
 
 ## What it does
 
-1. Analyze the **master track** (beats, sections, waveform) on a GPU-backed Essentia service.
-2. Ingest **your clips** — scene detection and vision captions (LFM / Qwen VL on server GPU).
+1. **Analyze** your master track — beats, sections, waveform (Essentia on server GPU).
+2. **Ingest** your clips — scene detection + vision captions (LFM / Qwen3-VL).
 3. **Match** real footage to song sections and lyrics with motion continuity.
-4. **Generate** (optional) filler shots, extensions, and bridges only where coverage is missing — via hosted APIs or local ComfyUI (integration in progress).
+4. **Generate** filler shots only where coverage is missing (optional).
 5. **Join** approved clips into section previews and export.
 
-**Upload-first:** most of the edit comes from footage you already shot. AI generation is a gap-fill lane, not a replacement for your clips.
+Upload-first: most of the edit comes from footage you already shot. AI generation is a gap-fill lane, not a replacement.
 
-## Design rules
+## Quick start
 
-- **Musical alignment first** — Essentia beats and sections drive cuts.
-- **Motion continuity** as the default visual mode.
-- **Prepared previews** — explicit recompute states, not laggy pseudo-live playback.
-- **Human approval** — Match and Join gate what enters the timeline; Generate does not silently invent shots.
-
-## How it fits together
-
-| Layer | Where it runs |
-| --- | --- |
-| Studio UI | Browser (Next.js) |
-| Song analysis | Essentia API (server GPU) |
-| Clip storage and scene detect | RustFS + media gateway |
-| Semantic clip tagging | Vision caption gateways — LFM fast, Qwen3-VL GGUF smart (server GPU) |
-| Lyrics | Deepgram (proxied) |
-| Preview / export | FFmpeg gateway or local FFmpeg |
-| Gap-fill video | Planned: API and/or ComfyUI sidecar |
-
-Full detail: **[Product infrastructure](docs/architecture/product-infrastructure.md)** — workflow, hybrid model, data authority, planned clip-to-master audio sync.
-
-## System architecture
-
-```mermaid
-graph TB
-    subgraph Client["Browser studio"]
-        UI[StudioApp]
-    end
-
-    subgraph NextJS["Next.js app"]
-        API_E["/api/essentia/full"]
-        API_F["/api/ffglitch"]
-        API_C["/api/caption/scene"]
-        API_M["/api/media/video/jobs"]
-        API_P["preview and export routes"]
-    end
-
-    subgraph Cloud["Hosted services"]
-        ESS["Essentia API GPU"]
-        FFG["FFmpeg gateway"]
-        MG["Media gateway and scene detect"]
-        VL["Vision caption gateways"]
-    end
-
-    UI --> API_E
-    UI --> API_F
-    UI --> API_C
-    UI --> API_M
-    UI --> API_P
-    API_E --> ESS
-    API_F --> FFG
-    API_C --> VL
-    API_M --> MG
-    API_P --> FFG
-```
-
-### External services
-
-| Service | URL | Repo | Role |
-| --- | --- | --- | --- |
-| Essentia API | `essentia.v1su4.dev` | [essentia-endpoint](https://github.com/gordo-v1su4/essentia-endpoint) | Beats, sections, onsets, waveform |
-| FFmpeg Gateway | `ffmpeg.v1su4.dev` | [ffmpeg-gateway](https://github.com/gordo-v1su4/ffmpeg-gateway) | Preview, concat, extract-audio, FFglitch |
-| Media gateway | env `MEDIA_GATEWAY_URL` | — | RustFS uploads, PySceneDetect jobs |
-| Vision captions | env `SCENE_CAPTION_*_GATEWAY_*` | — | LFM and Qwen3-VL scene tagging |
-| Discord Bot | — | [discord-bot](https://github.com/gordo-v1su4/discord-bot) | Ops / notifications |
-
-FFmpeg gateway API: `https://ffmpeg.v1su4.dev/docs`
-
-## Codebase entry points
-
-| Path | Role |
-| --- | --- |
-| `src/components/StudioApp.tsx` | Main studio shell |
-| `src/components/studio/audioAnalysis.ts` | Essentia fetch and waveform |
-| `src/components/studio/mediaUpload.ts` | Clip ingest, scene detect, captions |
-| `src/components/studio/semanticEditPlanner.ts` | Lyric and story matching |
-| `src/components/studio/panels/GenerateTab.tsx` | Coverage gaps and filler prompts |
-| `src/app/api/essentia/full/route.ts` | Audio analysis proxy |
-| `src/app/api/caption/scene/route.ts` | Vision caption proxy |
-| `src/app/api/ffglitch/route.ts` | FFglitch capability/proxy route |
-
-## Getting started
+Requirements: [Bun](https://bun.sh) ≥ 1.3, Node ≥ 24.5, ffmpeg/ffprobe on PATH.
 
 ```bash
 bun install
-bun run dev
+cp .env.example .env        # fill in values — see Configuration
+bun run dev                 # http://localhost:3000
 ```
+
+Sign in with GitHub when prompted — every API route requires a session.
+
+## Configuration
+
+All settings come from environment variables. `.env.example` documents every name; real values live in **Bitwarden Secrets Manager** (project `hermes_keys`) and are pulled per machine — never commit `.env`.
+
+Key groups: `AUTH_*` (GitHub OAuth + session signing), `TRIGGER_*` (background orchestration), `MEDIA_GATEWAY_*` (RustFS storage), `ESSENTIA_API_*`, `FFMPEG_GATEWAY_*`, `DEEPGRAM_API_KEY`, `SCENE_CAPTION_SMART_*`.
+
+## Commands
 
 ```bash
-bun run build
-bun run test
-bun run lint
-bun run check
-bun run probe:media
-bun run preview:section
-bun run bench:latency
+bun run dev        # dev server
+bun run build      # production build
+bun run check      # lint + typecheck + tests
+bun run test       # test suite
+bun run e2e:media  # full pipeline e2e (needs running server + fixtures)
 ```
 
-Local media fixtures (gitignored): `.local-fixtures/media/`
+Tests use synthetic fixtures in `.local-fixtures/media/` (gitignored). The e2e run authenticates with `STACK_STRUCTURE_E2E_COOKIE` — see [tests/README.md](tests/README.md).
 
-```bash
-TEST_MEDIA_DIR=/absolute/path/to/media bun run test
-```
+## How it fits together
 
-See [tests/README.md](tests/README.md).
+| Layer | Runs on |
+| --- | --- |
+| Studio UI | Browser (Next.js on Vercel) |
+| Song analysis | Essentia API — `essentia.v1su4.dev` |
+| Clip storage / scene detect | Media gateway — `media.v1su4.dev` |
+| Scene captions | Qwen gateway — `caption.v1su4.dev` |
+| Preview / export | FFmpeg gateway — `ffmpeg.v1su4.dev` |
+| Background jobs | Trigger.dev control plane on VM100 |
+
+Every heavy step dispatches through [Trigger.dev](https://trigger.v1su4.dev) to GPU workers; the Next.js routes only authenticate, validate, and queue.
+
+## Deployment
+
+- **Web app:** push to `main` → auto-deploys to Vercel. Env vars sync from BWS (`scripts/sync-vercel-production-env.ps1` from the ops machine).
+- **Workers:** Trigger.dev tasks on VM100 — see `docs/operations/trigger-production.md`.
+- **Security posture + hardening history:** [docs/security/api-hardening.md](docs/security/api-hardening.md).
 
 ## Documentation
 
-### Architecture and product
+- Architecture: [docs/architecture/product-infrastructure.md](docs/architecture/product-infrastructure.md) (start here)
+- Media pipeline: [docs/architecture/media-pipeline.md](docs/architecture/media-pipeline.md)
+- Roadmap: [docs/roadmap.md](docs/roadmap.md)
+- Agent guidance: [AGENTS.md](AGENTS.md)
 
-- [Product infrastructure](docs/architecture/product-infrastructure.md) — **start here** for how services and workflow connect
-- [Clip audio sync](docs/architecture/clip-audio-sync.md) — align muxed clips to master timeline, lanes, phasing
-- [Media pipeline](docs/architecture/media-pipeline.md) — segmentation, ranking, recompute
-- [Creative production brief](docs/product/creative-production-brief.md)
-- [UI workflow overhaul](docs/product/music-video-ui-workflow-overhaul.md)
-- [Local SwarmUI / ComfyUI generation](docs/local-generation.md)
-- [Trigger.dev Windows staging and migration checklist](docs/architecture/trigger-staging.md)
-- [Temporary local Trigger.dev control plane](docs/architecture/trigger-local.md)
-- [Trigger.dev production operations](docs/operations/trigger-production.md)
-- [Higgsfield API and manual Unlimited provider routing](docs/architecture/higgsfield-provider-routing.md)
-- [Roadmap](docs/roadmap.md)
+## Design rules
 
-### Protocols and benchmarks
-
-- [Latency budget](docs/protocols/latency-budget.md)
-- [Local latency checkpoint](docs/benchmarks/local-latency.md)
-- [Remote latency status](docs/benchmarks/remote-latency-status.md)
-
-## Near-term roadmap
-
-1. Lock song / lyric / video-moment contracts
-2. Harden Match and section preview
-3. Wire Generate gap-fill to API or ComfyUI backends
-4. Explore clip-to-master audio sync on ingest
-5. Measure web-first latency before any desktop pivot
-
-## Notes
-
-Architecture stays **web-first** for the studio UI, with **server GPU** for analysis and tagging. A **Tauri + sidecar** path remains a contingency if browser media limits block musically correct preview.
+- **Musical alignment first** — beats and sections drive cuts.
+- **Motion continuity** as the default visual mode.
+- **Prepared previews** — explicit recompute states, no laggy pseudo-live playback.
+- **Human approval** — Match and Join gate what enters the timeline.
