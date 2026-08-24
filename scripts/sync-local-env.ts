@@ -14,6 +14,7 @@
 
 import { copyFileSync, existsSync, readFileSync, chmodSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { spawnSync } from "node:child_process";
 
 type Mapping = { env: string; bws: string };
 
@@ -31,14 +32,13 @@ function readToken(): string {
 }
 
 function bws(args: string[], token: string): string {
-  const result = Bun.spawnSync(["bws", ...args], {
+  const result = spawnSync("bws", args, {
     env: { ...process.env, BWS_ACCESS_TOKEN: token },
-    stdout: "pipe",
-    stderr: "pipe",
+    encoding: "utf8",
   });
-  const out = result.stdout.toString();
-  if (result.exitCode !== 0) {
-    throw new Error(`bws ${args[0]} ${args[1] ?? ""} failed: ${result.stderr.toString().slice(0, 200)}`);
+  const out = result.stdout ?? "";
+  if (result.status !== 0) {
+    throw new Error(`bws ${args[0]} ${args[1] ?? ""} failed: ${(result.stderr ?? "").slice(0, 200)}`);
   }
   return out;
 }

@@ -1,4 +1,4 @@
-import { downloadHttpBytes } from "@/lib/httpDownload";
+import { downloadHttpBytes, type HttpDownload } from "@/lib/httpDownload";
 import { getMediaGatewayConfig, normalizeMediaPath, uploadFileToMediaGateway, type MediaGatewayUploadResult } from "@/lib/mediaGateway";
 
 export type ImageSplitMode = "fixed" | "auto";
@@ -43,9 +43,76 @@ export type ImageSplitPersistedResponse = ImageSplitResponse & {
 };
 
 const DEFAULT_SPLITTER_URL = "https://splitter.serving.cloud";
+const ACCESS_COOKIE_NAME = "splitter_access";
 
 export function getImageSplitterBaseUrl(env: Record<string, string | undefined> = process.env) {
   return normalizeImageSplitterBaseUrl(env.IMAGE_SPLITTER_URL || env.SPLITTER_API_URL || DEFAULT_SPLITTER_URL);
+}
+
+export function getImageSplitterAccessCode(env: Record<string, string | undefined> = process.env) {
+  return env.IMAGE_SPLITTER_ACCESS_CODE?.trim() || undefined;
+}
+
+type SplitterSession = { key: string; cookie: string };
+let splitterSession: SplitterSession | null = null;
+let splitterUnlockInFlight: Promise<SplitterSession> | null = null;
+
+async function unlockSplitterSession(baseUrl: string, code: string): Promise<SplitterSession> {
+  const response = await fetch(`${baseUrl}/api/access-gate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pin: code }),
+  });
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`Image splitter access gate rejected the code (${response.status}): ${text.slice(0, 200)}`);
+  }
+  const cookies = typeof response.headers.getSetCookie === "function" ? response.headers.getSetCookie() : [];
+  const raw = cookies.find((cookie) => cookie.startsWith(`${ACCESS_COOKIE_NAME}=`));
+  if (!raw) throw new Error("Image splitter access gate did not return a session cookie.");
+  const cookie = raw.split(";")[0]!.trim();
+  return { key: `${baseUrl}:${code}`, cookie };
+}
+
+async function getSplitterSession(baseUrl: string, code: string, forceRefresh = false): Promise<SplitterSession> {
+  if (!forceRefresh && splitterSession?.key === `${baseUrl}:${code}`) return splitterSession;
+  if (!splitterUnlockInFlight) {
+    splitterUnlockInFlight = unlockSplitterSession(baseUrl, code)
+      .then((session) => {
+        splitterSession = session;
+        return session;
+      })
+      .finally(() => {
+        splitterUnlockInFlight = null;
+      });
+  }
+  return splitterUnlockInFlight;
+}
+
+/**
+ * Server-to-server callers must present the access-gate cookie minted from
+ * IMAGE_SPLITTER_ACCESS_CODE, and re-mint once when it expires mid-flight —
+ * without this the deployment answers every call with 401 access_locked.
+ */
+async function fetchSplitterWithAuth(
+  url: string,
+  init: RequestInit,
+  env: Record<string, string | undefined>,
+): Promise<Response> {
+  const code = getImageSplitterAccessCode(env);
+  if (!code) return fetch(url, init);
+
+  const baseUrl = getImageSplitterBaseUrl(env);
+  let session = await getSplitterSession(baseUrl, code);
+  const headers = new Headers(init.headers);
+  headers.set("Cookie", session.cookie);
+  const response = await fetch(url, { ...init, headers });
+  if (response.status !== 401) return response;
+
+  await response.body?.cancel().catch(() => {});
+  session = await getSplitterSession(baseUrl, code, true);
+  headers.set("Cookie", session.cookie);
+  return fetch(url, { ...init, headers });
 }
 
 export function normalizeImageSplitterBaseUrl(value: string) {
@@ -60,6 +127,29 @@ export function buildImageSplitterPanelProxyUrl(splitId: string, assetPath: stri
 export function buildImageSplitterPanelSourceUrl(baseUrl: string, splitId: string, assetPath: string) {
   const safePath = assetPath.split("/").map(encodeURIComponent).join("/");
   return `${normalizeImageSplitterBaseUrl(baseUrl)}/api/image-split/${encodeURIComponent(splitId)}/panels/${safePath}`;
+}
+
+export async function buildSplitterRequestHeaders(
+  env: Record<string, string | undefined> = process.env,
+): Promise<Record<string, string>> {
+  const code = getImageSplitterAccessCode(env);
+  if (!code) return {};
+  const session = await getSplitterSession(getImageSplitterBaseUrl(env), code);
+  return { Cookie: session.cookie };
+}
+
+async function downloadSplitterBytesWithAuth(url: string, env: Record<string, string | undefined>): Promise<HttpDownload> {
+  const code = getImageSplitterAccessCode(env);
+  if (!code) return downloadHttpBytes(url);
+  const session = await getSplitterSession(getImageSplitterBaseUrl(env), code);
+  try {
+    return await downloadHttpBytes(url, 60_000, { Cookie: session.cookie });
+  } catch (error) {
+    const expired = error instanceof Error && error.message.includes("(401)");
+    if (!expired) throw error;
+    const fresh = await getSplitterSession(getImageSplitterBaseUrl(env), code, true);
+    return downloadHttpBytes(url, 60_000, { Cookie: fresh.cookie });
+  }
 }
 
 export function normalizeImageSplitResponse(payload: unknown): ImageSplitResponse {
@@ -127,11 +217,11 @@ export async function splitImageWithGateway(args: {
   formData.set("file", args.file, args.file.name || "source-image.png");
   const mode = appendImageSplitOptions(formData, args.options ?? {});
   const endpoint = mode === "auto" ? "auto" : "fixed-grid";
-  const fetcher = args.fetchImpl ?? fetch;
-  const response = await fetcher(`${baseUrl}/api/image-split/${endpoint}`, {
-    method: "POST",
-    body: formData,
-  });
+  const url = `${baseUrl}/api/image-split/${endpoint}`;
+  const init: RequestInit = { method: "POST", body: formData };
+  const response = args.fetchImpl
+    ? await args.fetchImpl(url, init)
+    : await fetchSplitterWithAuth(url, init, args.env ?? process.env);
   const payload = await readJson(response);
   if (!response.ok) {
     throw new Error(`Image splitter failed (${response.status}): ${JSON.stringify(payload).slice(0, 300)}`);
@@ -153,7 +243,6 @@ export async function uploadImageSplitPanelsToMediaGateway(args: {
   }
 
   const baseUrl = getImageSplitterBaseUrl(env);
-  const fetcher = args.fetchImpl ?? fetch;
   const uploadFile = args.uploadFileImpl ?? uploadFileToMediaGateway;
   const sourceSlug = buildSourceSlug(args.split.manifest.sourceFilename);
   const folder = normalizeMediaPath(`${config.uploadPrefix}/image-splits/${sourceSlug}/${args.split.manifest.splitId}`);
@@ -166,7 +255,7 @@ export async function uploadImageSplitPanelsToMediaGateway(args: {
     const filename = buildPanelFilename(panel, args.split.manifest);
     let file: File;
     if (args.fetchImpl) {
-      const response = await fetcher(sourceUrl);
+      const response = await args.fetchImpl(sourceUrl);
       if (!response.ok) {
         const text = await response.text().catch(() => "");
         throw new Error(`Image splitter panel fetch failed (${response.status}): ${text.slice(0, 300)}`);
@@ -176,11 +265,11 @@ export async function uploadImageSplitPanelsToMediaGateway(args: {
       const contentType = rawContentType.split(";")[0].trim();
       file = new File([blob], filename, { type: contentType });
     } else {
-      const downloaded = await downloadHttpBytes(sourceUrl);
+      const downloaded = await downloadSplitterBytesWithAuth(sourceUrl, env);
       file = new File([downloaded.bytes], filename, { type: downloaded.contentType });
     }
 
-    const storage = await uploadFile({ file, folder, env, fetchImpl: fetcher });
+    const storage = await uploadFile({ file, folder, env, fetchImpl: args.fetchImpl });
     panels.push({ ...panel, storage });
   }
 

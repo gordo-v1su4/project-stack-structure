@@ -1,4 +1,4 @@
-import { buildImageSplitterPanelSourceUrl, getImageSplitterBaseUrl } from "@/lib/imageSplitterGateway";
+import { buildImageSplitterPanelSourceUrl, buildSplitterRequestHeaders, getImageSplitterBaseUrl } from "@/lib/imageSplitterGateway";
 import { getSessionUser, unauthorizedResponse } from "@/lib/session";
 
 export const runtime = "nodejs";
@@ -22,7 +22,9 @@ export async function GET(request: Request) {
       return Response.json({ error: "Invalid assetPath." }, { status: 400 });
     }
 
-    const response = await fetch(buildImageSplitterPanelSourceUrl(getImageSplitterBaseUrl(), splitId, assetPath));
+    const response = await fetch(buildImageSplitterPanelSourceUrl(getImageSplitterBaseUrl(), splitId, assetPath), {
+      headers: await buildSplitterRequestHeaders(),
+    });
     if (!response.ok) {
       return Response.json(
         { error: `Image splitter panel fetch failed (${response.status}).` },
