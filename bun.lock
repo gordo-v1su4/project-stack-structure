@@ -6,6 +6,7 @@
       "name": "project-stack-structure",
       "dependencies": {
         "@breezystack/lamejs": "^1.2.7",
+        "@higgsfield/cli": "^1.1.23",
         "@huggingface/transformers": "^4.2.0",
         "@trigger.dev/react-hooks": "4.5.3",
         "@trigger.dev/sdk": "4.5.3",
@@ -100,6 +101,8 @@
     "@eslint/plugin-kit": ["@eslint/plugin-kit@0.4.1", "", { "dependencies": { "@eslint/core": "^0.17.0", "levn": "^0.4.1" } }, "sha512-43/qtrDUokr7LJqoF2c3+RInu/t4zfrpYdoSDfYyhg52rwLV6TnOvdG4fXm7IkSB3wErkcmJS9iEhjVtOSEjjA=="],
 
     "@google-cloud/precise-date": ["@google-cloud/precise-date@4.0.0", "", {}, "sha512-1TUx3KdaU3cN7nfCdNf+UVqA/PSX29Cjcox3fZZBtINlRrXVTmUkQnCKv2MbBUbCopbK4olAT1IHl76uZyCiVA=="],
+
+    "@higgsfield/cli": ["@higgsfield/cli@1.1.23", "", { "os": [ "linux", "win32", "darwin", ], "cpu": [ "x64", "arm64", ], "bin": { "higgsfield": "bin/higgsfield.js", "higgs": "bin/higgs.js" } }, "sha512-s4KkDXlxly7u0GSO9IAFwzyc0APdZe9C17qGvYzc36TJnYpJpJDHBeYis0x0aDavRw9URD7ZM92SjI3dHoyCLA=="],
 
     "@huggingface/jinja": ["@huggingface/jinja@0.5.9", "", {}, "sha512-uWTG+l3VJRsl7EXxYizuL3P+cCPoc3cRqbWWRcQN0FhejRfbdq0RNhCmbY/YDtnTcz9icdLYuLDjsnz4d8JMuw=="],
 

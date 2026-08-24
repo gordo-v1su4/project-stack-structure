@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { existsSync, writeFileSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -180,7 +181,13 @@ function runHiggsfieldCli(args: string[], env: Record<string, string | undefined
   const childEnv = { ...process.env, ...env };
   const credentialsPath = env.HIGGSFIELD_CREDENTIALS_PATH?.trim();
   if (credentialsPath) childEnv.HIGGSFIELD_CREDENTIALS_PATH = credentialsPath;
-  else delete childEnv.HIGGSFIELD_CREDENTIALS_PATH;
+  else if (env.HIGGSFIELD_CREDENTIALS_JSON?.trim()) {
+    // The CLI only reads credentials from a file; deployments receive the JSON
+    // as an env var, so materialize it per-spawn and never bake it into images.
+    const tmpCredentials = path.join(os.tmpdir(), `higgsfield-credentials-${process.pid}.json`);
+    writeFileSync(tmpCredentials, env.HIGGSFIELD_CREDENTIALS_JSON.trim());
+    childEnv.HIGGSFIELD_CREDENTIALS_PATH = tmpCredentials;
+  } else delete childEnv.HIGGSFIELD_CREDENTIALS_PATH;
   return new Promise((resolve, reject) => {
     const child = spawn(resolveHiggsfieldExecutable(childEnv), args, {
       env: childEnv,
@@ -201,6 +208,8 @@ function runHiggsfieldCli(args: string[], env: Record<string, string | undefined
 function resolveHiggsfieldExecutable(env: NodeJS.ProcessEnv) {
   const configured = env.HIGGSFIELD_CLI_PATH?.trim();
   if (configured) return configured;
+  const bundled = path.join(process.cwd(), "node_modules", ".bin", process.platform === "win32" ? "higgsfield.cmd" : "higgsfield");
+  if (existsSync(bundled)) return bundled;
   return process.platform === "win32" ? "higgsfield.exe" : "higgsfield";
 }
 
