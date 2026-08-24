@@ -747,14 +747,18 @@ function FrameExtensionPanel({
   const character1Asset = referenceAssets.find((asset) => asset.id === referenceSelection.character1Id);
   const character2Asset = referenceAssets.find((asset) => asset.id === referenceSelection.character2Id);
   const environmentAsset = referenceAssets.find((asset) => asset.id === referenceSelection.environmentId);
+  const customAsset = referenceAssets.find((asset) => asset.id === referenceSelection.customId);
   const characterNames = [character1Asset?.displayName, character2Asset?.displayName].filter(Boolean) as string[];
   const defaultCharacterName = characterNames.join(" & ") || "Character";
+  const gridReferences: Array<{ kind: "character" | "environment" | "custom"; name?: string }> = [];
+  if (character1Asset) gridReferences.push({ kind: "character", name: character1Asset.displayName });
+  if (character2Asset) gridReferences.push({ kind: "character", name: character2Asset.displayName });
+  if (environmentAsset) gridReferences.push({ kind: "environment", name: environmentAsset.displayName });
+  if (customAsset) gridReferences.push({ kind: "custom", name: customAsset.displayName });
   const gridPrompt = buildStoryboardGridPrompt({
     slot,
     moment,
-    characterNames,
-    environmentName: environmentAsset?.displayName,
-    referenceInstructions: referencePlan.instructions,
+    references: gridReferences,
   });
   const gridTitle = `${slot?.item.label ?? "storyboard"} grid`;
   const [editedForm, setEditedForm] = useState<Partial<HiggsfieldGenerationFormState>>({});
@@ -939,52 +943,45 @@ function buildHiggsfieldInputImages(assets: ReferenceAsset[], selection: Generat
 function buildStoryboardGridPrompt(args: {
   slot?: CoverageSlot;
   moment?: VideoMoment;
-  characterNames: string[];
-  environmentName?: string;
-  referenceInstructions: string[];
+  references: Array<{ kind: "character" | "environment" | "custom"; name?: string }>;
 }) {
-  const { slot, moment, characterNames, environmentName, referenceInstructions } = args;
+  const { slot, moment, references } = args;
+  const characterNames = references
+    .filter((reference) => reference.kind === "character")
+    .map((reference) => reference.name)
+    .filter(Boolean) as string[];
   const cast = characterNames.length ? characterNames.join(" and ") : "the lead character";
   const sectionLine = slot
     ? `This grid continues the section "${slot.item.label}" (${fmt(slot.item.start)}\u2013${fmt(slot.item.end)}). Story intent: ${moderationSafeText(slot.item.prompt)}`
     : "This grid continues the current music-video section.";
   const caption = getMomentCaption(moment);
-  const captionLine = caption ? ` The current frame captures: ${caption}` : "";
-  const settingLine = environmentName
-    ? `Setting: ${environmentName} (use its reference image for the location and mood).`
-    : "Setting: keep the location consistent with the source frame.";
-  const castLine = characterNames.length
-    ? `Cast: ${characterNames.join(", ")} \u2014 keep faces, hair, and wardrobe consistent with their character reference images.`
-    : "Cast: keep the on-screen subject consistent with the reference images.";
+  const beatLine = caption ? ` The source beat to continue from (text context only \u2014 it is NOT an attached image): ${caption}.` : "";
+
+  // The image map MUST mirror buildHiggsfieldInputImages order exactly —
+  // these are the only images the model actually receives, and a mismatch
+  // scrambles which reference anchors identity vs location.
   const imageMap: string[] = [];
   let imageIndex = 1;
-  imageMap.push(`Use image ${imageIndex} as the current frame \u2014 the grid shows what happens NEXT, continuing its action, framing, and lighting.`);
-  imageIndex += 1;
-  for (const name of characterNames) {
-    imageMap.push(`Use image ${imageIndex} as the character reference for ${name}.`);
+  for (const reference of references) {
+    if (reference.kind === "character") {
+      imageMap.push(`Image_${imageIndex} is the character reference for ${reference.name} \u2014 keep this exact face, hair, build, wardrobe, and identity markers consistent in every panel featuring them.`);
+    } else if (reference.kind === "environment") {
+      imageMap.push(`Image_${imageIndex} is the location lock for ${reference.name ?? "the environment"} \u2014 every panel takes place inside this exact space; preserve its layout, materials, palette, and lighting direction.`);
+    } else {
+      imageMap.push(`Image_${imageIndex} is an additional reference${reference.name ? ` (${reference.name})` : ""} \u2014 honor it wherever relevant.`);
+    }
     imageIndex += 1;
-  }
-  if (environmentName) {
-    imageMap.push(`Use image ${imageIndex} as the environment/location reference.`);
-    imageIndex += 1;
-  }
-  for (const instruction of referenceInstructions.slice(characterNames.length + (environmentName ? 1 : 0))) {
-    imageMap.push(instruction);
   }
 
-  return `Storyboard continuation grid for ${cast}.
+  return `Cinematic 3x3 anamorphic grid of shots for ${cast}, built from the ${references.length} attached reference images.
 
 ${imageMap.join("\n")}
 
-${sectionLine}.${captionLine}
-${settingLine}
-${castLine}
+${sectionLine}.${beatLine}
 
-Create a 3x3 grid of nine sequential cinematic shots that read left-to-right, top-to-bottom as ONE continuing action: image 1 is the current moment, and each following panel advances to the next logical beat \u2014 reaction, movement, escalation, turn, consequence, approach, tension peak, settle, and a final forward-moving beat into the next section. Stay in the same scene; do not jump to unrelated moments.
+Render the 3x3 grid of shots as ONE continuing action that reads left-to-right, top-to-bottom: panel 1 opens on ${cast.split(" and ")[0] ?? cast} in the Image_${references.findIndex((reference) => reference.kind === "environment") + 1 || 1} location, and each following panel advances to the next logical beat \u2014 reaction, movement, escalation, turn, consequence, approach, tension peak, settle, and a final forward-moving beat that hands off to the next section. Stay in the same scene and space; do not jump to unrelated moments or invent new locations.
 
-Keep every panel 16:9 widescreen with consistent framing language. Vary shot size and angle between panels (wide, medium, close-up, insert, over-the-shoulder) with motion continuity.
-
-Cinematic register across all nine panels: vintage 2x anamorphic lens character \u2014 oval bokeh on background lights, subtle horizontal flare on point sources, soft frame-edge falloff, gentle halation lifting highlights. Practical-driven night lighting: hard neon, lamp, and fixture practicals cutting through visible volumetric haze, deep shadows that hold detail, rim and edge light separating subjects from darkness, skin reading warm against cooler ambient light at its true natural tone. Atmospheric perspective with real air between planes \u2014 distant elements softer, desaturated, lower contrast than the foreground. Highlights roll off in a filmic curve, blacks lifted but never milky. Fine theatrical 35mm grain across every panel, natural fabric weave and skin texture, no smoothing, unposed realism \u2014 photographed not generated.`;
+Cinematic register across all nine panels: vintage 2x anamorphic lens character \u2014 oval bokeh on background lights, subtle horizontal flare on point sources, soft frame-edge falloff, gentle halation lifting highlights. Practical-driven night lighting: hard neon, lamp, and fixture practicals cutting through visible volumetric haze, deep shadows that hold detail, rim and edge light separating subjects from darkness, skin reading warm against cooler ambient light at its true natural tone. Atmospheric perspective with real air between planes \u2014 distant elements softer, desaturated, lower contrast than the foreground. Highlights roll off in a filmic curve, blacks lifted but never milky. Fine theatrical 35mm grain across every panel, natural fabric weave and skin texture, no smoothing, unposed realism \u2014 photographed not generated. No labels, no numbers, no text, no borders between panels.`;
 }
 
 function GeneratedHiggsfieldAssetGrid({ assets }: { assets: GeneratedStudioAsset[] }) {

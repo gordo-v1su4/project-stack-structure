@@ -237,12 +237,24 @@ async function fetchProviderAsset(
 ) {
   if (reference.startsWith("data:")) return dataUrlToFile(reference, fallbackName);
   const url = alreadyAbsolute ? reference : resolveProviderUrl(baseUrl, reference);
-  const response = await fetchWithTimeout(url, undefined, 120_000);
-  if (!response.ok) throw new Error(`Generated asset download failed (${response.status}).`);
-  const contentType = response.headers.get("content-type")?.split(";")[0]?.trim() || "application/octet-stream";
-  const filename = filenameFromUrl(url) || `${fallbackName}${extensionFromMime(contentType)}`;
-  const blob = await response.blob();
-  return new File([blob], filename, { type: contentType });
+  // SwarmUI persists outputs asynchronously after GenerateText2Image responds,
+  // so an immediate /View fetch can race the file write (observed as a 500
+  // from ViewOutput). Retry with backoff before giving up.
+  let lastStatus = 0;
+  let lastBody = "";
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 1_500 * attempt));
+    const response = await fetchWithTimeout(url, undefined, 120_000);
+    if (response.ok) {
+      const contentType = response.headers.get("content-type")?.split(";")[0]?.trim() || "application/octet-stream";
+      const filename = filenameFromUrl(url) || `${fallbackName}${extensionFromMime(contentType)}`;
+      const blob = await response.blob();
+      return new File([blob], filename, { type: contentType });
+    }
+    lastStatus = response.status;
+    lastBody = await response.text().catch(() => "");
+  }
+  throw new Error(`Generated asset download failed (${lastStatus}): ${lastBody.slice(0, 200)}`);
 }
 
 export function dataUrlToFile(value: string, fallbackName: string) {
