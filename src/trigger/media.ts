@@ -13,7 +13,7 @@ import {
 } from "@/lib/mediaGateway";
 import { createTriggerIdempotencyKey } from "@/lib/triggerIdempotency";
 import { sceneCaptionBatchTask, type SceneCaptionBatchPayload } from "./caption";
-import { mediaFinalizationQueue, sceneDetectionQueue } from "./queues";
+import { mediaFinalizationQueue, mediaPipelineQueue, sceneDetectionQueue } from "./queues";
 
 export const CAPTION_BATCH_SIZE = 6;
 export const MEDIA_PIPELINE_VERSION = "stack-structure-media-pipeline-v2";
@@ -171,6 +171,7 @@ export const mediaPipelineFinalizationTask = task({
 
 export const mediaVideoPipelineTask = task({
   id: "media-video-pipeline",
+  queue: mediaPipelineQueue,
   maxDuration: 3_600,
   retry: { maxAttempts: 1 },
   run: async (payload: MediaSceneDetectionPayload, { ctx }) => {

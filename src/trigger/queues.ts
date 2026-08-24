@@ -2,6 +2,14 @@ import { queue } from "@trigger.dev/sdk";
 
 export const MEDIA_ASSEMBLY_MACHINE = "large-1x" as const;
 
+// Orchestrator parents hold a runner for their whole lifetime while awaiting
+// children. Uncapped, one clip per uploaded file parks a 512MB machine and a
+// large batch exhausts VM100 RAM (llama-server keeps ~10GB resident).
+export const mediaPipelineQueue = queue({
+  name: "media-pipeline",
+  concurrencyLimit: 3,
+});
+
 export const serviceHealthQueue = queue({
   name: "service-health",
   concurrencyLimit: 2,
