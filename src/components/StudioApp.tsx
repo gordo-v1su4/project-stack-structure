@@ -94,6 +94,7 @@ export default function StudioApp() {
   const referenceAssetsRef = useRef<ReferenceAsset[]>([]);
   const [tab, setTab] = useState<Tab>("review");
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isDockCollapsed, setIsDockCollapsed] = useState(false);
   const [playhead] = useState(0.08);
   const [, setAudioPreviewPlayhead] = useState(0);
   const [activeClip, setActiveClip] = useState(2);
@@ -206,6 +207,16 @@ export default function StudioApp() {
     if (typeof window === "undefined") return;
     window.localStorage.setItem("svs.studio.sidebarCollapsed", isSidebarCollapsed ? "1" : "0");
   }, [isSidebarCollapsed]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("svs.studio.dockCollapsed", isDockCollapsed ? "1" : "0");
+  }, [isDockCollapsed]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setIsDockCollapsed(window.localStorage.getItem("svs.studio.dockCollapsed") === "1");
+  }, []);
 
   useEffect(() => {
     const player = previewPlayerRef.current;
@@ -1951,6 +1962,8 @@ export default function StudioApp() {
           </main>
 
           <StudioRightPanel
+            isDockCollapsed={isDockCollapsed}
+            onToggleDockCollapsed={() => setIsDockCollapsed((current) => !current)}
             readout={readout}
             tab={tab}
             shuffleMode={shuffleMode}

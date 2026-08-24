@@ -23,6 +23,8 @@ type StudioRightPanelProps = {
   audioTimeline?: Pick<BeatJoinAnalysis, "waveform" | "beats" | "onsets" | "duration"> | null;
   isPreviewExpanded?: boolean;
   onTogglePreviewExpanded?: () => void;
+  isDockCollapsed?: boolean;
+  onToggleDockCollapsed?: () => void;
   useSourceAudio?: boolean;
   onUseSourceAudioChange?: (enabled: boolean) => void;
   finalExportStatus?: string;
@@ -56,6 +58,8 @@ export function StudioRightPanel({
   audioTimeline = null,
   isPreviewExpanded = false,
   onTogglePreviewExpanded,
+  isDockCollapsed = false,
+  onToggleDockCollapsed,
   useSourceAudio = false,
   onUseSourceAudioChange,
   finalExportStatus = "Final export waits for a generated story preview and master audio.",
@@ -72,6 +76,22 @@ export function StudioRightPanel({
   draftStatus = "",
   nextHint = null,
 }: StudioRightPanelProps) {
+  if (isDockCollapsed) {
+    return (
+      <div className="flex h-7 w-full shrink-0 items-center justify-between border-t border-[#181818] bg-[#0c0c0c] px-3">
+        <span className="text-[8px] uppercase tracking-[0.22em] text-[#555]">Studio panels · {tab}</span>
+        <button
+          type="button"
+          onClick={onToggleDockCollapsed}
+          title="Expand studio panels"
+          className="rounded-[2px] border border-[#2a2a2a] px-2 py-[2px] text-[8px] uppercase tracking-[0.12em] text-[#9a9a9a] hover:border-[#e05c00] hover:text-[#e05c00]"
+        >
+          ▲ Expand
+        </button>
+      </div>
+    );
+  }
+
   const previewAssetFileName = getPreviewAssetFileName(previewAssetKey);
   const showBrowserPreview = browserPreviewSegments.length > 0 && previewPlayer;
   const showFfmpegPreview = !showBrowserPreview && !isBrowserPreviewActive && previewAssetUrl;
@@ -81,8 +101,16 @@ export function StudioRightPanel({
 
   return (
     <aside
-      className={`${isPreviewExpanded ? "h-[min(68vh,760px)]" : "h-[145px]"} w-full shrink-0 border-t border-[#181818] bg-[#0c0c0c] grid grid-cols-[minmax(150px,0.6fr)_minmax(170px,0.65fr)_minmax(190px,0.75fr)_minmax(420px,2.35fr)_minmax(190px,0.7fr)_minmax(160px,0.55fr)] overflow-x-hidden overflow-y-auto transition-[height] duration-200`}
+      className={`${isPreviewExpanded ? "h-[min(68vh,760px)]" : "h-[145px]"} relative w-full shrink-0 border-t border-[#181818] bg-[#0c0c0c] grid grid-cols-[minmax(150px,0.6fr)_minmax(170px,0.65fr)_minmax(190px,0.75fr)_minmax(420px,2.35fr)_minmax(190px,0.7fr)_minmax(160px,0.55fr)] overflow-x-hidden overflow-y-auto transition-[height] duration-200`}
     >
+      <button
+        type="button"
+        onClick={onToggleDockCollapsed}
+        title="Minimize studio panels"
+        className="absolute right-2 top-1 z-10 rounded-[2px] border border-[#2a2a2a] bg-[#0c0c0c] px-1.5 py-[1px] text-[8px] uppercase tracking-[0.12em] text-[#666] hover:border-[#e05c00] hover:text-[#e05c00]"
+      >
+        ▼
+      </button>
       <div className="min-w-0 border-r border-[#181818] p-2.5">
         <div className="mb-1.5 text-[8px] uppercase tracking-[0.22em] text-[#343434]">Live Readout</div>
         <div className="space-y-[5px]">

@@ -26,40 +26,15 @@ export function StudioSidebar({ tab, stages, sessionStats, collapsed, onToggleCo
 
   if (collapsed) {
     return (
-      <aside className="flex w-9 shrink-0 flex-col items-center border-r border-[#181818] bg-[#0c0c0c]">
-        <button
-          type="button"
-          onClick={onToggleCollapsed}
-          title="Expand workflow panel"
-          className="flex h-9 w-full items-center justify-center border-b border-[#181818] text-[12px] text-[#777] hover:bg-[#131313] hover:text-[#e05c00]"
-        >
-          »
-        </button>
-        <div className="mt-3 grid grid-cols-2 gap-[2px]">
-          <div className="h-[5px] w-[5px] bg-[#e05c00]" />
-          <div className="h-[5px] w-[5px] bg-[#2a2a2a]" />
-          <div className="h-[5px] w-[5px] bg-[#2a2a2a]" />
-          <div className="h-[5px] w-[5px] bg-[#e05c00]" />
-        </div>
-        <div className="mt-4 flex flex-1 flex-col items-center gap-2 overflow-y-auto py-1">
-          {NAV.map((item) => {
-            const stage = stagesByKey.get(item.key);
-            return (
-              <button
-                key={item.key}
-                type="button"
-                onClick={() => onSelectTab(item.key)}
-                title={stage ? `${item.label}: ${stage.status}` : item.label}
-                className={`flex h-5 w-5 items-center justify-center rounded-[2px] border transition-colors ${
-                  tab === item.key ? "border-[#e05c00]" : "border-transparent hover:border-[#333]"
-                }`}
-              >
-                <span className={`h-1.5 w-1.5 rounded-full ${stage?.ready ? "bg-[#3a8a3a]" : stage?.isNext ? "bg-[#e05c00]" : "bg-[#2a2a2a]"}`} />
-              </button>
-            );
-          })}
-        </div>
-      </aside>
+      <button
+        type="button"
+        onClick={onToggleCollapsed}
+        title="Expand workflow panel"
+        className="group fixed left-0 top-1/2 z-40 -translate-y-1/2 rounded-r-[3px] border border-l-0 border-[#2a2a2a] bg-[#0c0c0c] py-5 pl-[3px] pr-[5px] shadow-[2px_0_8px_rgba(0,0,0,0.5)] transition-colors hover:border-[#e05c00]"
+        style={{ writingMode: "vertical-rl" }}
+      >
+        <span className="text-[9px] uppercase tracking-[0.32em] text-[#777] group-hover:text-[#e05c00]">Menu</span>
+      </button>
     );
   }
 
