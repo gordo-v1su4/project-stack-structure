@@ -63,3 +63,5 @@ next-env.d.ts
 # e2e browser artifacts + local test media (never tracked)
 .playwright-mcp/
 media-to-test-with/
+e2e-ingest-state.png
+story-state.jpeg
