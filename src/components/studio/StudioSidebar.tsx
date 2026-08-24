@@ -32,9 +32,9 @@ export function StudioSidebar({ tab, stages, sessionStats, collapsed, onToggleCo
         title="Expand workflow panel"
         className="group fixed left-0 top-1/2 z-40 flex -translate-y-1/2 items-stretch overflow-hidden rounded-r-[2px] bg-[#0c0c0c]/95 text-left backdrop-blur-sm transition-colors hover:bg-[#151515]"
       >
-        <span className="w-[2px] shrink-0 bg-[#e05c00] transition-colors group-hover:bg-[#ff8a3d]" />
+        <span className="w-[3px] shrink-0 bg-[#e05c00] transition-colors group-hover:bg-[#ff8a3d]" />
         <span
-          className="px-[5px] py-5 text-[9px] font-medium uppercase tracking-[0.3em] text-[#8a8a8a] transition-colors group-hover:text-[#e8e8e8]"
+          className="px-[6px] py-6 text-[10px] font-medium uppercase tracking-[0.22em] text-[#c0c0c0] transition-colors group-hover:text-[#f0f0f0]"
           style={{ writingMode: "vertical-rl" }}
         >
           Menu
