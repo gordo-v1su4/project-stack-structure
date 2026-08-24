@@ -42,6 +42,12 @@ printf '%s' "$DOCKER_REGISTRY_PASSWORD" |
 
 bun install --frozen-lockfile
 
+# The higgsfield CLI ships its platform binary via a postinstall script that
+# bun blocks by default — fetch it explicitly or the image build copies nothing.
+if [ -d node_modules/@higgsfield/cli ]; then
+  (cd node_modules/@higgsfield/cli && node install.js) || echo "WARN: higgsfield CLI vendor install failed; grid generation will not run" >&2
+fi
+
 deploy_log="$(mktemp)"
 trap 'rm -f "$deploy_log"' EXIT
 set +e
