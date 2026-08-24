@@ -189,7 +189,12 @@ function runHiggsfieldCli(args: string[], env: Record<string, string | undefined
     childEnv.HIGGSFIELD_CREDENTIALS_PATH = tmpCredentials;
   } else delete childEnv.HIGGSFIELD_CREDENTIALS_PATH;
   return new Promise((resolve, reject) => {
-    const child = spawn(resolveHiggsfieldExecutable(childEnv), args, {
+    const resolvedExecutable = resolveHiggsfieldExecutable(childEnv);
+    // The copied package bin is a plain .js file — run it through the current
+    // runtime (node/bun) instead of relying on an executable bit.
+    const command = resolvedExecutable.endsWith(".js") ? process.execPath : resolvedExecutable;
+    const childArgs = resolvedExecutable.endsWith(".js") ? [resolvedExecutable, ...args] : args;
+    const child = spawn(command, childArgs, {
       env: childEnv,
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -208,6 +213,8 @@ function runHiggsfieldCli(args: string[], env: Record<string, string | undefined
 function resolveHiggsfieldExecutable(env: NodeJS.ProcessEnv) {
   const configured = env.HIGGSFIELD_CLI_PATH?.trim();
   if (configured) return configured;
+  const packageBin = path.join(process.cwd(), "node_modules", "@higgsfield", "cli", "bin", "higgsfield.js");
+  if (existsSync(packageBin)) return packageBin;
   const bundled = path.join(process.cwd(), "node_modules", ".bin", process.platform === "win32" ? "higgsfield.cmd" : "higgsfield");
   if (existsSync(bundled)) return bundled;
   return process.platform === "win32" ? "higgsfield.exe" : "higgsfield";

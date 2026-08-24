@@ -1,5 +1,5 @@
 import { defineConfig } from "@trigger.dev/sdk";
-import { ffmpeg } from "@trigger.dev/build/extensions/core";
+import { additionalFiles, ffmpeg } from "@trigger.dev/build/extensions/core";
 
 export default defineConfig({
   // The production project remains the default. Temporary self-hosted
@@ -26,7 +26,12 @@ export default defineConfig({
     },
   },
   build: {
-    extensions: [ffmpeg({ version: "7" })],
+    extensions: [
+      ffmpeg({ version: "7" }),
+      // The higgsfield CLI is spawned at runtime (not imported), so the
+      // bundler never traces it — ship the self-contained package explicitly.
+      additionalFiles({ files: ["node_modules/@higgsfield/cli/**"] }),
+    ],
   },
   dirs: ["./src/trigger"],
 });
