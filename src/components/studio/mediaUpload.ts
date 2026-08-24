@@ -78,9 +78,12 @@ export async function prepareVideoSources(
                 objectKey: storage.storagePath,
                 uploadChunks: storage.uploadChunks ?? undefined,
               }, index)
-                .then(async (scenes) => {
+                .then(async ({ scenes, sourceStorage }) => {
+                  const detectedSource: UploadedVideoSource = sourceStorage
+                    ? { ...storedSource, storageBucket: sourceStorage.bucket, storagePath: sourceStorage.objectKey, uploadChunks: null }
+                    : storedSource;
                   const readySource = {
-                    ...storedSource,
+                    ...detectedSource,
                     scenes,
                     sceneStatus: "ready" as const,
                     sceneError: null,
@@ -213,11 +216,19 @@ export async function rerunSourceSceneAnalysis(
     });
 
     try {
-      const scenes = await detectScenesFromStoredVideo(
+      const detection = await detectScenesFromStoredVideo(
         { bucket: source.storageBucket, objectKey: source.storagePath, uploadChunks: source.uploadChunks ?? undefined },
         source.id,
       );
-      workingSource = { ...workingSource, scenes, sceneStatus: "ready", sceneError: null };
+      workingSource = {
+        ...workingSource,
+        ...(detection.sourceStorage
+          ? { storageBucket: detection.sourceStorage.bucket, storagePath: detection.sourceStorage.objectKey, uploadChunks: null }
+          : {}),
+        scenes: detection.scenes,
+        sceneStatus: "ready",
+        sceneError: null,
+      };
     } catch (error) {
       onUpdate({
         key,

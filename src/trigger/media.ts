@@ -37,6 +37,8 @@ type SceneDetectionOutput = {
   manifestStorage: StorageReference;
   sourceContentHash: string;
   sceneCount: number;
+  /** Durable single-file source ref — present only when a chunked upload was reassembled. */
+  sourceStorage?: { bucket: string; objectKey: string };
 };
 
 type CaptionBatchReference = {
@@ -59,7 +61,8 @@ export const mediaSceneDetectionTask = task({
   maxDuration: 900,
   retry: { maxAttempts: 1 },
   run: async (rawPayload: MediaSceneDetectionPayload, { ctx }): Promise<SceneDetectionOutput> => {
-    const payload = rawPayload.uploadChunks?.chunks?.length
+    const usesChunkedUpload = Boolean(rawPayload.uploadChunks?.chunks?.length);
+    const payload = usesChunkedUpload
       ? await assembleChunkedSource(rawPayload, ctx.run.id)
       : rawPayload;
     metadata
@@ -101,6 +104,7 @@ export const mediaSceneDetectionTask = task({
       manifestStorage,
       sourceContentHash,
       sceneCount,
+      ...(usesChunkedUpload ? { sourceStorage: { bucket: payload.bucket, objectKey: payload.objectKey } } : {}),
     };
   },
 });

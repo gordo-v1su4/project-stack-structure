@@ -1183,24 +1183,37 @@ export default function StudioApp() {
       setProgress(20);
       setPreviewState((current) => updateSectionRecomputeProgress(current, { requestKey, progress: 20 }));
 
-      const sourceFiles = await Promise.all(uniqueVideoUrls.map(async (url, index) => {
-        const response = await fetch(url);
-        const blob = await response.blob();
-        const ext = blob.type.includes("mp4") ? ".mp4" : blob.type.includes("webm") ? ".webm" : ".mp4";
-        return new File([blob], `source${index}${ext}`, { type: blob.type || "video/mp4" });
-      }));
-
       const segments = browserPreviewSegments.map((seg) => ({
         startTime: seg.startTime,
         endTime: seg.endTime,
         sourceIndex: videoUrlIndex.get(seg.videoUrl) ?? 0,
       }));
 
-      const gatewayForm = new FormData();
-      gatewayForm.set("file", sourceFiles[0]);
-      sourceFiles.forEach((file, index) => {
-        gatewayForm.set(`file:${index}`, file);
+      // When every clip lives assembled in RustFS, send durable refs so the raw
+      // files never re-enter the browser or cross Vercel's serverless body cap.
+      const sourcesByUrl = new Map(videoSources.map((source) => [source.videoUrl, source]));
+      const durableRefs = uniqueVideoUrls.map((url) => {
+        const source = sourcesByUrl.get(url);
+        return source?.storageBucket && source.storagePath && !source.uploadChunks
+          ? { bucket: source.storageBucket, objectKey: source.storagePath }
+          : null;
       });
+
+      const gatewayForm = new FormData();
+      if (durableRefs.length && durableRefs.every((ref) => ref !== null)) {
+        gatewayForm.set("refs", JSON.stringify(durableRefs));
+      } else {
+        const sourceFiles = await Promise.all(uniqueVideoUrls.map(async (url, index) => {
+          const response = await fetch(url);
+          const blob = await response.blob();
+          const ext = blob.type.includes("mp4") ? ".mp4" : blob.type.includes("webm") ? ".webm" : ".mp4";
+          return new File([blob], `source${index}${ext}`, { type: blob.type || "video/mp4" });
+        }));
+        gatewayForm.set("file", sourceFiles[0]);
+        sourceFiles.forEach((file, index) => {
+          gatewayForm.set(`file:${index}`, file);
+        });
+      }
       gatewayForm.set("segments", JSON.stringify(segments));
       gatewayForm.set("requestKey", requestKey);
 

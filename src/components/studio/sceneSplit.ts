@@ -13,6 +13,12 @@ interface StoredVideoSceneReference {
   uploadChunks?: { size: number; chunks: Array<{ bucket: string; objectKey: string }> } | null;
 }
 
+export interface StoredSceneDetectionResult {
+  scenes: DetectedSceneSegment[];
+  /** Single-file durable ref produced when chunked parts were reassembled by the worker. */
+  sourceStorage?: { bucket: string; objectKey: string };
+}
+
 interface MediaVideoJobState {
   job_id: string;
   status: MediaVideoJobStatus;
@@ -346,7 +352,7 @@ export async function detectScenesFromStoredVideo(
   storage: StoredVideoSceneReference,
   sourceClipId: number,
   options: { timeoutMs?: number; pollIntervalMs?: number } = {},
-): Promise<DetectedSceneSegment[]> {
+): Promise<StoredSceneDetectionResult> {
   const bucket = storage.bucket;
   const objectKey = storage.objectKey ?? storage.storagePath;
   if (!bucket || !objectKey) throw new Error("Stored scene detection requires bucket and object key.");
@@ -387,5 +393,14 @@ export async function detectScenesFromStoredVideo(
   const result = await readJsonResponse(await fetch(`/api/media/video/jobs/${encodeURIComponent(jobId)}/result`));
   const scenes = mergeShortSceneCuts(normalizeSplitterManifest(result, sourceClipId, ""));
   if (!scenes.length) throw new Error("Media video job completed but returned no scene segments.");
-  return scenes;
+
+  const resultRoot = asRecord(result);
+  const storedRef = asRecord(resultRoot?.sourceStorage);
+  const sourceBucket = readString(storedRef?.bucket);
+  const sourceObjectKey = readString(storedRef?.objectKey);
+
+  return {
+    scenes,
+    ...(sourceBucket && sourceObjectKey ? { sourceStorage: { bucket: sourceBucket, objectKey: sourceObjectKey } } : {}),
+  };
 }

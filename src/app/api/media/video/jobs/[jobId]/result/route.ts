@@ -24,13 +24,23 @@ export async function GET(_request: Request, context: Params) {
 
     const output = run.output as {
       manifestStorage?: { bucket?: string; objectKey?: string };
+      sourceStorage?: { bucket?: string; objectKey?: string };
     } | undefined;
     const bucket = output?.manifestStorage?.bucket;
     const objectKey = output?.manifestStorage?.objectKey;
     if (!bucket || !objectKey) {
       return Response.json({ error: `Run ${jobId} completed without a final manifest pointer.` }, { status: 500 });
     }
-    return Response.json(await downloadJsonFromMediaGateway({ bucket, objectKey }));
+    const manifest = await downloadJsonFromMediaGateway({ bucket, objectKey });
+    // Chunked uploads are reassembled by the worker; surface the assembled single-file ref so the
+    // client can stop pointing at chunk part 0 and preview/export can use durable gateway refs.
+    const sourceBucket = output?.sourceStorage?.bucket;
+    const sourceObjectKey = output?.sourceStorage?.objectKey;
+    return Response.json(
+      sourceBucket && sourceObjectKey
+        ? { ...manifest, sourceStorage: { bucket: sourceBucket, objectKey: sourceObjectKey } }
+        : manifest,
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : "Video job result failed";
     const status = /not configured/i.test(message) ? 503 : /409/.test(message) ? 409 : /404|not found/i.test(message) ? 404 : 500;

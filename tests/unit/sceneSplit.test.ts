@@ -179,19 +179,26 @@ describe("sceneSplit.detectScenesFromStoredVideo", () => {
       }
 
       if (href === "/api/media/video/jobs/video-job-123/result") {
-        return Response.json({ manifest: mediaSceneManifest });
+        return Response.json({
+          manifest: mediaSceneManifest,
+          sourceStorage: { bucket: "stack-structure", objectKey: "media-uploads/video-source/assembled/assembled.mp4" },
+        });
       }
 
       return Response.json({ error: `unexpected ${href}` }, { status: 500 });
     }) as typeof fetch;
 
     try {
-      const scenes = await detectScenesFromStoredVideo({
+      const { scenes, sourceStorage } = await detectScenesFromStoredVideo({
         bucket: "stack-structure",
         objectKey: "media-uploads/2026/clip.mp4",
       }, 4, { pollIntervalMs: 0 });
 
       expect(scenes).toHaveLength(2);
+      expect(sourceStorage).toEqual({
+        bucket: "stack-structure",
+        objectKey: "media-uploads/video-source/assembled/assembled.mp4",
+      });
       expect(calls.map((call) => call.url)).toEqual([
         "/api/media/video/jobs",
         "/api/media/video/jobs/video-job-123/result",
@@ -243,7 +250,7 @@ describe("sceneSplit.detectScenesFromStoredVideo", () => {
     }) as typeof fetch;
 
     try {
-      const scenes = await detectScenesFromStoredVideo({
+      const { scenes } = await detectScenesFromStoredVideo({
         bucket: "stack-structure",
         objectKey: "media-uploads/2026/long-running.mp4",
       }, 5, { timeoutMs: 1_000, pollIntervalMs: 0 });
