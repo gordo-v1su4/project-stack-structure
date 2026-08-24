@@ -295,6 +295,7 @@ export const mediaVideoPipelineTask = task({
       .set("providerStatus", "completed");
     return {
       ...finalized.output,
+      ...(sceneOutput.sourceStorage ? { sourceStorage: sceneOutput.sourceStorage } : {}),
       job: {
         job_id: ctx.run.id,
         status: "completed",
