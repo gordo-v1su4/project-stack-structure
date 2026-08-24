@@ -179,6 +179,8 @@ function runHiggsfieldJsonCli(args: string[], env: Record<string, string | undef
 
 function runHiggsfieldCli(args: string[], env: Record<string, string | undefined>): Promise<string> {
   const childEnv = { ...process.env, ...env };
+  // Task containers run without HOME; the CLI resolves its config dir from it.
+  childEnv.HOME = childEnv.HOME?.trim() || "/tmp";
   const credentialsPath = env.HIGGSFIELD_CREDENTIALS_PATH?.trim();
   if (credentialsPath) childEnv.HIGGSFIELD_CREDENTIALS_PATH = credentialsPath;
   else if (env.HIGGSFIELD_CREDENTIALS_JSON?.trim()) {
