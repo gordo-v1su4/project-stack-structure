@@ -397,6 +397,25 @@ describe("Next route Trigger.dev dispatch boundary", () => {
     expect(payload.error).toMatch(/not registered to this account/i);
   });
 
+  test("rejects foreign chunk parts hidden behind an owned primary ref", async () => {
+    resetMocks();
+    const form = new FormData();
+    form.set("requestKey", "final-route-chunk-owner-test");
+    form.set("segments", JSON.stringify([{ sourceIndex: 0, startTime: 0, endTime: 1 }]));
+    form.set("audioRef", JSON.stringify({
+      bucket: "stack-structure",
+      objectKey: "media-uploads/github-test-user/source-audio/master.wav",
+      chunks: [{ bucket: "stack-structure", objectKey: "media-uploads/attacker-user/source-audio/victim.part" }],
+    }));
+    form.set("videoRefs", JSON.stringify([
+      { bucket: "stack-structure", objectKey: "media-uploads/github-test-user/sources/clip-a.mp4" },
+    ]));
+
+    const response = await postFinalExport(new Request("http://localhost/api/export/final", { method: "POST", body: form }));
+
+    expect(response.status).toBe(403);
+  });
+
   test("rejects durable refs from a foreign bucket", async () => {
     resetMocks();
     const form = new FormData();

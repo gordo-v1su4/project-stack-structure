@@ -85,7 +85,10 @@ export async function POST(request: Request) {
       // Shared worker credentials mean every referenced object must belong to
       // the caller. Ownership is proven by the owner segment the storage route
       // inserted at upload time; pre-scoping keys must be re-uploaded.
-      const foreignRefs = [audio.objectKey, ...videos.flatMap((video) => [
+      const foreignRefs = [
+        audio.objectKey,
+        ...(audio.chunks ?? []).map((chunk) => chunk.objectKey),
+        ...videos.flatMap((video) => [
         video.objectKey,
         ...(video.chunks ?? []).map((chunk) => chunk.objectKey),
       ])]
