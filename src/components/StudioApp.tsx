@@ -1079,7 +1079,32 @@ export default function StudioApp() {
         // the owner-scoped storage path, then the export retries once.
         if (outcome.response.status === 403 && /not registered to this account/i.test(outcome.payload.error ?? "")) {
           setFinalExportStatus("Re-registering project media under your account before rendering...");
-          const audioFile = await resolveMasterAudioFile(beatJoinAnalysis, audioFileRef.current);
+          const resolveMigratableAudio = async (): Promise<File> => {
+            try {
+              return await resolveMasterAudioFile(beatJoinAnalysis, audioFileRef.current);
+            } catch {
+              // Reloaded legacy sessions may hold only the durable audio ref;
+              // recover a fresh download URL through the authenticated route.
+              if (!beatJoinAnalysis.storageBucket || !beatJoinAnalysis.storagePath) {
+                throw new Error("Master audio could not be recovered for migration; re-upload the song.");
+              }
+              const params = new URLSearchParams({
+                bucket: beatJoinAnalysis.storageBucket,
+                objectKey: beatJoinAnalysis.storagePath,
+              });
+              const resolution = await fetch(`/api/storage/download-url?${params.toString()}`);
+              const payload = (await resolution.json().catch(() => null)) as { fileUrl?: string; error?: string } | null;
+              if (!resolution.ok || !payload?.fileUrl) {
+                throw new Error(payload?.error ?? "Could not resolve the master audio download.");
+              }
+              return fetchMediaUrlAsFile(
+                payload.fileUrl,
+                `${beatJoinAnalysis.sourceLabel || "master-audio"}.wav`,
+                "audio/wav",
+              );
+            }
+          };
+          const audioFile = await resolveMigratableAudio();
           const scopedAudio = await reuploadThroughScopedPath(audioFile, "media-uploads/source-audio");
           const scopedVideoRefs: Array<{ bucket: string; objectKey: string }> = [];
           for (const [index, url] of uniqueVideoUrls.entries()) {
