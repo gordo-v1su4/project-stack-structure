@@ -5,6 +5,7 @@ set -euo pipefail
 readonly isolated_tests=(
   "tests/unit/sceneCaptionServer.test.ts"
   "tests/unit/triggerRoutes.test.ts"
+  "tests/integration/exportRoute.test.ts"
 )
 
 declare -a bun_args=()

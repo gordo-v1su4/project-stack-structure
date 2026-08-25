@@ -10,7 +10,7 @@ import { mergeUploadedVideoSourceUpdate, needsSceneDetectionRetry, prepareVideoS
 import type { VideoSceneUpdate } from "./studio/mediaUpload";
 import { buildEditPlanPreviewSegments, normalizeStoryEditSettings, type EditPlanPreviewSegment, type MusicVideoProject } from "./studio/musicVideoProject";
 import { selectStorySectionCandidate } from "./studio/musicVideoProjectSelection";
-import { buildAutoShaderCues, describeMusicVideoShaderPreset, MUSIC_VIDEO_SHADER_PRESETS, type ShaderEffectCue } from "./studio/shaderEffectPlan";
+import { buildAutoShaderCues, describeMusicVideoShaderPreset, MUSIC_VIDEO_SHADER_PRESETS, type ShaderAccentKinds, type ShaderEffectCue } from "./studio/shaderEffectPlan";
 import {
   ACTIVE_STUDIO_PROJECT_KEY,
   STUDIO_AUTOSAVE_INTERVAL_MS,
@@ -160,6 +160,7 @@ export default function StudioApp() {
   const [referenceAssets, setReferenceAssets] = useState<ReferenceAsset[]>([]);
   const [generatedAssets, setGeneratedAssets] = useState<GeneratedStudioAsset[]>([]);
   const [shaderPresetId, setShaderPresetId] = useState(MUSIC_VIDEO_SHADER_PRESETS[0].id);
+  const [shaderAccentKinds, setShaderAccentKinds] = useState<ShaderAccentKinds>({});
   const [finalExportStatus, setFinalExportStatus] = useState("Final export waits for a generated story preview and master audio.");
   const [finalExportError, setFinalExportError] = useState<string | null>(null);
   const [finalExportUrl, setFinalExportUrl] = useState<string | null>(null);
@@ -986,6 +987,10 @@ export default function StudioApp() {
       form.set("segments", JSON.stringify(segments));
       form.set("beats", JSON.stringify(beatJoinAnalysis.beats));
       form.set("lyricChunks", JSON.stringify(musicVideoProject.lyricChunks));
+      form.set("shaderCues", JSON.stringify(shaderEffectCues));
+      if (Object.keys(shaderAccentKinds).length > 0) {
+        form.set("accentKinds", JSON.stringify(shaderAccentKinds));
+      }
       form.set("shaderPresetId", shaderPresetId);
       form.set("requestKey", requestKey);
 
@@ -1138,8 +1143,8 @@ export default function StudioApp() {
       setPreviewState((current) => swapReadySection(current, requestKey));
       setFinalExportUrl(asset.videoUrl ?? null);
       setFinalExportName(asset.downloadFileName ?? "stack-structure-webgpu-final.mp4");
-      setFinalExportCueCount(browserPreviewEffectCues.length);
-      setFinalExportStatus(`WebGPU MP4 ready · ${(asset.duration || 0).toFixed(1)}s · ${browserPreviewEffectCues.length} live shader cues captured.`);
+      setFinalExportCueCount(shaderEffectCues.length);
+      setFinalExportStatus(`WebGPU MP4 ready · ${(asset.duration || 0).toFixed(1)}s · ${shaderEffectCues.length} live shader cues captured.`);
       setProgress(100);
       setDone(true);
     } catch (error) {
@@ -1155,7 +1160,7 @@ export default function StudioApp() {
 
   async function runBrowserPreview() {
     setRetainedBrowserPreviewSegments(browserPreviewSegments);
-    setRetainedPreviewEffectCues(browserPreviewEffectCues);
+    setRetainedPreviewEffectCues(shaderEffectCues);
     setIsRunning(true);
     setDone(false);
     setProgress(5);
@@ -1537,30 +1542,31 @@ export default function StudioApp() {
     return [];
   }, [tab, storyPreviewSegments, effectiveClipOrder, workingBeatSplitSegments, videoSources, sourceClips, arrangementSegments]);
 
-  const browserPreviewEffectCues = useMemo(
+  const shaderEffectCues = useMemo(
     () =>
-      (tab === "story" || tab === "compose") && beatJoinAnalysis && musicVideoProject && storyPreviewSegments.length > 0
+      beatJoinAnalysis && musicVideoProject && storyPreviewSegments.length > 0
         ? buildAutoShaderCues({
             segments: storyPreviewSegments,
             beats: beatJoinAnalysis.beats,
             lyricChunks: musicVideoProject.lyricChunks,
             presetId: shaderPresetId,
+            accentKinds: shaderAccentKinds,
           })
         : [],
-    [beatJoinAnalysis, musicVideoProject, shaderPresetId, storyPreviewSegments, tab],
+    [beatJoinAnalysis, musicVideoProject, shaderAccentKinds, shaderPresetId, storyPreviewSegments],
   );
 
   useEffect(() => {
-    if (browserPreviewEffectCues.length > 0) {
-      lastPreviewEffectCuesRef.current = browserPreviewEffectCues;
+    if (shaderEffectCues.length > 0) {
+      lastPreviewEffectCuesRef.current = shaderEffectCues;
     }
-  }, [browserPreviewEffectCues]);
+  }, [shaderEffectCues]);
 
   useEffect(() => {
     if ((tab !== "story" && tab !== "compose") || browserPreviewSegments.length === 0) return;
     setRetainedBrowserPreviewSegments(browserPreviewSegments);
-    setRetainedPreviewEffectCues(browserPreviewEffectCues);
-  }, [browserPreviewEffectCues, browserPreviewSegments, tab]);
+    setRetainedPreviewEffectCues(shaderEffectCues);
+  }, [browserPreviewSegments, shaderEffectCues, tab]);
 
   const displayedBrowserPreviewSegments = (tab === "story" || tab === "compose") && browserPreviewSegments.length > 0
     ? browserPreviewSegments
@@ -1569,12 +1575,12 @@ export default function StudioApp() {
       : browserPreviewSegments.length > 0
         ? browserPreviewSegments
         : previewPlayerRef.current.getSegments();
-  const displayedPreviewEffectCues = (tab === "story" || tab === "compose") && browserPreviewEffectCues.length > 0
-    ? browserPreviewEffectCues
+  const displayedPreviewEffectCues = (tab === "story" || tab === "compose") && shaderEffectCues.length > 0
+    ? shaderEffectCues
     : retainedPreviewEffectCues.length > 0
       ? retainedPreviewEffectCues
-      : browserPreviewEffectCues.length > 0
-        ? browserPreviewEffectCues
+      : shaderEffectCues.length > 0
+        ? shaderEffectCues
         : lastPreviewEffectCuesRef.current;
 
   const ingestStats = useMemo(() => {
@@ -1861,6 +1867,9 @@ export default function StudioApp() {
                 videoSourceCount={videoSources.length}
                 shaderPresetId={shaderPresetId}
                 shaderPresetSummary={shaderPresetSummary}
+                shaderEffectCues={shaderEffectCues}
+                accentKinds={shaderAccentKinds}
+                onAccentKindChange={(sync, kind) => setShaderAccentKinds((current) => ({ ...current, [sync]: kind }))}
                 finalExportStatus={finalExportStatus}
                 finalExportError={finalExportError}
                 finalExportUrl={finalExportUrl}

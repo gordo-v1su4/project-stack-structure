@@ -16,6 +16,22 @@ export type ShaderCueKind =
 
 export type ShaderCueSync = "beat" | "section" | "lyric";
 
+export const SHADER_CUE_KINDS = [
+  "beat-flash",
+  "section-warmth",
+  "lyric-glow",
+  "glitch-cut",
+  "datamosh-lite",
+  "film-halation",
+  "duotone-pulse",
+] as const;
+
+export interface ShaderAccentKinds {
+  beat?: ShaderCueKind;
+  section?: ShaderCueKind;
+  lyric?: ShaderCueKind;
+}
+
 export interface ShaderEffectCue {
   id: string;
   kind: ShaderCueKind;
@@ -131,8 +147,12 @@ export function buildAutoShaderCues(params: {
   beats?: number[];
   lyricChunks?: ShaderLyricChunk[];
   presetId?: string | null;
+  accentKinds?: ShaderAccentKinds;
 }): ShaderEffectCue[] {
   const preset = getMusicVideoShaderPreset(params.presetId);
+  const sectionKind = params.accentKinds?.section ?? preset.sectionKind;
+  const beatKind = params.accentKinds?.beat ?? preset.beatKind;
+  const lyricKind = params.accentKinds?.lyric ?? preset.lyricKind;
   const segments = normalizeShaderTimelineSegments(params.segments);
   const cues: ShaderEffectCue[] = [];
   let outputCursor = 0;
@@ -148,7 +168,7 @@ export function buildAutoShaderCues(params: {
     const sectionPresetId = preset.shaderPresetIds[index % preset.shaderPresetIds.length] ?? preset.shaderPresetIds[0];
     cues.push({
       id: `section-${index}-${sectionPresetId}`,
-      kind: preset.sectionKind,
+      kind: sectionKind,
       start: outputStart,
       end: outputEnd,
       intensity: clamp(0.3 + preset.triggerIntensity * 0.35, 0, 1),
@@ -175,7 +195,7 @@ export function buildAutoShaderCues(params: {
       const beatPresetId = preset.shaderPresetIds[(index + beatIndex + 1) % preset.shaderPresetIds.length] ?? sectionPresetId;
       cues.push({
         id: `beat-${index}-${beatIndex}-${beatPresetId}`,
-        kind: preset.beatKind,
+        kind: beatKind,
         start,
         end,
         intensity: preset.triggerIntensity,
@@ -194,7 +214,7 @@ export function buildAutoShaderCues(params: {
         const lyricPresetId = preset.shaderPresetIds[(index + 2) % preset.shaderPresetIds.length] ?? sectionPresetId;
         cues.push({
           id: `lyric-${index}-${lyric.id ?? lyric.index ?? lyricStart}-${lyricPresetId}`,
-          kind: preset.lyricKind,
+          kind: lyricKind,
           start: lyricStart,
           end: lyricEnd,
           intensity: clamp(preset.triggerIntensity + 0.18, 0, 1),

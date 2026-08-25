@@ -211,6 +211,7 @@ export async function triggerFinalExport(payload: FinalExportPayload) {
       payload.requestKey,
       JSON.stringify(payload.segments),
       JSON.stringify(payload.effectCues ?? []),
+      JSON.stringify(payload.accentKinds ?? {}),
       JSON.stringify(payload.beats ?? []),
       JSON.stringify(payload.lyricChunks ?? []),
       payload.shaderPresetId ?? "",

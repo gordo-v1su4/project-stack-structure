@@ -1,12 +1,32 @@
 "use client";
 
-import { MUSIC_VIDEO_SHADER_PRESETS } from "../shaderEffectPlan";
+import {
+  getMusicVideoShaderPreset,
+  MUSIC_VIDEO_SHADER_PRESETS,
+  SHADER_CUE_KINDS,
+  type ShaderAccentKinds,
+  type ShaderCueKind,
+  type ShaderCueSync,
+  type ShaderEffectCue,
+} from "../shaderEffectPlan";
 import type { BeatJoinAnalysis } from "../types";
 
 type ShaderPresetSummary = {
   engine: string;
   shaders: Array<{ id: string; label: string; family: string; description: string }>;
 };
+
+const MAX_CUE_CHIPS = 12;
+
+const ACCENT_LANES: Array<{ sync: ShaderCueSync; label: string }> = [
+  { sync: "beat", label: "Beat accent" },
+  { sync: "section", label: "Section accent" },
+  { sync: "lyric", label: "Lyric accent" },
+];
+
+function formatCueRange(start: number, end: number) {
+  return `${start.toFixed(2)}–${end.toFixed(2)}s`;
+}
 
 type ComposeTabProps = {
   analysis: BeatJoinAnalysis | null;
@@ -17,6 +37,9 @@ type ComposeTabProps = {
   videoSourceCount: number;
   shaderPresetId: string;
   shaderPresetSummary: ShaderPresetSummary;
+  shaderEffectCues?: ShaderEffectCue[];
+  accentKinds?: ShaderAccentKinds;
+  onAccentKindChange?: (sync: ShaderCueSync, kind: ShaderCueKind) => void;
   finalExportStatus: string;
   finalExportError: string | null;
   finalExportUrl: string | null;
@@ -40,6 +63,9 @@ export function ComposeTab({
   videoSourceCount,
   shaderPresetId,
   shaderPresetSummary,
+  shaderEffectCues = [],
+  accentKinds = {},
+  onAccentKindChange,
   finalExportStatus,
   finalExportError,
   finalExportUrl,
@@ -98,8 +124,9 @@ export function ComposeTab({
         <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
           <div>
             <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Shader treatment</div>
-            <div className="mt-1 text-[11px] text-[#6d6d6d]">
-              Synced cues are derived from story segments, beat/onset markers, section energy, and lyric chunks.
+            <div className="mt-1 max-w-3xl text-[11px] leading-relaxed text-[#6d6d6d]" data-treatment-explanation>
+              {getMusicVideoShaderPreset(shaderPresetId).description} Synced cues are derived from story segments, beat/onset markers, section
+              energy, and lyric chunks; the same cue timeline drives both the browser preview and the final MP4 export.
             </div>
           </div>
           <select
@@ -112,6 +139,53 @@ export function ComposeTab({
             ))}
           </select>
         </div>
+
+        <div className="mb-2 grid gap-2 md:grid-cols-3">
+          {ACCENT_LANES.map(({ sync, label }) => {
+            const preset = getMusicVideoShaderPreset(shaderPresetId);
+            const resolvedKind = accentKinds[sync] ?? preset[`${sync}Kind` as keyof typeof preset] as ShaderCueKind;
+            return (
+              <label key={sync} className="flex items-center justify-between gap-2 rounded-[2px] border border-[#171717] bg-[#070707] px-2 py-1.5">
+                <span className="text-[8px] uppercase tracking-[0.16em] text-[#555]">{label}</span>
+                <select
+                  data-accent-select={sync}
+                  value={resolvedKind}
+                  onChange={(event) => onAccentKindChange?.(sync, event.target.value as ShaderCueKind)}
+                  className="rounded-[2px] border border-[#242424] bg-[#050505] px-1.5 py-1 font-mono text-[9px] text-[#bdbdbd] outline-none focus:border-[#e05c00]"
+                >
+                  {SHADER_CUE_KINDS.map((kind) => (
+                    <option key={kind} value={kind}>{kind}</option>
+                  ))}
+                </select>
+              </label>
+            );
+          })}
+        </div>
+
+        {shaderEffectCues.length ? (
+          <div className="mb-2 flex flex-wrap items-center gap-1" data-cue-chip-row>
+            {shaderEffectCues.slice(0, MAX_CUE_CHIPS).map((cue) => (
+              <span
+                key={cue.id}
+                data-cue-chip={cue.id}
+                title={`${cue.kind} · ${cue.sync} · ${formatCueRange(cue.start, cue.end)} · intensity ${cue.intensity.toFixed(2)}`}
+                className={`rounded-[2px] border px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-[0.08em] ${
+                  cue.sync === "beat"
+                    ? "border-[#3a2410] bg-[#140b03] text-[#e08a3f]"
+                    : cue.sync === "lyric"
+                      ? "border-[#14301a] bg-[#04120a] text-[#79c779]"
+                      : "border-[#101826] bg-[#04070f] text-[#6f9fd8]"
+                }`}
+              >
+                {cue.kind} · {cue.sync}
+              </span>
+            ))}
+            {shaderEffectCues.length > MAX_CUE_CHIPS ? (
+              <span className="font-mono text-[8px] text-[#555]">+{shaderEffectCues.length - MAX_CUE_CHIPS} more</span>
+            ) : null}
+          </div>
+        ) : null}
+
         <div className="rounded-[2px] border border-[#171717] bg-[#070707] p-2">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <span className="text-[8px] uppercase tracking-[0.16em] text-[#e05c00]">Stutter shader runtime</span>
