@@ -22,6 +22,15 @@ mock.module("@/lib/mediaGateway", () => ({
     mediaUrl: `https://media.test/${file.name}`,
     publicUrl: `https://media.test/${file.name}`,
   }),
+  downloadJsonFromMediaGateway: async () => {
+    throw new Error("404 not found");
+  },
+  uploadJsonToMediaGateway: async ({ data }: { data: unknown }) => ({
+    bucket: "test-bucket",
+    objectKey: "uploads/claim.json",
+    publicUrl: "https://media.test/claim.json",
+    payload: data,
+  }),
 }));
 
 mock.module("@/lib/triggerOrchestration", () => ({

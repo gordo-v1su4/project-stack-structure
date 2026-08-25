@@ -1,5 +1,5 @@
 import { getMediaGatewayConfig, normalizeMediaPath, uploadFileToMediaGateway } from "@/lib/mediaGateway";
-import { mediaUploadBelongsToOwner } from "@/lib/essentiaUpload";
+import { authorizeMediaObject } from "@/lib/mediaOwnership";
 import { getSessionUser, unauthorizedResponse } from "@/lib/session";
 import { triggerFinalExport } from "@/lib/triggerOrchestration";
 
@@ -63,9 +63,12 @@ export async function POST(request: Request) {
       }
       // Shared worker credentials mean every referenced object must belong to
       // the caller, or any authenticated user could export another user's media.
-      const foreignRefs = [audio.objectKey, ...videos.map((video) => video.objectKey)]
-        .filter((objectKey) => !mediaUploadBelongsToOwner(objectKey, user.id));
-      if (foreignRefs.length) {
+      // Pre-scoping legacy keys migrate into the ownership ledger on first use.
+      const refObjectKeys = [audio.objectKey, ...videos.map((video) => video.objectKey)];
+      const ownershipResults = await Promise.all(
+        refObjectKeys.map((objectKey) => authorizeMediaObject({ bucket: audio.bucket, objectKey, ownerId: user.id })),
+      );
+      if (ownershipResults.some((authorized) => !authorized)) {
         return Response.json({ success: false, error: "Durable references must point at objects uploaded by the current user." }, { status: 403 });
       }
     } else {

@@ -11,6 +11,9 @@ const uploadFileToMediaGatewayMock = mock(async ({ file, folder }: { file: File;
   mediaUrl: `https://media.test/${encodeURIComponent(file.name)}`,
   mime: file.type || "application/octet-stream",
 }));
+const downloadJsonFromMediaGatewayMock = mock(async () => {
+  throw new Error("404 not found");
+});
 const uploadJsonToMediaGatewayMock = mock(async () => ({
   bucket: "stack-structure",
   objectKey: "media-uploads/analysis/result.json",
@@ -62,6 +65,7 @@ mock.module("@/lib/mediaGateway", () => ({
     uploadPrefix: "media-uploads",
   }),
   normalizeMediaPath: (value: string) => value,
+  downloadJsonFromMediaGateway: downloadJsonFromMediaGatewayMock,
   downloadMediaGatewayFile: mock(async () => ({
     bytes: new Uint8Array([1, 2, 3]),
     fileName: "source.bin",
@@ -389,6 +393,25 @@ describe("Next route Trigger.dev dispatch boundary", () => {
     expect(response.status).toBe(403);
     expect(payload.success).toBe(false);
     expect(payload.error).toMatch(/current user/i);
+  });
+
+  test("migrates unscoped legacy refs into the ownership ledger", async () => {
+    resetMocks();
+    uploadJsonToMediaGatewayMock.mockClear();
+    const form = new FormData();
+    form.set("requestKey", "final-route-legacy-test");
+    form.set("segments", JSON.stringify([{ sourceIndex: 0, startTime: 0, endTime: 1 }]));
+    form.set("audioRef", JSON.stringify({ bucket: "stack-structure", objectKey: "media-uploads/source-audio/master.wav" }));
+    form.set("videoRefs", JSON.stringify([
+      { bucket: "stack-structure", objectKey: "media-uploads/video-source/87f25c0c-90f0-4c8d-8451-e7a08d56f57a/00000.part" },
+    ]));
+
+    const response = await postFinalExport(new Request("http://localhost/api/export/final", { method: "POST", body: form }));
+    const payload = await jsonResponse(response);
+
+    expect(response.status).toBe(202);
+    expect(payload.runId).toBe("run-export-123");
+    expect(uploadJsonToMediaGatewayMock).toHaveBeenCalled();
   });
 
   test("rejects durable refs from a foreign bucket", async () => {
