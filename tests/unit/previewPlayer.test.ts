@@ -311,6 +311,49 @@ describe("BrowserPreviewPlayer master audio", () => {
     expect(player.getState().errorMessage).toBeNull();
   });
 
+  test("stale play rejection does not overwrite a newer playback chain", async () => {
+    const originalRaf = globalThis.requestAnimationFrame;
+    const originalCancelRaf = globalThis.cancelAnimationFrame;
+    globalThis.requestAnimationFrame = (() => 0) as typeof requestAnimationFrame;
+    globalThis.cancelAnimationFrame = (() => undefined) as typeof cancelAnimationFrame;
+    (globalThis as Record<string, unknown>).HTMLMediaElement ??= { HAVE_METADATA: 1, HAVE_CURRENT_DATA: 2 };
+
+    try {
+      const player = new BrowserPreviewPlayer({ warmSourceLimit: 0 });
+      const video = new FakeVideoElement();
+      let rejectFirstPlay: (reason: Error) => void = () => {};
+      let playCount = 0;
+      video.play = () => {
+        video.paused = false;
+        playCount += 1;
+        if (playCount === 1) {
+          return new Promise((_resolve, reject) => { rejectFirstPlay = reject; });
+        }
+        return Promise.resolve();
+      };
+      player.attach(video as unknown as HTMLVideoElement);
+      player.load([{ videoUrl: "blob:a", startTime: 0, endTime: 2, label: "SEG_01" }]);
+
+      const stalePlayDone = player.play();
+      await flushAsync();
+      player.stop();
+      void player.play();
+      await flushAsync();
+      expect(player.getState().status).toBe("playing");
+
+      rejectFirstPlay(new Error("stale undecodable source"));
+      await stalePlayDone;
+      await flushAsync();
+
+      expect(player.getState().status).toBe("playing");
+      expect(player.getState().errorMessage).toBeNull();
+      player.stop();
+    } finally {
+      globalThis.requestAnimationFrame = originalRaf;
+      globalThis.cancelAnimationFrame = originalCancelRaf;
+    }
+  });
+
   test("pause during a pending resume keeps the preview paused", async () => {
     const originalRaf = globalThis.requestAnimationFrame;
     const originalCancelRaf = globalThis.cancelAnimationFrame;

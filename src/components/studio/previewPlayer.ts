@@ -198,10 +198,12 @@ export class BrowserPreviewPlayer {
     if (!this.videoElement || this.segments.length === 0) return;
     this.status = "loading";
     this.emit();
+    const token = ++this.playbackToken;
 
     try {
-      await this.playSegment(this.currentIndex, ++this.playbackToken);
+      await this.playSegment(this.currentIndex, token);
     } catch (error) {
+      if (token !== this.playbackToken) return;
       this.status = "error";
       this.currentSegmentEndTime = null;
       this.errorMessage = error instanceof Error ? error.message : "Playback failed.";
