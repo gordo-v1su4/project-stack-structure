@@ -223,22 +223,37 @@ export class BrowserPreviewPlayer {
 
     if (this.currentSegmentEndTime !== null && this.status === "paused") {
       const token = ++this.playbackToken;
-      this.videoElement.play().catch(() => {});
-      this.startMasterAudio();
-      this.status = "playing";
-      this.startProgressLoop();
-      this.emit();
-
-      this.waitForSegmentEnd(this.currentSegmentEndTime, token)
-        .then(() => this.advanceToNext(token))
-        .catch(() => {});
+      const endTime = this.currentSegmentEndTime;
+      void this.videoElement.play()
+        .then(() => {
+          if (token !== this.playbackToken) return;
+          this.startMasterAudio();
+          this.status = "playing";
+          this.startProgressLoop();
+          this.emit();
+          return this.waitForSegmentEnd(endTime, token)
+            .then(() => this.advanceToNext(token));
+        })
+        .catch(() => this.failPlayback("Could not resume preview playback."));
       return;
     }
 
-    this.videoElement.play().catch(() => {});
-    this.startMasterAudio();
-    this.status = "playing";
-    this.startProgressLoop();
+    void this.videoElement.play()
+      .then(() => {
+        this.startMasterAudio();
+        this.status = "playing";
+        this.startProgressLoop();
+        this.emit();
+      })
+      .catch(() => this.failPlayback("Could not resume preview playback."));
+  }
+
+  private failPlayback(message: string) {
+    this.stopProgressLoop();
+    this.pauseMasterAudio();
+    this.currentSegmentEndTime = null;
+    this.status = "error";
+    this.errorMessage = message;
     this.emit();
   }
 
@@ -366,7 +381,14 @@ export class BrowserPreviewPlayer {
     if (token !== this.playbackToken) return;
 
     if (standby && nextSegment && standbyReady) {
-      void standby.play().catch(() => {});
+      try {
+        await standby.play();
+      } catch {
+        // Standby refused to start (errored or undecodable source): keep the
+        // current element visible and let advanceToNext prepare it instead.
+        await this.advanceToNext(token);
+        return;
+      }
       this.activeElementIndex = this.activeElementIndex === 0 ? 1 : 0;
       this.applyElementVisibility();
       video.pause();
