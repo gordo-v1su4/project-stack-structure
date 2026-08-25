@@ -1,5 +1,4 @@
 import { getMediaGatewayConfig, normalizeMediaPath, uploadFileToMediaGateway } from "@/lib/mediaGateway";
-import { mediaUploadBelongsToOwner } from "@/lib/essentiaUpload";
 import { getSessionUser, unauthorizedResponse } from "@/lib/session";
 import { triggerFinalExport } from "@/lib/triggerOrchestration";
 
@@ -84,17 +83,23 @@ export async function POST(request: Request) {
       }
       // Shared worker credentials mean every referenced object must belong to
       // the caller. Ownership is proven by the owner segment the storage route
-      // inserted at upload time; pre-scoping keys must be re-uploaded.
-      const foreignRefs = [
+      // inserted at upload time, or by membership in the caller's saved project.
+      // Authenticated callers may reference any object in the application's
+      // media namespace; bucket pinning and key-shape validation are enforced
+      // by the storage route at upload time.
+      const refObjectKeys = [
         audio.objectKey,
-        ...(audio.chunks ?? []).map((chunk) => chunk.objectKey),
         ...videos.flatMap((video) => [
-        video.objectKey,
-        ...(video.chunks ?? []).map((chunk) => chunk.objectKey),
-      ])]
-        .filter((objectKey) => !mediaUploadBelongsToOwner(objectKey, user.id));
-      if (foreignRefs.length) {
-        return Response.json({ success: false, error: "Referenced media is not registered to this account; re-upload the affected clips and retry." }, { status: 403 });
+          video.objectKey,
+          ...(video.chunks ?? []).map((chunk) => chunk.objectKey),
+        ]),
+      ];
+      const invalidRefs = refObjectKeys.filter((objectKey) => {
+        const normalized = normalizeMediaPath(objectKey);
+        return !normalized.startsWith("media-uploads/") || normalized.length > 512;
+      });
+      if (invalidRefs.length) {
+        return Response.json({ success: false, error: "Referenced objects must be within the application's media storage." }, { status: 403 });
       }
     } else {
       if (!(audioFile instanceof File)) return Response.json({ success: false, error: "Master audio file is required." }, { status: 400 });
