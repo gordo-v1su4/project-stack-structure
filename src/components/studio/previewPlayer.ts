@@ -70,6 +70,7 @@ export class BrowserPreviewPlayer {
   private progressRafId: number | null = null;
   private progressFrameCallbackId: number | null = null;
   private playbackToken = 0;
+  private elementOwnerTokens = new WeakMap<HTMLVideoElement, number>();
   private warmElements = new Map<string, HTMLVideoElement>();
   private audioElement: HTMLAudioElement | null = null;
   private readonly warmSourceLimit: number;
@@ -390,7 +391,6 @@ export class BrowserPreviewPlayer {
     if (token !== this.playbackToken) return;
 
     if (standby && nextSegment && standbyReady) {
-      const stagedSrc = standby.src;
       try {
         await standby.play();
       } catch {
@@ -402,9 +402,9 @@ export class BrowserPreviewPlayer {
       }
       if (token !== this.playbackToken || this.status !== "playing") {
         // stop/seek/pause/newer chain invalidated this one while play() was
-        // pending. Only silence the standby if it is still the untouched
-        // staging slot — a newer chain may already have repurposed it.
-        if (this.standbyElement === standby && (standby.src === stagedSrc || standby.currentSrc === stagedSrc)) {
+        // pending. Only silence the standby if this chain still owns it — a
+        // newer chain may have repurposed the same element for the same URL.
+        if (this.standbyElement === standby && this.elementOwnerTokens.get(standby) === token) {
           standby.pause();
         }
         return;
@@ -422,6 +422,7 @@ export class BrowserPreviewPlayer {
   }
 
   private async prepareVisibleVideo(video: HTMLVideoElement, segment: PreviewSegment, token: number) {
+    this.elementOwnerTokens.set(video, token);
     const sameSource = video.currentSrc === segment.videoUrl || video.src === segment.videoUrl;
     if (!sameSource) {
       video.pause();

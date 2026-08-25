@@ -448,4 +448,61 @@ describe("BrowserPreviewPlayer double buffering", () => {
       globalThis.cancelAnimationFrame = originalCancelRaf;
     }
   });
+
+  test("stale standby cleanup does not pause a newer chain reusing the same element and URL", async () => {
+    const originalRaf = globalThis.requestAnimationFrame;
+    const originalCancelRaf = globalThis.cancelAnimationFrame;
+    globalThis.requestAnimationFrame = (() => 0) as typeof requestAnimationFrame;
+    globalThis.cancelAnimationFrame = (() => undefined) as typeof cancelAnimationFrame;
+    (globalThis as Record<string, unknown>).HTMLMediaElement ??= { HAVE_METADATA: 1, HAVE_CURRENT_DATA: 2 };
+
+    try {
+      const player = new BrowserPreviewPlayer({ warmSourceLimit: 0 });
+      const front = new FakeVideoElement();
+      const back = new FakeVideoElement();
+      const resolveBackPlays: Array<() => void> = [];
+      back.play = () => {
+        back.paused = false;
+        return new Promise<void>((resolve) => { resolveBackPlays.push(resolve); });
+      };
+      player.attach(front as unknown as HTMLVideoElement, back as unknown as HTMLVideoElement);
+      player.load([
+        { videoUrl: "blob:a", startTime: 0, endTime: 1, label: "SEG_01" },
+        { videoUrl: "blob:b", startTime: 0, endTime: 1, label: "SEG_02" },
+      ]);
+
+      const stalePlayDone = player.play();
+      await flushAsync();
+      front.currentTime = 1;
+      front.dispatch("timeupdate");
+      await flushAsync();
+      expect(resolveBackPlays).toHaveLength(1);
+
+      // Start a new chain with the same segment URLs, then leave its standby
+      // play pending while the invalidated chain's earlier play settles.
+      front.currentTime = 0;
+      player.seekToSegment(0);
+      await flushAsync();
+      front.currentTime = 1;
+      front.dispatch("timeupdate");
+      await flushAsync();
+      expect(resolveBackPlays).toHaveLength(2);
+      expect(back.paused).toBe(false);
+
+      resolveBackPlays[0]?.();
+      await flushAsync();
+      await stalePlayDone;
+      expect(back.paused).toBe(false);
+
+      resolveBackPlays[1]?.();
+      await flushAsync();
+      expect(player.getState().currentIndex).toBe(1);
+      expect(back.style.opacity).toBe("1");
+      expect(back.paused).toBe(false);
+      player.stop();
+    } finally {
+      globalThis.requestAnimationFrame = originalRaf;
+      globalThis.cancelAnimationFrame = originalCancelRaf;
+    }
+  });
 });
