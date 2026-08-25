@@ -1,4 +1,5 @@
-import { getMediaGatewayConfig, normalizeMediaPath, uploadFileToMediaGateway, buildMediaGatewayFileUrl } from "@/lib/mediaGateway";
+import { getMediaGatewayConfig, normalizeMediaPath, uploadFileToMediaGateway } from "@/lib/mediaGateway";
+import { mediaUploadBelongsToOwner } from "@/lib/essentiaUpload";
 import { getSessionUser, unauthorizedResponse } from "@/lib/session";
 import { triggerFinalExport } from "@/lib/triggerOrchestration";
 
@@ -61,16 +62,12 @@ export async function POST(request: Request) {
         return Response.json({ success: false, error: error instanceof Error ? error.message : "Invalid durable references." }, { status: 400 });
       }
       // Shared worker credentials mean every referenced object must belong to
-      // the caller, or any authenticated user could export another user's media.
-      // The caller's saved studio draft is the server-side record of their media.
-      const ownedKeys = await loadOwnedExportRefs(user.id);
+      // the caller. Ownership is proven by the owner segment the storage route
+      // inserted at upload time; pre-scoping keys must be re-uploaded.
       const foreignRefs = [audio.objectKey, ...videos.map((video) => video.objectKey)]
-        .filter((objectKey) => !ownedKeys.has(normalizeMediaPath(objectKey)));
-      if (!ownedKeys.size) {
-        return Response.json({ success: false, error: "No saved project found for this session; save your project before exporting." }, { status: 403 });
-      }
+        .filter((objectKey) => !mediaUploadBelongsToOwner(objectKey, user.id));
       if (foreignRefs.length) {
-        return Response.json({ success: false, error: "Durable references must point at objects saved in your own project." }, { status: 403 });
+        return Response.json({ success: false, error: "Referenced media is not registered to this account; re-upload the affected clips and retry." }, { status: 403 });
       }
     } else {
       if (!(audioFile instanceof File)) return Response.json({ success: false, error: "Master audio file is required." }, { status: 400 });
@@ -129,54 +126,4 @@ function numberValue(value: unknown) {
 
 function sanitize(value: string) {
   return value.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "export";
-}
-
-type StoredDraftLike = {
-  analysis?: { storagePath?: string } | null;
-  videoSources?: Array<{
-    storagePath?: string;
-    uploadChunks?: { chunks?: Array<{ objectKey?: string }> } | null;
-  } | null>;
-} | null;
-
-async function fetchOwnedDraft(config: NonNullable<ReturnType<typeof getMediaGatewayConfig>>, objectKey: string) {
-  const response = await fetch(buildMediaGatewayFileUrl(config, config.bucket, objectKey), {
-    headers: { Authorization: `Bearer ${config.token}` },
-    cache: "no-store",
-  });
-  if (!response.ok) return null;
-  try {
-    return JSON.parse(await response.text()) as StoredDraftLike;
-  } catch {
-    return null;
-  }
-}
-
-async function loadOwnedExportRefs(userId: string): Promise<Set<string>> {
-  const config = getMediaGatewayConfig();
-  const owned = new Set<string>();
-  if (!config) return owned;
-
-  const addFromDraft = (draft: StoredDraftLike) => {
-    if (draft?.analysis?.storagePath) owned.add(normalizeMediaPath(draft.analysis.storagePath));
-    for (const source of draft?.videoSources ?? []) {
-      if (!source) continue;
-      if (source.storagePath) owned.add(normalizeMediaPath(source.storagePath));
-      for (const chunk of source.uploadChunks?.chunks ?? []) {
-        if (chunk?.objectKey) owned.add(normalizeMediaPath(chunk.objectKey));
-      }
-    }
-  };
-
-  addFromDraft(await fetchOwnedDraft(config, `media-uploads/studio-drafts/${encodeURIComponent(userId)}.json`));
-
-  const ownerSegment = userId.trim().replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 128);
-  const index = await fetchOwnedDraft(config, `media-uploads/projects/${ownerSegment}/index.json`) as unknown as {
-    projects?: Array<{ id?: string }>;
-  } | null;
-  for (const entry of (index?.projects ?? []).slice(0, 5)) {
-    if (!entry?.id) continue;
-    addFromDraft(await fetchOwnedDraft(config, `media-uploads/projects/${ownerSegment}/${entry.id}/project.json`));
-  }
-  return owned;
 }
