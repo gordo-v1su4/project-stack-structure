@@ -278,6 +278,38 @@ describe("BrowserPreviewPlayer master audio", () => {
     player.detach();
     expect(audio.paused).toBe(true);
   });
+
+  test("resume failure surfaces a playback error instead of a phantom playing state", async () => {
+    const player = new BrowserPreviewPlayer({ warmSourceLimit: 0 });
+    const video = new FakeVideoElement();
+    video.play = () => Promise.reject(new Error("undecodable source"));
+    player.attach(video as unknown as HTMLVideoElement);
+    player.load([{ videoUrl: "blob:a", startTime: 0, endTime: 2, label: "SEG_01" }]);
+
+    player.resume();
+    await flushAsync();
+
+    const state = player.getState();
+    expect(state.status).toBe("error");
+    expect(state.errorMessage).toContain("resume");
+  });
+
+  test("stale resume rejection does not corrupt state after stop", async () => {
+    const player = new BrowserPreviewPlayer({ warmSourceLimit: 0 });
+    const video = new FakeVideoElement();
+    let rejectPlay: (reason: Error) => void = () => {};
+    video.play = () => new Promise((_resolve, reject) => { rejectPlay = reject; });
+    player.attach(video as unknown as HTMLVideoElement);
+    player.load([{ videoUrl: "blob:a", startTime: 0, endTime: 2, label: "SEG_01" }]);
+
+    player.resume();
+    player.stop();
+    rejectPlay(new Error("undecodable source"));
+    await flushAsync();
+
+    expect(player.getState().status).toBe("idle");
+    expect(player.getState().errorMessage).toBeNull();
+  });
 });
 
 describe("BrowserPreviewPlayer double buffering", () => {

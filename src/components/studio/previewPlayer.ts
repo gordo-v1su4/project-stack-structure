@@ -234,18 +234,26 @@ export class BrowserPreviewPlayer {
           return this.waitForSegmentEnd(endTime, token)
             .then(() => this.advanceToNext(token));
         })
-        .catch(() => this.failPlayback("Could not resume preview playback."));
+        .catch(() => {
+          if (token !== this.playbackToken) return;
+          this.failPlayback("Could not resume preview playback.");
+        });
       return;
     }
 
+    const token = this.playbackToken;
     void this.videoElement.play()
       .then(() => {
+        if (token !== this.playbackToken) return;
         this.startMasterAudio();
         this.status = "playing";
         this.startProgressLoop();
         this.emit();
       })
-      .catch(() => this.failPlayback("Could not resume preview playback."));
+      .catch(() => {
+        if (token !== this.playbackToken) return;
+        this.failPlayback("Could not resume preview playback.");
+      });
   }
 
   private failPlayback(message: string) {
@@ -384,16 +392,19 @@ export class BrowserPreviewPlayer {
       try {
         await standby.play();
       } catch {
-        // Standby refused to start (errored or undecodable source): keep the
-        // current element visible and let advanceToNext prepare it instead.
-        await this.advanceToNext(token);
-        return;
+        // Standby refused to start (errored or undecodable source). currentIndex
+        // still points at the finished cut, so the single advanceToNext fallback
+        // below replays the standby's segment (currentIndex + 1) on the visible
+        // element — identical to the never-staged path; no cut is skipped.
+        standbyReady = false;
       }
-      this.activeElementIndex = this.activeElementIndex === 0 ? 1 : 0;
-      this.applyElementVisibility();
-      video.pause();
-      this.nextSegmentIsLive = true;
-      this.stopProgressLoop();
+      if (standbyReady) {
+        this.activeElementIndex = this.activeElementIndex === 0 ? 1 : 0;
+        this.applyElementVisibility();
+        video.pause();
+        this.nextSegmentIsLive = true;
+        this.stopProgressLoop();
+      }
     }
 
     await this.advanceToNext(token);
