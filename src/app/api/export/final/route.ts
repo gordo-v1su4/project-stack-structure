@@ -1,10 +1,11 @@
 import { getMediaGatewayConfig, normalizeMediaPath, uploadFileToMediaGateway } from "@/lib/mediaGateway";
+import { mediaUploadBelongsToOwner } from "@/lib/essentiaUpload";
 import { getSessionUser, unauthorizedResponse } from "@/lib/session";
 import { triggerFinalExport } from "@/lib/triggerOrchestration";
 
 export const runtime = "nodejs";
 
-type DurableExportInput = { bucket: string; objectKey: string; fileName: string; mimeType: string };
+type DurableExportInput = { bucket: string; objectKey: string; fileName: string; mimeType: string; chunks?: Array<{ bucket: string; objectKey: string }> };
 
 function resolveDurableInput(entry: unknown, mimeType: string): DurableExportInput {
   if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw new Error("Durable reference must be an object.");
@@ -17,7 +18,28 @@ function resolveDurableInput(entry: unknown, mimeType: string): DurableExportInp
   const objectKey = normalizeMediaPath(record.objectKey);
   if (!objectKey || objectKey.length > 512) throw new Error("Invalid durable reference object key.");
   if (record.bucket.trim() !== config.bucket) throw new Error(`Durable reference bucket must be ${config.bucket}.`);
-  return { bucket: record.bucket.trim(), objectKey, fileName: objectKey.split("/").pop() || "input.bin", mimeType };
+
+  let chunks: Array<{ bucket: string; objectKey: string }> | undefined;
+  if (record.chunks !== undefined && record.chunks !== null) {
+    if (!Array.isArray(record.chunks)) throw new Error("Chunk references must be an array.");
+    chunks = record.chunks.map((part) => {
+      if (!part || typeof part !== "object" || Array.isArray(part)) throw new Error("Each chunk reference must be an object.");
+      const partRecord = part as Record<string, unknown>;
+      if (typeof partRecord.bucket !== "string" || typeof partRecord.objectKey !== "string") {
+        throw new Error("Chunk references require string bucket and objectKey.");
+      }
+      if (partRecord.bucket.trim() !== config.bucket) throw new Error(`Chunk reference bucket must be ${config.bucket}.`);
+      return { bucket: partRecord.bucket.trim(), objectKey: normalizeMediaPath(partRecord.objectKey) };
+    });
+  }
+
+  return {
+    bucket: record.bucket.trim(),
+    objectKey,
+    fileName: objectKey.split("/").pop() || "input.bin",
+    mimeType,
+    ...(chunks?.length ? { chunks } : {}),
+  };
 }
 
 function resolveDurableInputs(entries: unknown, mimeType: string): DurableExportInput[] {
@@ -59,6 +81,20 @@ export async function POST(request: Request) {
         videos = resolveDurableInputs(parsedVideos, "video/mp4");
       } catch (error) {
         return Response.json({ success: false, error: error instanceof Error ? error.message : "Invalid durable references." }, { status: 400 });
+      }
+      // Shared worker credentials mean every referenced object must belong to
+      // the caller. Ownership is proven by the owner segment the storage route
+      // inserted at upload time; pre-scoping keys must be re-uploaded.
+      const foreignRefs = [
+        audio.objectKey,
+        ...(audio.chunks ?? []).map((chunk) => chunk.objectKey),
+        ...videos.flatMap((video) => [
+        video.objectKey,
+        ...(video.chunks ?? []).map((chunk) => chunk.objectKey),
+      ])]
+        .filter((objectKey) => !mediaUploadBelongsToOwner(objectKey, user.id));
+      if (foreignRefs.length) {
+        return Response.json({ success: false, error: "Referenced media is not registered to this account; re-upload the affected clips and retry." }, { status: 403 });
       }
     } else {
       if (!(audioFile instanceof File)) return Response.json({ success: false, error: "Master audio file is required." }, { status: 400 });

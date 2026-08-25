@@ -16,11 +16,22 @@ mock.module("@/lib/mediaGateway", () => ({
     bucket: "test-bucket",
     uploadPrefix: "uploads",
   }),
+  buildMediaGatewayFileUrl: (config: { url: string }, bucket: string, objectKey: string) =>
+    `${config.url}/files/${bucket}/${objectKey}`,
   uploadFileToMediaGateway: async ({ file }: { file: File }) => ({
     bucket: "test-bucket",
     objectKey: `uploads/${file.name}`,
     mediaUrl: `https://media.test/${file.name}`,
     publicUrl: `https://media.test/${file.name}`,
+  }),
+  downloadJsonFromMediaGateway: async () => {
+    throw new Error("404 not found");
+  },
+  uploadJsonToMediaGateway: async ({ data }: { data: unknown }) => ({
+    bucket: "test-bucket",
+    objectKey: "uploads/claim.json",
+    publicUrl: "https://media.test/claim.json",
+    payload: data,
   }),
 }));
 

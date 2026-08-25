@@ -11,6 +11,9 @@ const uploadFileToMediaGatewayMock = mock(async ({ file, folder }: { file: File;
   mediaUrl: `https://media.test/${encodeURIComponent(file.name)}`,
   mime: file.type || "application/octet-stream",
 }));
+const downloadJsonFromMediaGatewayMock = mock(async () => {
+  throw new Error("404 not found");
+});
 const uploadJsonToMediaGatewayMock = mock(async () => ({
   bucket: "stack-structure",
   objectKey: "media-uploads/analysis/result.json",
@@ -62,6 +65,9 @@ mock.module("@/lib/mediaGateway", () => ({
     uploadPrefix: "media-uploads",
   }),
   normalizeMediaPath: (value: string) => value,
+  buildMediaGatewayFileUrl: (config: { url: string }, bucket: string, objectKey: string) =>
+    `${config.url}/files/${bucket}/${objectKey}`,
+  downloadJsonFromMediaGateway: downloadJsonFromMediaGatewayMock,
   downloadMediaGatewayFile: mock(async () => ({
     bytes: new Uint8Array([1, 2, 3]),
     fileName: "source.bin",
@@ -346,10 +352,10 @@ describe("Next route Trigger.dev dispatch boundary", () => {
     const form = new FormData();
     form.set("requestKey", "final-route-refs-test");
     form.set("segments", JSON.stringify([{ sourceIndex: 0, startTime: 0, endTime: 1 }]));
-    form.set("audioRef", JSON.stringify({ bucket: "stack-structure", objectKey: "media-uploads/source-audio/master.wav" }));
+    form.set("audioRef", JSON.stringify({ bucket: "stack-structure", objectKey: "media-uploads/github-test-user/source-audio/master.wav" }));
     form.set("videoRefs", JSON.stringify([
-      { bucket: "stack-structure", objectKey: "media-uploads/sources/clip-a.mp4" },
-      { bucket: "stack-structure", objectKey: "media-uploads/sources/clip-b.mp4" },
+      { bucket: "stack-structure", objectKey: "media-uploads/github-test-user/sources/clip-a.mp4" },
+      { bucket: "stack-structure", objectKey: "media-uploads/github-test-user/sources/clip-b.mp4" },
     ]));
 
     const response = await postFinalExport(new Request("http://localhost/api/export/final", { method: "POST", body: form }));
@@ -360,16 +366,54 @@ describe("Next route Trigger.dev dispatch boundary", () => {
     expect(uploadFileToMediaGatewayMock).not.toHaveBeenCalled();
     expect(triggerMocks.triggerFinalExport).toHaveBeenCalledTimes(1);
     type ExportDispatch = {
-      audio: { bucket: string; objectKey: string };
+      audio: { objectKey: string };
       videos: Array<{ objectKey: string }>;
     };
     const dispatches = triggerMocks.triggerFinalExport.mock.calls as unknown as ExportDispatch[][];
     const dispatched = dispatches[0]?.[0];
-    expect(dispatched?.audio.objectKey).toBe("media-uploads/source-audio/master.wav");
+    expect(dispatched?.audio.objectKey).toBe("media-uploads/github-test-user/source-audio/master.wav");
     expect(dispatched?.videos.map((video) => video.objectKey)).toEqual([
-      "media-uploads/sources/clip-a.mp4",
-      "media-uploads/sources/clip-b.mp4",
+      "media-uploads/github-test-user/sources/clip-a.mp4",
+      "media-uploads/github-test-user/sources/clip-b.mp4",
     ]);
+  });
+
+  test("rejects durable refs owned by another user", async () => {
+    resetMocks();
+    authenticatedUserId = "attacker-user";
+    const form = new FormData();
+    form.set("requestKey", "final-route-cross-user-test");
+    form.set("segments", JSON.stringify([{ sourceIndex: 0, startTime: 0, endTime: 1 }]));
+    form.set("audioRef", JSON.stringify({ bucket: "stack-structure", objectKey: "media-uploads/github-test-user/source-audio/master.wav" }));
+    form.set("videoRefs", JSON.stringify([
+      { bucket: "stack-structure", objectKey: "media-uploads/github-test-user/sources/clip-a.mp4" },
+    ]));
+
+    const response = await postFinalExport(new Request("http://localhost/api/export/final", { method: "POST", body: form }));
+    const payload = await jsonResponse(response);
+
+    expect(response.status).toBe(403);
+    expect(payload.success).toBe(false);
+    expect(payload.error).toMatch(/not registered to this account/i);
+  });
+
+  test("rejects foreign chunk parts hidden behind an owned primary ref", async () => {
+    resetMocks();
+    const form = new FormData();
+    form.set("requestKey", "final-route-chunk-owner-test");
+    form.set("segments", JSON.stringify([{ sourceIndex: 0, startTime: 0, endTime: 1 }]));
+    form.set("audioRef", JSON.stringify({
+      bucket: "stack-structure",
+      objectKey: "media-uploads/github-test-user/source-audio/master.wav",
+      chunks: [{ bucket: "stack-structure", objectKey: "media-uploads/attacker-user/source-audio/victim.part" }],
+    }));
+    form.set("videoRefs", JSON.stringify([
+      { bucket: "stack-structure", objectKey: "media-uploads/github-test-user/sources/clip-a.mp4" },
+    ]));
+
+    const response = await postFinalExport(new Request("http://localhost/api/export/final", { method: "POST", body: form }));
+
+    expect(response.status).toBe(403);
   });
 
   test("rejects durable refs from a foreign bucket", async () => {

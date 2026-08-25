@@ -962,6 +962,36 @@ export default function StudioApp() {
     setPreviewState((current) => markSectionRecomputeRunning(current, requestKey));
 
     try {
+      // The export route authorizes durable refs against the caller's saved
+      // studio draft, so flush a fresh save covering exactly this media.
+      await saveStudioProjectDraft(
+        {
+          analysis: beatJoinAnalysis,
+          videoSources,
+          storyState,
+          musicVideoProject,
+          referenceAssets,
+          generatedAssets,
+          captionSettings: buildSceneCaptionSettings(captionMode, beatJoinAnalysis, storyState),
+          workflowUiSettings: {
+            activeTab: tab,
+            splitMode,
+            matchMode,
+            matchOnsetDensity,
+            matchLyricCueBlend,
+            matchLyricMergeWindow,
+            colorGradient,
+            shaderPresetId,
+            shaderAccentKinds,
+            isPreviewExpanded,
+          },
+        },
+        {
+          audioFile: audioFileRef.current,
+          videoFilesByMediaKey: videoFilesByMediaKeyRef.current,
+        },
+      );
+
       const uniqueVideoUrls = [...new Set(storyPreviewSegments.map((segment) => segment.videoUrl))];
       const videoUrlIndex = new Map(uniqueVideoUrls.map((url, index) => [url, index]));
 
@@ -984,18 +1014,6 @@ export default function StudioApp() {
       setProgress(20);
       setPreviewState((current) => updateSectionRecomputeProgress(current, { requestKey, progress: 20 }));
 
-      const form = new FormData();
-      if (audioRef && !missingVideoRef && videoRefs.length > 0) {
-        form.set("audioRef", JSON.stringify(audioRef));
-        form.set("videoRefs", JSON.stringify(videoRefs));
-      } else {
-        // Byte-upload fallback for sessions without durable storage refs.
-        const audioFile = await resolveMasterAudioFile(beatJoinAnalysis, audioFileRef.current);
-        const sourceFiles = await Promise.all(uniqueVideoUrls.map((url, index) => fetchMediaUrlAsFile(url, `source${index}.mp4`, "video/mp4")));
-        form.set("audio", audioFile);
-        sourceFiles.forEach((file, index) => form.set(`file:${index}`, file));
-      }
-
       const timelineItemsBySectionId = new Map(musicVideoProject.editPlan.timelineItems.map((item) => [item.sectionId, item]));
       const segments = storyPreviewSegments.map((segment) => {
         const item = timelineItemsBySectionId.get(segment.sectionId);
@@ -1008,32 +1026,148 @@ export default function StudioApp() {
           label: item?.label ?? segment.label,
         };
       });
-      form.set("segments", JSON.stringify(segments));
-      form.set("beats", JSON.stringify(beatJoinAnalysis.beats));
-      form.set("lyricChunks", JSON.stringify(musicVideoProject.lyricChunks));
-      form.set("shaderCues", JSON.stringify(shaderEffectCues));
-      if (Object.keys(shaderAccentKinds).length > 0) {
-        form.set("accentKinds", JSON.stringify(shaderAccentKinds));
-      }
-      form.set("shaderPresetId", shaderPresetId);
-      form.set("requestKey", requestKey);
+
+      const buildBaseForm = () => {
+        const form = new FormData();
+        form.set("segments", JSON.stringify(segments));
+        form.set("beats", JSON.stringify(beatJoinAnalysis.beats));
+        form.set("lyricChunks", JSON.stringify(musicVideoProject.lyricChunks));
+        form.set("shaderCues", JSON.stringify(shaderEffectCues));
+        if (Object.keys(shaderAccentKinds).length > 0) {
+          form.set("accentKinds", JSON.stringify(shaderAccentKinds));
+        }
+        form.set("shaderPresetId", shaderPresetId);
+        form.set("requestKey", requestKey);
+        return form;
+      };
+      const attachDurableRefs = (
+        form: FormData,
+        audioRef: { bucket: string; objectKey: string },
+        videoRefs: Array<{ bucket: string; objectKey: string }>,
+      ) => {
+        form.set("audioRef", JSON.stringify(audioRef));
+        form.set("videoRefs", JSON.stringify(videoRefs));
+      };
 
       setProgress(45);
       setFinalExportStatus(`Rendering MP4 with ${MUSIC_VIDEO_SHADER_PRESETS.find((preset) => preset.id === shaderPresetId)?.label ?? shaderPresetId} shader cues...`);
       setPreviewState((current) => updateSectionRecomputeProgress(current, { requestKey, progress: 45 }));
 
-      const response = await fetch("/api/export/final", { method: "POST", body: form });
-      const rawBody = await response.text();
-      let payload: {
-        success?: boolean;
-        error?: string;
-        runId?: string;
+      type ExportDispatchOutcome = {
+        response: Response;
+        payload: { success?: boolean; error?: string; runId?: string };
       };
-      try {
-        payload = JSON.parse(rawBody) as { success?: boolean; error?: string; runId?: string };
-      } catch {
-        throw new Error(response.ok ? "Final export returned an invalid response." : `Final export failed (${response.status}).`);
+      const sendExportForm = async (form: FormData): Promise<ExportDispatchOutcome> => {
+        const response = await fetch("/api/export/final", { method: "POST", body: form });
+        const rawBody = await response.text();
+        let payload: { success?: boolean; error?: string; runId?: string };
+        try {
+          payload = JSON.parse(rawBody) as { success?: boolean; error?: string; runId?: string };
+        } catch {
+          throw new Error(response.ok ? "Final export returned an invalid response." : `Final export failed (${response.status}).`);
+        }
+        return { response, payload };
+      };
+
+      let outcome: ExportDispatchOutcome | null = null;
+      if (audioRef && !missingVideoRef && videoRefs.length > 0) {
+        const form = buildBaseForm();
+        attachDurableRefs(form, audioRef, videoRefs);
+        outcome = await sendExportForm(form);
+
+        // Possession-based migration: pre-scoping keys are re-uploaded through
+        // the owner-scoped storage path, then the export retries once.
+        if (outcome.response.status === 403 && /not registered to this account/i.test(outcome.payload.error ?? "")) {
+          setFinalExportStatus("Re-registering project media under your account before rendering...");
+          const resolveMigratableAudio = async (): Promise<File> => {
+            try {
+              return await resolveMasterAudioFile(beatJoinAnalysis, audioFileRef.current);
+            } catch {
+              // Reloaded legacy sessions may hold only the durable audio ref;
+              // recover a fresh download URL through the authenticated route.
+              if (!beatJoinAnalysis.storageBucket || !beatJoinAnalysis.storagePath) {
+                throw new Error("Master audio could not be recovered for migration; re-upload the song.");
+              }
+              const params = new URLSearchParams({
+                bucket: beatJoinAnalysis.storageBucket,
+                objectKey: beatJoinAnalysis.storagePath,
+              });
+              const resolution = await fetch(`/api/storage/download-url?${params.toString()}`);
+              const payload = (await resolution.json().catch(() => null)) as { fileUrl?: string; error?: string } | null;
+              if (!resolution.ok || !payload?.fileUrl) {
+                throw new Error(payload?.error ?? "Could not resolve the master audio download.");
+              }
+              return fetchMediaUrlAsFile(
+                payload.fileUrl,
+                `${beatJoinAnalysis.sourceLabel || "master-audio"}.wav`,
+                "audio/wav",
+              );
+            }
+          };
+          const audioFile = await resolveMigratableAudio();
+          const scopedAudio = await reuploadThroughScopedPath(audioFile, "media-uploads/source-audio");
+          const scopedVideoRefs: Array<{ bucket: string; objectKey: string }> = [];
+          for (const [index, url] of uniqueVideoUrls.entries()) {
+            const bytes = await fetchMediaUrlAsFile(url, `migrate${index}.mp4`, "video/mp4");
+            scopedVideoRefs.push(await reuploadThroughScopedPath(bytes, "media-uploads/video-source"));
+          }
+          setBeatJoinAnalysis((current) => (current ? { ...current, storageBucket: scopedAudio.bucket, storagePath: scopedAudio.objectKey } : current));
+          setVideoSources((current) => current.map((source) => {
+            const index = uniqueVideoUrls.indexOf(source.videoUrl);
+            const scoped = index >= 0 ? scopedVideoRefs[index] : undefined;
+            return scoped ? { ...source, storageBucket: scoped.bucket, storagePath: scoped.objectKey } : source;
+          }));
+
+          // Persist the migrated references immediately so a reload before the
+          // next autosave cannot resurrect the unscoped keys.
+          const migratedAnalysis = { ...beatJoinAnalysis, storageBucket: scopedAudio.bucket, storagePath: scopedAudio.objectKey };
+          const migratedSources = videoSources.map((source) => {
+            const index = uniqueVideoUrls.indexOf(source.videoUrl);
+            const scoped = index >= 0 ? scopedVideoRefs[index] : undefined;
+            return scoped ? { ...source, storageBucket: scoped.bucket, storagePath: scoped.objectKey } : source;
+          });
+          await saveStudioProjectDraft(
+            {
+              analysis: migratedAnalysis,
+              videoSources: migratedSources,
+              storyState,
+              musicVideoProject,
+              referenceAssets,
+              generatedAssets,
+              captionSettings: buildSceneCaptionSettings(captionMode, beatJoinAnalysis, storyState),
+              workflowUiSettings: {
+                activeTab: tab,
+                splitMode,
+                matchMode,
+                matchOnsetDensity,
+                matchLyricCueBlend,
+                matchLyricMergeWindow,
+                colorGradient,
+                shaderPresetId,
+                shaderAccentKinds,
+                isPreviewExpanded,
+              },
+            },
+            {
+              audioFile: audioFileRef.current,
+              videoFilesByMediaKey: videoFilesByMediaKeyRef.current,
+            },
+          );
+
+          const retryForm = buildBaseForm();
+          attachDurableRefs(retryForm, scopedAudio, scopedVideoRefs);
+          outcome = await sendExportForm(retryForm);
+        }
+      } else {
+        const form = buildBaseForm();
+        // Byte-upload fallback for sessions without durable storage refs.
+        const audioFile = await resolveMasterAudioFile(beatJoinAnalysis, audioFileRef.current);
+        const sourceFiles = await Promise.all(uniqueVideoUrls.map((url, index) => fetchMediaUrlAsFile(url, `source${index}.mp4`, "video/mp4")));
+        form.set("audio", audioFile);
+        sourceFiles.forEach((file, index) => form.set(`file:${index}`, file));
+        outcome = await sendExportForm(form);
       }
+      const { response, payload } = outcome;
 
       if (!response.ok || !payload.success || !payload.runId) {
         throw new Error(payload.error ?? "Final export failed.");
@@ -1309,6 +1443,20 @@ export default function StudioApp() {
     if (!response.ok) throw new Error(`Could not read media URL for export: ${response.status}`);
     const blob = await response.blob();
     return new File([blob], fileName, { type: blob.type || fallbackType });
+  }
+
+  async function reuploadThroughScopedPath(file: File, folderBase: string): Promise<{ bucket: string; objectKey: string }> {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("folder", folderBase);
+    const response = await fetch("/api/storage/upload", { method: "POST", body: formData });
+    const payload = (await response.json().catch(() => null)) as { bucket?: unknown; storagePath?: unknown; objectKey?: unknown } | null;
+    const bucket = typeof payload?.bucket === "string" ? payload.bucket : "";
+    const objectKey = typeof payload?.objectKey === "string" ? payload.objectKey : typeof payload?.storagePath === "string" ? payload.storagePath : "";
+    if (!response.ok || !bucket || !objectKey) {
+      throw new Error(`Scoped re-upload failed (${response.status}).`);
+    }
+    return { bucket, objectKey };
   }
 
   function handleCommitBeatSplit() {
