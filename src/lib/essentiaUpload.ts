@@ -90,7 +90,17 @@ export function mediaUploadBelongsToOwner(objectKey: string, ownerId: string) {
   const normalized = normalizePath(objectKey);
   if (!normalized.startsWith("media-uploads/")) return false;
   const ownerSegment = essentiaUploadOwnerSegment(ownerId);
-  return normalized.startsWith(`media-uploads/${ownerSegment}/`) || normalized.includes(`/${ownerSegment}/`);
+  const parts = normalized.split("/");
+  return parts[1] === ownerSegment
+    || (parts[1] === "source-audio" && parts[2] === "chunks" && parts[3] === ownerSegment);
+}
+
+export function isUnscopedLegacyMediaKey(objectKey: string) {
+  const normalized = normalizePath(objectKey);
+  if (!normalized.startsWith("media-uploads/")) return false;
+  return /^media-uploads\/video-source\//i.test(normalized)
+    || /^media-uploads\/source-audio\//i.test(normalized)
+    || /^media-uploads\/e2e-validation\//i.test(normalized);
 }
 
 export function essentiaUploadOwnerSegment(ownerId: string) {
