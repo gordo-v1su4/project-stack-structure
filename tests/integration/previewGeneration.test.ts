@@ -9,7 +9,9 @@ import { hasAudioVideoFixtures, listMediaFixtures, mediaFixtureTest } from "../h
 import { probeMediaFile } from "../../src/components/studio/mediaProbe";
 import {
   PreviewGenerationError,
+  concatPreviewDurationTolerance,
   createTempPreviewPath,
+  frameAlignedDuration,
   generateConcatPreview,
   generateSectionPreview,
   isPreviewDurationWithinTolerance,
@@ -106,6 +108,16 @@ describe("previewGeneration integration", () => {
 
     expect(error).toBeInstanceOf(PreviewGenerationError);
     expect(error?.code).toBe("missing-input");
+  });
+
+  test("frame-aligns segment durations and scales concat tolerance with segment count", () => {
+    expect(frameAlignedDuration(0.5)).toBe(0.5);
+    expect(frameAlignedDuration(0.52)).toBe(0.5);
+    expect(frameAlignedDuration(0)).toBeGreaterThan(0);
+    expect(frameAlignedDuration(246.685)).toBeCloseTo(246.667, 3);
+
+    expect(concatPreviewDurationTolerance(1)).toBeCloseTo(0.15);
+    expect(concatPreviewDurationTolerance(155)).toBeGreaterThanOrEqual(2.885);
   });
 
   mediaFixtureTest(hasAudioVideoFixtures())("rejects audio-only input for video preview generation", async () => {
