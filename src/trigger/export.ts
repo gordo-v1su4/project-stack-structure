@@ -19,6 +19,8 @@ export type StoredExportInput = {
   objectKey: string;
   fileName: string;
   mimeType?: string;
+  /** Ordered gateway-stored parts; present when the input traveled chunked. */
+  chunks?: Array<{ bucket: string; objectKey: string }>;
 };
 
 export type FinalExportPayload = {
@@ -148,9 +150,26 @@ export const shaderCaptureExportTask = task({
 });
 
 async function materializeStoredInput(input: StoredExportInput, workspace: string, stem: string) {
-  const source = await downloadMediaGatewayFile({ bucket: input.bucket, objectKey: input.objectKey, fileName: input.fileName });
   const extension = path.extname(input.fileName) || ".bin";
   const target = path.join(workspace, `${stem}${extension}`);
+
+  if (input.chunks?.length) {
+    // Chunked inputs store ordered byte-slice parts; concatenate them into the
+    // original single file before handing media to ffmpeg.
+    const buffers: Buffer[] = [];
+    for (const part of input.chunks) {
+      const partData = await downloadMediaGatewayFile({
+        bucket: part.bucket,
+        objectKey: part.objectKey,
+        fileName: part.objectKey.split("/").pop() || "part",
+      });
+      buffers.push(Buffer.from(partData.bytes));
+    }
+    await writeFile(target, Buffer.concat(buffers));
+    return target;
+  }
+
+  const source = await downloadMediaGatewayFile({ bucket: input.bucket, objectKey: input.objectKey, fileName: input.fileName });
   await writeFile(target, Buffer.from(source.bytes));
   return target;
 }
