@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   buildMasterAudioSliceFilterComplex,
+  getCanonicalExportDuration,
   planExportAudioAssembly,
   type ExportTimelineSegment,
 } from "@/components/studio/exportGeneration";
@@ -65,6 +66,16 @@ describe("export audio window assembly planning", () => {
 });
 
 describe("master audio slice filter graph", () => {
+  test("canonical export duration follows the edit timeline instead of a drifted concat container", () => {
+    const duration = getCanonicalExportDuration([
+      segment({ inputPath: "/tmp/a.mp4", startTime: 2, endTime: 3.25, musicStart: 10, musicEnd: 11.25 }),
+      segment({ inputPath: "/tmp/b.mp4", startTime: 7, endTime: 9, musicStart: 40, musicEnd: 42 }),
+      segment({ inputPath: "/tmp/a.mp4", startTime: 12, endTime: 13.5, musicStart: 20, musicEnd: 21.5 }),
+    ]);
+
+    expect(duration).toBe(4.75);
+  });
+
   test("builds one atrim branch per slice in order and concats audio-only", () => {
     const { filterComplex, mapLabel } = buildMasterAudioSliceFilterComplex([
       { start: 10, end: 11.25 },

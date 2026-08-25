@@ -175,16 +175,20 @@ export async function generateConcatPreview(params: {
       throw new PreviewGenerationError("audio-only-input", `Concat segment ${index} has no video stream.`);
     }
 
+    const segmentDuration = roundDuration(clampTime(segment.endTime) - clampTime(segment.startTime));
     try {
       await execFileAsync(ffmpegPath, [
         "-y",
         "-ss", `${clampTime(segment.startTime)}`,
-        "-to", `${clampTime(segment.endTime)}`,
         "-i", segment.inputPath,
+        "-t", `${segmentDuration}`,
+        "-map", "0:v:0",
+        "-vf", "fps=24,scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1,setpts=PTS-STARTPTS",
+        "-an",
         "-c:v", "libx264",
         "-preset", "veryfast",
         "-crf", "20",
-        "-c:a", "aac",
+        "-pix_fmt", "yuv420p",
         "-movflags", "+faststart",
         segmentOutputPath,
       ]);
@@ -209,39 +213,40 @@ export async function generateConcatPreview(params: {
     .join("\n");
   await writeFile(concatListPath, concatEntries, "utf-8");
 
+  const expectedDuration = roundDuration(
+    segments.reduce((total, segment) => total + (clampTime(segment.endTime) - clampTime(segment.startTime)), 0),
+  );
+
   try {
     await execFileAsync(ffmpegPath, [
       "-y",
       "-f", "concat",
       "-safe", "0",
       "-i", concatListPath,
-      "-c", "copy",
+      "-map", "0:v:0",
+      "-an",
+      "-t", `${expectedDuration}`,
+      "-c:v", "libx264",
+      "-preset", "veryfast",
+      "-crf", "20",
+      "-pix_fmt", "yuv420p",
       "-movflags", "+faststart",
       outputPath,
     ]);
-  } catch {
-    try {
-      await execFileAsync(ffmpegPath, [
-        "-y",
-        "-f", "concat",
-        "-safe", "0",
-        "-i", concatListPath,
-        "-c:v", "libx264",
-        "-preset", "veryfast",
-        "-crf", "20",
-        "-c:a", "aac",
-        "-movflags", "+faststart",
-        outputPath,
-      ]);
-    } catch (retryError) {
-      throw new PreviewGenerationError(
-        "ffmpeg-failed",
-        retryError instanceof Error ? retryError.message : "ffmpeg concat merge failed",
-      );
-    }
+  } catch (error) {
+    throw new PreviewGenerationError(
+      "ffmpeg-failed",
+      error instanceof Error ? error.message : "ffmpeg concat merge failed",
+    );
   }
 
   const metadata = await probeFn(outputPath);
+  if (!isPreviewDurationWithinTolerance(metadata.duration, expectedDuration)) {
+    throw new PreviewGenerationError(
+      "music-window-mismatch",
+      `Concat preview duration ${metadata.duration.toFixed(3)}s drifted outside the canonical ${expectedDuration.toFixed(3)}s timeline.`,
+    );
+  }
 
   return {
     requestKey: params.requestKey,

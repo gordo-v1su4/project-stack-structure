@@ -1,11 +1,16 @@
 import { describe, expect, test } from "bun:test";
-import { rm } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { promisify } from "node:util";
 
 import { hasAudioVideoFixtures, listMediaFixtures, mediaFixtureTest } from "../helpers/mediaFixtures";
 import { probeMediaFile } from "../../src/components/studio/mediaProbe";
 import {
   PreviewGenerationError,
   createTempPreviewPath,
+  generateConcatPreview,
   generateSectionPreview,
   isPreviewDurationWithinTolerance,
   type ProbeFn,
@@ -16,6 +21,8 @@ import {
   startSectionRecompute,
   swapReadySection,
 } from "../../src/components/studio/sectionRecompute";
+
+const execFileAsync = promisify(execFile);
 
 const testProbeFn: ProbeFn = async (filePath) => {
   const result = await probeMediaFile(filePath);
@@ -135,6 +142,39 @@ describe("previewGeneration integration", () => {
 
     await rm(outputPath, { force: true });
   });
+
+  mediaFixtureTest(hasAudioVideoFixtures())("normalizes mixed source formats without accumulating concat timestamp drift", async () => {
+    const inventory = listMediaFixtures();
+    const source = inventory.video.find((entry) => path.basename(entry) === "real-original-video-a.mp4") ?? inventory.video[0]!;
+    const workspace = await mkdtemp(path.join(tmpdir(), "preview-mixed-concat-"));
+    try {
+      const transcoded = path.join(workspace, "source-30fps-640x360.mp4");
+      await execFileAsync("ffmpeg", [
+        "-hide_banner", "-loglevel", "error", "-y", "-i", source,
+        "-t", "4", "-vf", "fps=30,scale=640:360", "-an", "-c:v", "libx264", transcoded,
+      ]);
+
+      const segments = Array.from({ length: 12 }, (_, index) => ({
+        inputPath: index % 2 === 0 ? source : transcoded,
+        startTime: (index % 4) * 0.1,
+        endTime: (index % 4) * 0.1 + 0.5,
+      }));
+      const outputPath = path.join(workspace, "mixed-preview.mp4");
+      const asset = await generateConcatPreview({
+        segments,
+        requestKey: "mixed-format-duration-regression",
+        outputPath,
+        probeFn: testProbeFn,
+      });
+
+      expect(asset.duration).toBeCloseTo(6, 1);
+      const metadata = await probeMediaFile(outputPath);
+      expect(metadata.hasVideo).toBe(true);
+      expect(metadata.duration).toBeCloseTo(6, 1);
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  }, 180_000);
 
   mediaFixtureTest(hasAudioVideoFixtures())("ready-only flow swaps only after a generated asset is marked ready", async () => {
     const inventory = listMediaFixtures();

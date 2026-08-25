@@ -60,6 +60,15 @@ export interface MasterAudioSlice {
   end: number;
 }
 
+export function getCanonicalExportDuration(segments: ExportTimelineSegment[]): number {
+  return roundTime(
+    normalizeExportSegments(segments).reduce(
+      (total, segment) => total + (segment.endTime - segment.startTime),
+      0,
+    ),
+  );
+}
+
 /**
  * Decides the export audio source from RAW segments (pre-normalization): segments with
  * real [musicStart, musicEnd] windows produce ordered master-audio slices so the export
@@ -163,6 +172,7 @@ export async function generateMusicVideoExport(params: {
     outputDir: getDefaultPreviewOutputDir(),
   });
   const segments = normalizeExportSegments(params.segments);
+  const canonicalDuration = getCanonicalExportDuration(segments);
 
   const videoAsset = await generateConcatPreview({
     segments,
@@ -211,7 +221,7 @@ export async function generateMusicVideoExport(params: {
   args.push(
     "-map", "0:v:0",
     "-map", "1:a:0",
-    "-t", `${Math.max(0.05, videoAsset.duration)}`,
+    "-t", `${Math.max(0.05, canonicalDuration)}`,
     "-c:v", "libx264",
     "-preset", "veryfast",
     "-crf", "20",
