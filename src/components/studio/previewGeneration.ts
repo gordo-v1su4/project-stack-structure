@@ -8,6 +8,7 @@ import type { SectionPreviewReadyAsset } from "./sectionRecompute";
 
 const execFileAsync = promisify(execFile);
 const PREVIEW_OUTPUT_DIR = getDefaultPreviewOutputDir();
+const CONCAT_PREVIEW_FPS = 24;
 
 export type ProbeFn = (filePath: string) => Promise<{ duration: number; hasVideo: boolean }>;
 
@@ -161,6 +162,7 @@ export async function generateConcatPreview(params: {
   await mkdir(path.dirname(outputPath), { recursive: true });
 
   const segmentPaths: string[] = [];
+  const segmentDurations: number[] = [];
   const outputDir = path.dirname(outputPath);
   for (let index = 0; index < segments.length; index++) {
     const segment = segments[index]!;
@@ -175,7 +177,7 @@ export async function generateConcatPreview(params: {
       throw new PreviewGenerationError("audio-only-input", `Concat segment ${index} has no video stream.`);
     }
 
-    const segmentDuration = roundDuration(clampTime(segment.endTime) - clampTime(segment.startTime));
+    const segmentDuration = frameAlignedDuration(clampTime(segment.endTime) - clampTime(segment.startTime));
     try {
       await execFileAsync(ffmpegPath, [
         "-y",
@@ -200,6 +202,7 @@ export async function generateConcatPreview(params: {
     }
 
     segmentPaths.push(segmentOutputPath);
+    segmentDurations.push(segmentDuration);
   }
 
   const concatListPath = buildPreviewOutputPath({
@@ -213,9 +216,7 @@ export async function generateConcatPreview(params: {
     .join("\n");
   await writeFile(concatListPath, concatEntries, "utf-8");
 
-  const expectedDuration = roundDuration(
-    segments.reduce((total, segment) => total + (clampTime(segment.endTime) - clampTime(segment.startTime)), 0),
-  );
+  const expectedDuration = roundDuration(segmentDurations.reduce((total, duration) => total + duration, 0));
 
   try {
     await execFileAsync(ffmpegPath, [
@@ -241,7 +242,7 @@ export async function generateConcatPreview(params: {
   }
 
   const metadata = await probeFn(outputPath);
-  if (!isPreviewDurationWithinTolerance(metadata.duration, expectedDuration)) {
+  if (!isPreviewDurationWithinTolerance(metadata.duration, expectedDuration, concatPreviewDurationTolerance(segments.length))) {
     throw new PreviewGenerationError(
       "music-window-mismatch",
       `Concat preview duration ${metadata.duration.toFixed(3)}s drifted outside the canonical ${expectedDuration.toFixed(3)}s timeline.`,
@@ -262,6 +263,14 @@ export async function generateConcatPreview(params: {
 
 export function isPreviewDurationWithinTolerance(actualDuration: number, requestedDuration: number, tolerance = 0.15) {
   return Math.abs(actualDuration - requestedDuration) <= tolerance;
+}
+
+export function frameAlignedDuration(seconds: number, fps = CONCAT_PREVIEW_FPS) {
+  return Math.max(1 / fps, Math.round(seconds * fps) / fps);
+}
+
+export function concatPreviewDurationTolerance(segmentCount: number, fps = CONCAT_PREVIEW_FPS) {
+  return Math.max(0.15, segmentCount / (fps * 2));
 }
 
 export function createTempPreviewPath(requestKey: string) {
