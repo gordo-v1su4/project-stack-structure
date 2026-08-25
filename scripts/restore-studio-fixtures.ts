@@ -75,7 +75,6 @@ const draft = createPersistableStudioProjectDraft({
     matchMode: "semantic",
     colorGradient: "Sunset",
     shaderPresetId: "high-energy-glitch",
-    useSourceAudio: false,
     isPreviewExpanded: false,
   },
 });

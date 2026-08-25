@@ -244,7 +244,6 @@ describe("projectPersistence", () => {
         matchLyricMergeWindow: 3,
         colorGradient: "Ocean",
         shaderPresetId: "balanced-music-video",
-        useSourceAudio: true,
         isPreviewExpanded: true,
       },
       savedAt: "2026-06-21T00:00:00.000Z",
@@ -261,7 +260,6 @@ describe("projectPersistence", () => {
       matchLyricMergeWindow: 3,
       colorGradient: "Ocean",
       shaderPresetId: "balanced-music-video",
-      useSourceAudio: true,
       isPreviewExpanded: true,
     });
   });
