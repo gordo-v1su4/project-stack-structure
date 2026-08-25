@@ -15,6 +15,7 @@ import {
   buildAutoShaderCues as buildSharedAutoShaderCues,
   buildFfmpegShaderFilter,
   normalizeShaderCue,
+  type ShaderAccentKinds,
   type ShaderEffectCue,
 } from "./shaderEffectPlan";
 
@@ -31,6 +32,7 @@ export interface ExportTimelineSegment extends ConcatPreviewSegment {
 
 export interface MusicVideoExportAsset extends GeneratedPreviewAsset {
   audioPath: string;
+  audioMode: "windowed-slices" | "legacy-from-zero";
   effectCues: ShaderEffectCue[];
   effectFilter: string | null;
   hasAudio: boolean;
@@ -49,6 +51,94 @@ export interface ShaderCaptureExportAsset {
   downloadFileName: string;
 }
 
+export type ExportAudioAssemblyPlan =
+  | { mode: "legacy-from-zero" }
+  | { mode: "windowed-slices"; slices: Array<{ start: number; end: number }> };
+
+export interface MasterAudioSlice {
+  start: number;
+  end: number;
+}
+
+/**
+ * Decides the export audio source from RAW segments (pre-normalization): segments with
+ * real [musicStart, musicEnd] windows produce ordered master-audio slices so the export
+ * matches the browser preview; inputs without windows keep legacy full-audio-from-zero.
+ * normalizeExportSegments fills window defaults, so this check must run first.
+ */
+export function planExportAudioAssembly(segments: ExportTimelineSegment[]): ExportAudioAssemblyPlan {
+  const exportable = segments.filter((segment) => {
+    if (!segment.inputPath) return false;
+    const startTime = Math.max(0, Number(segment.startTime) || 0);
+    return roundTime(Math.max(startTime, Number(segment.endTime) || 0)) > roundTime(startTime);
+  });
+  if (!exportable.length) return { mode: "legacy-from-zero" };
+
+  const hasAnyWindow = exportable.some(
+    (segment) =>
+      Number.isFinite(segment.musicStart) &&
+      Number.isFinite(segment.musicEnd) &&
+      (segment.musicEnd as number) > (segment.musicStart as number),
+  );
+  if (!hasAnyWindow) return { mode: "legacy-from-zero" };
+
+  const slices: MasterAudioSlice[] = [];
+  let outputCursor = 0;
+  for (const segment of exportable) {
+    const duration = roundTime(Math.max(0.05, segment.endTime - segment.startTime));
+    const musicStart = Number.isFinite(segment.musicStart)
+      ? Math.max(0, segment.musicStart as number)
+      : outputCursor;
+    const musicEnd = Number.isFinite(segment.musicEnd) && (segment.musicEnd as number) > musicStart
+      ? segment.musicEnd as number
+      : musicStart + duration;
+    slices.push({ start: roundTime(musicStart), end: roundTime(musicEnd) });
+    outputCursor = roundTime(outputCursor + duration);
+  }
+
+  return { mode: "windowed-slices", slices };
+}
+
+export function buildMasterAudioSliceFilterComplex(slices: MasterAudioSlice[]): { filterComplex: string; mapLabel: string } {
+  const branches = slices.map((slice, index) => {
+    const label = `a${index}`;
+    return {
+      label,
+      graph: `[0:a]atrim=start=${roundTime(slice.start)}:end=${roundTime(slice.end)},asetpts=N/SR/TB[${label}]`,
+    };
+  });
+
+  if (branches.length === 1) {
+    return { filterComplex: branches[0]!.graph, mapLabel: `[${branches[0]!.label}]` };
+  }
+
+  const concatInputs = branches.map((branch) => `[${branch.label}]`).join("");
+  return {
+    filterComplex: `${branches.map((branch) => branch.graph).join(";")};${concatInputs}concat=n=${branches.length}:v=0:a=1[out]`,
+    mapLabel: "[out]",
+  };
+}
+
+export async function assembleWindowedMasterAudio(params: {
+  audioPath: string;
+  slices: MasterAudioSlice[];
+  outputPath: string;
+  ffmpegPath?: string;
+}): Promise<string> {
+  const ffmpegPath = params.ffmpegPath ?? process.env.FFMPEG_PATH ?? "ffmpeg";
+  if (!params.slices.length) throw new Error("Windowed audio assembly requires at least one slice.");
+  const { filterComplex, mapLabel } = buildMasterAudioSliceFilterComplex(params.slices);
+  await execFileAsync(ffmpegPath, [
+    "-y",
+    "-i", params.audioPath,
+    "-filter_complex", filterComplex,
+    "-map", mapLabel,
+    "-c:a", "pcm_s16le",
+    params.outputPath,
+  ]);
+  return params.outputPath;
+}
+
 export async function generateMusicVideoExport(params: {
   segments: ExportTimelineSegment[];
   audioPath: string;
@@ -60,6 +150,7 @@ export async function generateMusicVideoExport(params: {
   beats?: number[];
   lyricChunks?: Array<{ id?: string; index?: number; start: number; end: number; text?: string }>;
   shaderPresetId?: string | null;
+  accentKinds?: ShaderAccentKinds;
 }): Promise<MusicVideoExportAsset> {
   const ffmpegPath = params.ffmpegPath ?? process.env.FFMPEG_PATH ?? "ffmpeg";
   const probeFn = params.probeFn ?? (async () => ({ duration: 0, hasVideo: false }));
@@ -87,15 +178,30 @@ export async function generateMusicVideoExport(params: {
         beats: params.beats,
         lyricChunks: params.lyricChunks,
         presetId: params.shaderPresetId,
+        accentKinds: params.accentKinds,
       }))
     .map(normalizeShaderCue)
     .filter((cue): cue is ShaderEffectCue => cue !== null);
   const effectFilter = buildFfmpegShaderFilter(effectCues);
 
+  const audioAssembly = planExportAudioAssembly(params.segments);
+  let muxAudioPath = params.audioPath;
+  if (audioAssembly.mode === "windowed-slices") {
+    muxAudioPath = await assembleWindowedMasterAudio({
+      audioPath: params.audioPath,
+      slices: audioAssembly.slices,
+      outputPath: buildPreviewOutputPath({
+        requestKey: `${params.requestKey}-export-audio`,
+        outputDir: getDefaultPreviewOutputDir(),
+      }),
+      ffmpegPath,
+    });
+  }
+
   const args = [
     "-y",
     "-i", videoAsset.outputPath,
-    "-i", params.audioPath,
+    "-i", muxAudioPath,
   ];
 
   if (effectFilter) {
@@ -127,7 +233,8 @@ export async function generateMusicVideoExport(params: {
     outputPath,
     startTime: segments[0]?.startTime ?? 0,
     endTime: segments[segments.length - 1]?.endTime ?? 0,
-    audioPath: params.audioPath,
+    audioPath: muxAudioPath,
+    audioMode: audioAssembly.mode,
     effectCues,
     effectFilter,
     hasAudio: "hasAudio" in outputMetadata ? Boolean((outputMetadata as { hasAudio?: boolean }).hasAudio) : true,
@@ -159,13 +266,14 @@ export function normalizeExportSegments(segments: ExportTimelineSegment[]): Expo
 
 export function buildAutoShaderCues(
   segments: ExportTimelineSegment[],
-  options: { beats?: number[]; lyricChunks?: Array<{ id?: string; index?: number; start: number; end: number; text?: string }>; presetId?: string | null } = {},
+  options: { beats?: number[]; lyricChunks?: Array<{ id?: string; index?: number; start: number; end: number; text?: string }>; presetId?: string | null; accentKinds?: ShaderAccentKinds } = {},
 ): ShaderEffectCue[] {
   return buildSharedAutoShaderCues({
     segments,
     beats: options.beats,
     lyricChunks: options.lyricChunks,
     presetId: options.presetId,
+    accentKinds: options.accentKinds,
   });
 }
 
