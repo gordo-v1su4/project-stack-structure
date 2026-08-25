@@ -56,6 +56,7 @@ describe("mediaGateway", () => {
 
     expect(config).toEqual({
       url: "https://media.v1su4.dev",
+      internalUrl: null,
       token: "secret-token",
       userId: "stack-structure",
       bucket: "stack-structure",
@@ -168,6 +169,40 @@ describe("mediaGateway", () => {
     expect(result.fileName).toBe("song.wav");
     expect(result.mime).toBe("audio/wav");
     expect(Array.from(new Uint8Array(result.bytes))).toEqual([1, 2, 3]);
+  });
+
+  test("prefers the internal gateway URL for large data transfers", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const env = {
+      MEDIA_GATEWAY_URL: "https://media.v1su4.dev",
+      MEDIA_GATEWAY_INTERNAL_URL: "http://127.0.0.1:8080",
+      MEDIA_GATEWAY_TOKEN: "media-token",
+    };
+    const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
+      calls.push({ url: String(url), init });
+      return Response.json({
+        bucket: "stack-structure",
+        objectKey: "media-uploads/generated/exports/x/final.mp4",
+        publicUrl: "https://media.v1su4.dev/files/stack-structure/media-uploads/generated/exports/x/final.mp4",
+        mime: "video/mp4",
+      });
+    }) as typeof fetch;
+
+    await uploadFileToMediaGateway({
+      file: new File([new Uint8Array([1, 2, 3])], "final.mp4", { type: "video/mp4" }),
+      folder: "media-uploads/generated/exports/x",
+      env,
+      fetchImpl,
+    });
+    await downloadMediaGatewayFile({
+      bucket: "stack-structure",
+      objectKey: "media-uploads/generated/exports/x/final.mp4",
+      env,
+      fetchImpl,
+    });
+
+    expect(calls[0]?.url).toBe("http://127.0.0.1:8080/upload");
+    expect(calls[1]?.url).toBe("http://127.0.0.1:8080/files/stack-structure/media-uploads/generated/exports/x/final.mp4");
   });
 
   test("deletes temporary objects through the authenticated batch endpoint", async () => {
