@@ -1,5 +1,5 @@
 import { auth } from "@/auth";
-import { scopeEssentiaChunkUploadFolder } from "@/lib/essentiaUpload";
+import { scopeEssentiaChunkUploadFolder, scopeMediaUploadFolder } from "@/lib/essentiaUpload";
 import { uploadFileToMediaGateway } from "@/lib/mediaGateway";
 import { getSessionUser, unauthorizedResponse } from "@/lib/session";
 
@@ -28,20 +28,16 @@ export async function POST(request: Request) {
 
     const requestedFolder = typeof folder === "string" ? folder : undefined;
     const isEssentiaChunkUpload = requestedFolder?.startsWith("media-uploads/source-audio/chunks/") ?? false;
-    const session = isEssentiaChunkUpload ? await auth() : null;
-    if (isEssentiaChunkUpload && !session?.user?.id) {
-      return Response.json({ error: "Sign in with GitHub to upload audio chunks." }, { status: 401 });
-    }
-    const uploadFolder = session?.user?.id
-      ? scopeEssentiaChunkUploadFolder(requestedFolder, session.user.id)
-      : requestedFolder;
-    if (isEssentiaChunkUpload && !uploadFolder) {
+    const session = await auth();
+    const ownerId = session?.user?.id || user.id || "";
+    const scopedFolder = scopeMediaUploadFolder(requestedFolder, ownerId);
+    if (isEssentiaChunkUpload && !scopeEssentiaChunkUploadFolder(requestedFolder, ownerId)) {
       return Response.json({ error: "A valid audio chunk upload folder is required." }, { status: 400 });
     }
 
     const uploaded = await uploadFileToMediaGateway({
       file,
-      folder: uploadFolder ?? undefined,
+      folder: scopedFolder || undefined,
     });
 
     return Response.json({

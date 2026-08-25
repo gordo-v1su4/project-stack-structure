@@ -72,6 +72,27 @@ export function scopeEssentiaChunkUploadFolder(folder: unknown, ownerId: string)
   return `media-uploads/source-audio/chunks/${essentiaUploadOwnerSegment(ownerId)}/${match[1]}`;
 }
 
+export function scopeMediaUploadFolder(folder: string | undefined | null, ownerId: string) {
+  const normalized = normalizePath(folder ?? "");
+  if (!normalized.startsWith("media-uploads/")) return normalized;
+  const ownerSegment = essentiaUploadOwnerSegment(ownerId);
+  if (mediaUploadBelongsToOwner(normalized, ownerId)) return normalized;
+  const rest = normalized.slice("media-uploads/".length);
+  // Audio-chunk folders carry the owner inside the chunks tree, matching the
+  // worker-facing chunk manifest contract.
+  if (/^source-audio\/chunks\//i.test(rest)) {
+    return normalizePath(`media-uploads/source-audio/chunks/${ownerSegment}/${rest.slice("source-audio/chunks/".length)}`);
+  }
+  return normalizePath(`media-uploads/${ownerSegment}/${rest}`);
+}
+
+export function mediaUploadBelongsToOwner(objectKey: string, ownerId: string) {
+  const normalized = normalizePath(objectKey);
+  if (!normalized.startsWith("media-uploads/")) return false;
+  const ownerSegment = essentiaUploadOwnerSegment(ownerId);
+  return normalized.startsWith(`media-uploads/${ownerSegment}/`) || normalized.includes(`/${ownerSegment}/`);
+}
+
 export function essentiaUploadOwnerSegment(ownerId: string) {
   return ownerId.trim().replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 128) || "unknown-user";
 }
