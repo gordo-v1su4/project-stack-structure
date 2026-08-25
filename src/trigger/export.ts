@@ -34,6 +34,7 @@ export type FinalExportPayload = {
     label?: string;
   }>;
   effectCues?: unknown[];
+  accentKinds?: { beat?: string; section?: string; lyric?: string };
   beats?: number[];
   lyricChunks?: Array<{ id?: string; index?: number; start: number; end: number; text?: string }>;
   shaderPresetId?: string;
@@ -86,6 +87,7 @@ export const finalExportTask = task({
         audioPath,
         segments: resolveExportSegments(payload.segments, videoPaths),
         effectCues: payload.effectCues as import("@/components/studio/shaderEffectPlan").ShaderEffectCue[] | undefined,
+        accentKinds: payload.accentKinds as import("@/components/studio/shaderEffectPlan").ShaderAccentKinds | undefined,
         beats: payload.beats,
         lyricChunks: payload.lyricChunks,
         shaderPresetId: payload.shaderPresetId,

@@ -42,6 +42,7 @@ export async function POST(request: Request) {
         label: typeof segment.label === "string" ? segment.label : undefined,
       })),
       effectCues: parseJsonField(formData.get("shaderCues")) as unknown[] | undefined,
+      accentKinds: parseJsonField(formData.get("accentKinds")) as Record<string, string> | undefined,
       beats: parseJsonField(formData.get("beats")) as number[] | undefined,
       lyricChunks: parseJsonField(formData.get("lyricChunks")) as Array<{ id?: string; index?: number; start: number; end: number; text?: string }> | undefined,
       shaderPresetId: String(formData.get("shaderPresetId") || "balanced-music-video"),

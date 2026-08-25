@@ -244,6 +244,11 @@ describe("projectPersistence", () => {
         matchLyricMergeWindow: 3,
         colorGradient: "Ocean",
         shaderPresetId: "balanced-music-video",
+        shaderAccentKinds: {
+          beat: "glitch-cut",
+          section: "film-halation",
+          lyric: "duotone-pulse",
+        },
         isPreviewExpanded: true,
       },
       savedAt: "2026-06-21T00:00:00.000Z",
@@ -260,7 +265,32 @@ describe("projectPersistence", () => {
       matchLyricMergeWindow: 3,
       colorGradient: "Ocean",
       shaderPresetId: "balanced-music-video",
+      shaderAccentKinds: {
+        beat: "glitch-cut",
+        section: "film-halation",
+        lyric: "duotone-pulse",
+      },
       isPreviewExpanded: true,
+    });
+  });
+
+  test("drops invalid persisted shader accent kinds", () => {
+    const draft = createPersistableStudioProjectDraft({
+      analysis: null,
+      videoSources: [],
+      storyState,
+      musicVideoProject: null,
+      workflowUiSettings: {
+        shaderAccentKinds: {
+          beat: "glitch-cut",
+          section: "not-a-cue-kind",
+        } as never,
+      },
+      savedAt: "2026-06-21T00:00:00.000Z",
+    });
+
+    expect(hydrateStudioProjectDraft({ draft }).workflowUiSettings?.shaderAccentKinds).toEqual({
+      beat: "glitch-cut",
     });
   });
 

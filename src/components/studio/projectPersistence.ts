@@ -2,6 +2,7 @@ import type { DeepgramTranscriptSummary } from "./deepgramUtils";
 import { getDefaultStorySectionDrafts, type MusicVideoProject, type StoryEditSettings, type StoryPlanDraft } from "./musicVideoProject";
 import { hydrateGeneratedStudioAssets, sanitizeGeneratedStudioAssetForStorage, type GeneratedStudioAsset } from "./generatedAssets";
 import { hydrateReferenceAssets, sanitizeReferenceAssetForStorage, type ReferenceAsset } from "./referenceAssets";
+import { SHADER_CUE_KINDS, type ShaderAccentKinds, type ShaderCueKind } from "./shaderEffectPlan";
 import type { BeatJoinAnalysis, ColorGradient, SceneCaptionSettings, Tab, UploadedVideoSource } from "./types";
 import type { SplitMode } from "./sourceTimeline";
 import type { SavedStudioProject, StudioProjectSummary } from "@/lib/studioProjectStore";
@@ -38,6 +39,7 @@ export type PersistedWorkflowUiSettings = {
   matchLyricMergeWindow?: number;
   colorGradient?: ColorGradient;
   shaderPresetId?: string;
+  shaderAccentKinds?: ShaderAccentKinds;
   isPreviewExpanded?: boolean;
 };
 
@@ -416,8 +418,22 @@ function sanitizeWorkflowUiSettings(settings: PersistedWorkflowUiSettings | unde
   if (Number.isFinite(matchLyricMergeWindow)) next.matchLyricMergeWindow = clampNumber(matchLyricMergeWindow, 0, 5);
   if (settings?.colorGradient === "Rainbow" || settings?.colorGradient === "Sunset" || settings?.colorGradient === "Ocean") next.colorGradient = settings.colorGradient;
   if (typeof settings?.shaderPresetId === "string" && settings.shaderPresetId.trim()) next.shaderPresetId = settings.shaderPresetId;
+  const shaderAccentKinds = sanitizeShaderAccentKinds(settings?.shaderAccentKinds);
+  if (Object.keys(shaderAccentKinds).length > 0) next.shaderAccentKinds = shaderAccentKinds;
   if (typeof settings?.isPreviewExpanded === "boolean") next.isPreviewExpanded = settings.isPreviewExpanded;
   return next;
+}
+
+function sanitizeShaderAccentKinds(accentKinds: ShaderAccentKinds | undefined): ShaderAccentKinds {
+  const next: ShaderAccentKinds = {};
+  if (isShaderCueKind(accentKinds?.beat)) next.beat = accentKinds.beat;
+  if (isShaderCueKind(accentKinds?.section)) next.section = accentKinds.section;
+  if (isShaderCueKind(accentKinds?.lyric)) next.lyric = accentKinds.lyric;
+  return next;
+}
+
+function isShaderCueKind(value: unknown): value is ShaderCueKind {
+  return typeof value === "string" && SHADER_CUE_KINDS.some((kind) => kind === value);
 }
 
 function isKnownTab(value: unknown): value is Tab {
