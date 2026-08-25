@@ -23,6 +23,18 @@ if (-not (Get-Command bun -ErrorAction SilentlyContinue)) {
   throw "Bun is required."
 }
 
+$packageJsonPath = Join-Path $PSScriptRoot "..\package.json"
+$packageJson = Get-Content -LiteralPath $packageJsonPath -Raw | ConvertFrom-Json
+$triggerVersions = @(
+  [string]$packageJson.dependencies.'@trigger.dev/sdk'
+  [string]$packageJson.dependencies.'@trigger.dev/react-hooks'
+  [string]$packageJson.devDependencies.'@trigger.dev/build'
+) | Select-Object -Unique
+if ($triggerVersions.Count -ne 1 -or [string]::IsNullOrWhiteSpace($triggerVersions[0])) {
+  throw "Trigger.dev package pins must use one exact version before starting the CLI."
+}
+$triggerCliVersion = $triggerVersions[0]
+
 function Get-BwsSecretId([string]$name, [hashtable]$byName) {
   $name = $name.Trim()
   if (-not $byName.ContainsKey($name)) {
@@ -124,9 +136,9 @@ if ($Start -eq "trigger") {
       [System.Text.UTF8Encoding]::new($false)
     )
     Write-Host "Local Trigger env file refreshed outside the repository."
-    & bunx trigger.dev@4.5.2 dev start --profile stack-structure-local --env-file $LocalTriggerEnvFile
+    & bunx "trigger.dev@$triggerCliVersion" dev start --profile stack-structure-local --env-file $LocalTriggerEnvFile
   } else {
-    & bunx trigger.dev@4.5.2 dev
+    & bunx "trigger.dev@$triggerCliVersion" dev
   }
   exit $LASTEXITCODE
 }
