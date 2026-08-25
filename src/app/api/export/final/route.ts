@@ -1,5 +1,5 @@
 import { getMediaGatewayConfig, normalizeMediaPath, uploadFileToMediaGateway } from "@/lib/mediaGateway";
-import { mediaUploadBelongsToOwner } from "@/lib/essentiaUpload";
+import { canReadMediaObject } from "@/lib/studioMediaAccess";
 import { getSessionUser, unauthorizedResponse } from "@/lib/session";
 import { triggerFinalExport } from "@/lib/triggerOrchestration";
 
@@ -84,16 +84,19 @@ export async function POST(request: Request) {
       }
       // Shared worker credentials mean every referenced object must belong to
       // the caller. Ownership is proven by the owner segment the storage route
-      // inserted at upload time; pre-scoping keys must be re-uploaded.
-      const foreignRefs = [
+      // inserted at upload time, or by membership in the caller's saved project.
+      const refObjectKeys = [
         audio.objectKey,
         ...(audio.chunks ?? []).map((chunk) => chunk.objectKey),
         ...videos.flatMap((video) => [
-        video.objectKey,
-        ...(video.chunks ?? []).map((chunk) => chunk.objectKey),
-      ])]
-        .filter((objectKey) => !mediaUploadBelongsToOwner(objectKey, user.id));
-      if (foreignRefs.length) {
+          video.objectKey,
+          ...(video.chunks ?? []).map((chunk) => chunk.objectKey),
+        ]),
+      ];
+      const ownershipResults = await Promise.all(
+        refObjectKeys.map((objectKey) => canReadMediaObject({ userId: user.id, bucket: audio.bucket, objectKey })),
+      );
+      if (ownershipResults.some((authorized) => !authorized)) {
         return Response.json({ success: false, error: "Referenced media is not registered to this account; re-upload the affected clips and retry." }, { status: 403 });
       }
     } else {

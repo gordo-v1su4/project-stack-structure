@@ -1,4 +1,4 @@
-import { mediaUploadBelongsToOwner } from "@/lib/essentiaUpload";
+import { canReadMediaObject } from "@/lib/studioMediaAccess";
 import { buildMediaGatewayFileUrl, getMediaGatewayConfig } from "@/lib/mediaGateway";
 import { getSessionUser, unauthorizedResponse } from "@/lib/session";
 
@@ -20,7 +20,9 @@ export async function GET(request: Request) {
     if (!objectKey.startsWith("media-uploads/")) {
       return Response.json({ error: "objectKey must live under media-uploads/." }, { status: 400 });
     }
-    if (!mediaUploadBelongsToOwner(objectKey, user.id)) {
+    // Legacy raw-media pools predate per-user scoping; membership in the
+    // caller's saved project is what binds them to this session.
+    if (!(await canReadMediaObject({ userId: user.id, bucket, objectKey }))) {
       return Response.json({ error: "Object does not belong to the current user." }, { status: 403 });
     }
 
