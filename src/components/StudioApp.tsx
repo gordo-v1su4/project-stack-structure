@@ -7,6 +7,7 @@ import { buildArrangementSegments } from "./studio/arrangementBuilder";
 import type { ArrangementSegment } from "./studio/arrangementBuilder";
 import { NAV } from "./studio/constants";
 import { mergeUploadedVideoSourceUpdate, needsSceneDetectionRetry, prepareVideoSources, rerunSourceSceneAnalysis, revokePreparedVideoSources, selectSceneRetrySources } from "./studio/mediaUpload";
+import { uploadFileInChunks } from "./studio/chunkedUploadClient";
 import type { VideoSceneUpdate } from "./studio/mediaUpload";
 import { buildEditPlanPreviewSegments, normalizeStoryEditSettings, type EditPlanPreviewSegment, type MusicVideoProject } from "./studio/musicVideoProject";
 import { selectStorySectionCandidate } from "./studio/musicVideoProjectSelection";
@@ -1445,7 +1446,15 @@ export default function StudioApp() {
     return new File([blob], fileName, { type: blob.type || fallbackType });
   }
 
-  async function reuploadThroughScopedPath(file: File, folderBase: string): Promise<{ bucket: string; objectKey: string }> {
+  async function reuploadThroughScopedPath(file: File, folderBase: string): Promise<{ bucket: string; objectKey: string; chunks?: Array<{ bucket: string; objectKey: string }> }> {
+    const chunked = await uploadFileInChunks(file, folderBase);
+    if (chunked && chunked.chunks[0]) {
+      return {
+        bucket: chunked.chunks[0].bucket,
+        objectKey: chunked.chunks[0].objectKey,
+        chunks: chunked.chunks.map((chunk) => ({ bucket: chunk.bucket, objectKey: chunk.objectKey })),
+      };
+    }
     const formData = new FormData();
     formData.append("file", file);
     formData.append("folder", folderBase);
