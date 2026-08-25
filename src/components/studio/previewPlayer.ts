@@ -398,6 +398,12 @@ export class BrowserPreviewPlayer {
         // element — identical to the never-staged path; no cut is skipped.
         standbyReady = false;
       }
+      if (token !== this.playbackToken || this.status !== "playing") {
+        // stop()/seek/pause invalidated this chain while play() was pending;
+        // never expose the standby element for a dead chain.
+        standby.pause();
+        return;
+      }
       if (standbyReady) {
         this.activeElementIndex = this.activeElementIndex === 0 ? 1 : 0;
         this.applyElementVisibility();

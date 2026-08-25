@@ -313,8 +313,7 @@ describe("BrowserPreviewPlayer master audio", () => {
 });
 
 describe("BrowserPreviewPlayer double buffering", () => {
-  test("stages the next cut on the standby element and swaps at the boundary without reloading the visible one", async () => {
-    const originalRaf = globalThis.requestAnimationFrame;
+  test("stages the next cut on the standby element and swaps at the boundary without reloading the visible one", async () => {    const originalRaf = globalThis.requestAnimationFrame;
     const originalCancelRaf = globalThis.cancelAnimationFrame;
     globalThis.requestAnimationFrame = (() => 0) as typeof requestAnimationFrame;
     globalThis.cancelAnimationFrame = (() => undefined) as typeof cancelAnimationFrame;
@@ -363,6 +362,51 @@ describe("BrowserPreviewPlayer double buffering", () => {
       await playDone;
 
       expect(player.getState().status).toBe("ended");
+    } finally {
+      globalThis.requestAnimationFrame = originalRaf;
+      globalThis.cancelAnimationFrame = originalCancelRaf;
+    }
+  });
+
+  test("pause during a pending standby swap leaves the current cut visible", async () => {
+    const originalRaf = globalThis.requestAnimationFrame;
+    const originalCancelRaf = globalThis.cancelAnimationFrame;
+    globalThis.requestAnimationFrame = (() => 0) as typeof requestAnimationFrame;
+    globalThis.cancelAnimationFrame = (() => undefined) as typeof cancelAnimationFrame;
+    (globalThis as Record<string, unknown>).HTMLMediaElement ??= { HAVE_METADATA: 1, HAVE_CURRENT_DATA: 2 };
+
+    try {
+      const player = new BrowserPreviewPlayer({ warmSourceLimit: 0 });
+      const front = new FakeVideoElement();
+      const back = new FakeVideoElement();
+      let resolveBackPlay: () => void = () => {};
+      back.play = () => new Promise<void>((resolve) => { resolveBackPlay = resolve; });
+      player.attach(front as unknown as HTMLVideoElement, back as unknown as HTMLVideoElement);
+      player.load([
+        { videoUrl: "blob:a", startTime: 0, endTime: 1, label: "SEG_01" },
+        { videoUrl: "blob:b", startTime: 0, endTime: 1, label: "SEG_02" },
+      ]);
+
+      const playDone = player.play();
+      await flushAsync();
+      expect(front.paused).toBe(false);
+      expect(back.style.opacity).toBe("0");
+
+      // Segment 1 ends → standby.play() is invoked but left pending.
+      front.currentTime = 1;
+      front.dispatch("timeupdate");
+      await flushAsync();
+
+      // Pause while the swap is in flight, then let the stale play resolve.
+      player.pause();
+      resolveBackPlay();
+      await flushAsync();
+      await playDone;
+
+      expect(player.getState().status).toBe("paused");
+      expect(front.style.opacity).toBe("1");
+      expect(back.style.opacity).toBe("0");
+      expect(back.paused).toBe(true);
     } finally {
       globalThis.requestAnimationFrame = originalRaf;
       globalThis.cancelAnimationFrame = originalCancelRaf;
