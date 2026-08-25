@@ -1,8 +1,29 @@
-import { uploadFileToMediaGateway } from "@/lib/mediaGateway";
+import { getMediaGatewayConfig, normalizeMediaPath, uploadFileToMediaGateway } from "@/lib/mediaGateway";
 import { getSessionUser, unauthorizedResponse } from "@/lib/session";
 import { triggerFinalExport } from "@/lib/triggerOrchestration";
 
 export const runtime = "nodejs";
+
+type DurableExportInput = { bucket: string; objectKey: string; fileName: string; mimeType: string };
+
+function resolveDurableInput(entry: unknown, mimeType: string): DurableExportInput {
+  if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw new Error("Durable reference must be an object.");
+  const record = entry as Record<string, unknown>;
+  if (typeof record.bucket !== "string" || typeof record.objectKey !== "string") {
+    throw new Error("Durable reference requires string bucket and objectKey.");
+  }
+  const config = getMediaGatewayConfig();
+  if (!config) throw new Error("RustFS media gateway env is not configured; durable export references cannot be resolved.");
+  const objectKey = normalizeMediaPath(record.objectKey);
+  if (!objectKey || objectKey.length > 512) throw new Error("Invalid durable reference object key.");
+  if (record.bucket.trim() !== config.bucket) throw new Error(`Durable reference bucket must be ${config.bucket}.`);
+  return { bucket: record.bucket.trim(), objectKey, fileName: objectKey.split("/").pop() || "input.bin", mimeType };
+}
+
+function resolveDurableInputs(entries: unknown, mimeType: string): DurableExportInput[] {
+  if (!Array.isArray(entries) || !entries.length) throw new Error("Durable references must be a non-empty array.");
+  return entries.map((entry) => resolveDurableInput(entry, mimeType));
+}
 
 export async function POST(request: Request) {
   const user = await getSessionUser();
@@ -12,23 +33,48 @@ export async function POST(request: Request) {
     const audioFile = formData.get("audio");
     const segmentsRaw = formData.get("segments");
     const requestKey = String(formData.get("requestKey") || `final-export-${Date.now()}`);
-    if (!(audioFile instanceof File)) return Response.json({ success: false, error: "Master audio file is required." }, { status: 400 });
     if (typeof segmentsRaw !== "string" || !segmentsRaw.trim()) return Response.json({ success: false, error: "Export segments are required." }, { status: 400 });
-
-    const inputFiles = [...formData.entries()]
-      .map(([key, value]) => {
-        const match = key.match(/^file:(\d+)$/);
-        return match && value instanceof File ? { index: Number(match[1]), file: value } : null;
-      })
-      .filter((entry): entry is { index: number; file: File } => entry !== null)
-      .sort((left, right) => left.index - right.index)
-      .map((entry) => entry.file);
-    if (!inputFiles.length) return Response.json({ success: false, error: "At least one source video file is required." }, { status: 400 });
-
     const segments = JSON.parse(segmentsRaw) as Array<Record<string, unknown>>;
     if (!Array.isArray(segments) || !segments.length) return Response.json({ success: false, error: "No export segments provided." }, { status: 400 });
-    const audio = await uploadInput(audioFile, `media-uploads/export-inputs/${sanitize(requestKey)}`);
-    const videos = await Promise.all(inputFiles.map((file) => uploadInput(file, `media-uploads/export-inputs/${sanitize(requestKey)}`)));
+
+    const audioRefRaw = formData.get("audioRef");
+    const videoRefsRaw = formData.get("videoRefs");
+    let audio: DurableExportInput;
+    let videos: DurableExportInput[];
+    if (audioRefRaw !== null || videoRefsRaw !== null) {
+      // Media already lives in RustFS; validate refs instead of re-uploading bytes.
+      if (typeof audioRefRaw !== "string" || typeof videoRefsRaw !== "string") {
+        return Response.json({ success: false, error: "Durable references require both audioRef and videoRefs." }, { status: 400 });
+      }
+      let parsedAudio: unknown;
+      let parsedVideos: unknown;
+      try {
+        parsedAudio = JSON.parse(audioRefRaw);
+        parsedVideos = JSON.parse(videoRefsRaw);
+      } catch {
+        return Response.json({ success: false, error: "Durable references are not valid JSON." }, { status: 400 });
+      }
+      try {
+        audio = resolveDurableInput(parsedAudio, "audio/wav");
+        videos = resolveDurableInputs(parsedVideos, "video/mp4");
+      } catch (error) {
+        return Response.json({ success: false, error: error instanceof Error ? error.message : "Invalid durable references." }, { status: 400 });
+      }
+    } else {
+      if (!(audioFile instanceof File)) return Response.json({ success: false, error: "Master audio file is required." }, { status: 400 });
+      const inputFiles = [...formData.entries()]
+        .map(([key, value]) => {
+          const match = key.match(/^file:(\d+)$/);
+          return match && value instanceof File ? { index: Number(match[1]), file: value } : null;
+        })
+        .filter((entry): entry is { index: number; file: File } => entry !== null)
+        .sort((left, right) => left.index - right.index)
+        .map((entry) => entry.file);
+      if (!inputFiles.length) return Response.json({ success: false, error: "At least one source video file is required." }, { status: 400 });
+      audio = await uploadInput(audioFile, `media-uploads/export-inputs/${sanitize(requestKey)}`);
+      videos = await Promise.all(inputFiles.map((file) => uploadInput(file, `media-uploads/export-inputs/${sanitize(requestKey)}`)));
+    }
+
     const handle = await triggerFinalExport({
       requestKey,
       audio,

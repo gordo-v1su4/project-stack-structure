@@ -341,6 +341,52 @@ describe("Next route Trigger.dev dispatch boundary", () => {
     expect(triggerMocks.triggerFinalExport).toHaveBeenCalledTimes(1);
   });
 
+  test("passes validated durable refs straight through without re-uploading", async () => {
+    resetMocks();
+    const form = new FormData();
+    form.set("requestKey", "final-route-refs-test");
+    form.set("segments", JSON.stringify([{ sourceIndex: 0, startTime: 0, endTime: 1 }]));
+    form.set("audioRef", JSON.stringify({ bucket: "stack-structure", objectKey: "media-uploads/source-audio/master.wav" }));
+    form.set("videoRefs", JSON.stringify([
+      { bucket: "stack-structure", objectKey: "media-uploads/sources/clip-a.mp4" },
+      { bucket: "stack-structure", objectKey: "media-uploads/sources/clip-b.mp4" },
+    ]));
+
+    const response = await postFinalExport(new Request("http://localhost/api/export/final", { method: "POST", body: form }));
+    const payload = await jsonResponse(response);
+
+    expect(response.status).toBe(202);
+    expect(payload.runId).toBe("run-export-123");
+    expect(uploadFileToMediaGatewayMock).not.toHaveBeenCalled();
+    expect(triggerMocks.triggerFinalExport).toHaveBeenCalledTimes(1);
+    type ExportDispatch = {
+      audio: { bucket: string; objectKey: string };
+      videos: Array<{ objectKey: string }>;
+    };
+    const dispatches = triggerMocks.triggerFinalExport.mock.calls as unknown as ExportDispatch[][];
+    const dispatched = dispatches[0]?.[0];
+    expect(dispatched?.audio.objectKey).toBe("media-uploads/source-audio/master.wav");
+    expect(dispatched?.videos.map((video) => video.objectKey)).toEqual([
+      "media-uploads/sources/clip-a.mp4",
+      "media-uploads/sources/clip-b.mp4",
+    ]);
+  });
+
+  test("rejects durable refs from a foreign bucket", async () => {
+    resetMocks();
+    const form = new FormData();
+    form.set("segments", JSON.stringify([{ sourceIndex: 0, startTime: 0, endTime: 1 }]));
+    form.set("audioRef", JSON.stringify({ bucket: "other-bucket", objectKey: "media-uploads/x.wav" }));
+    form.set("videoRefs", JSON.stringify([{ bucket: "stack-structure", objectKey: "media-uploads/y.mp4" }]));
+
+    const response = await postFinalExport(new Request("http://localhost/api/export/final", { method: "POST", body: form }));
+    const payload = await jsonResponse(response);
+
+    expect(response.status).toBe(400);
+    expect(payload.success).toBe(false);
+    expect(payload.error).toMatch(/bucket/i);
+  });
+
   test("uploads shader-capture inputs before queuing the shader export", async () => {
     resetMocks();
     const form = new FormData();
