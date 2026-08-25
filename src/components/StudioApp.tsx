@@ -962,6 +962,36 @@ export default function StudioApp() {
     setPreviewState((current) => markSectionRecomputeRunning(current, requestKey));
 
     try {
+      // The export route authorizes durable refs against the caller's saved
+      // studio draft, so flush a fresh save covering exactly this media.
+      await saveStudioProjectDraft(
+        {
+          analysis: beatJoinAnalysis,
+          videoSources,
+          storyState,
+          musicVideoProject,
+          referenceAssets,
+          generatedAssets,
+          captionSettings: buildSceneCaptionSettings(captionMode, beatJoinAnalysis, storyState),
+          workflowUiSettings: {
+            activeTab: tab,
+            splitMode,
+            matchMode,
+            matchOnsetDensity,
+            matchLyricCueBlend,
+            matchLyricMergeWindow,
+            colorGradient,
+            shaderPresetId,
+            shaderAccentKinds,
+            isPreviewExpanded,
+          },
+        },
+        {
+          audioFile: audioFileRef.current,
+          videoFilesByMediaKey: videoFilesByMediaKeyRef.current,
+        },
+      );
+
       const uniqueVideoUrls = [...new Set(storyPreviewSegments.map((segment) => segment.videoUrl))];
       const videoUrlIndex = new Map(uniqueVideoUrls.map((url, index) => [url, index]));
 
