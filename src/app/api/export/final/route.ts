@@ -1,4 +1,5 @@
 import { getMediaGatewayConfig, normalizeMediaPath, uploadFileToMediaGateway } from "@/lib/mediaGateway";
+import { mediaUploadBelongsToOwner } from "@/lib/essentiaUpload";
 import { getSessionUser, unauthorizedResponse } from "@/lib/session";
 import { triggerFinalExport } from "@/lib/triggerOrchestration";
 
@@ -59,6 +60,13 @@ export async function POST(request: Request) {
         videos = resolveDurableInputs(parsedVideos, "video/mp4");
       } catch (error) {
         return Response.json({ success: false, error: error instanceof Error ? error.message : "Invalid durable references." }, { status: 400 });
+      }
+      // Shared worker credentials mean every referenced object must belong to
+      // the caller, or any authenticated user could export another user's media.
+      const foreignRefs = [audio.objectKey, ...videos.map((video) => video.objectKey)]
+        .filter((objectKey) => !mediaUploadBelongsToOwner(objectKey, user.id));
+      if (foreignRefs.length) {
+        return Response.json({ success: false, error: "Durable references must point at objects uploaded by the current user." }, { status: 403 });
       }
     } else {
       if (!(audioFile instanceof File)) return Response.json({ success: false, error: "Master audio file is required." }, { status: 400 });
