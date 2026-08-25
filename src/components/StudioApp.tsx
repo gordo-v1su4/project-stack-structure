@@ -962,14 +962,40 @@ export default function StudioApp() {
     setPreviewState((current) => markSectionRecomputeRunning(current, requestKey));
 
     try {
-      const audioFile = await resolveMasterAudioFile(beatJoinAnalysis, audioFileRef.current);
       const uniqueVideoUrls = [...new Set(storyPreviewSegments.map((segment) => segment.videoUrl))];
       const videoUrlIndex = new Map(uniqueVideoUrls.map((url, index) => [url, index]));
+
+      // Durable refs keep large media out of the serverless body cap (ef03ffe contract).
+      const audioRef = beatJoinAnalysis.storageBucket && beatJoinAnalysis.storagePath
+        ? { bucket: beatJoinAnalysis.storageBucket, objectKey: beatJoinAnalysis.storagePath }
+        : null;
+      const videoRefs: Array<{ bucket: string; objectKey: string }> = [];
+      let missingVideoRef = false;
+      for (const url of uniqueVideoUrls) {
+        const source = videoSourcesRef.current.find((item) => item.videoUrl === url);
+        if (source?.storageBucket && source?.storagePath) {
+          videoRefs.push({ bucket: source.storageBucket, objectKey: source.storagePath });
+        } else {
+          missingVideoRef = true;
+          break;
+        }
+      }
 
       setProgress(20);
       setPreviewState((current) => updateSectionRecomputeProgress(current, { requestKey, progress: 20 }));
 
-      const sourceFiles = await Promise.all(uniqueVideoUrls.map((url, index) => fetchMediaUrlAsFile(url, `source${index}.mp4`, "video/mp4")));
+      const form = new FormData();
+      if (audioRef && !missingVideoRef && videoRefs.length > 0) {
+        form.set("audioRef", JSON.stringify(audioRef));
+        form.set("videoRefs", JSON.stringify(videoRefs));
+      } else {
+        // Byte-upload fallback for sessions without durable storage refs.
+        const audioFile = await resolveMasterAudioFile(beatJoinAnalysis, audioFileRef.current);
+        const sourceFiles = await Promise.all(uniqueVideoUrls.map((url, index) => fetchMediaUrlAsFile(url, `source${index}.mp4`, "video/mp4")));
+        form.set("audio", audioFile);
+        sourceFiles.forEach((file, index) => form.set(`file:${index}`, file));
+      }
+
       const timelineItemsBySectionId = new Map(musicVideoProject.editPlan.timelineItems.map((item) => [item.sectionId, item]));
       const segments = storyPreviewSegments.map((segment) => {
         const item = timelineItemsBySectionId.get(segment.sectionId);
@@ -982,10 +1008,6 @@ export default function StudioApp() {
           label: item?.label ?? segment.label,
         };
       });
-
-      const form = new FormData();
-      form.set("audio", audioFile);
-      sourceFiles.forEach((file, index) => form.set(`file:${index}`, file));
       form.set("segments", JSON.stringify(segments));
       form.set("beats", JSON.stringify(beatJoinAnalysis.beats));
       form.set("lyricChunks", JSON.stringify(musicVideoProject.lyricChunks));
@@ -1001,11 +1023,17 @@ export default function StudioApp() {
       setPreviewState((current) => updateSectionRecomputeProgress(current, { requestKey, progress: 45 }));
 
       const response = await fetch("/api/export/final", { method: "POST", body: form });
-      const payload = (await response.json()) as {
+      const rawBody = await response.text();
+      let payload: {
         success?: boolean;
         error?: string;
         runId?: string;
       };
+      try {
+        payload = JSON.parse(rawBody) as { success?: boolean; error?: string; runId?: string };
+      } catch {
+        throw new Error(response.ok ? "Final export returned an invalid response." : `Final export failed (${response.status}).`);
+      }
 
       if (!response.ok || !payload.success || !payload.runId) {
         throw new Error(payload.error ?? "Final export failed.");
