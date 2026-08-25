@@ -38,7 +38,6 @@ export type PersistedWorkflowUiSettings = {
   matchLyricMergeWindow?: number;
   colorGradient?: ColorGradient;
   shaderPresetId?: string;
-  useSourceAudio?: boolean;
   isPreviewExpanded?: boolean;
 };
 
@@ -417,7 +416,6 @@ function sanitizeWorkflowUiSettings(settings: PersistedWorkflowUiSettings | unde
   if (Number.isFinite(matchLyricMergeWindow)) next.matchLyricMergeWindow = clampNumber(matchLyricMergeWindow, 0, 5);
   if (settings?.colorGradient === "Rainbow" || settings?.colorGradient === "Sunset" || settings?.colorGradient === "Ocean") next.colorGradient = settings.colorGradient;
   if (typeof settings?.shaderPresetId === "string" && settings.shaderPresetId.trim()) next.shaderPresetId = settings.shaderPresetId;
-  if (typeof settings?.useSourceAudio === "boolean") next.useSourceAudio = settings.useSourceAudio;
   if (typeof settings?.isPreviewExpanded === "boolean") next.isPreviewExpanded = settings.isPreviewExpanded;
   return next;
 }

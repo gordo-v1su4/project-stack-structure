@@ -25,8 +25,7 @@ type StudioRightPanelProps = {
   onTogglePreviewExpanded?: () => void;
   isDockCollapsed?: boolean;
   onToggleDockCollapsed?: () => void;
-  useSourceAudio?: boolean;
-  onUseSourceAudioChange?: (enabled: boolean) => void;
+  masterAudioUrl?: string | null;
   finalExportStatus?: string;
   finalExportUrl?: string | null;
   finalExportName?: string | null;
@@ -60,8 +59,7 @@ export function StudioRightPanel({
   onTogglePreviewExpanded,
   isDockCollapsed = false,
   onToggleDockCollapsed,
-  useSourceAudio = false,
-  onUseSourceAudioChange,
+  masterAudioUrl = null,
   finalExportStatus = "Final export waits for a generated story preview and master audio.",
   finalExportUrl = null,
   finalExportName = null,
@@ -178,17 +176,15 @@ export function StudioRightPanel({
         {showBrowserPreview && browserPreviewState ? (
           <div className={isPreviewExpanded ? "space-y-2" : "space-y-1.5"}>
             <div className={`${isPreviewExpanded ? "flex" : "hidden"} flex-wrap items-center gap-2 rounded-[2px] border border-[#151515] bg-[#070707] px-2 py-1`}>
-              <button
-                type="button"
-                onClick={() => onUseSourceAudioChange?.(!useSourceAudio)}
+              <span
                 className={`rounded-[2px] border px-2 py-1 text-[8px] uppercase tracking-[0.12em] ${
-                  useSourceAudio
-                    ? "border-[#e05c00] text-[#e05c00]"
-                    : "border-[#242424] text-[#777] hover:border-[#444] hover:text-[#aaa]"
+                  masterAudioUrl
+                    ? "border-[#3a8a3a] text-[#79c779]"
+                    : "border-[#242424] text-[#555]"
                 }`}
               >
-                Source audio {useSourceAudio ? "on" : "off"}
-              </button>
+                {masterAudioUrl ? "Master audio live" : "No master audio"}
+              </span>
               <span className="font-mono text-[8px] uppercase tracking-[0.1em] text-[#4d4d4d]">Master track leads sync</span>
             </div>
             <div className={`${isPreviewExpanded ? "block" : "hidden"} rounded-[2px] border border-[#151515] bg-[#060606] p-2`}>
@@ -240,7 +236,7 @@ export function StudioRightPanel({
               effectCues={previewEffectCues}
               audioTimeline={audioTimeline}
               isExpanded={isPreviewExpanded}
-              useSourceAudio={useSourceAudio}
+              masterAudioUrl={masterAudioUrl}
             />
           </div>
         ) : showFfmpegPreview ? (

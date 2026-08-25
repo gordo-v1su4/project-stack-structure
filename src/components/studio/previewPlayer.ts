@@ -3,6 +3,9 @@ export interface PreviewSegment {
   startTime: number;
   endTime: number;
   label: string;
+  /** Master-song timeline seconds for this cut (startTime/endTime are source-clip seconds). */
+  musicStart?: number;
+  musicEnd?: number;
 }
 
 export interface PreviewPlayerState {
@@ -51,6 +54,7 @@ const DEFAULT_WARM_SOURCE_LIMIT = 4;
 const DEFAULT_WARM_AHEAD_SEGMENTS = 6;
 const DEFAULT_PREROLL_SECONDS = 0.08;
 const SEGMENT_END_TOLERANCE_SECONDS = 0.025;
+const MASTER_AUDIO_DRIFT_TOLERANCE_SECONDS = 0.12;
 
 export class BrowserPreviewPlayer {
   private segments: PreviewSegment[] = [];
@@ -66,7 +70,9 @@ export class BrowserPreviewPlayer {
   private progressRafId: number | null = null;
   private progressFrameCallbackId: number | null = null;
   private playbackToken = 0;
+  private elementOwnerTokens = new WeakMap<HTMLVideoElement, number>();
   private warmElements = new Map<string, HTMLVideoElement>();
+  private audioElement: HTMLAudioElement | null = null;
   private readonly warmSourceLimit: number;
   private readonly warmAheadSegments: number;
   private readonly prerollSeconds: number;
@@ -108,12 +114,62 @@ export class BrowserPreviewPlayer {
   detach() {
     this.stop();
     this.releaseWarmElements();
+    this.attachAudioElement(null);
     this.elements = [null, null];
     this.activeElementIndex = 0;
   }
 
   getActiveVideoElement(): HTMLVideoElement | null {
     return this.videoElement;
+  }
+
+  /**
+   * Attach the master-song audio element. While present, playback keeps it
+   * synced to the cut timeline (segment musicStart + offset into the cut), so
+   * previews play against the real track instead of raw source-clip audio.
+   */
+  attachAudioElement(audioElement: HTMLAudioElement | null) {
+    if (this.audioElement && this.audioElement !== audioElement) {
+      this.audioElement.pause();
+    }
+    this.audioElement = audioElement;
+  }
+
+  private getMasterAudioTargetTime(): number {
+    if (!this.videoElement) return 0;
+    const currentSegment = this.segments[this.currentIndex];
+    if (!currentSegment) return 0;
+    return getMasterAudioTimeForPosition(this.segments, this.currentIndex, this.videoElement.currentTime);
+  }
+
+  private startMasterAudio() {
+    const audio = this.audioElement;
+    if (!audio) return;
+    try {
+      audio.currentTime = this.getMasterAudioTargetTime();
+    } catch {
+      // Metadata may not be loaded yet; the drift loop corrects once playable.
+    }
+    void audio.play().catch(() => {
+      // Autoplay policy or missing source: video playback continues silently.
+    });
+  }
+
+  private pauseMasterAudio() {
+    this.audioElement?.pause();
+  }
+
+  private correctMasterAudioDrift() {
+    const audio = this.audioElement;
+    if (!audio || audio.paused) return;
+    const target = this.getMasterAudioTargetTime();
+    if (Math.abs(audio.currentTime - target) > MASTER_AUDIO_DRIFT_TOLERANCE_SECONDS) {
+      try {
+        audio.currentTime = target;
+      } catch {
+        // Seek before metadata is a no-op; next tick retries.
+      }
+    }
   }
 
   private applyElementVisibility() {
@@ -142,10 +198,12 @@ export class BrowserPreviewPlayer {
     if (!this.videoElement || this.segments.length === 0) return;
     this.status = "loading";
     this.emit();
+    const token = ++this.playbackToken;
 
     try {
-      await this.playSegment(this.currentIndex, ++this.playbackToken);
+      await this.playSegment(this.currentIndex, token);
     } catch (error) {
+      if (token !== this.playbackToken) return;
       this.status = "error";
       this.currentSegmentEndTime = null;
       this.errorMessage = error instanceof Error ? error.message : "Playback failed.";
@@ -157,6 +215,8 @@ export class BrowserPreviewPlayer {
   pause() {
     if (!this.videoElement) return;
     this.videoElement.pause();
+    this.pauseMasterAudio();
+    this.playbackToken++;
     this.status = "paused";
     this.stopProgressLoop();
     this.emit();
@@ -167,26 +227,52 @@ export class BrowserPreviewPlayer {
 
     if (this.currentSegmentEndTime !== null && this.status === "paused") {
       const token = ++this.playbackToken;
-      this.videoElement.play().catch(() => {});
-      this.status = "playing";
-      this.startProgressLoop();
-      this.emit();
-
-      this.waitForSegmentEnd(this.currentSegmentEndTime, token)
-        .then(() => this.advanceToNext(token))
-        .catch(() => {});
+      const endTime = this.currentSegmentEndTime;
+      void this.videoElement.play()
+        .then(() => {
+          if (token !== this.playbackToken) return;
+          this.startMasterAudio();
+          this.status = "playing";
+          this.startProgressLoop();
+          this.emit();
+          return this.waitForSegmentEnd(endTime, token)
+            .then(() => this.advanceToNext(token));
+        })
+        .catch(() => {
+          if (token !== this.playbackToken) return;
+          this.failPlayback("Could not resume preview playback.");
+        });
       return;
     }
 
-    this.videoElement.play().catch(() => {});
-    this.status = "playing";
-    this.startProgressLoop();
+    const token = this.playbackToken;
+    void this.videoElement.play()
+      .then(() => {
+        if (token !== this.playbackToken) return;
+        this.startMasterAudio();
+        this.status = "playing";
+        this.startProgressLoop();
+        this.emit();
+      })
+      .catch(() => {
+        if (token !== this.playbackToken) return;
+        this.failPlayback("Could not resume preview playback.");
+      });
+  }
+
+  private failPlayback(message: string) {
+    this.stopProgressLoop();
+    this.pauseMasterAudio();
+    this.currentSegmentEndTime = null;
+    this.status = "error";
+    this.errorMessage = message;
     this.emit();
   }
 
   stop() {
     this.playbackToken++;
     this.stopProgressLoop();
+    this.pauseMasterAudio();
     this.currentSegmentEndTime = null;
     this.nextSegmentIsLive = false;
     for (const element of this.elements) {
@@ -284,6 +370,7 @@ export class BrowserPreviewPlayer {
 
     this.status = "playing";
     this.currentSegmentEndTime = segment.endTime;
+    this.startMasterAudio();
     this.startProgressLoop();
     this.emit();
 
@@ -306,18 +393,38 @@ export class BrowserPreviewPlayer {
     if (token !== this.playbackToken) return;
 
     if (standby && nextSegment && standbyReady) {
-      void standby.play().catch(() => {});
-      this.activeElementIndex = this.activeElementIndex === 0 ? 1 : 0;
-      this.applyElementVisibility();
-      video.pause();
-      this.nextSegmentIsLive = true;
-      this.stopProgressLoop();
+      try {
+        await standby.play();
+      } catch {
+        // Standby refused to start (errored or undecodable source). currentIndex
+        // still points at the finished cut, so the single advanceToNext fallback
+        // below replays the standby's segment (currentIndex + 1) on the visible
+        // element — identical to the never-staged path; no cut is skipped.
+        standbyReady = false;
+      }
+      if (token !== this.playbackToken || this.status !== "playing") {
+        // stop/seek/pause/newer chain invalidated this one while play() was
+        // pending. Only silence the standby if this chain still owns it — a
+        // newer chain may have repurposed the same element for the same URL.
+        if (this.standbyElement === standby && this.elementOwnerTokens.get(standby) === token) {
+          standby.pause();
+        }
+        return;
+      }
+      if (standbyReady) {
+        this.activeElementIndex = this.activeElementIndex === 0 ? 1 : 0;
+        this.applyElementVisibility();
+        video.pause();
+        this.nextSegmentIsLive = true;
+        this.stopProgressLoop();
+      }
     }
 
     await this.advanceToNext(token);
   }
 
   private async prepareVisibleVideo(video: HTMLVideoElement, segment: PreviewSegment, token: number) {
+    this.elementOwnerTokens.set(video, token);
     const sameSource = video.currentSrc === segment.videoUrl || video.src === segment.videoUrl;
     if (!sameSource) {
       video.pause();
@@ -395,6 +502,7 @@ export class BrowserPreviewPlayer {
     const nextIndex = this.currentIndex + 1;
     if (nextIndex >= this.segments.length) {
       this.stopProgressLoop();
+      this.pauseMasterAudio();
       this.currentSegmentEndTime = null;
       this.status = "ended";
       this.emit();
@@ -406,6 +514,7 @@ export class BrowserPreviewPlayer {
     } catch (error) {
       if (token !== this.playbackToken) return;
       this.stopProgressLoop();
+      this.pauseMasterAudio();
       this.currentSegmentEndTime = null;
       this.status = "error";
       this.errorMessage = error instanceof Error ? error.message : "Segment playback failed.";
@@ -419,6 +528,7 @@ export class BrowserPreviewPlayer {
     if (video?.requestVideoFrameCallback) {
       const tick: FrameCallback = () => {
         if (this.status === "playing") {
+          this.correctMasterAudioDrift();
           this.emit();
           this.progressFrameCallbackId = video.requestVideoFrameCallback?.(tick) ?? null;
         }
@@ -429,6 +539,7 @@ export class BrowserPreviewPlayer {
 
     const tick = () => {
       if (this.status === "playing") {
+        this.correctMasterAudioDrift();
         this.emit();
       }
       this.progressRafId = requestAnimationFrame(tick);
@@ -514,6 +625,34 @@ export class BrowserPreviewPlayer {
 
 export function createPreviewPlayerState(): PreviewPlayerState {
   return { ...STATE_IDLE };
+}
+
+/**
+ * Master-song time for a cut position. Prefers the segment's own musicStart
+ * (exact across non-contiguous edits); falls back to elapsed preview time
+ * offset by the first segment's musicStart when music times are missing.
+ */
+export function getMasterAudioTimeForPosition(
+  segments: PreviewSegment[],
+  currentIndex: number,
+  segmentVideoTime: number,
+): number {
+  const segment = segments[currentIndex];
+  if (!segment) return 0;
+
+  const offsetIntoSegment = Math.max(0, segmentVideoTime - segment.startTime);
+  if (Number.isFinite(segment.musicStart)) {
+    return Math.max(0, segment.musicStart! + offsetIntoSegment);
+  }
+
+  let elapsed = 0;
+  for (let index = 0; index < currentIndex; index += 1) {
+    const prior = segments[index];
+    if (prior) elapsed += prior.endTime - prior.startTime;
+  }
+  const firstMusicStart = segments[0]?.musicStart;
+  const base = Number.isFinite(firstMusicStart) ? firstMusicStart! : 0;
+  return Math.max(0, base + elapsed + offsetIntoSegment);
 }
 
 export function getWarmSegmentTargets(params: {
