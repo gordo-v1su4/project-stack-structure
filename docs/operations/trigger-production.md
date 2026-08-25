@@ -5,7 +5,7 @@ Project Stack Structure uses its own Trigger.dev project at
 
 - Project ref: `proj_wlrcsfnmovzmdwzojzfe`
 - Production dashboard: `https://trigger.v1su4.dev/orgs/v1su4-91d9/projects/project-stack-structure-C5T7/env/prod`
-- Platform, CLI, SDK, build, and React hooks: `4.5.3`
+- Platform, CLI, SDK, build, and React hooks: `4.5.12`
 - Production deployment host: VM100 Linux
 - Authoritative application data: RustFS project JSON, analysis manifests, and generated objects
 
@@ -108,7 +108,8 @@ gitignored bootstrap/recovery fallback. Never print either file.
 6. Query the current production worker and compare all 15 task IDs with the
    table above before triggering acceptance runs.
 
-The deploy script refuses non-Linux hosts, pins CLI `4.5.3`, uses
+The deploy script refuses non-Linux hosts, verifies that SDK, build, and React
+hooks use one exact version, derives the CLI version from that shared pin, uses
 `--local-build`, identifies the deployed version/code, and pushes that exact
 image to VM100's Trigger registry.
 
