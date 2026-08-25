@@ -8,6 +8,14 @@ mock.module("@/auth", () => ({
 }));
 
 mock.module("@/lib/mediaGateway", () => ({
+  normalizeMediaPath: (value: string) => value,
+  getMediaGatewayConfig: () => ({
+    url: "https://media.test",
+    token: "test-token",
+    userId: "test-user",
+    bucket: "test-bucket",
+    uploadPrefix: "uploads",
+  }),
   uploadFileToMediaGateway: async ({ file }: { file: File }) => ({
     bucket: "test-bucket",
     objectKey: `uploads/${file.name}`,
