@@ -180,7 +180,6 @@ export default function StudioApp() {
   const [browserPreviewState, setBrowserPreviewState] = useState<PreviewPlayerState>(createPreviewPlayerState);
   const [isBrowserPreviewActive, setIsBrowserPreviewActive] = useState(false);
   const [isPreviewExpanded, setIsPreviewExpanded] = useState(false);
-  const [useSourceAudio, setUseSourceAudio] = useState(false);
   const [retainedBrowserPreviewSegments, setRetainedBrowserPreviewSegments] = useState<PreviewSegment[]>([]);
   const [retainedPreviewEffectCues, setRetainedPreviewEffectCues] = useState<ShaderEffectCue[]>([]);
   const lastPreviewEffectCuesRef = useRef<ShaderEffectCue[]>([]);
@@ -299,12 +298,11 @@ export default function StudioApp() {
           matchLyricMergeWindow,
           colorGradient,
           shaderPresetId,
-          useSourceAudio,
           isPreviewExpanded,
         },
       },
     };
-  }, [activeProjectId, activeProjectName, beatJoinAnalysis, captionMode, colorGradient, draftRestored, generatedAssets, isPreviewExpanded, matchLyricCueBlend, matchLyricMergeWindow, matchMode, matchOnsetDensity, musicVideoProject, referenceAssets, shaderPresetId, splitMode, storyState, tab, useSourceAudio, videoSources]);
+  }, [activeProjectId, activeProjectName, beatJoinAnalysis, captionMode, colorGradient, draftRestored, generatedAssets, isPreviewExpanded, matchLyricCueBlend, matchLyricMergeWindow, matchMode, matchOnsetDensity, musicVideoProject, referenceAssets, shaderPresetId, splitMode, storyState, tab, videoSources]);
 
   useEffect(() => {
     if (!draftRestored) return;
@@ -387,7 +385,6 @@ export default function StudioApp() {
     if (workflowUi?.shaderPresetId && MUSIC_VIDEO_SHADER_PRESETS.some((preset) => preset.id === workflowUi.shaderPresetId)) {
       setShaderPresetId(workflowUi.shaderPresetId as (typeof MUSIC_VIDEO_SHADER_PRESETS)[number]["id"]);
     }
-    if (workflowUi?.useSourceAudio !== undefined) setUseSourceAudio(workflowUi.useSourceAudio);
     if (workflowUi?.isPreviewExpanded !== undefined) setIsPreviewExpanded(workflowUi.isPreviewExpanded);
     setFinalExportUrl(null);
     setFinalExportName(null);
@@ -1500,7 +1497,7 @@ export default function StudioApp() {
 
     if (tab === "shuffle" || tab === "join") {
       return effectiveClipOrder
-        .map((clipId) => {
+        .map((clipId): PreviewSegment | null => {
           const segment = workingBeatSplitSegments[clipId];
           if (!segment) return null;
           const sourceClipId = segment.sourceClipIds[0] ?? -1;
@@ -1511,6 +1508,8 @@ export default function StudioApp() {
             videoUrl: source.videoUrl,
             startTime: Math.max(0, segment.start - offset),
             endTime: Math.max(0, segment.end - offset),
+            musicStart: segment.start,
+            musicEnd: segment.end,
             label: `SEG_${String(clipId + 1).padStart(2, "0")}`,
           };
         })
@@ -1519,7 +1518,7 @@ export default function StudioApp() {
 
     if (tab === "beatjoin" && arrangementSegments.length > 0) {
       return arrangementSegments
-        .map((segment) => {
+        .map((segment): PreviewSegment | null => {
           const source = videoSources[segment.clipId];
           if (!source) return null;
           const offset = getSourceClipTimeOffset(sourceClips, segment.clipId);
@@ -1527,6 +1526,8 @@ export default function StudioApp() {
             videoUrl: source.videoUrl,
             startTime: Math.max(0, segment.start - offset),
             endTime: Math.max(0, segment.end - offset),
+            musicStart: segment.start,
+            musicEnd: segment.end,
             label: segment.detailLabel,
           };
         })
@@ -1633,10 +1634,9 @@ export default function StudioApp() {
       matchLyricMergeWindow,
       colorGradient,
       shaderPresetId,
-      useSourceAudio,
       isPreviewExpanded,
     },
-  }), [beatJoinAnalysis, captionMode, colorGradient, generatedAssets, isPreviewExpanded, matchLyricCueBlend, matchLyricMergeWindow, matchMode, matchOnsetDensity, musicVideoProject, referenceAssets, shaderPresetId, splitMode, storyState, tab, useSourceAudio, videoSources]);
+  }), [beatJoinAnalysis, captionMode, colorGradient, generatedAssets, isPreviewExpanded, matchLyricCueBlend, matchLyricMergeWindow, matchMode, matchOnsetDensity, musicVideoProject, referenceAssets, shaderPresetId, splitMode, storyState, tab, videoSources]);
 
   useEffect(() => {
     if (tab === "beatsplit" && committedBeatSplit && !isCommittedBeatSplitCurrent) {
@@ -1992,8 +1992,7 @@ export default function StudioApp() {
             audioTimeline={beatJoinAnalysis}
             isPreviewExpanded={isPreviewExpanded}
             onTogglePreviewExpanded={() => setIsPreviewExpanded((current) => !current)}
-            useSourceAudio={useSourceAudio}
-            onUseSourceAudioChange={setUseSourceAudio}
+            masterAudioUrl={beatJoinAnalysis?.audioUrl ?? null}
             finalExportStatus={finalExportStatus}
             finalExportUrl={finalExportUrl}
             finalExportName={finalExportName}

@@ -28,7 +28,7 @@ type PreviewPlayerProps = {
   effectCues?: ShaderEffectCue[];
   audioTimeline?: PreviewAudioTimeline | null;
   isExpanded?: boolean;
-  useSourceAudio?: boolean;
+  masterAudioUrl?: string | null;
 };
 
 export function PreviewPlayer({
@@ -39,10 +39,11 @@ export function PreviewPlayer({
   effectCues = [],
   audioTimeline = null,
   isExpanded = false,
-  useSourceAudio = false,
+  masterAudioUrl = null,
 }: PreviewPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const standbyVideoRef = useRef<HTMLVideoElement>(null);
+  const masterAudioRef = useRef<HTMLAudioElement>(null);
   const shaderCanvasRef = useRef<HTMLCanvasElement>(null);
   const shaderFallbackCanvasRef = useRef<HTMLCanvasElement>(null);
   const sourceMonitorRef = useRef<HTMLVideoElement>(null);
@@ -57,10 +58,11 @@ export function PreviewPlayer({
     if (videoRef.current) {
       player.attach(videoRef.current, standbyVideoRef.current);
     }
+    player.attachAudioElement(masterAudioUrl ? masterAudioRef.current : null);
     return () => {
       player.detach();
     };
-  }, [player]);
+  }, [player, masterAudioUrl]);
 
   useEffect(() => {
     if (segments === player.getSegments()) return;
@@ -168,7 +170,7 @@ export function PreviewPlayer({
             ref={videoRef}
             crossOrigin="anonymous"
             preload="auto"
-            muted={!useSourceAudio}
+            muted
             playsInline
             data-preview-engine={state.engineMode}
             data-shader-preview={hasShaderCues ? shaderMode : "disabled"}
@@ -180,11 +182,18 @@ export function PreviewPlayer({
             ref={standbyVideoRef}
             crossOrigin="anonymous"
             preload="auto"
-            muted={!useSourceAudio}
+            muted
             playsInline
             aria-hidden="true"
             data-preview-standby="true"
             className="pointer-events-none absolute inset-0 h-full w-full rounded-[2px] border border-[#181818] bg-[#050505] object-contain opacity-0"
+          />
+          <audio
+            ref={masterAudioRef}
+            src={masterAudioUrl ?? undefined}
+            preload="auto"
+            data-master-audio="true"
+            className="hidden"
           />
           {isExpanded ? (
             <div className="pointer-events-none absolute bottom-2 left-2 rounded-[2px] border border-[#151515] bg-[#050505cc] px-2 py-1 font-mono text-[8px] uppercase tracking-[0.12em] text-[#777]">
