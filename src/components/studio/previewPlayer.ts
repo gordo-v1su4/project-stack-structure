@@ -213,6 +213,7 @@ export class BrowserPreviewPlayer {
     if (!this.videoElement) return;
     this.videoElement.pause();
     this.pauseMasterAudio();
+    this.playbackToken++;
     this.status = "paused";
     this.stopProgressLoop();
     this.emit();
@@ -389,6 +390,7 @@ export class BrowserPreviewPlayer {
     if (token !== this.playbackToken) return;
 
     if (standby && nextSegment && standbyReady) {
+      const stagedSrc = standby.src;
       try {
         await standby.play();
       } catch {
@@ -399,9 +401,12 @@ export class BrowserPreviewPlayer {
         standbyReady = false;
       }
       if (token !== this.playbackToken || this.status !== "playing") {
-        // stop()/seek/pause invalidated this chain while play() was pending;
-        // never expose the standby element for a dead chain.
-        standby.pause();
+        // stop/seek/pause/newer chain invalidated this one while play() was
+        // pending. Only silence the standby if it is still the untouched
+        // staging slot — a newer chain may already have repurposed it.
+        if (this.standbyElement === standby && (standby.src === stagedSrc || standby.currentSrc === stagedSrc)) {
+          standby.pause();
+        }
         return;
       }
       if (standbyReady) {

@@ -310,6 +310,42 @@ describe("BrowserPreviewPlayer master audio", () => {
     expect(player.getState().status).toBe("idle");
     expect(player.getState().errorMessage).toBeNull();
   });
+
+  test("pause during a pending resume keeps the preview paused", async () => {
+    const originalRaf = globalThis.requestAnimationFrame;
+    const originalCancelRaf = globalThis.cancelAnimationFrame;
+    globalThis.requestAnimationFrame = (() => 0) as typeof requestAnimationFrame;
+    globalThis.cancelAnimationFrame = (() => undefined) as typeof cancelAnimationFrame;
+    (globalThis as Record<string, unknown>).HTMLMediaElement ??= { HAVE_METADATA: 1, HAVE_CURRENT_DATA: 2 };
+
+    try {
+      const player = new BrowserPreviewPlayer({ warmSourceLimit: 0 });
+      const video = new FakeVideoElement();
+      player.attach(video as unknown as HTMLVideoElement);
+      player.load([{ videoUrl: "blob:a", startTime: 0, endTime: 2, label: "SEG_01" }]);
+
+      player.play();
+      await flushAsync();
+      expect(player.getState().status).toBe("playing");
+
+      player.pause();
+      expect(player.getState().status).toBe("paused");
+
+      let resolvePlay: () => void = () => {};
+      video.play = () => new Promise<void>((resolve) => { resolvePlay = resolve; });
+      player.resume();
+      player.pause();
+      resolvePlay();
+      await flushAsync();
+
+      expect(player.getState().status).toBe("paused");
+      expect(player.getState().errorMessage).toBeNull();
+      expect(video.paused).toBe(true);
+    } finally {
+      globalThis.requestAnimationFrame = originalRaf;
+      globalThis.cancelAnimationFrame = originalCancelRaf;
+    }
+  });
 });
 
 describe("BrowserPreviewPlayer double buffering", () => {
