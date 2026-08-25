@@ -7,7 +7,6 @@ import { buildArrangementSegments } from "./studio/arrangementBuilder";
 import type { ArrangementSegment } from "./studio/arrangementBuilder";
 import { NAV } from "./studio/constants";
 import { mergeUploadedVideoSourceUpdate, needsSceneDetectionRetry, prepareVideoSources, rerunSourceSceneAnalysis, revokePreparedVideoSources, selectSceneRetrySources } from "./studio/mediaUpload";
-import { uploadFileInChunks } from "./studio/chunkedUploadClient";
 import type { VideoSceneUpdate } from "./studio/mediaUpload";
 import { buildEditPlanPreviewSegments, normalizeStoryEditSettings, type EditPlanPreviewSegment, type MusicVideoProject } from "./studio/musicVideoProject";
 import { selectStorySectionCandidate } from "./studio/musicVideoProjectSelection";
@@ -1094,6 +1093,42 @@ export default function StudioApp() {
             return scoped ? { ...source, storageBucket: scoped.bucket, storagePath: scoped.objectKey } : source;
           }));
 
+          // Persist the migrated references immediately so a reload before the
+          // next autosave cannot resurrect the unscoped keys.
+          const migratedAnalysis = { ...beatJoinAnalysis, storageBucket: scopedAudio.bucket, storagePath: scopedAudio.objectKey };
+          const migratedSources = videoSources.map((source) => {
+            const index = uniqueVideoUrls.indexOf(source.videoUrl);
+            const scoped = index >= 0 ? scopedVideoRefs[index] : undefined;
+            return scoped ? { ...source, storageBucket: scoped.bucket, storagePath: scoped.objectKey } : source;
+          });
+          await saveStudioProjectDraft(
+            {
+              analysis: migratedAnalysis,
+              videoSources: migratedSources,
+              storyState,
+              musicVideoProject,
+              referenceAssets,
+              generatedAssets,
+              captionSettings: buildSceneCaptionSettings(captionMode, beatJoinAnalysis, storyState),
+              workflowUiSettings: {
+                activeTab: tab,
+                splitMode,
+                matchMode,
+                matchOnsetDensity,
+                matchLyricCueBlend,
+                matchLyricMergeWindow,
+                colorGradient,
+                shaderPresetId,
+                shaderAccentKinds,
+                isPreviewExpanded,
+              },
+            },
+            {
+              audioFile: audioFileRef.current,
+              videoFilesByMediaKey: videoFilesByMediaKeyRef.current,
+            },
+          );
+
           const retryForm = buildBaseForm();
           attachDurableRefs(retryForm, scopedAudio, scopedVideoRefs);
           outcome = await sendExportForm(retryForm);
@@ -1386,10 +1421,6 @@ export default function StudioApp() {
   }
 
   async function reuploadThroughScopedPath(file: File, folderBase: string): Promise<{ bucket: string; objectKey: string }> {
-    const chunked = await uploadFileInChunks(file, folderBase);
-    if (chunked && chunked.chunks[0]) {
-      return { bucket: chunked.chunks[0].bucket, objectKey: chunked.chunks[0].objectKey };
-    }
     const formData = new FormData();
     formData.append("file", file);
     formData.append("folder", folderBase);
