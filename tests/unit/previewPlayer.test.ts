@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   BrowserPreviewPlayer,
   createPreviewPlayerState,
+  getMasterAudioTimeForPosition,
   getWarmSegmentTargets,
   type PreviewSegment,
 } from "@/components/studio/previewPlayer";
@@ -181,6 +182,103 @@ async function flushAsync(rounds = 6) {
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
 }
+
+describe("getMasterAudioTimeForPosition", () => {
+  test("maps source-clip time onto the segment's music window", () => {
+    const segments: PreviewSegment[] = [
+      { videoUrl: "blob:a", startTime: 10, endTime: 14, label: "SEG_01", musicStart: 30, musicEnd: 34 },
+    ];
+
+    expect(getMasterAudioTimeForPosition(segments, 0, 10)).toBe(30);
+    expect(getMasterAudioTimeForPosition(segments, 0, 11.5)).toBe(31.5);
+    expect(getMasterAudioTimeForPosition(segments, 0, 14)).toBe(34);
+  });
+
+  test("clamps video time before the cut start to the music window start", () => {
+    const segments: PreviewSegment[] = [
+      { videoUrl: "blob:a", startTime: 10, endTime: 14, label: "SEG_01", musicStart: 30 },
+    ];
+
+    expect(getMasterAudioTimeForPosition(segments, 0, 8)).toBe(30);
+  });
+
+  test("advances across prior cuts using their music windows", () => {
+    const segments: PreviewSegment[] = [
+      { videoUrl: "blob:a", startTime: 0, endTime: 4, label: "SEG_01", musicStart: 8, musicEnd: 12 },
+      { videoUrl: "blob:b", startTime: 5, endTime: 9, label: "SEG_02", musicStart: 20, musicEnd: 24 },
+    ];
+
+    expect(getMasterAudioTimeForPosition(segments, 1, 5)).toBe(20);
+    expect(getMasterAudioTimeForPosition(segments, 1, 6.5)).toBe(21.5);
+  });
+
+  test("falls back to elapsed preview time when music times are missing", () => {
+    const segments: PreviewSegment[] = [
+      { videoUrl: "blob:a", startTime: 0, endTime: 4, label: "SEG_01" },
+      { videoUrl: "blob:b", startTime: 0, endTime: 5, label: "SEG_02" },
+    ];
+
+    expect(getMasterAudioTimeForPosition(segments, 1, 2)).toBe(6);
+  });
+
+  test("fallback is offset by the first segment's musicStart when only it has one", () => {
+    const segments: PreviewSegment[] = [
+      { videoUrl: "blob:a", startTime: 0, endTime: 4, label: "SEG_01", musicStart: 8 },
+      { videoUrl: "blob:b", startTime: 0, endTime: 5, label: "SEG_02" },
+    ];
+
+    expect(getMasterAudioTimeForPosition(segments, 1, 2)).toBe(14);
+  });
+
+  test("returns 0 for an out-of-range index", () => {
+    expect(getMasterAudioTimeForPosition([], 0, 5)).toBe(0);
+    expect(getMasterAudioTimeForPosition([{ videoUrl: "blob:a", startTime: 0, endTime: 1, label: "SEG_01" }], 3, 5)).toBe(0);
+  });
+});
+
+class FakeAudioElement {
+  currentTime = 0;
+  paused = true;
+
+  play() {
+    this.paused = false;
+    return Promise.resolve();
+  }
+
+  pause() {
+    this.paused = true;
+  }
+}
+
+describe("BrowserPreviewPlayer master audio", () => {
+  test("attachAudioElement pauses the previously attached element", () => {
+    const player = new BrowserPreviewPlayer();
+    const first = new FakeAudioElement();
+    const second = new FakeAudioElement();
+
+    player.attachAudioElement(first as unknown as HTMLAudioElement);
+    first.play();
+    expect(first.paused).toBe(false);
+
+    player.attachAudioElement(second as unknown as HTMLAudioElement);
+    expect(first.paused).toBe(true);
+  });
+
+  test("stop and detach pause the attached master audio", () => {
+    const player = new BrowserPreviewPlayer();
+    const audio = new FakeAudioElement();
+    player.attachAudioElement(audio as unknown as HTMLAudioElement);
+    player.load([{ videoUrl: "blob:a", startTime: 0, endTime: 2, label: "SEG_01" }]);
+
+    audio.play();
+    player.stop();
+    expect(audio.paused).toBe(true);
+
+    audio.play();
+    player.detach();
+    expect(audio.paused).toBe(true);
+  });
+});
 
 describe("BrowserPreviewPlayer double buffering", () => {
   test("stages the next cut on the standby element and swaps at the boundary without reloading the visible one", async () => {
