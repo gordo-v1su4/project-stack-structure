@@ -1,5 +1,6 @@
 export type MediaGatewayConfig = {
   url: string;
+  internalUrl: string | null;
   token: string;
   userId: string;
   bucket: string;
@@ -47,7 +48,7 @@ export async function downloadMediaGatewayFile(args: {
   }
 
   const fetcher = args.fetchImpl ?? fetch;
-  const response = await fetcher(buildMediaGatewayFileUrl(config, args.bucket, args.objectKey), {
+  const response = await fetcher(buildMediaGatewayFileUrl({ url: config.internalUrl || config.url }, args.bucket, args.objectKey), {
     headers: { Authorization: `Bearer ${config.token}` },
     redirect: "follow",
   });
@@ -127,6 +128,7 @@ export function normalizeMediaPath(value: string) {
 
 export function getMediaGatewayConfig(env: Record<string, string | undefined> = process.env): MediaGatewayConfig | null {
   const url = env.MEDIA_GATEWAY_URL || env.RUSTFS_MEDIA_API_URL;
+  const internalUrl = env.MEDIA_GATEWAY_INTERNAL_URL?.trim() || null;
   const token = env.MEDIA_GATEWAY_TOKEN || env.MEDIA_API_TOKEN;
   const userId = env.MEDIA_GATEWAY_USER_ID || env.STACK_STRUCTURE_MEDIA_USER_ID || "stack-structure";
   const bucket = env.MEDIA_GATEWAY_BUCKET || "stack-structure";
@@ -141,6 +143,7 @@ export function getMediaGatewayConfig(env: Record<string, string | undefined> = 
 
   return {
     url: url.replace(/\/+$/, ""),
+    internalUrl: internalUrl?.replace(/\/+$/, "") || null,
     token,
     userId,
     bucket,
@@ -188,7 +191,8 @@ export async function uploadFileToMediaGateway(args: {
   formData.append("file", args.file, args.file.name);
 
   const fetcher = args.fetchImpl ?? fetch;
-  const response = await fetcher(`${config.url}/upload`, {
+  // Worker hosts resolve the gateway locally so large payloads bypass Cloudflare's body cap.
+  const response = await fetcher(`${(config.internalUrl || config.url)}/upload`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${config.token}`,
