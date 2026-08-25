@@ -145,13 +145,13 @@ export function ComposeTab({
             const preset = getMusicVideoShaderPreset(shaderPresetId);
             const resolvedKind = accentKinds[sync] ?? preset[`${sync}Kind` as keyof typeof preset] as ShaderCueKind;
             return (
-              <label key={sync} className="flex items-center justify-between gap-2 rounded-[2px] border border-[#171717] bg-[#070707] px-2 py-1.5">
+              <label key={sync} className="flex flex-col items-stretch gap-2 rounded-[2px] border border-[#171717] bg-[#070707] px-2 py-1.5 sm:flex-row sm:items-center sm:justify-between">
                 <span className="text-[8px] uppercase tracking-[0.16em] text-[#555]">{label}</span>
                 <select
                   data-accent-select={sync}
                   value={resolvedKind}
                   onChange={(event) => onAccentKindChange?.(sync, event.target.value as ShaderCueKind)}
-                  className="rounded-[2px] border border-[#242424] bg-[#050505] px-1.5 py-1 font-mono text-[9px] text-[#bdbdbd] outline-none focus:border-[#e05c00]"
+                  className="w-full min-w-0 rounded-[2px] border border-[#242424] bg-[#050505] px-1.5 py-1 font-mono text-[9px] text-[#bdbdbd] outline-none focus:border-[#e05c00] sm:w-auto"
                 >
                   {SHADER_CUE_KINDS.map((kind) => (
                     <option key={kind} value={kind}>{kind}</option>

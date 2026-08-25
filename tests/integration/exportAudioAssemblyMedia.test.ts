@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect } from "bun:test";
 import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
