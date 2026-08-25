@@ -95,14 +95,6 @@ export function mediaUploadBelongsToOwner(objectKey: string, ownerId: string) {
     || (parts[1] === "source-audio" && parts[2] === "chunks" && parts[3] === ownerSegment);
 }
 
-export function isUnscopedLegacyMediaKey(objectKey: string) {
-  const normalized = normalizePath(objectKey);
-  if (!normalized.startsWith("media-uploads/")) return false;
-  return /^media-uploads\/video-source\//i.test(normalized)
-    || /^media-uploads\/source-audio\//i.test(normalized)
-    || /^media-uploads\/e2e-validation\//i.test(normalized);
-}
-
 export function essentiaUploadOwnerSegment(ownerId: string) {
   return ownerId.trim().replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 128) || "unknown-user";
 }

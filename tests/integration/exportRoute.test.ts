@@ -16,6 +16,8 @@ mock.module("@/lib/mediaGateway", () => ({
     bucket: "test-bucket",
     uploadPrefix: "uploads",
   }),
+  buildMediaGatewayFileUrl: (config: { url: string }, bucket: string, objectKey: string) =>
+    `${config.url}/files/${bucket}/${objectKey}`,
   uploadFileToMediaGateway: async ({ file }: { file: File }) => ({
     bucket: "test-bucket",
     objectKey: `uploads/${file.name}`,
