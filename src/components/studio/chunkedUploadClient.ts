@@ -3,6 +3,58 @@ import {
   type ChunkedUploadManifest,
 } from "@/lib/chunkedMediaUpload";
 
+export const MAX_CONCURRENT_CHUNK_UPLOADS = 4;
+export const DEFAULT_CHUNK_UPLOAD_TIMEOUT_MS = 60_000;
+
+let activeChunkUploads = 0;
+const chunkUploadWaiters: Array<() => void> = [];
+
+async function withChunkUploadSlot<T>(upload: () => Promise<T>): Promise<T> {
+  if (activeChunkUploads >= MAX_CONCURRENT_CHUNK_UPLOADS) {
+    await new Promise<void>((resolve) => chunkUploadWaiters.push(resolve));
+  }
+
+  activeChunkUploads += 1;
+  try {
+    return await upload();
+  } finally {
+    activeChunkUploads -= 1;
+    chunkUploadWaiters.shift()?.();
+  }
+}
+
+async function fetchChunkUpload(
+  endpoint: string,
+  formData: FormData,
+  timeoutMs: number,
+) {
+  const controller = new AbortController();
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timedOut = new Promise<never>((_resolve, reject) => {
+    timeout = setTimeout(() => {
+      controller.abort();
+      reject(new Error(`Chunk upload timed out after ${Math.round(timeoutMs / 1000)}s.`));
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([
+      (async () => {
+        const response = await fetch(endpoint, {
+          method: "POST",
+          body: formData,
+          signal: controller.signal,
+        });
+        const payload: unknown = await response.json().catch(() => null);
+        return { response, payload };
+      })(),
+      timedOut,
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
 function readStringField(value: unknown, key: string) {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? typeof (value as Record<string, unknown>)[key] === "string"
@@ -19,7 +71,11 @@ function readStringField(value: unknown, key: string) {
 export async function uploadFileInChunks(
   file: File,
   folderBase: string,
-  options: { endpoint?: string; onPartUploaded?: (uploaded: number, total: number) => void } = {},
+  options: {
+    endpoint?: string;
+    onPartUploaded?: (uploaded: number, total: number) => void;
+    requestTimeoutMs?: number;
+  } = {},
 ): Promise<ChunkedUploadManifest | null> {
   if (file.size <= 4 * 1024 * 1024) return null;
 
@@ -36,8 +92,11 @@ export async function uploadFileInChunks(
     const formData = new FormData();
     formData.set("file", part);
     formData.set("folder", folder);
-    const response = await fetch(endpoint, { method: "POST", body: formData });
-    const payload: unknown = await response.json().catch(() => null);
+    const { response, payload } = await withChunkUploadSlot(() => fetchChunkUpload(
+      endpoint,
+      formData,
+      options.requestTimeoutMs ?? DEFAULT_CHUNK_UPLOAD_TIMEOUT_MS,
+    ));
     const bucket = readStringField(payload, "bucket");
     const objectKey = readStringField(payload, "objectKey") ?? readStringField(payload, "storagePath");
     if (!response.ok || !bucket || !objectKey) {
