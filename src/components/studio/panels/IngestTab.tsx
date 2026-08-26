@@ -441,13 +441,13 @@ function ReferenceSlotCard({
 function ReadinessCard({ label, value, detail, tone }: { label: string; value: string; detail: string; tone: ReadinessTone }) {
   const colors = toneColors(tone);
   return (
-    <div className={`rounded-[2px] border p-3 ${colors.border} ${colors.bg}`}>
-      <div className="mb-2 flex items-center justify-between gap-2">
+    <div className={`rounded-[2px] border p-2 ${colors.border} ${colors.bg}`}>
+      <div className="mb-1 flex items-center justify-between gap-2">
         <div className="text-[8px] uppercase tracking-[0.16em] text-[#5c5c5c]">{label}</div>
         <span className={`h-2 w-2 rounded-full ${colors.dot}`} />
       </div>
       <div className={`truncate font-mono text-[11px] ${colors.text}`}>{value}</div>
-      <div className="mt-2 line-clamp-2 text-[9px] leading-4 text-[#606060]" title={detail}>{detail}</div>
+      <div className="mt-1 truncate text-[8px] leading-4 text-[#606060]" title={detail}>{detail}</div>
     </div>
   );
 }
