@@ -164,8 +164,8 @@ export function PreviewPlayer({
 
   return (
     <div className={isExpanded ? "space-y-2" : "space-y-1.5"}>
-      <div className={isExpanded ? "grid gap-2 xl:grid-cols-[minmax(0,1.45fr)_minmax(260px,0.75fr)]" : "grid grid-cols-[minmax(150px,1fr)_minmax(150px,1fr)_minmax(120px,0.62fr)] gap-2 items-start"}>
-        <div className="relative min-w-0">
+      <div className={isExpanded ? "grid items-start gap-2 xl:grid-cols-[minmax(0,1.45fr)_minmax(260px,0.75fr)]" : "grid grid-cols-[minmax(150px,1fr)_minmax(150px,1fr)_minmax(120px,0.62fr)] gap-2 items-start"}>
+        <div className="relative min-w-0 self-start overflow-hidden bg-black">
           <video
             ref={videoRef}
             crossOrigin="anonymous"
@@ -174,7 +174,7 @@ export function PreviewPlayer({
             playsInline
             data-preview-engine={state.engineMode}
             data-shader-preview={hasShaderCues ? shaderMode : "disabled"}
-            className={`aspect-video rounded-[2px] border border-[#181818] bg-[#050505] object-contain ${isExpanded ? "w-full max-h-[68vh]" : "h-[96px] w-full"}`}
+            className={`block aspect-video rounded-[2px] border border-[#181818] bg-black object-contain ${isExpanded ? "w-full" : "h-[96px] w-full"}`}
           />
           {/* Standby buffer: the next cut is staged here off-screen, then the
               player swaps opacities at the boundary — no black frame. */}
@@ -332,7 +332,7 @@ export function PreviewPlayer({
                   playsInline
                   preload="metadata"
                   data-source-monitor="current"
-                  className="h-full w-full object-cover opacity-75"
+                  className="h-full w-full object-contain opacity-75"
                   onLoadedMetadata={(event) => {
                     event.currentTarget.currentTime = Math.max(0, currentSegment.startTime);
                   }}
