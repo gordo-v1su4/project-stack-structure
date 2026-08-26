@@ -110,14 +110,14 @@ describe("previewGeneration integration", () => {
     expect(error?.code).toBe("missing-input");
   });
 
-  test("frame-aligns segment durations and scales concat tolerance with segment count", () => {
+  test("frame-aligns segment durations and uses a constant two-frame concat tolerance", () => {
     expect(frameAlignedDuration(0.5)).toBe(0.5);
     expect(frameAlignedDuration(0.52)).toBe(0.5);
     expect(frameAlignedDuration(0)).toBeGreaterThan(0);
     expect(frameAlignedDuration(246.685)).toBeCloseTo(246.667, 3);
 
-    expect(concatPreviewDurationTolerance(1)).toBeCloseTo(0.15);
-    expect(concatPreviewDurationTolerance(155)).toBeGreaterThanOrEqual(2.885);
+    expect(concatPreviewDurationTolerance(1)).toBeCloseTo(2 / 24, 3);
+    expect(concatPreviewDurationTolerance(155)).toBeCloseTo(2 / 24, 3);
   });
 
   mediaFixtureTest(hasAudioVideoFixtures())("rejects audio-only input for video preview generation", async () => {
