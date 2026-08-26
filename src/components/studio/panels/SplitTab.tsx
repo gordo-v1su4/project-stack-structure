@@ -423,7 +423,7 @@ function getModeWaitLabel(option: SplitModeOption, stats: ReturnType<typeof getS
 
 function describeSegment(segment: SourceTimelineSegment, index: number, sources: UploadedVideoSource[], sourceClips: SourceClipSpan[]) {
   const sourceId = segment.sourceClipIds[0] ?? -1;
-  const source = sources.find((candidate) => candidate.id === sourceId) ?? sources[sourceId];
+  const source = sources.find((candidate) => candidate.id === sourceId);
   const scene = resolveScene(segment, source, sourceClips);
   const captionError = scene?.captionError ?? source?.captionError ?? null;
   const caption = scene?.caption ?? null;

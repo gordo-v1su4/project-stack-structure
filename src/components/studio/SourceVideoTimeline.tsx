@@ -25,7 +25,7 @@ export function SourceVideoTimeline({
       </div>
 
       <div className="absolute inset-x-0 top-[22px] bottom-0 flex">
-        {sources.map((source, index) => {
+        {sources.map((source) => {
           const width = `${(source.duration / Math.max(totalDuration, 0.001)) * 100}%`;
 
           return (
@@ -43,7 +43,7 @@ export function SourceVideoTimeline({
               <div className="absolute inset-0 bg-gradient-to-b from-[#00000055] via-[#00000022] to-[#00000099]" />
               <div className="absolute inset-y-0 right-0 w-px bg-[#121212]" />
               <div className="absolute left-[6px] top-[6px] rounded-[2px] bg-[#00000088] px-1 py-[2px] text-[8px] font-mono text-[#e0e0e0]">
-                S{index + 1}
+                S{source.id + 1}
               </div>
               <div className="absolute bottom-[6px] left-[6px] max-w-[70%] truncate rounded-[2px] bg-[#00000088] px-1 py-[2px] text-[7px] font-mono text-[#cfcfcf]">
                 {source.name}

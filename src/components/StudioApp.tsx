@@ -72,6 +72,7 @@ import {
 import { mergeSceneIntoPrevious } from "./studio/sceneSplit";
 import { buildAudioDrivenSegments, buildBeatSegments, buildSourceClipSpans, buildUnifiedSplitSegments, getSourceClipTimeOffset } from "./studio/sourceTimeline";
 import type { SourceClipSpan, SourceTimelineSegment, SplitMode } from "./studio/sourceTimeline";
+import { assignVideoSourceIds, getNextVideoSourceId, removeVideoSourceById, withVideoSourceId } from "./studio/videoSourceIdentity";
 import type {
   BeatJoinAnalysis,
   ColorGradient,
@@ -498,7 +499,7 @@ export default function StudioApp() {
   const segmentPreviews = useMemo<SegmentPreview[]>(
     () =>
       workingBeatSplitSegments.map((segment, index) => {
-        const source = videoSources[segment.sourceClipIds[0] ?? -1];
+        const source = videoSources.find((candidate) => candidate.id === (segment.sourceClipIds[0] ?? -1));
         const scene = resolveSceneForTimelineSegment(videoSources, sourceClips, segment);
         return {
           clipId: index,
@@ -553,7 +554,7 @@ export default function StudioApp() {
 
             const nextSources = currentSources.map((currentSource, index) => {
               if (index !== sourceIndex) return currentSource;
-              return remapVideoSourceId(
+              return withVideoSourceId(
                 mergeUploadedVideoSourceUpdate(currentSource, source),
                 currentSource.id,
               );
@@ -590,10 +591,9 @@ export default function StudioApp() {
           }
 
           const uniquePrepared = uniquePreparedPairs.map(({ source }) => source);
-          const nextSources =
-            mode === "append"
-              ? [...currentSources, ...uniquePrepared].map((source, index) => remapVideoSourceId(source, index))
-              : uniquePrepared.map((source, index) => remapVideoSourceId(source, index));
+          const nextSources = mode === "append"
+            ? [...currentSources, ...assignVideoSourceIds(uniquePrepared, getNextVideoSourceId(currentSources))]
+            : assignVideoSourceIds(uniquePrepared, 0);
 
           const nextVideoFiles = mode === "append" ? new Map(videoFilesByMediaKeyRef.current) : new Map<string, Blob>();
           for (const nextSource of nextSources) {
@@ -645,9 +645,7 @@ export default function StudioApp() {
 
       revokePreparedVideoSources([sourceToRemove]);
       videoFilesByMediaKeyRef.current.delete(buildVideoMediaKey(sourceToRemove));
-      const nextSources = currentSources
-        .filter((source) => source.id !== sourceId)
-        .map((source, index) => remapVideoSourceId(source, index));
+      const nextSources = removeVideoSourceById(currentSources, sourceId);
 
       setCommittedBeatSplit(null);
       setJoinClipStates({});
@@ -697,7 +695,7 @@ export default function StudioApp() {
             if (buildVideoSourceKey(currentSource) !== key) return currentSource;
             // Replace instead of merge: rerun updates carry the full source state
             // and must be able to clear stale sceneError/captionError values.
-            return remapVideoSourceId(
+            return withVideoSourceId(
               { ...source, videoUrl: currentSource.videoUrl, thumbnailUrl: currentSource.thumbnailUrl },
               currentSource.id,
             );
@@ -1693,7 +1691,7 @@ export default function StudioApp() {
           const segment = workingBeatSplitSegments[clipId];
           if (!segment) return null;
           const sourceClipId = segment.sourceClipIds[0] ?? -1;
-          const source = videoSources[sourceClipId];
+          const source = videoSources.find((candidate) => candidate.id === sourceClipId);
           if (!source) return null;
           const offset = getSourceClipTimeOffset(sourceClips, sourceClipId);
           return {
@@ -1711,9 +1709,10 @@ export default function StudioApp() {
     if (tab === "beatjoin" && arrangementSegments.length > 0) {
       return arrangementSegments
         .map((segment): PreviewSegment | null => {
-          const source = videoSources[segment.clipId];
+          const sourceClipId = workingBeatSplitSegments[segment.clipId]?.sourceClipIds[0] ?? -1;
+          const source = videoSources.find((candidate) => candidate.id === sourceClipId);
           if (!source) return null;
-          const offset = getSourceClipTimeOffset(sourceClips, segment.clipId);
+          const offset = getSourceClipTimeOffset(sourceClips, sourceClipId);
           return {
             videoUrl: source.videoUrl,
             startTime: Math.max(0, segment.start - offset),
@@ -2298,14 +2297,6 @@ function buildSceneCaptionSettings(
   };
 }
 
-function remapVideoSourceId(source: UploadedVideoSource, id: number): UploadedVideoSource {
-  return {
-    ...source,
-    id,
-    scenes: source.scenes?.map((scene) => ({ ...scene, sourceClipId: id })),
-  };
-}
-
 function formatSplitModeLabel(mode: SplitMode) {
   switch (mode) {
     case "scene":
@@ -2365,7 +2356,7 @@ function resolveSceneForTimelineSegment(
 ) {
   const sourceId = segment.sourceClipIds[0];
   if (sourceId === undefined) return null;
-  const source = sources[sourceId];
+  const source = sources.find((candidate) => candidate.id === sourceId);
   const span = sourceClips.find((clip) => clip.id === sourceId);
   if (!source || !span || !source.scenes?.length) return null;
 
