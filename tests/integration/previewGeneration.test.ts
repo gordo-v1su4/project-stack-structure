@@ -116,8 +116,8 @@ describe("previewGeneration integration", () => {
     expect(frameAlignedDuration(0)).toBeGreaterThan(0);
     expect(frameAlignedDuration(246.685)).toBeCloseTo(246.667, 3);
 
-    expect(concatPreviewDurationTolerance(1)).toBeCloseTo(0.15);
-    expect(concatPreviewDurationTolerance(155)).toBeGreaterThanOrEqual(2.885);
+    expect(concatPreviewDurationTolerance(1)).toBeCloseTo(2 / 24, 3);
+    expect(concatPreviewDurationTolerance(155)).toBeCloseTo(2 / 24, 3);
   });
 
   mediaFixtureTest(hasAudioVideoFixtures())("rejects audio-only input for video preview generation", async () => {

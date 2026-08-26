@@ -201,8 +201,9 @@ export async function generateConcatPreview(params: {
       );
     }
 
+    const segmentMetadata = await probeFn(segmentOutputPath);
     segmentPaths.push(segmentOutputPath);
-    segmentDurations.push(segmentDuration);
+    segmentDurations.push(segmentMetadata.duration);
   }
 
   const concatListPath = buildPreviewOutputPath({
@@ -269,8 +270,9 @@ export function frameAlignedDuration(seconds: number, fps = CONCAT_PREVIEW_FPS) 
   return Math.max(1 / fps, Math.round(seconds * fps) / fps);
 }
 
-export function concatPreviewDurationTolerance(segmentCount: number, fps = CONCAT_PREVIEW_FPS) {
-  return Math.max(0.15, segmentCount / (fps * 2));
+export function concatPreviewDurationTolerance(_segmentCount: number, fps = CONCAT_PREVIEW_FPS) {
+  // Part durations are probed after each encode; only the final concat pass can drift.
+  return Math.max(0.05, 2 / fps);
 }
 
 export function createTempPreviewPath(requestKey: string) {
