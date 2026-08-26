@@ -44,4 +44,35 @@ describe("uploadFileInChunks", () => {
       globalThis.fetch = originalFetch;
     }
   });
+
+  test("times out stalled requests and releases slots for queued files", async () => {
+    const originalFetch = globalThis.fetch;
+    let fetchCalls = 0;
+
+    globalThis.fetch = ((_input, init) => {
+      fetchCalls += 1;
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+      });
+    }) as typeof fetch;
+
+    const files = Array.from({ length: MAX_CONCURRENT_CHUNK_UPLOADS + 1 }, (_, index) => (
+      new File(
+        [new Uint8Array(LARGE_UPLOAD_SINGLE_SHOT_MAX + 1)],
+        `stalled-${index}.mp4`,
+        { type: "video/mp4" },
+      )
+    ));
+
+    try {
+      const results = await Promise.allSettled(
+        files.map((file) => uploadFileInChunks(file, "media-uploads/video-source", { requestTimeoutMs: 10 })),
+      );
+
+      expect(results.every((result) => result.status === "rejected")).toBe(true);
+      expect(fetchCalls).toBe(files.length);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });
