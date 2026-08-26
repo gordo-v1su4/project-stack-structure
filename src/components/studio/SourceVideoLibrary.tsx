@@ -175,7 +175,7 @@ function SourceVideoPreviewDialog({ source, onClose }: { source: UploadedVideoSo
 
   return (
     <div
-      className="fixed inset-0 z-[80] flex items-center justify-center bg-black/75 p-4"
+      className="fixed inset-0 z-[80] flex items-center justify-center bg-black/85 p-4"
       role="dialog"
       aria-modal="true"
       aria-label={`Preview S${source.id + 1} ${source.name}`}
