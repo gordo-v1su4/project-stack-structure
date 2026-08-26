@@ -99,7 +99,10 @@ export function StudioRightPanel({
 
   return (
     <aside
-      className={`${isPreviewExpanded ? "h-[min(68vh,760px)]" : "h-[145px]"} relative w-full shrink-0 border-t border-[#181818] bg-[#0c0c0c] grid grid-cols-[minmax(150px,0.6fr)_minmax(170px,0.65fr)_minmax(190px,0.75fr)_minmax(420px,2.35fr)_minmax(190px,0.7fr)_minmax(160px,0.55fr)] overflow-x-hidden overflow-y-auto transition-[height] duration-200`}
+      className={`${isPreviewExpanded
+        ? "h-[min(68vh,760px)] grid-cols-1"
+        : "h-[145px] grid-cols-[minmax(150px,0.6fr)_minmax(170px,0.65fr)_minmax(190px,0.75fr)_minmax(420px,2.35fr)_minmax(190px,0.7fr)_minmax(160px,0.55fr)]"
+      } relative grid w-full shrink-0 items-start overflow-hidden border-t border-[#181818] bg-[#0c0c0c] transition-[height] duration-200`}
     >
       <button
         type="button"
@@ -109,7 +112,7 @@ export function StudioRightPanel({
       >
         ▼
       </button>
-      <div className="min-w-0 border-r border-[#181818] p-2.5">
+      <div className={`${isPreviewExpanded ? "hidden" : "block"} min-w-0 border-r border-[#181818] p-2.5`}>
         <div className="mb-1.5 text-[8px] uppercase tracking-[0.22em] text-[#343434]">Live Readout</div>
         <div className="space-y-[5px]">
           {readout.map(([k, v]) => (
@@ -121,7 +124,7 @@ export function StudioRightPanel({
         </div>
       </div>
 
-      <div className="min-w-0 border-r border-[#181818] p-2.5">
+      <div className={`${isPreviewExpanded ? "hidden" : "block"} min-w-0 border-r border-[#181818] p-2.5`}>
         <div className="mb-1.5 text-[8px] uppercase tracking-[0.22em] text-[#343434]">Next Step</div>
         <div className="rounded-[2px] border border-[#1d1208] bg-[#0d0803] px-2 py-[6px] text-[10px] leading-relaxed text-[#c07a3f]">
           {nextHint ?? "Work through the stages left to right; every stage dot turns green when it is ready."}
@@ -131,7 +134,7 @@ export function StudioRightPanel({
         </div>
       </div>
 
-      <div className="min-w-0 border-r border-[#181818] p-2.5">
+      <div className={`${isPreviewExpanded ? "hidden" : "block"} min-w-0 border-r border-[#181818] p-2.5`}>
         <div className="mb-1.5 text-[8px] uppercase tracking-[0.22em] text-[#343434]">Ranking Preview</div>
         <div className="space-y-[5px] text-[10px]">
           <div className="flex justify-between items-center">
@@ -158,7 +161,7 @@ export function StudioRightPanel({
         </div>
       </div>
 
-      <div className={`min-w-0 border-r border-[#181818] ${isPreviewExpanded ? "order-first col-span-3 p-3" : "p-2.5"}`}>
+      <div className={`min-w-0 self-start border-r border-[#181818] ${isPreviewExpanded ? "col-span-full h-full overflow-hidden p-3" : "p-2.5"}`}>
         <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
           <div className="text-[9px] uppercase tracking-[0.22em] text-[#343434]">
             {showBrowserPreview ? "Instant Preview" : "Prepared Preview"}
@@ -246,7 +249,7 @@ export function StudioRightPanel({
               controls
               preload="metadata"
               src={previewAssetUrl}
-              className="aspect-video w-full rounded-[2px] border border-[#181818] bg-[#050505]"
+              className="aspect-video w-full rounded-[2px] border border-[#181818] bg-black object-contain"
             />
             <div className="font-mono text-[9px] text-[#4d4d4d]">
               {previewAssetFileName ?? "Preview ready"}
@@ -262,7 +265,7 @@ export function StudioRightPanel({
         ) : null}
       </div>
 
-      <div className="min-w-0 border-r border-[#181818] p-2.5">
+      <div className={`${isPreviewExpanded ? "hidden" : "block"} min-w-0 border-r border-[#181818] p-2.5`}>
         <div className="mb-1.5 text-[8px] uppercase tracking-[0.22em] text-[#343434]">Activity</div>
         <div className="space-y-[4px]">
           {[
@@ -282,7 +285,7 @@ export function StudioRightPanel({
         </div>
       </div>
 
-      <div className="min-w-0 p-2.5">
+      <div className={`${isPreviewExpanded ? "hidden" : "block"} min-w-0 p-2.5`}>
         <div className="mb-1 text-[8px] uppercase tracking-[0.22em] text-[#343434]">Tip</div>
         <p className="text-[10px] leading-relaxed text-[#383838]">
           {tab === "shuffle" && shuffleMode === "motion" ? (
