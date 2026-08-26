@@ -314,6 +314,69 @@ describe("Next route Trigger.dev dispatch boundary", () => {
     expect(triggerMocks.triggerMediaSceneDetection).toHaveBeenCalledTimes(1);
   });
 
+  test("queues media scene detection from authenticated video chunk references", async () => {
+    resetMocks();
+    const uploadId = "87f25c0c-90f0-4c8d-8451-e7a08d56f57a";
+    const response = await postMediaJob(new Request("http://localhost/api/media/video/jobs", {
+      method: "POST",
+      body: JSON.stringify({
+        bucket: "stack-structure",
+        objectKey: "media-uploads/github-test-user/video-source/source.mp4",
+        uploadChunks: {
+          size: 3 * 1024 * 1024 + 1,
+          chunks: [
+            { bucket: "stack-structure", objectKey: `media-uploads/github-test-user/video-source/${uploadId}/1784709256001-00000.part` },
+            { bucket: "stack-structure", objectKey: `media-uploads/github-test-user/video-source/${uploadId}/1784709256002-00001.part` },
+          ],
+        },
+      }),
+      headers: { "content-type": "application/json" },
+    }));
+    const payload = await jsonResponse(response);
+
+    expect(response.status).toBe(202);
+    expect((payload.job as Record<string, unknown>).job_id).toBe("run-media-123");
+    type SceneDetectionDispatch = {
+      uploadChunks: {
+        size: number;
+        chunks: Array<{ bucket: string; objectKey: string }>;
+      };
+    };
+    const dispatches = triggerMocks.triggerMediaSceneDetection.mock.calls as unknown as SceneDetectionDispatch[][];
+    expect(dispatches[0]?.[0]).toMatchObject({
+      uploadChunks: {
+        size: 3 * 1024 * 1024 + 1,
+        chunks: [
+          { bucket: "stack-structure", objectKey: `media-uploads/github-test-user/video-source/${uploadId}/1784709256001-00000.part` },
+          { bucket: "stack-structure", objectKey: `media-uploads/github-test-user/video-source/${uploadId}/1784709256002-00001.part` },
+        ],
+      },
+    });
+  });
+
+  test("rejects another user's video chunk references before Trigger.dev dispatch", async () => {
+    resetMocks();
+    const uploadId = "87f25c0c-90f0-4c8d-8451-e7a08d56f57a";
+    const response = await postMediaJob(new Request("http://localhost/api/media/video/jobs", {
+      method: "POST",
+      body: JSON.stringify({
+        bucket: "stack-structure",
+        objectKey: "media-uploads/github-test-user/video-source/source.mp4",
+        uploadChunks: {
+          size: 3 * 1024 * 1024 + 1,
+          chunks: [
+            { bucket: "stack-structure", objectKey: `media-uploads/github-other-user/video-source/${uploadId}/00000.part` },
+            { bucket: "stack-structure", objectKey: `media-uploads/github-other-user/video-source/${uploadId}/00001.part` },
+          ],
+        },
+      }),
+      headers: { "content-type": "application/json" },
+    }));
+
+    expect(response.status).toBe(400);
+    expect(triggerMocks.triggerMediaSceneDetection).toHaveBeenCalledTimes(0);
+  });
+
   test("uploads preview inputs before queuing FFmpeg", async () => {
     resetMocks();
     const form = new FormData();

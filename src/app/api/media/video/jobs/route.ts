@@ -1,14 +1,15 @@
 import { validateOrderedChunkManifest } from "@/lib/chunkedMediaUpload";
+import { essentiaUploadOwnerSegment } from "@/lib/essentiaUpload";
 import { getMediaGatewayConfig, normalizeMediaPath } from "@/lib/mediaGateway";
 import { getSessionUser, unauthorizedResponse } from "@/lib/session";
 import { triggerMediaSceneDetection } from "@/lib/triggerOrchestration";
 
 export const runtime = "nodejs";
 
-const VIDEO_CHUNK_FOLDER_BASE = "media-uploads/video-source";
-
-function chunkManifestPrefix(uploadPrefix: string) {
-  return normalizeMediaPath(`${normalizeMediaPath(uploadPrefix)}/video-source`);
+function chunkManifestPrefix(uploadPrefix: string, ownerId: string) {
+  return normalizeMediaPath(
+    `${normalizeMediaPath(uploadPrefix)}/${essentiaUploadOwnerSegment(ownerId)}/video-source`,
+  );
 }
 
 export async function POST(request: Request) {
@@ -46,7 +47,7 @@ export async function POST(request: Request) {
           value: payload.uploadChunks.chunks,
           size,
           bucket: config.bucket,
-          expectedPrefix: chunkManifestPrefix(config.uploadPrefix),
+          expectedPrefix: chunkManifestPrefix(config.uploadPrefix, user.id),
         })
         : null;
       if (!chunks) {
