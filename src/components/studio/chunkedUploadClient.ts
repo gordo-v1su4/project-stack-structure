@@ -3,6 +3,25 @@ import {
   type ChunkedUploadManifest,
 } from "@/lib/chunkedMediaUpload";
 
+export const MAX_CONCURRENT_CHUNK_UPLOADS = 4;
+
+let activeChunkUploads = 0;
+const chunkUploadWaiters: Array<() => void> = [];
+
+async function withChunkUploadSlot<T>(upload: () => Promise<T>): Promise<T> {
+  if (activeChunkUploads >= MAX_CONCURRENT_CHUNK_UPLOADS) {
+    await new Promise<void>((resolve) => chunkUploadWaiters.push(resolve));
+  }
+
+  activeChunkUploads += 1;
+  try {
+    return await upload();
+  } finally {
+    activeChunkUploads -= 1;
+    chunkUploadWaiters.shift()?.();
+  }
+}
+
 function readStringField(value: unknown, key: string) {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? typeof (value as Record<string, unknown>)[key] === "string"
@@ -36,8 +55,11 @@ export async function uploadFileInChunks(
     const formData = new FormData();
     formData.set("file", part);
     formData.set("folder", folder);
-    const response = await fetch(endpoint, { method: "POST", body: formData });
-    const payload: unknown = await response.json().catch(() => null);
+    const { response, payload } = await withChunkUploadSlot(async () => {
+      const response = await fetch(endpoint, { method: "POST", body: formData });
+      const payload: unknown = await response.json().catch(() => null);
+      return { response, payload };
+    });
     const bucket = readStringField(payload, "bucket");
     const objectKey = readStringField(payload, "objectKey") ?? readStringField(payload, "storagePath");
     if (!response.ok || !bucket || !objectKey) {
