@@ -218,8 +218,8 @@ async function persistExport(
         bucket: "local-fallback",
         publicUrl: videoUrl,
         mediaUrl: videoUrl,
-        storagePath: path.join(fallbackDir, fileName),
-        objectKey: path.join(fallbackDir, fileName),
+        storagePath: fallbackPath,
+        objectKey: fallbackPath,
         mime: "video/mp4",
       },
     };
