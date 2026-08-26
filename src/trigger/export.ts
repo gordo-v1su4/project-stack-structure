@@ -198,10 +198,9 @@ async function persistExport(
       outputPath,
       sizeBytes: output.byteLength,
     });
-    const fallbackDir = path.join("/opt", "export-fallback", sanitize(requestKey));
-    await mkdir(fallbackDir, { recursive: true });
-    await copyFile(outputPath, path.join(fallbackDir, fileName));
-    videoUrl = `http://192.168.8.222:8090/exports/${sanitize(requestKey)}/${fileName}`;
+    const fallbackPath = path.join("/tmp", fileName);
+    await writeFile(fallbackPath, output);
+    videoUrl = `http://100.118.78.13:8090/${fileName}`;
     return {
       requestKey,
       assetKey: videoUrl,
