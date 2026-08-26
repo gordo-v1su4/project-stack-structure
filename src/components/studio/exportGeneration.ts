@@ -308,7 +308,7 @@ export async function generateShaderCaptureMp4Export(params: {
     "-i", params.audioPath,
     "-map", "0:v:0",
     "-map", "1:a:0",
-    "-vf", "fps=24,scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1,setpts=PTS-STARTPTS",
+    "-vf", "fps=24,scale=960:540:force_original_aspect_ratio=decrease,pad=960:540:(ow-iw)/2:(oh-ih)/2,setsar=1,setpts=PTS-STARTPTS",
     "-c:v", "libx264",
     "-preset", "veryfast",
     "-crf", "23",
