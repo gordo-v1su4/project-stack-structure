@@ -236,7 +236,8 @@ export function normalizeMediaGatewayUploadResult(
   fallbackMime: string,
 ): MediaGatewayUploadResult {
   const publicUrl = readString(payload.publicUrl) || readString(payload.mediaUrl) || readString(payload.url);
-  const storagePath = readString(payload.objectKey) || readString(payload.storagePath) || readString(payload.path);
+  let storagePath = readString(payload.objectKey) || readString(payload.storagePath) || readString(payload.path) || "";
+  if (/%2f/i.test(storagePath)) storagePath = decodeURIComponent(storagePath);
   const bucket = readString(payload.bucket) || fallbackBucket;
   const mime = readString(payload.mime) || readString(payload.contentType) || fallbackMime;
 

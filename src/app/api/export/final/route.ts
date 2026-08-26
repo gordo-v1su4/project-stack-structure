@@ -14,7 +14,7 @@ function resolveDurableInput(entry: unknown, mimeType: string): DurableExportInp
   }
   const config = getMediaGatewayConfig();
   if (!config) throw new Error("RustFS media gateway env is not configured; durable export references cannot be resolved.");
-  const objectKey = normalizeMediaPath(record.objectKey);
+  const objectKey = normalizeMediaPath(/%2f/i.test(record.objectKey) ? decodeURIComponent(record.objectKey) : record.objectKey);
   if (!objectKey || objectKey.length > 512) throw new Error("Invalid durable reference object key.");
   if (record.bucket.trim() !== config.bucket) throw new Error(`Durable reference bucket must be ${config.bucket}.`);
 
