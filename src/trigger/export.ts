@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -181,11 +181,51 @@ async function persistExport(
   metadata: Pick<DurableExportAsset, "duration" | "hasAudio" | "hasVideo" | "effectCues" | "effectFilter" | "shaderPresetId" | "shaderRenderSource">,
 ): Promise<DurableExportAsset> {
   const output = await readFile(outputPath);
-  const storage = await uploadFileToMediaGateway({
-    file: new File([output], fileName, { type: "video/mp4" }),
-    folder: `media-uploads/generated/exports/${sanitize(requestKey)}`,
-  });
-  const videoUrl = storage.mediaUrl || storage.publicUrl;
+
+  let storage: MediaGatewayUploadResult;
+  let videoUrl: string;
+  try {
+    storage = await uploadFileToMediaGateway({
+      file: new File([output], fileName, { type: "video/mp4" }),
+      folder: `media-uploads/generated/exports/${sanitize(requestKey)}`,
+    });
+    videoUrl = storage.mediaUrl || storage.publicUrl;
+  } catch (uploadError) {
+    // Gateway Multer limits can reject large renders. Preserve the file
+    // locally on VM100 so it remains accessible over Tailscale.
+    logger.warn("Gateway upload rejected; preserving output locally", {
+      error: String(uploadError).slice(0, 300),
+      outputPath,
+      sizeBytes: output.byteLength,
+    });
+    const fallbackDir = path.join("/opt", "export-fallback", sanitize(requestKey));
+    await mkdir(fallbackDir, { recursive: true });
+    await copyFile(outputPath, path.join(fallbackDir, fileName));
+    videoUrl = `http://192.168.8.222:8090/exports/${sanitize(requestKey)}/${fileName}`;
+    return {
+      requestKey,
+      assetKey: videoUrl,
+      duration: metadata.duration,
+      generatedAt: new Date().toISOString(),
+      videoUrl,
+      downloadFileName: fileName,
+      hasAudio: metadata.hasAudio,
+      hasVideo: metadata.hasVideo,
+      effectCues: metadata.effectCues,
+      effectFilter: metadata.effectFilter,
+      shaderPresetId: metadata.shaderPresetId,
+      shaderRenderSource: metadata.shaderRenderSource,
+      storage: {
+        bucket: "local-fallback",
+        publicUrl: videoUrl,
+        mediaUrl: videoUrl,
+        storagePath: path.join(fallbackDir, fileName),
+        objectKey: path.join(fallbackDir, fileName),
+        mime: "video/mp4",
+      },
+    };
+  }
+
   return {
     requestKey,
     assetKey: videoUrl,
