@@ -39,4 +39,21 @@ describe("exportGeneration shader cue planning", () => {
     expect(filter).toContain("between(t");
     expect(filter).not.toContain("bad");
   });
+
+  test("groups repeated cue parameters into bounded ffmpeg filters", () => {
+    const filter = buildFfmpegShaderFilter(
+      Array.from({ length: 600 }, (_, index) => ({
+        id: `beat-${index}`,
+        kind: "beat-flash" as const,
+        start: index * 0.4,
+        end: index * 0.4 + 0.18,
+        intensity: 0.45,
+        sync: "beat" as const,
+      })),
+    );
+
+    expect(filter?.match(/eq=/g)).toHaveLength(19);
+    expect(filter?.match(/between\(t/g)).toHaveLength(600);
+    expect(filter).toContain("+between(t");
+  });
 });

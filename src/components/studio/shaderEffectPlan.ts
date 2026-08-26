@@ -269,30 +269,46 @@ export function normalizeShaderCue(cue: ShaderEffectCue): ShaderEffectCue | null
 }
 
 export function buildFfmpegShaderFilter(cues: ShaderEffectCue[]) {
-  const filters = cues
+  const maxWindowsPerFilter = 32;
+  const groupedFilters = new Map<string, string[]>();
+
+  cues
     .map(normalizeShaderCue)
     .filter((cue): cue is ShaderEffectCue => cue !== null)
-    .map((cue) => {
+    .forEach((cue) => {
       const enable = `between(t\\,${cue.start.toFixed(3)}\\,${cue.end.toFixed(3)})`;
       const intensity = clamp(cue.intensity, 0, 1);
+      const filters: string[] = [];
       if (cue.kind === "beat-flash") {
-        return `eq=brightness=${(0.08 + intensity * 0.24).toFixed(3)}:saturation=${(1 + intensity * 0.55).toFixed(3)}:enable='${enable}'`;
+        filters.push(`eq=brightness=${(0.08 + intensity * 0.24).toFixed(3)}:saturation=${(1 + intensity * 0.55).toFixed(3)}`);
+      } else if (cue.kind === "glitch-cut" || cue.kind === "datamosh-lite") {
+        filters.push(
+          `rgbashift=rh=${Math.round(4 + intensity * 18)}:bh=${Math.round(-4 - intensity * 16)}`,
+          `noise=alls=${Math.round(6 + intensity * 18)}:allf=t`,
+        );
+      } else if (cue.kind === "lyric-glow") {
+        filters.push(`unsharp=5:5:${(0.35 + intensity).toFixed(3)}:5:5:0.0`);
+      } else if (cue.kind === "film-halation") {
+        filters.push(`eq=contrast=${(1 + intensity * 0.08).toFixed(3)}:saturation=${(1 + intensity * 0.22).toFixed(3)}:gamma_r=${(1 + intensity * 0.1).toFixed(3)}`);
+      } else if (cue.kind === "duotone-pulse") {
+        filters.push(`colorbalance=rs=${(intensity * 0.18).toFixed(3)}:bs=${(-intensity * 0.1).toFixed(3)}`);
+      } else {
+        filters.push(`hue=s=${(1 + intensity * 0.35).toFixed(3)}`);
       }
-      if (cue.kind === "glitch-cut" || cue.kind === "datamosh-lite") {
-        return `rgbashift=rh=${Math.round(4 + intensity * 18)}:bh=${Math.round(-4 - intensity * 16)}:enable='${enable}',noise=alls=${Math.round(6 + intensity * 18)}:allf=t:enable='${enable}'`;
+
+      for (const filter of filters) {
+        const windows = groupedFilters.get(filter);
+        if (windows) windows.push(enable);
+        else groupedFilters.set(filter, [enable]);
       }
-      if (cue.kind === "lyric-glow") {
-        return `unsharp=5:5:${(0.35 + intensity).toFixed(3)}:5:5:0.0:enable='${enable}'`;
-      }
-      if (cue.kind === "film-halation") {
-        return `eq=contrast=${(1 + intensity * 0.08).toFixed(3)}:saturation=${(1 + intensity * 0.22).toFixed(3)}:gamma_r=${(1 + intensity * 0.1).toFixed(3)}:enable='${enable}'`;
-      }
-      if (cue.kind === "duotone-pulse") {
-        return `colorbalance=rs=${(intensity * 0.18).toFixed(3)}:bs=${(-intensity * 0.1).toFixed(3)}:enable='${enable}'`;
-      }
-      return `hue=s=${(1 + intensity * 0.35).toFixed(3)}:enable='${enable}'`;
     });
 
+  const filters = Array.from(groupedFilters, ([filter, windows]) =>
+    Array.from({ length: Math.ceil(windows.length / maxWindowsPerFilter) }, (_, index) => {
+      const start = index * maxWindowsPerFilter;
+      return `${filter}:enable='${windows.slice(start, start + maxWindowsPerFilter).join("+")}'`;
+    }),
+  ).flat();
   return filters.length ? filters.join(",") : null;
 }
 

@@ -57,4 +57,47 @@ describe("music video final export integration", () => {
 
     await rm(outputPath, { force: true });
   });
+
+  mediaFixtureTest(hasAudioVideoFixtures())("renders hundreds of repeated shader cues without exhausting ffmpeg", async () => {
+    const inventory = listMediaFixtures();
+    const audioPath = inventory.audio[0];
+    const videoPath = inventory.video[0];
+    const outputPath = createTempPreviewPath("final-export-many-cues-integration");
+    const cues: ShaderEffectCue[] = Array.from({ length: 600 }, (_, index) => ({
+      id: `beat-${index}`,
+      kind: "beat-flash",
+      start: index / 600,
+      end: Math.min(1, index / 600 + 0.001),
+      intensity: 0.45,
+      sync: "beat",
+    }));
+
+    const asset = await generateMusicVideoExport({
+      requestKey: "final-export-many-cues-integration",
+      audioPath: audioPath!,
+      outputPath,
+      segments: [
+        {
+          inputPath: videoPath!,
+          startTime: 0,
+          endTime: 1,
+          musicStart: 0,
+          musicEnd: 1,
+          label: "Many cues",
+        },
+      ],
+      effectCues: cues,
+      probeFn: exportProbeFn,
+    });
+
+    const metadata = await probeMediaFile(asset.outputPath);
+
+    expect(asset.effectCues).toHaveLength(600);
+    expect(asset.effectFilter?.match(/eq=/g)).toHaveLength(19);
+    expect(metadata.hasVideo).toBe(true);
+    expect(metadata.hasAudio).toBe(true);
+    expect(metadata.duration).toBeGreaterThan(0.5);
+
+    await rm(outputPath, { force: true });
+  });
 });
