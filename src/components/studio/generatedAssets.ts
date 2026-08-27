@@ -148,7 +148,7 @@ export function buildGeneratedAssetContextPreview(
     videoUrl,
     startTime: trimStart,
     endTime: trimStart + requiredDuration,
-    label: asset.title ?? `${asset.model} generated replacement`,
+    label: `GENERATED CANDIDATE · ${asset.model} · ${asset.title ?? target.sectionLabel}`,
     momentId: undefined,
     sourceClipId: undefined,
     sourceRefLabel: `PREVIEW GEN · ${asset.model}`,

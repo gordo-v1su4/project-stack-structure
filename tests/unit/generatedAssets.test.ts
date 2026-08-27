@@ -100,6 +100,7 @@ describe("generated clip approval", () => {
     expect(preview?.segments[1]).toMatchObject({
       videoUrl: "https://media.example/seedance-2.5.mp4",
       startTime: 4.25,
+      label: "GENERATED CANDIDATE · seedance_2_5 · Chorus 3",
       sourceRefLabel: "PREVIEW GEN · seedance_2_5",
     });
     expect(preview?.segments[1]?.endTime).toBeCloseTo(7.18, 5);
