@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { applyApprovedGeneratedAssets, type GeneratedStudioAsset } from "@/components/studio/generatedAssets";
+import { applyApprovedGeneratedAssets, buildGeneratedAssetContextPreview, type GeneratedStudioAsset } from "@/components/studio/generatedAssets";
 import type { EditPlanPreviewSegment } from "@/components/studio/musicVideoProject";
 
 const sourceSegments: EditPlanPreviewSegment[] = [
@@ -86,5 +86,31 @@ describe("generated clip approval", () => {
     const resolved = applyApprovedGeneratedAssets(sourceSegments, [rejected, generatedAsset({}), latest]);
 
     expect(resolved[1]?.videoUrl).toBe("https://media.example/seedance-2.5-latest.mp4");
+  });
+
+  test("auditions a pending candidate in context without approving or mutating the edit", () => {
+    const pending = generatedAsset({ reviewStatus: "pending", trimStart: 4.25 });
+    const preview = buildGeneratedAssetContextPreview(sourceSegments, pending, 2);
+
+    expect(preview).not.toBeNull();
+    expect(preview?.startIndex).toBe(0);
+    expect(preview?.endIndex).toBe(1);
+    expect(preview?.targetIndex).toBe(1);
+    expect(preview?.segments[0]).toEqual(sourceSegments[0]);
+    expect(preview?.segments[1]).toMatchObject({
+      videoUrl: "https://media.example/seedance-2.5.mp4",
+      startTime: 4.25,
+      sourceRefLabel: "PREVIEW GEN · seedance_2_5",
+    });
+    expect(preview?.segments[1]?.endTime).toBeCloseTo(7.18, 5);
+    expect(sourceSegments[1]?.videoUrl).toBe("https://media.example/source.mp4");
+  });
+
+  test("clamps an audition trim window to the available generated source", () => {
+    const preview = buildGeneratedAssetContextPreview(sourceSegments, generatedAsset({ trimStart: 99 }), 0);
+
+    expect(preview?.segments).toHaveLength(1);
+    expect(preview?.segments[0]?.startTime).toBeCloseTo(12.11, 5);
+    expect(preview?.segments[0]?.endTime).toBeCloseTo(15.04, 5);
   });
 });

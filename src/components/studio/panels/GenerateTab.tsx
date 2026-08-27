@@ -1,10 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { fmt } from "../math";
 import { buildGenerationReferenceInputs, type GenerationReferenceSelection, type ReferenceAsset } from "../referenceAssets";
 import type { BeatJoinAnalysis, ColorPaletteSwatch, MotionDescriptor } from "../types";
-import type { GeneratedStudioAsset } from "../generatedAssets";
+import { buildGeneratedAssetContextPreview, type GeneratedStudioAsset } from "../generatedAssets";
 import { uploadGeneratedClipToRustFs } from "../generatedClipUpload";
 import { buildSeedanceContinuationPacket, serializeSeedanceContinuationPacket } from "../seedanceContinuation";
 import { buildAdaptiveCueMap } from "../adaptiveCueMap";
@@ -28,6 +28,7 @@ type GenerateTabProps = {
   selectedPreviewRange: PreviewCutRange | null;
   onSelectedPreviewRange: (range: PreviewCutRange | null) => void;
   onAuditionPreviewRange: (range: PreviewCutRange) => void;
+  onAuditionGeneratedAsset: (asset: GeneratedStudioAsset, contextRadius: number) => void;
 };
 
 export type SlotStatus = "filled" | "weak" | "short" | "missing";
@@ -153,7 +154,7 @@ const NEED_LABELS: Record<GenerationNeed, string> = {
   "reroll-match": "Reroll Match",
 };
 
-export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, onSelectJoin, onsetDensity, lyricCueBlend, lyricMergeWindow, previewSegments, referenceAssets, persistedGeneratedAssets, onGeneratedAsset, selectedPreviewRange, onSelectedPreviewRange, onAuditionPreviewRange }: GenerateTabProps) {
+export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, onSelectJoin, onsetDensity, lyricCueBlend, lyricMergeWindow, previewSegments, referenceAssets, persistedGeneratedAssets, onGeneratedAsset, selectedPreviewRange, onSelectedPreviewRange, onAuditionPreviewRange, onAuditionGeneratedAsset }: GenerateTabProps) {
   const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
   const [timelineZoomMode, setTimelineZoomMode] = useState<TimelineZoomMode>("fit");
   const [referenceSelection, setReferenceSelection] = useState<GenerationReferenceSelection>({});
@@ -523,7 +524,9 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
         <div className="mb-3 rounded-[2px] border border-[#171717] bg-[#050505] px-2 py-1.5 font-mono text-[8px] leading-4 text-[#777]">{generatedImportStatus}</div>
         <GeneratedShotBank
           assets={persistedGeneratedAssets}
+          previewSegments={previewSegments}
           onUpdate={onGeneratedAsset}
+          onAudition={onAuditionGeneratedAsset}
         />
       </section>
 
@@ -1485,8 +1488,17 @@ function fillDefaultReferenceSelection(selection: GenerationReferenceSelection, 
   };
 }
 
-function GeneratedShotBank({ assets, onUpdate }: { assets: GeneratedStudioAsset[]; onUpdate: (asset: GeneratedStudioAsset) => void }) {
-  const [notes, setNotes] = useState<Record<string, string>>({});
+function GeneratedShotBank({
+  assets,
+  previewSegments,
+  onUpdate,
+  onAudition,
+}: {
+  assets: GeneratedStudioAsset[];
+  previewSegments: EditPlanPreviewSegment[];
+  onUpdate: (asset: GeneratedStudioAsset) => void;
+  onAudition: (asset: GeneratedStudioAsset, contextRadius: number) => void;
+}) {
   const videos = assets
     .filter((asset) => asset.mediaKind === "video")
     .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
@@ -1495,41 +1507,144 @@ function GeneratedShotBank({ assets, onUpdate }: { assets: GeneratedStudioAsset[
   }
   return (
     <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-      {videos.map((asset, index) => {
-        const videoUrl = asset.fullStorage?.mediaUrl ?? asset.fullStorage?.publicUrl ?? asset.resultUrl;
-        const reviewStatus = asset.reviewStatus ?? "pending";
-        const requiredDuration = Math.max(0, (asset.target?.songEnd ?? 0) - (asset.target?.songStart ?? 0));
-        const note = notes[asset.id] ?? asset.reviewNotes ?? "";
-        return (
-        <article key={asset.id} className={`rounded-[2px] border bg-[#080808] p-2 ${reviewStatus === "approved" ? "border-[#245c2c]" : reviewStatus === "rejected" ? "border-[#743029]" : "border-[#695019]"}`}>
+      {videos.map((asset, index) => (
+        <GeneratedShotCard
+          key={asset.id}
+          asset={asset}
+          index={index}
+          previewSegments={previewSegments}
+          onUpdate={onUpdate}
+          onAudition={onAudition}
+        />
+      ))}
+    </div>
+  );
+}
+
+function GeneratedShotCard({
+  asset,
+  index,
+  previewSegments,
+  onUpdate,
+  onAudition,
+}: {
+  asset: GeneratedStudioAsset;
+  index: number;
+  previewSegments: EditPlanPreviewSegment[];
+  onUpdate: (asset: GeneratedStudioAsset) => void;
+  onAudition: (asset: GeneratedStudioAsset, contextRadius: number) => void;
+}) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [note, setNote] = useState(asset.reviewNotes ?? "");
+  const [playingSelection, setPlayingSelection] = useState(false);
+  const videoUrl = asset.fullStorage?.mediaUrl ?? asset.fullStorage?.publicUrl ?? asset.resultUrl;
+  const reviewStatus = asset.reviewStatus ?? "pending";
+  const requiredDuration = Math.max(0.05, (asset.target?.songEnd ?? 0) - (asset.target?.songStart ?? 0));
+  const sourceDuration = Math.max(requiredDuration, asset.durationSeconds ?? requiredDuration);
+  const maxTrimStart = Math.max(0, sourceDuration - requiredDuration);
+  const trimStart = Math.max(0, Math.min(asset.trimStart ?? 0, maxTrimStart));
+  const trimEnd = Math.min(sourceDuration, trimStart + requiredDuration);
+  const selectedWidthPct = Math.min(100, (requiredDuration / sourceDuration) * 100);
+  const selectedLeftPct = Math.min(100 - selectedWidthPct, (trimStart / sourceDuration) * 100);
+  const context = buildGeneratedAssetContextPreview(previewSegments, asset, 2);
+
+  const updateTrimStart = (value: number) => {
+    const next = Math.max(0, Math.min(value, maxTrimStart));
+    onUpdate({ ...asset, trimStart: Number(next.toFixed(3)) });
+  };
+
+  const playSelectedWindow = async () => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.currentTime = trimStart;
+    setPlayingSelection(true);
+    await video.play();
+  };
+
+  return (
+    <article className={`rounded-[2px] border bg-[#080808] p-2 ${reviewStatus === "approved" ? "border-[#245c2c]" : reviewStatus === "rejected" ? "border-[#743029]" : "border-[#695019]"}`}>
           <div className="mb-2 flex items-center justify-between gap-2">
             <div className="min-w-0 truncate font-mono text-[9px] uppercase tracking-[0.14em] text-[#d0d0d0]">GEN_{String(index + 1).padStart(2, "0")} · {asset.model}</div>
             <span className={`rounded-[2px] border px-1.5 py-0.5 text-[7px] uppercase tracking-[0.1em] ${reviewStatus === "approved" ? "border-[#245c2c] text-[#78c878]" : reviewStatus === "rejected" ? "border-[#743029] text-[#dc6257]" : "border-[#695019] text-[#d3a236]"}`}>{reviewStatus}</span>
           </div>
           <div className="overflow-hidden rounded-[1px] border border-[#1b1b1b] bg-black">
-            {videoUrl ? <video src={videoUrl} controls preload="metadata" className="aspect-video w-full object-contain" /> : <div className="flex aspect-video items-center justify-center text-[8px] uppercase tracking-[0.12em] text-[#555]">Missing video</div>}
+            {videoUrl ? (
+              <video
+                ref={videoRef}
+                src={videoUrl}
+                controls
+                preload="metadata"
+                onTimeUpdate={(event) => {
+                  if (playingSelection && event.currentTarget.currentTime >= trimEnd) {
+                    event.currentTarget.pause();
+                    setPlayingSelection(false);
+                  }
+                }}
+                onPause={() => setPlayingSelection(false)}
+                className="aspect-video w-full object-contain"
+              />
+            ) : <div className="flex aspect-video items-center justify-center text-[8px] uppercase tracking-[0.12em] text-[#555]">Missing video</div>}
           </div>
-          <div className="mt-2 grid grid-cols-[1fr_90px] gap-2 font-mono text-[8px] text-[#777]">
-            <div className="min-w-0">
+          <div className="mt-2 font-mono text-[8px] text-[#777]">
+            <div className="min-w-0 border-b border-[#171717] pb-2">
               <div className="truncate" title={asset.target?.sectionLabel}>{asset.target?.sectionLabel ?? "Unassigned slot"}</div>
               <div className="mt-1">SONG {fmtCutTime(asset.target?.songStart ?? 0)}–{fmtCutTime(asset.target?.songEnd ?? 0)} · need {requiredDuration.toFixed(2)}s</div>
             </div>
-            <label className="block">
-              <span className="mb-1 block uppercase tracking-[0.1em] text-[#555]">Trim in</span>
+
+            <div className="mt-2 rounded-[2px] border border-[#1b1b1b] bg-[#050505] p-2">
+              <div className="flex items-center justify-between gap-2 uppercase tracking-[0.1em] text-[#666]">
+                <span>Source window · fixed to song slot</span>
+                <span>{sourceDuration.toFixed(2)}s source</span>
+              </div>
+              <div className="relative mt-2 h-7 overflow-hidden rounded-[1px] border border-[#202020] bg-[#101010]">
+                <div className="absolute inset-y-0 bg-[#1c5b6d99]" style={{ left: `${selectedLeftPct}%`, width: `${selectedWidthPct}%` }} />
+                <div className="absolute inset-y-0 w-1 bg-[#55c5e5]" style={{ left: `${selectedLeftPct}%` }} title={`In ${trimStart.toFixed(2)}s`} />
+                <div className="absolute inset-y-0 w-1 -translate-x-full bg-[#55c5e5]" style={{ left: `${selectedLeftPct + selectedWidthPct}%` }} title={`Out ${trimEnd.toFixed(2)}s`} />
+                <div className="pointer-events-none absolute inset-0 flex items-center justify-center uppercase tracking-[0.12em] text-[#b6e6ef]">drag selected window</div>
+              </div>
               <input
-                type="number"
+                aria-label={`Trim window for ${asset.title ?? asset.model}`}
+                type="range"
                 min={0}
-                max={Math.max(0, (asset.durationSeconds ?? requiredDuration) - requiredDuration)}
-                step={0.1}
-                value={asset.trimStart ?? 0}
-                onChange={(event) => onUpdate({ ...asset, trimStart: Number(event.target.value) || 0 })}
-                className="w-full rounded-[1px] border border-[#202020] bg-[#040404] px-2 py-1 text-[#aaa] outline-none focus:border-[#e05c00]"
+                max={maxTrimStart}
+                step={1 / 30}
+                value={trimStart}
+                onChange={(event) => updateTrimStart(Number(event.target.value))}
+                className="mt-1 w-full accent-[#55c5e5]"
               />
-            </label>
+              <div className="mt-1 grid grid-cols-2 gap-2">
+                <div className="rounded-[1px] border border-[#1d343a] bg-[#071014] px-2 py-1"><span className="text-[#52737c]">IN / START FRAME</span><div className="mt-0.5 text-[#b6e6ef]">{trimStart.toFixed(2)}s · f{Math.round(trimStart * 30)}</div></div>
+                <div className="rounded-[1px] border border-[#1d343a] bg-[#071014] px-2 py-1"><span className="text-[#52737c]">OUT / LAST FRAME</span><div className="mt-0.5 text-[#b6e6ef]">{trimEnd.toFixed(2)}s · f{Math.round(trimEnd * 30)}</div></div>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                <button type="button" disabled={!videoUrl} onClick={() => void playSelectedWindow()} className="rounded-[2px] border border-[#1d5362] px-2 py-1 uppercase tracking-[0.1em] text-[#6bc8dc] disabled:opacity-35">Play selected</button>
+                <button type="button" disabled={!videoUrl} onClick={() => updateTrimStart(videoRef.current?.currentTime ?? trimStart)} className="rounded-[2px] border border-[#303030] px-2 py-1 uppercase tracking-[0.1em] text-[#888] disabled:opacity-35">Set in at playhead</button>
+                <button type="button" disabled={!context || !videoUrl} onClick={() => onAudition(asset, 2)} className="rounded-[2px] border border-[#e05c00] bg-[#120b06] px-2 py-1 uppercase tracking-[0.1em] text-[#e05c00] disabled:border-[#303030] disabled:bg-transparent disabled:text-[#555]">Audition ±2 cuts</button>
+              </div>
+            </div>
           </div>
+
+          {context ? (
+            <div className="mt-2 rounded-[2px] border border-[#1b1b1b] bg-[#050505] p-2">
+              <div className="mb-1 text-[7px] uppercase tracking-[0.12em] text-[#555]">Edit context · generated clip replaces the cyan slot only</div>
+              <div className="flex gap-1">
+                {context.segments.map((segment, contextIndex) => {
+                  const absoluteIndex = context.startIndex + contextIndex;
+                  const isTarget = absoluteIndex === context.targetIndex;
+                  return (
+                    <div key={`${segment.musicStart}-${absoluteIndex}`} className={`min-w-0 flex-1 rounded-[1px] border px-1 py-1 text-center font-mono text-[7px] ${isTarget ? "border-[#55c5e5] bg-[#0a1d23] text-[#9bddeb]" : "border-[#202020] bg-[#090909] text-[#666]"}`}>
+                      <div>{isTarget ? "GEN" : `CUT ${String(absoluteIndex + 1).padStart(3, "0")}`}</div>
+                      <div className="mt-0.5 truncate">{fmtCutTime(segment.musicStart)}–{fmtCutTime(segment.musicEnd)}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+
           <textarea
             value={note}
-            onChange={(event) => setNotes((current) => ({ ...current, [asset.id]: event.target.value }))}
+            onChange={(event) => setNote(event.target.value)}
             placeholder="Review notes: identity, duplicates, continuity, action..."
             rows={2}
             className="mt-2 w-full resize-y rounded-[1px] border border-[#202020] bg-[#040404] px-2 py-1 font-mono text-[8px] leading-4 text-[#aaa] outline-none placeholder:text-[#444] focus:border-[#e05c00]"
@@ -1539,9 +1654,7 @@ function GeneratedShotBank({ assets, onUpdate }: { assets: GeneratedStudioAsset[
             <button type="button" onClick={() => onUpdate({ ...asset, reviewStatus: "rejected", reviewNotes: note })} className="flex-1 rounded-[2px] border border-[#743029] px-2 py-1 text-[8px] uppercase tracking-[0.1em] text-[#dc6257]">Reject</button>
             <button type="button" onClick={() => onUpdate({ ...asset, reviewStatus: "pending", reviewNotes: note })} className="rounded-[2px] border border-[#303030] px-2 py-1 text-[8px] uppercase tracking-[0.1em] text-[#777]">Reopen</button>
           </div>
-        </article>
-      )})}
-    </div>
+    </article>
   );
 }
 
