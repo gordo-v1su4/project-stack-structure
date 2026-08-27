@@ -187,6 +187,7 @@ export default function StudioApp() {
   const [retainedBrowserPreviewSegments, setRetainedBrowserPreviewSegments] = useState<PreviewSegment[]>([]);
   const [retainedPreviewEffectCues, setRetainedPreviewEffectCues] = useState<ShaderEffectCue[]>([]);
   const [generatePreviewRange, setGeneratePreviewRange] = useState<PreviewCutRange | null>(null);
+  const [generatedAuditionSegments, setGeneratedAuditionSegments] = useState<PreviewSegment[] | null>(null);
   const [previewAuditionRequest, setPreviewAuditionRequest] = useState(0);
   const handledPreviewAuditionRequestRef = useRef(0);
   const lastPreviewEffectCuesRef = useRef<ShaderEffectCue[]>([]);
@@ -541,11 +542,8 @@ export default function StudioApp() {
     const preview = buildGeneratedAssetContextPreview(storyPreviewSegments, asset, contextRadius);
     if (!preview) return;
     setGeneratePreviewRange({ startIndex: preview.startIndex, endIndex: preview.endIndex });
-    setIsDockCollapsed(false);
-    setIsPreviewExpanded(true);
-    const player = previewPlayerRef.current;
-    player.load(preview.segments);
-    void player.play();
+    setGeneratedAuditionSegments(preview.segments);
+    setPreviewAuditionRequest((request) => request + 1);
   };
 
   async function ingestVideoFiles(files: File[], mode: "replace" | "append") {
@@ -1702,7 +1700,7 @@ export default function StudioApp() {
 
   const browserPreviewSegments = useMemo<PreviewSegment[]>(() => {
     if (tab === "generate") {
-      return slicePreviewCutRange(storyPreviewSegments, generatePreviewRange);
+      return generatedAuditionSegments ?? slicePreviewCutRange(storyPreviewSegments, generatePreviewRange);
     }
 
     if (tab === "story" || tab === "compose") {
@@ -1754,7 +1752,7 @@ export default function StudioApp() {
     }
 
     return [];
-  }, [tab, storyPreviewSegments, generatePreviewRange, effectiveClipOrder, workingBeatSplitSegments, videoSources, sourceClips, arrangementSegments]);
+  }, [tab, storyPreviewSegments, generatePreviewRange, generatedAuditionSegments, effectiveClipOrder, workingBeatSplitSegments, videoSources, sourceClips, arrangementSegments]);
 
   useEffect(() => {
     if (tab !== "generate" || previewAuditionRequest === 0 || !browserPreviewSegments.length) return;
@@ -2163,8 +2161,12 @@ export default function StudioApp() {
                 persistedGeneratedAssets={generatedAssets}
                 onGeneratedAsset={(asset) => setGeneratedAssets((current) => [asset, ...current.filter((candidate) => candidate.id !== asset.id)])}
                 selectedPreviewRange={generatePreviewRange}
-                onSelectedPreviewRange={setGeneratePreviewRange}
+                onSelectedPreviewRange={(range) => {
+                  setGeneratedAuditionSegments(null);
+                  setGeneratePreviewRange(range);
+                }}
                 onAuditionPreviewRange={(range) => {
+                  setGeneratedAuditionSegments(null);
                   setGeneratePreviewRange(range);
                   setPreviewAuditionRequest((request) => request + 1);
                 }}
