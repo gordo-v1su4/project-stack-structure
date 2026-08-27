@@ -12,6 +12,7 @@ export interface PipelineStageInput {
   editSlotCount: number;
   matchedSlotCount: number;
   gapSlotCount: number;
+  weakMatchSlotCount: number;
   storySegmentCount: number;
   hasCommittedSplit: boolean;
   shaderPresetLabel: string;
@@ -48,8 +49,8 @@ export function buildPipelineState(input: PipelineStageInput): PipelineState {
   const storyReady = ingestReady && input.hasTranscript && input.storyGenerated && input.editSlotCount > 0;
   const splitReady = storyReady && input.hasCommittedSplit;
   const matchReady = splitReady && input.captionReadyCount > 0 && input.matchedSlotCount > 0;
-  const generateReady = matchReady;
-  const joinReady = matchReady && input.storySegmentCount > 0;
+  const generateReady = matchReady && input.gapSlotCount === 0;
+  const joinReady = generateReady && input.storySegmentCount > 0;
   const effectsReady = joinReady;
   const exportReady = input.finalExportReady || effectsReady;
 
@@ -114,16 +115,18 @@ export function buildPipelineState(input: PipelineStageInput): PipelineState {
       status: !storyReady
         ? "Waiting for match"
         : input.gapSlotCount > 0
-          ? `${input.gapSlotCount} gap${input.gapSlotCount === 1 ? "" : "s"} to fill`
-          : "No gaps · optional",
+          ? `${input.gapSlotCount} true gap${input.gapSlotCount === 1 ? "" : "s"} to fill`
+          : input.weakMatchSlotCount > 0
+            ? `${input.weakMatchSlotCount} weak section${input.weakMatchSlotCount === 1 ? "" : "s"} · optional`
+            : "No gaps · optional",
     },
     {
       key: "join",
       label: "Join",
       ready: joinReady,
-      available: matchReady,
-      blockedReason: matchReady ? null : "Finish Match before assembling the approved Join timeline.",
-      prerequisiteKey: matchReady ? null : "shuffle",
+      available: generateReady,
+      blockedReason: generateReady ? null : "Resolve required Generate gaps before assembling the approved Join timeline.",
+      prerequisiteKey: generateReady ? null : "generate",
       status: joinReady ? `${input.storySegmentCount} cuts` : "Waiting for story preview",
     },
     {
@@ -188,7 +191,7 @@ function buildNextHint(stage: PipelineStage, input: PipelineStageInput) {
     case "shuffle":
       return "Next: review semantic matches for each section in Match.";
     case "generate":
-      return "Next: fill remaining coverage gaps in Generate, or skip to Join.";
+      return "Next: fill the remaining true coverage gaps in Generate before Join.";
     case "join":
       return "Next: run the Story preview so Join has cuts to assemble.";
     case "ramp":
