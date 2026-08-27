@@ -77,6 +77,10 @@ export interface EditPlanPreviewSegment {
   sectionId: string;
   musicStart: number;
   musicEnd: number;
+  momentId?: string;
+  sourceClipId?: number;
+  sourceRefLabel?: string;
+  thumbnailUrl?: string;
 }
 
 export interface TimelineItem {
@@ -854,6 +858,10 @@ function expandMomentsToSectionPreviewSegments(params: {
         sectionId: item.sectionId,
         musicStart,
         musicEnd,
+        momentId: candidate.moment.id,
+        sourceClipId: candidate.moment.sourceClipId,
+        sourceRefLabel: candidate.moment.sourceRefLabel ?? `S${candidate.moment.sourceClipId + 1} · ${candidate.moment.label}`,
+        thumbnailUrl: candidate.moment.firstFrameUrl ?? candidate.moment.thumbnailUrl ?? candidate.source.thumbnailUrl,
         label: buildPreviewSegmentLabel({
           sectionLabel: item.label,
           momentLabel: candidate.moment.label,

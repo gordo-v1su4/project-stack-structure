@@ -127,7 +127,7 @@ export function StudioRightPanel({
       <div className={`${isPreviewExpanded ? "hidden" : "block"} min-w-0 border-r border-[#181818] p-2.5`}>
         <div className="mb-1.5 text-[8px] uppercase tracking-[0.22em] text-[#343434]">Next Step</div>
         <div className="rounded-[2px] border border-[#1d1208] bg-[#0d0803] px-2 py-[6px] text-[10px] leading-relaxed text-[#c07a3f]">
-          {nextHint ?? "Work through the stages left to right; every stage dot turns green when it is ready."}
+          {nextHint ?? "Green means completed. Orange means ready for review or action. Gray means locked or not started."}
         </div>
         <div className="mt-2 font-mono text-[9px] text-[#4d4d4d] break-all" title={draftStatus}>
           {draftStatus || "Draft autosave idle"}

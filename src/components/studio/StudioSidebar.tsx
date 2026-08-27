@@ -93,12 +93,17 @@ export function StudioSidebar({ tab, stages, sessionStats, collapsed, onToggleCo
                 <div className="text-[10px] text-[#3a3a3a]">{item.sub}</div>
               </div>
               <span
-                className={`mr-3 h-1.5 w-1.5 shrink-0 rounded-full ${stage?.ready ? "bg-[#3a8a3a]" : "bg-[#2a2a2a]"}`}
-                title={stage ? `${stage.label}: ${stage.status}` : undefined}
+                className={`mr-3 h-1.5 w-1.5 shrink-0 rounded-full ${stage?.complete ? "bg-[#3a8a3a]" : stage?.ready || stage?.available ? "bg-[#b46721]" : "bg-[#2a2a2a]"}`}
+                title={stage ? `${stage.label}: ${stage.status} · ${stage.complete ? "complete" : stage.ready || stage.available ? "ready for review/action" : "locked"}` : undefined}
               />
             </button>
           );
         })}
+        <div className="mx-3 mt-2 flex flex-wrap gap-x-3 gap-y-1 border-t border-[#181818] pt-2 font-mono text-[7px] uppercase tracking-[0.1em] text-[#454545]">
+          <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-[#3a8a3a]" />complete</span>
+          <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-[#b46721]" />review</span>
+          <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-[#2a2a2a]" />locked</span>
+        </div>
       </div>
 
       <div className="border-t border-[#181818] p-3 space-y-[6px]">

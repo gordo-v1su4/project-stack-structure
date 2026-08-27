@@ -100,9 +100,17 @@ describe("studio pipeline state", () => {
 
     expect(state.stages.find((stage) => stage.key === "generate")).toMatchObject({
       ready: true,
+      complete: true,
       status: "4 weak sections · optional",
     });
-    expect(state.stages.find((stage) => stage.key === "join")?.available).toBe(true);
+    expect(state.stages.find((stage) => stage.key === "join")).toMatchObject({
+      available: true,
+      ready: true,
+      complete: false,
+      status: "40 cuts · review",
+    });
+    expect(state.stages.find((stage) => stage.key === "ramp")).toMatchObject({ ready: true, complete: false, status: "Beat Pulse · review" });
+    expect(state.stages.find((stage) => stage.key === "compose")).toMatchObject({ ready: true, complete: false, status: "Preview ready · export pending" });
   });
 
   test("fully ready project has no next stage and an export hint", () => {
@@ -125,6 +133,7 @@ describe("studio pipeline state", () => {
     );
 
     expect(state.stages.every((stage) => stage.ready)).toBe(true);
+    expect(state.stages.every((stage) => stage.complete)).toBe(true);
     expect(state.nextStage).toBeNull();
     expect(state.nextHint).toContain("export");
   });
