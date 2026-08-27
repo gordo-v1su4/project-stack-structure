@@ -30,6 +30,7 @@ import type { StudioProjectSummary } from "@/lib/studioProjectStore";
 import type { GeneratedStudioAsset } from "./studio/generatedAssets";
 import { createLocalReferenceAsset, uploadReferenceAssetToRustFs, type ReferenceAsset, type ReferenceAssetRole } from "./studio/referenceAssets";
 import { BrowserPreviewPlayer, createPreviewPlayerState, type PreviewPlayerState, type PreviewSegment } from "./studio/previewPlayer";
+import { slicePreviewCutRange, type PreviewCutRange } from "./studio/resolvedPreviewSelection";
 import { ProcessActionBar } from "./studio/ProcessActionBar";
 import { buildReadout } from "./studio/readout";
 import { ComposeTab } from "./studio/panels/ComposeTab";
@@ -123,7 +124,7 @@ export default function StudioApp() {
   const [lookahead] = useState(3);
   const [keepPct] = useState(70);
   const [colorGradient, setColorGradient] = useState<ColorGradient>("Sunset");
-  const [matchMode, setMatchMode] = useState<MatchMode>("semantic");
+  const matchMode: MatchMode = "balanced";
   const [matchOnsetDensity, setMatchOnsetDensity] = useState(65);
   const [matchLyricCueBlend, setMatchLyricCueBlend] = useState(60);
   const [matchLyricMergeWindow, setMatchLyricMergeWindow] = useState(3.0);
@@ -187,6 +188,9 @@ export default function StudioApp() {
   const [isPreviewExpanded, setIsPreviewExpanded] = useState(false);
   const [retainedBrowserPreviewSegments, setRetainedBrowserPreviewSegments] = useState<PreviewSegment[]>([]);
   const [retainedPreviewEffectCues, setRetainedPreviewEffectCues] = useState<ShaderEffectCue[]>([]);
+  const [generatePreviewRange, setGeneratePreviewRange] = useState<PreviewCutRange | null>(null);
+  const [previewAuditionRequest, setPreviewAuditionRequest] = useState(0);
+  const handledPreviewAuditionRequestRef = useRef(0);
   const lastPreviewEffectCuesRef = useRef<ShaderEffectCue[]>([]);
 
   useEffect(() => {
@@ -383,7 +387,6 @@ export default function StudioApp() {
     const workflowUi = draft.workflowUiSettings;
     if (workflowUi?.activeTab && NAV.some((item) => item.key === workflowUi.activeTab)) setTab(workflowUi.activeTab);
     if (workflowUi?.splitMode) setSplitMode(workflowUi.splitMode);
-    if (isMatchMode(workflowUi?.matchMode)) setMatchMode(workflowUi.matchMode);
     if (workflowUi?.colorGradient) setColorGradient(workflowUi.colorGradient);
     if (workflowUi?.matchOnsetDensity !== undefined) setMatchOnsetDensity(workflowUi.matchOnsetDensity);
     if (workflowUi?.matchLyricCueBlend !== undefined) setMatchLyricCueBlend(workflowUi.matchLyricCueBlend);
@@ -1688,13 +1691,28 @@ export default function StudioApp() {
   );
 
   useEffect(() => {
+    setGeneratePreviewRange((current) => {
+      if (!current) return current;
+      if (!storyPreviewSegments.length) return null;
+      const lastIndex = storyPreviewSegments.length - 1;
+      const startIndex = Math.min(current.startIndex, lastIndex);
+      const endIndex = Math.min(Math.max(startIndex, current.endIndex), lastIndex);
+      return startIndex === current.startIndex && endIndex === current.endIndex ? current : { startIndex, endIndex };
+    });
+  }, [storyPreviewSegments.length]);
+
+  useEffect(() => {
     const density = normalizeStoryEditSettings(storyState.editSettings).cutDensity;
     setClipDur(density >= 0.7 ? 2 : density <= 0.4 ? 10 : 6);
   }, [storyState.editSettings]);
   const shaderPresetSummary = useMemo(() => describeMusicVideoShaderPreset(shaderPresetId), [shaderPresetId]);
 
   const browserPreviewSegments = useMemo<PreviewSegment[]>(() => {
-    if (tab === "story" || tab === "compose" || tab === "generate") {
+    if (tab === "generate") {
+      return slicePreviewCutRange(storyPreviewSegments, generatePreviewRange);
+    }
+
+    if (tab === "story" || tab === "compose") {
       return storyPreviewSegments;
     }
 
@@ -1739,7 +1757,18 @@ export default function StudioApp() {
     }
 
     return [];
-  }, [tab, storyPreviewSegments, effectiveClipOrder, workingBeatSplitSegments, videoSources, sourceClips, arrangementSegments]);
+  }, [tab, storyPreviewSegments, generatePreviewRange, effectiveClipOrder, workingBeatSplitSegments, videoSources, sourceClips, arrangementSegments]);
+
+  useEffect(() => {
+    if (tab !== "generate" || previewAuditionRequest === 0 || !browserPreviewSegments.length) return;
+    if (handledPreviewAuditionRequestRef.current === previewAuditionRequest) return;
+    handledPreviewAuditionRequestRef.current = previewAuditionRequest;
+    setIsDockCollapsed(false);
+    setIsPreviewExpanded(true);
+    const player = previewPlayerRef.current;
+    player.load(browserPreviewSegments);
+    void player.play();
+  }, [browserPreviewSegments, previewAuditionRequest, tab]);
 
   const shaderEffectCues = useMemo(
     () =>
@@ -1767,14 +1796,18 @@ export default function StudioApp() {
     setRetainedPreviewEffectCues(shaderEffectCues);
   }, [browserPreviewSegments, shaderEffectCues, tab]);
 
-  const displayedBrowserPreviewSegments = (tab === "story" || tab === "compose") && browserPreviewSegments.length > 0
+  const displayedBrowserPreviewSegments = tab === "generate" && browserPreviewSegments.length > 0
+    ? browserPreviewSegments
+    : (tab === "story" || tab === "compose") && browserPreviewSegments.length > 0
     ? browserPreviewSegments
     : retainedBrowserPreviewSegments.length > 0
       ? retainedBrowserPreviewSegments
       : browserPreviewSegments.length > 0
         ? browserPreviewSegments
         : previewPlayerRef.current.getSegments();
-  const displayedPreviewEffectCues = (tab === "story" || tab === "compose") && shaderEffectCues.length > 0
+  const displayedPreviewEffectCues = tab === "generate" && generatePreviewRange
+    ? []
+    : (tab === "story" || tab === "compose") && shaderEffectCues.length > 0
     ? shaderEffectCues
     : retainedPreviewEffectCues.length > 0
       ? retainedPreviewEffectCues
@@ -2105,17 +2138,13 @@ export default function StudioApp() {
                 project={musicVideoProject}
                 analysis={beatJoinAnalysis}
                 storyGenerated={storyState.storyGenerated}
-                matchMode={matchMode}
                 onsetDensity={matchOnsetDensity}
                 lyricCueBlend={matchLyricCueBlend}
                 lyricMergeWindow={matchLyricMergeWindow}
-                colorGradient={colorGradient}
                 videoSources={videoSources}
-                onMatchMode={setMatchMode}
                 onOnsetDensity={setMatchOnsetDensity}
                 onLyricCueBlend={setMatchLyricCueBlend}
                 onLyricMergeWindow={setMatchLyricMergeWindow}
-                onColorGradient={setColorGradient}
                 onSelectStory={() => handleSelectTab("story")}
                 onSelectSplit={() => handleSelectTab("split")}
                 onSelectCandidate={handleSelectSemanticCandidate}
@@ -2134,6 +2163,12 @@ export default function StudioApp() {
                 referenceAssets={referenceAssets}
                 persistedGeneratedAssets={generatedAssets}
                 onGeneratedAsset={(asset) => setGeneratedAssets((current) => [asset, ...current.filter((candidate) => candidate.id !== asset.id)])}
+                selectedPreviewRange={generatePreviewRange}
+                onSelectedPreviewRange={setGeneratePreviewRange}
+                onAuditionPreviewRange={(range) => {
+                  setGeneratePreviewRange(range);
+                  setPreviewAuditionRequest((request) => request + 1);
+                }}
                 onSelectMatch={() => handleSelectTab("shuffle")}
                 onSelectJoin={() => handleSelectTab("join")}
               />
@@ -2300,10 +2335,6 @@ function waitForPreviewPlayerToEnd(player: BrowserPreviewPlayer, timeoutSeconds:
 
 function buildVideoSourceKey(source: Pick<UploadedVideoSource, "name" | "size" | "duration">) {
   return `${source.name}::${source.size}::${source.duration.toFixed(3)}`;
-}
-
-function isMatchMode(value: unknown): value is MatchMode {
-  return value === "semantic" || value === "story" || value === "motion" || value === "energy" || value === "color";
 }
 
 function buildSceneCaptionSettings(

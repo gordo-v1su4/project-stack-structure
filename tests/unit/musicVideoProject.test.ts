@@ -428,7 +428,7 @@ describe("musicVideoProject source moments and review contract", () => {
     expect(segments.slice(0, 3).map((segment) => segment.label)).toEqual([
       "Chorus · Dancers move through night rain in a city. · beat",
       "Chorus · Fast night city motion with wet streets. · beat",
-      "Chorus · Close-up of a singer in blue light. · beat",
+      "Chorus · Close-up of a singer in blue light. · beat · loop 2",
     ]);
   });
 
@@ -549,6 +549,49 @@ describe("musicVideoProject source moments and review contract", () => {
     }
   });
 
+  test("keeps shot-use continuity across Story section boundaries", () => {
+    const videoSources: UploadedVideoSource[] = [
+      { id: 0, name: "a.mp4", duration: 4, size: 10, thumbnailUrl: "thumb:a", videoUrl: "blob:a" },
+      { id: 1, name: "b.mp4", duration: 4, size: 10, thumbnailUrl: "thumb:b", videoUrl: "blob:b" },
+    ];
+    const project: MusicVideoProject = {
+      id: "cross-section-continuity",
+      song: mockAnalysis({
+        duration: 4,
+        beats: [],
+        onsets: [],
+        sections: [
+          { label: "Verse 1", start: 0, end: 2 },
+          { label: "Verse 2", start: 2, end: 4 },
+        ],
+      }),
+      duration: 4,
+      lyricChunks: [],
+      storySections: [
+        { id: "verse-1", label: "Verse 1", prompt: "dance", start: 0, end: 2, source: "analysis", lyricChunkIds: [], videoMomentIds: ["shot-a", "shot-b"] },
+        { id: "verse-2", label: "Verse 2", prompt: "dance", start: 2, end: 4, source: "analysis", lyricChunkIds: [], videoMomentIds: ["shot-a", "shot-b"] },
+      ],
+      videoMoments: [
+        { id: "shot-a", sourceClipId: 0, label: "Shot A", start: 0, end: 2, duration: 2, thumbnailUrl: "thumb:a" },
+        { id: "shot-b", sourceClipId: 1, label: "Shot B", start: 0, end: 2, duration: 2, thumbnailUrl: "thumb:b" },
+      ],
+      editPlan: {
+        id: "plan",
+        createdAt: "2026-08-27T00:00:00.000Z",
+        timelineItems: [
+          { id: "timeline-verse-1", sectionId: "verse-1", lyricChunkIds: [], videoMomentId: "shot-a", start: 0, end: 2, label: "Verse 1", prompt: "dance" },
+          { id: "timeline-verse-2", sectionId: "verse-2", lyricChunkIds: [], videoMomentId: "shot-a", start: 2, end: 4, label: "Verse 2", prompt: "dance" },
+        ],
+      },
+      reviewFindings: [],
+    };
+
+    const segments = buildEditPlanPreviewSegments({ project, videoSources });
+
+    expect(segments.map((segment) => segment.momentId)).toEqual(["shot-a", "shot-b"]);
+    expect(segments.map((segment) => segment.sourceClipId)).toEqual([0, 1]);
+  });
+
   test("reports invalid projects instead of silently accepting empty edit plans", () => {
     const project: MusicVideoProject = {
       id: "bad",
@@ -596,8 +639,8 @@ describe("musicVideoProject preview mapping", () => {
 
     expect(buildEditPlanPreviewSegments({ project, videoSources: [{ id: 0, name: "source.mov", duration: 10, size: 10, thumbnailUrl: "thumb", videoUrl: "blob:video" }] })).toEqual([
       { videoUrl: "blob:video", startTime: 3, endTime: 5, sectionId: "intro", musicStart: 0, musicEnd: 2, momentId: "segment-moment-1", sourceClipId: 0, sourceRefLabel: "S1", thumbnailUrl: "thumb", label: "Intro · Scene A · beat" },
-      { videoUrl: "blob:video", startTime: 3, endTime: 5, sectionId: "chorus", musicStart: 2, musicEnd: 4, momentId: "segment-moment-1", sourceClipId: 0, sourceRefLabel: "S1", thumbnailUrl: "thumb", label: "Chorus · Scene A · beat" },
-      { videoUrl: "blob:video", startTime: 3, endTime: 5, sectionId: "chorus", musicStart: 4, musicEnd: 6, momentId: "segment-moment-1", sourceClipId: 0, sourceRefLabel: "S1", thumbnailUrl: "thumb", label: "Chorus · Scene A · beat · loop 2" },
+      { videoUrl: "blob:video", startTime: 3, endTime: 5, sectionId: "chorus", musicStart: 2, musicEnd: 4, momentId: "segment-moment-1", sourceClipId: 0, sourceRefLabel: "S1", thumbnailUrl: "thumb", label: "Chorus · Scene A · beat · loop 2" },
+      { videoUrl: "blob:video", startTime: 3, endTime: 5, sectionId: "chorus", musicStart: 4, musicEnd: 6, momentId: "segment-moment-1", sourceClipId: 0, sourceRefLabel: "S1", thumbnailUrl: "thumb", label: "Chorus · Scene A · beat · loop 3" },
     ]);
   });
 

@@ -2,14 +2,14 @@
 
 import { useMemo, useState } from "react";
 import { ParamSlider } from "../ParamSlider";
-import type { BeatJoinAnalysis, ColorGradient, UploadedVideoSource } from "../types";
+import type { BeatJoinAnalysis, UploadedVideoSource } from "../types";
 import { buildAdaptiveCueMap } from "../adaptiveCueMap";
 import type { MusicVideoProject } from "../musicVideoProject";
 import { buildTrackLaneStack } from "../trackLaneStack";
 import { TrackLaneStackBoard } from "./TrackLaneStackBoard";
 import { MatchCard, ThumbMatchCard } from "./MatchCards";
 import { MatchMusicCueTimeline } from "./MatchMusicCueTimeline";
-import { MATCH_MODE_DETAILS, MATCH_MODE_LABELS, type MatchMode } from "./matchModes";
+import type { MatchMode } from "./matchModes";
 
 export type { MatchMode } from "./matchModes";
 
@@ -17,17 +17,13 @@ type MatchTabProps = {
   project: MusicVideoProject | null;
   analysis: BeatJoinAnalysis | null;
   storyGenerated: boolean;
-  matchMode: MatchMode;
   onsetDensity: number;
   lyricCueBlend: number;
   lyricMergeWindow: number;
-  colorGradient: ColorGradient;
   videoSources: UploadedVideoSource[];
-  onMatchMode: (mode: MatchMode) => void;
   onOnsetDensity: (value: number) => void;
   onLyricCueBlend: (value: number) => void;
   onLyricMergeWindow: (value: number) => void;
-  onColorGradient: (gradient: ColorGradient) => void;
   onSelectStory: () => void;
   onSelectSplit: () => void;
   onSelectCandidate: (sectionId: string, momentId: string) => void;
@@ -37,21 +33,18 @@ export function MatchTab({
   project,
   analysis,
   storyGenerated,
-  matchMode,
   onsetDensity,
   lyricCueBlend,
   lyricMergeWindow,
-  colorGradient,
   videoSources,
-  onMatchMode,
   onOnsetDensity,
   onLyricCueBlend,
   onLyricMergeWindow,
-  onColorGradient,
   onSelectStory,
   onSelectSplit,
   onSelectCandidate,
 }: MatchTabProps) {
+  const matchMode: MatchMode = "balanced";
   const [boardView, setBoardView] = useState<"detail" | "thumbs">("detail");
   const hasLyrics = Boolean(project?.lyricChunks.length);
   const hasCaptions = Boolean(project?.videoMoments.some((moment) => moment.caption));
@@ -114,42 +107,18 @@ export function MatchTab({
       <section className="rounded-[2px] border border-[#1a1a1a] bg-[#0b0b0b] p-3">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Match / shuffle strategy</div>
-            <div className="mt-1 text-[11px] text-[#6d6d6d]">This changes what the board emphasizes. Join will later validate the chosen sequence edge-to-edge.</div>
+            <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Balanced multi-signal match</div>
+            <div className="mt-1 text-[11px] text-[#6d6d6d]">There is no strategy mode to choose. Every candidate is ranked using the complete edit context, then Join validates the resolved sequence edge-to-edge.</div>
           </div>
-          <div className="font-mono text-[10px] uppercase text-[#777]">{MATCH_MODE_DETAILS[matchMode]}</div>
+          <div className="font-mono text-[10px] uppercase text-[#777]">One combined score · automatic</div>
         </div>
-        <div className="grid gap-2 md:grid-cols-5">
-          {(Object.keys(MATCH_MODE_LABELS) as MatchMode[]).map((mode) => (
-            <button
-              key={mode}
-              type="button"
-              onClick={() => onMatchMode(mode)}
-              className={`rounded-[2px] border px-3 py-2 text-[10px] uppercase tracking-[0.14em] transition-colors ${
-                matchMode === mode ? "border-[#e05c00] bg-[#e05c0012] text-[#e05c00]" : "border-[#1f1f1f] bg-[#090909] text-[#666] hover:border-[#2b2b2b] hover:text-[#aaa]"
-              }`}
-            >
-              {MATCH_MODE_LABELS[mode]}
-            </button>
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+          {["Lyrics + captions", "Story intent", "Motion edges", "Music energy", "Duration fit", "Color continuity", "Repeat control"].map((signal) => (
+            <div key={signal} className="rounded-[2px] border border-[#203022] bg-[#071007] px-3 py-2 text-center text-[9px] uppercase tracking-[0.12em] text-[#79a879]">
+              {signal}
+            </div>
           ))}
         </div>
-        {matchMode === "color" ? (
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <span className="text-[9px] uppercase tracking-[0.16em] text-[#555]">Palette lane</span>
-            {(["Rainbow", "Sunset", "Ocean"] as const).map((gradient) => (
-              <button
-                key={gradient}
-                type="button"
-                onClick={() => onColorGradient(gradient)}
-                className={`rounded-[2px] border px-2 py-1 text-[9px] uppercase tracking-[0.12em] ${
-                  colorGradient === gradient ? "border-[#e05c00] text-[#e05c00]" : "border-[#1e1e1e] text-[#555]"
-                }`}
-              >
-                {gradient}
-              </button>
-            ))}
-          </div>
-        ) : null}
       </section>
 
       <TrackLaneStackBoard stack={laneStack} onSelectCandidate={onSelectCandidate} />
@@ -182,7 +151,7 @@ export function MatchTab({
                 </button>
               ))}
             </div>
-            <div className="font-mono text-[10px] text-[#777]">{matchedItems.length} slots · {matchMode}</div>
+            <div className="font-mono text-[10px] text-[#777]">{matchedItems.length} slots · balanced score</div>
           </div>
         </div>
 

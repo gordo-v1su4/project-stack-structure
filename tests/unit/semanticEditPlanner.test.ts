@@ -103,6 +103,21 @@ describe("semantic edit planner", () => {
     expect(ranked[0]?.reasons).toContain("music/motion energy fit");
   });
 
+  test("includes edge color continuity in the combined match score", () => {
+    const ranked = rankMomentsForSection({
+      section: { id: "verse", label: "Verse", prompt: "dance", start: 2, end: 4, lyricTexts: ["dance"] },
+      previous: { id: "previous", sourceClipId: 0, label: "previous", start: 0, end: 2, duration: 2, caption: "dance", exitColor: [0.9, 0.1, 0.1] },
+      moments: [
+        { id: "warm", sourceClipId: 1, label: "warm", start: 0, end: 2, duration: 2, caption: "dance", entryColor: [0.88, 0.12, 0.1] },
+        { id: "cool", sourceClipId: 2, label: "cool", start: 0, end: 2, duration: 2, caption: "dance", entryColor: [0.05, 0.1, 0.95] },
+      ],
+    });
+
+    expect(ranked[0]?.momentId).toBe("warm");
+    expect(ranked[0]?.colorContinuityScore).toBeGreaterThan(ranked[1]?.colorContinuityScore ?? 1);
+    expect(ranked[0]?.reasons).toContain("color continuity");
+  });
+
   test("resolves contested moments by regret instead of section order", () => {
     // Both sections top-pick "neon-street", but the verse has a near-equal
     // alternative while the chorus does not; the chorus must keep it.

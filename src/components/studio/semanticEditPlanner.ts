@@ -24,6 +24,8 @@ export interface SemanticVideoMomentInput {
   setting?: string;
   shotType?: string;
   motionDescriptor?: MotionDescriptor | null;
+  entryColor?: [number, number, number] | null;
+  exitColor?: [number, number, number] | null;
 }
 
 export interface SemanticMomentScore {
@@ -36,6 +38,7 @@ export interface SemanticMomentScore {
   durationFitScore: number;
   motionContinuityScore: number;
   motionEnergyScore: number;
+  colorContinuityScore: number;
   repetitionPenalty: number;
   reasons: string[];
 }
@@ -227,6 +230,7 @@ export function scoreMomentForSection(params: {
     ? scoreMotionContinuity({ from: params.previous.motionDescriptor ?? null, to: params.moment.motionDescriptor ?? null })
     : 0.5;
   const motionEnergyScore = scoreMotionEnergyFit(params.section, params.moment);
+  const colorContinuityScore = scoreColorContinuity(params.previous, params.moment);
   const repetitionPenalty = Math.min(0.4, (params.useCount ?? 0) * 0.18 + (params.previous?.id === params.moment.id ? 0.22 : 0));
 
   const score = roundScore(
@@ -236,7 +240,7 @@ export function scoreMomentForSection(params: {
       durationFitScore * 0.12 +
       motionContinuityScore * 0.1 +
       motionEnergyScore * 0.08 +
-      0.04 -
+      colorContinuityScore * 0.04 -
       repetitionPenalty,
   );
 
@@ -251,8 +255,9 @@ export function scoreMomentForSection(params: {
     durationFitScore,
     motionContinuityScore,
     motionEnergyScore,
+    colorContinuityScore,
     repetitionPenalty,
-    reasons: buildReasons({ semanticScore, lyricCaptionScore, actionIntentScore, durationFitScore, motionContinuityScore, motionEnergyScore, repetitionPenalty }),
+    reasons: buildReasons({ semanticScore, lyricCaptionScore, actionIntentScore, durationFitScore, motionContinuityScore, motionEnergyScore, colorContinuityScore, repetitionPenalty }),
   };
 }
 
@@ -374,6 +379,18 @@ function scoreMotionEnergyFit(section: SemanticSectionInput, moment: SemanticVid
   return roundScore(1 - Math.abs(targetEnergy - motionEnergy));
 }
 
+function scoreColorContinuity(previous: SemanticVideoMomentInput | null | undefined, moment: SemanticVideoMomentInput) {
+  const from = previous?.exitColor;
+  const to = moment.entryColor;
+  if (!from || !to) return 0.5;
+  const distance = Math.sqrt(
+    (from[0] - to[0]) ** 2 +
+    (from[1] - to[1]) ** 2 +
+    (from[2] - to[2]) ** 2,
+  ) / Math.sqrt(3);
+  return roundScore(1 - Math.min(1, distance));
+}
+
 function inferSectionEnergy(section: SemanticSectionInput) {
   const text = normalizeText(`${section.label} ${section.prompt ?? ""}`);
   if (/\b(drop|chorus|hook|final|rush|fast|dance|energy)\b/.test(text)) return 0.82;
@@ -408,6 +425,7 @@ function buildReasons(scores: Omit<SemanticMomentScore, "momentId" | "sectionId"
   if (scores.durationFitScore >= 0.7) reasons.push("duration fit");
   if (scores.motionContinuityScore >= 0.65) reasons.push("motion continuity");
   if (scores.motionEnergyScore >= 0.7) reasons.push("music/motion energy fit");
+  if (scores.colorContinuityScore >= 0.7) reasons.push("color continuity");
   if (scores.repetitionPenalty > 0) reasons.push("repeat penalty applied");
   return reasons.length ? reasons : ["weighted match"];
 }
