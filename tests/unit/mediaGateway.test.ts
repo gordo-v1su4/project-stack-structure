@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  assembleMediaGatewayChunks,
   buildStudioMediaFolder,
   deleteMediaGatewayFiles,
   downloadMediaGatewayFile,
@@ -45,6 +46,49 @@ async function captureUploadFolder(args: {
 }
 
 describe("mediaGateway", () => {
+  test("assembles ordered RustFS parts into one playable object and cleans up the parts", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
+      calls.push({ url: String(url), init });
+      if (String(url).endsWith("00000.part")) return new Response(new Uint8Array([1, 2]));
+      if (String(url).endsWith("00001.part")) return new Response(new Uint8Array([3, 4, 5]));
+      if (String(url).endsWith("/upload")) {
+        const form = init?.body as FormData;
+        const file = form.get("file") as File;
+        expect(Array.from(new Uint8Array(await file.arrayBuffer()))).toEqual([1, 2, 3, 4, 5]);
+        return Response.json({
+          bucket: "stack-structure",
+          objectKey: "media-uploads/user/generated/final.mp4",
+          publicUrl: "https://media.local/files/stack-structure/media-uploads/user/generated/final.mp4",
+          mime: "video/mp4",
+        });
+      }
+      if (String(url).endsWith("/delete")) return Response.json({ deleted: 2, failed: 0 });
+      throw new Error(`Unexpected request: ${String(url)}`);
+    }) as typeof fetch;
+
+    const result = await assembleMediaGatewayChunks({
+      chunks: [
+        { bucket: "stack-structure", objectKey: "media-uploads/user/generated/upload/00000.part" },
+        { bucket: "stack-structure", objectKey: "media-uploads/user/generated/upload/00001.part" },
+      ],
+      expectedSize: 5,
+      fileName: "final.mp4",
+      contentType: "video/mp4",
+      folder: "media-uploads/user/generated",
+      env: { MEDIA_GATEWAY_URL: "https://media.local", MEDIA_GATEWAY_TOKEN: "media-token" },
+      fetchImpl,
+    });
+
+    expect(result.objectKey).toContain("final.mp4");
+    expect(calls.map((call) => call.url)).toEqual([
+      "https://media.local/files/stack-structure/media-uploads/user/generated/upload/00000.part",
+      "https://media.local/files/stack-structure/media-uploads/user/generated/upload/00001.part",
+      "https://media.local/upload",
+      "https://media.local/delete",
+    ]);
+  });
+
   test("uses the stack-structure RustFS bucket without duplicating the bucket prefix", () => {
     const config = getMediaGatewayConfig({
       MEDIA_GATEWAY_URL: "https://media.v1su4.dev/",
