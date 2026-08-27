@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { buildCoverageSlots, summarizeCoverage } from "@/components/studio/panels/GenerateTab";
+import { buildCoverageIssueGroups, buildCoverageSlots, describeCoverageIssue, summarizeCoverage } from "@/components/studio/panels/GenerateTab";
 import type { MusicVideoProject, SemanticClipMatch, TimelineItem, VideoMoment } from "@/components/studio/musicVideoProject";
 
 function match(momentId: string, score: number): SemanticClipMatch {
@@ -65,7 +65,23 @@ describe("Generate coverage truth", () => {
       strongMatchPct: 0,
       requiredNeedCount: 0,
       reviewCount: 2,
+      reviewSectionCount: 1,
     });
+
+    const issues = buildCoverageIssueGroups(slots);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toMatchObject({
+      status: "weak",
+      sectionId: "intro",
+      sectionLabel: "Intro",
+      start: 0,
+      end: 10,
+      requiredDuration: 10,
+      assignedDuration: 10,
+      missingDuration: 0,
+    });
+    expect(issues[0]?.slots).toHaveLength(2);
+    expect(describeCoverageIssue(issues[0]!)).toContain("All 2 chunks contain real footage, so generation is optional.");
   });
 
   test("keeps unassigned and physically short footage in the required queue", () => {
@@ -87,6 +103,9 @@ describe("Generate coverage truth", () => {
       requiredNeedCount: 2,
       reviewCount: 0,
     });
+    const missingIssues = buildCoverageIssueGroups(missingSlots);
+    expect(missingIssues).toHaveLength(1);
+    expect(describeCoverageIssue(missingIssues[0]!)).toBe("No source scene is assigned from 0:00 to 0:10. This is a true gap and must be filled before Join.");
 
     const shortMoment: VideoMoment = { id: "moment-short", sourceClipId: 0, label: "Short scene", start: 0, end: 3, duration: 3 };
     const shortItem = { ...missingItem, videoMomentId: shortMoment.id, semanticMatch: match(shortMoment.id, 0.9) };
@@ -94,5 +113,7 @@ describe("Generate coverage truth", () => {
 
     expect(shortSlots[0]).toMatchObject({ status: "short", assignedDuration: 3, missingDuration: 2 });
     expect(summarizeCoverage(shortSlots, 5)).toMatchObject({ trueGapDuration: 2, requiredNeedCount: 1 });
+    const shortIssues = buildCoverageIssueGroups(shortSlots);
+    expect(describeCoverageIssue(shortIssues[0]!)).toBe("The assigned source covers 0:03 of 0:05, leaving 0:02 uncovered. Extend or replace it before Join.");
   });
 });

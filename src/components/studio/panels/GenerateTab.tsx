@@ -107,6 +107,22 @@ export type CoverageSlot = {
   needs: GenerationNeed[];
 };
 
+export type CoverageIssueGroup = {
+  id: string;
+  status: Exclude<SlotStatus, "filled">;
+  sectionId: string;
+  sectionLabel: string;
+  slots: CoverageSlot[];
+  start: number;
+  end: number;
+  requiredDuration: number;
+  assignedDuration: number;
+  missingDuration: number;
+  score: number;
+  moment?: VideoMoment;
+  needs: GenerationNeed[];
+};
+
 const STATUS_LABELS: Record<SlotStatus, string> = {
   filled: "filled",
   weak: "weak match",
@@ -149,6 +165,9 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
   }), [analysis, lyricCueBlend, lyricMergeWindow, onsetDensity, project]);
   const slots = useMemo(() => buildCoverageSlots(project, cueMap.chunks), [cueMap.chunks, project]);
   const coverage = useMemo(() => summarizeCoverage(slots, cueMap.duration), [cueMap.duration, slots]);
+  const issueGroups = useMemo(() => buildCoverageIssueGroups(slots), [slots]);
+  const requiredIssues = issueGroups.filter((issue) => issue.status === "missing" || issue.status === "short");
+  const reviewIssues = issueGroups.filter((issue) => issue.status === "weak");
   const focusSlot = slots.find((slot) => slot.item.id === selectedSlotId) ?? slots.find((slot) => slot.status !== "filled") ?? slots[0];
   const selectedPreset = LOCAL_SWARM_PRESETS.find((preset) => preset.title === selectedPresetTitle) ?? LOCAL_SWARM_PRESETS[0];
   const frameMoment = focusSlot?.moment ?? project?.videoMoments.find((moment) => moment.firstFrameUrl || moment.thumbnailUrl);
@@ -282,8 +301,8 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
           <MetricCard label="Real assigned" value={fmt(coverage.assignedDuration)} ready={coverage.coveragePct >= 99} />
           <MetricCard label="True gaps" value={fmt(coverage.trueGapDuration)} ready={coverage.trueGapDuration === 0 && coverage.requiredDuration > 0} alert={coverage.trueGapDuration > 0} />
           <MetricCard label="Strong match" value={`${coverage.strongMatchPct}%`} ready={coverage.strongMatchPct >= 70} />
-          <MetricCard label="Required queue" value={`${coverage.requiredNeedCount} needs`} ready={coverage.requiredNeedCount === 0 && slots.length > 0} alert={coverage.requiredNeedCount > 0} />
-          <MetricCard label="Optional rerolls" value={`${coverage.reviewCount} review`} ready={coverage.reviewCount === 0 && slots.length > 0} />
+          <MetricCard label="Required queue" value={`${coverage.requiredNeedCount} chunks`} ready={coverage.requiredNeedCount === 0 && slots.length > 0} alert={coverage.requiredNeedCount > 0} />
+          <MetricCard label="Optional rerolls" value={`${coverage.reviewCount} chunks · ${coverage.reviewSectionCount} sections`} ready={coverage.reviewCount === 0 && slots.length > 0} />
         </div>
       </section>
 
@@ -334,16 +353,33 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
 
       <div className="grid gap-3 xl:grid-cols-[1.1fr_0.9fr]">
         <section className="rounded-[2px] border border-[#1a1a1a] bg-[#0b0b0b] p-3">
-          <div className="mb-3 flex items-center justify-between gap-3">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <div>
-              <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Coverage review board</div>
-              <div className="mt-1 text-[11px] text-[#6d6d6d]">True gaps and short clips require work before Join. Weak matches already contain real footage and remain optional rerolls.</div>
+              <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Coverage issues by song range</div>
+              <div className="mt-1 text-[11px] text-[#6d6d6d]">Adjacent chunks with the same issue are grouped so you can see exactly where the problem starts, ends, and why it was flagged.</div>
             </div>
-            <div className="font-mono text-[10px] text-[#777]">{coverage.requiredNeedCount} required · {coverage.reviewCount} review</div>
+            <div className="font-mono text-[10px] text-[#777]">{requiredIssues.length} required ranges · {reviewIssues.length} optional ranges</div>
           </div>
           {slots.length ? (
-            <div className="space-y-2">
-              {slots.map((slot) => <ShotNeedCard key={slot.item.id} slot={slot} selected={slot.item.id === focusSlot?.item.id} onSelect={() => setSelectedSlotId(slot.item.id)} />)}
+            <div className="space-y-4">
+              <IssueGroupSection
+                title="Required gaps"
+                detail="Red means no source is assigned. Purple means the assigned source is too short. These ranges block Join."
+                emptyLabel="No true gaps"
+                emptyDetail={`Every one of the ${slots.length} adaptive chunks has enough real footage assigned. Nothing must be generated before Join.`}
+                issues={requiredIssues}
+                selectedSlotId={focusSlot?.item.id ?? null}
+                onSelectSlot={setSelectedSlotId}
+              />
+              <IssueGroupSection
+                title="Optional match review"
+                detail="Yellow ranges already contain real footage. They are listed because the section match score is below 45%, not because video is missing."
+                emptyLabel="No weak matches"
+                emptyDetail="Every assigned section is at or above the 45% review threshold."
+                issues={reviewIssues}
+                selectedSlotId={focusSlot?.item.id ?? null}
+                onSelectSlot={setSelectedSlotId}
+              />
             </div>
           ) : (
             <EmptyState label="No edit slots" detail="Generate Story and run Match to populate this board." />
@@ -455,7 +491,64 @@ export function summarizeCoverage(slots: CoverageSlot[], cueDuration = 0) {
   const duration = Math.max(cueDuration, slots[slots.length - 1]?.item.end ?? 0, requiredDuration, 1);
   const requiredNeedCount = slots.filter((slot) => slot.status === "missing" || slot.status === "short").length;
   const reviewCount = slots.filter((slot) => slot.status === "weak").length;
-  return { requiredDuration, assignedDuration, trueGapDuration, strongMatchDuration, weakMatchDuration, coveragePct, strongMatchPct, duration, requiredNeedCount, reviewCount };
+  const reviewSectionCount = new Set(slots.filter((slot) => slot.status === "weak").map((slot) => slot.item.sectionId)).size;
+  return { requiredDuration, assignedDuration, trueGapDuration, strongMatchDuration, weakMatchDuration, coveragePct, strongMatchPct, duration, requiredNeedCount, reviewCount, reviewSectionCount };
+}
+
+export function buildCoverageIssueGroups(slots: CoverageSlot[]): CoverageIssueGroup[] {
+  const issueSlots = slots
+    .filter((slot): slot is CoverageSlot & { status: Exclude<SlotStatus, "filled"> } => slot.status !== "filled")
+    .sort((left, right) => left.item.start - right.item.start || left.item.end - right.item.end);
+  const groups: CoverageIssueGroup[] = [];
+
+  for (const slot of issueSlots) {
+    const previous = groups[groups.length - 1];
+    const canMerge = Boolean(
+      previous
+      && previous.status === slot.status
+      && previous.sectionId === slot.item.sectionId
+      && previous.moment?.id === slot.moment?.id
+      && Math.abs(previous.end - slot.item.start) <= 0.05,
+    );
+
+    if (previous && canMerge) {
+      previous.slots.push(slot);
+      previous.end = slot.item.end;
+      previous.requiredDuration += slot.requiredDuration;
+      previous.assignedDuration += slot.assignedDuration;
+      previous.missingDuration += slot.missingDuration;
+      previous.needs = [...new Set([...previous.needs, ...slot.needs])];
+      continue;
+    }
+
+    groups.push({
+      id: `coverage-issue-${slot.item.id}`,
+      status: slot.status,
+      sectionId: slot.item.sectionId,
+      sectionLabel: slot.item.label.replace(/\s*·\s*C\d+$/i, ""),
+      slots: [slot],
+      start: slot.item.start,
+      end: slot.item.end,
+      requiredDuration: slot.requiredDuration,
+      assignedDuration: slot.assignedDuration,
+      missingDuration: slot.missingDuration,
+      score: slot.score,
+      moment: slot.moment,
+      needs: [...slot.needs],
+    });
+  }
+
+  return groups;
+}
+
+export function describeCoverageIssue(issue: CoverageIssueGroup) {
+  if (issue.status === "missing") {
+    return `No source scene is assigned from ${fmt(issue.start)} to ${fmt(issue.end)}. This is a true gap and must be filled before Join.`;
+  }
+  if (issue.status === "short") {
+    return `The assigned source covers ${fmt(issue.assignedDuration)} of ${fmt(issue.requiredDuration)}, leaving ${fmt(issue.missingDuration)} uncovered. Extend or replace it before Join.`;
+  }
+  return `This Story section's selected match scores ${Math.round(issue.score * 100)}%, below the 45% review threshold. All ${issue.slots.length} chunks contain real footage, so generation is optional.`;
 }
 
 function MetricCard({ label, value, ready, alert = false }: { label: string; value: string; ready: boolean; alert?: boolean }) {
@@ -514,7 +607,12 @@ function CoverageTimeline({
               <div className="absolute left-1 top-1 max-w-[130px] truncate text-[8px] uppercase tracking-[0.12em] text-[#8a4b20]">{slot.item.label}</div>
               <div className="absolute bottom-2 left-1 right-1 h-16 rounded-[1px] border border-[#111] bg-[#0a0a0a]">
                 <div className="h-full rounded-[1px]" style={{ width: `${Math.max(5, (slot.assignedDuration / Math.max(slot.requiredDuration, 0.01)) * 100)}%`, background: style.fill, opacity: slot.status === "missing" ? 0.24 : 0.82 }} />
-                {slot.status !== "filled" ? <div className="absolute inset-y-0 right-0 min-w-[10px] bg-[#d24b3f22]" style={{ width: `${Math.max(12, (slot.missingDuration / Math.max(slot.requiredDuration, 0.01)) * 100)}%` }} /> : null}
+                {slot.missingDuration > 0.01 ? (
+                  <div
+                    className={`absolute inset-y-0 right-0 min-w-[10px] ${slot.status === "short" ? "bg-[#7a3aa055]" : "bg-[#d24b3f55]"}`}
+                    style={{ width: `${Math.max(12, (slot.missingDuration / Math.max(slot.requiredDuration, 0.01)) * 100)}%` }}
+                  />
+                ) : null}
               </div>
             </button>
           );
@@ -632,10 +730,62 @@ function AdaptiveClipQueue({ slots, selectedSlotId, onSelectSlot }: { slots: Cov
   );
 }
 
-function ShotNeedCard({ slot, selected, onSelect }: { slot: CoverageSlot; selected: boolean; onSelect: () => void }) {
-  const style = STATUS_STYLES[slot.status];
-  const palette = getPalette(slot.moment);
-  const motion = describeMotion(slot.moment?.motionDescriptor ?? slot.moment?.visualAnalysis?.motion);
+function IssueGroupSection({
+  title,
+  detail,
+  emptyLabel,
+  emptyDetail,
+  issues,
+  selectedSlotId,
+  onSelectSlot,
+}: {
+  title: string;
+  detail: string;
+  emptyLabel: string;
+  emptyDetail: string;
+  issues: CoverageIssueGroup[];
+  selectedSlotId: string | null;
+  onSelectSlot: (slotId: string) => void;
+}) {
+  return (
+    <section>
+      <div className="mb-2 flex flex-wrap items-start justify-between gap-2 border-b border-[#171717] pb-2">
+        <div>
+          <div className="text-[9px] uppercase tracking-[0.16em] text-[#b0b0b0]">{title}</div>
+          <div className="mt-1 text-[10px] leading-4 text-[#606060]">{detail}</div>
+        </div>
+        <span className="font-mono text-[9px] text-[#666]">{issues.length} range{issues.length === 1 ? "" : "s"}</span>
+      </div>
+      {issues.length ? (
+        <div className="space-y-2">
+          {issues.map((issue) => (
+            <CoverageIssueCard
+              key={issue.id}
+              issue={issue}
+              selected={issue.slots.some((slot) => slot.item.id === selectedSlotId)}
+              onSelect={() => onSelectSlot(issue.slots[0]!.item.id)}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="rounded-[2px] border border-[#245c2c] bg-[#071107] px-3 py-3">
+          <div className="text-[9px] uppercase tracking-[0.16em] text-[#79c779]">{emptyLabel}</div>
+          <div className="mt-1 text-[10px] leading-5 text-[#668066]">{emptyDetail}</div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function CoverageIssueCard({ issue, selected, onSelect }: { issue: CoverageIssueGroup; selected: boolean; onSelect: () => void }) {
+  const style = STATUS_STYLES[issue.status];
+  const palette = getPalette(issue.moment);
+  const motion = describeMotion(issue.moment?.motionDescriptor ?? issue.moment?.visualAnalysis?.motion);
+  const sourceLabel = issue.moment
+    ? issue.moment.sourceRefLabel ?? `S${issue.moment.sourceClipId + 1} · ${issue.moment.label}`
+    : "No source assigned";
+  const sourceRange = issue.moment ? `${fmt(issue.moment.start)}–${fmt(issue.moment.end)} in source` : "No source time range";
+  const optional = issue.status === "weak";
   return (
     <article
       role="button"
@@ -651,27 +801,37 @@ function ShotNeedCard({ slot, selected, onSelect }: { slot: CoverageSlot; select
     >
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#d0d0d0]">{slot.item.label}</div>
-          <div className="mt-1 text-[10px] text-[#777]">{fmt(slot.item.start)}–{fmt(slot.item.end)} · need {slot.requiredDuration.toFixed(1)}s · have {slot.assignedDuration.toFixed(1)}s assigned</div>
+          <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#d0d0d0]">{issue.sectionLabel}</div>
+          <div className="mt-1 text-[10px] text-[#777]">Song {fmt(issue.start)}–{fmt(issue.end)} · {issue.slots.length} chunk{issue.slots.length === 1 ? "" : "s"} · {fmt(issue.requiredDuration)} total</div>
         </div>
-        <span className={`rounded-[2px] border ${style.border} px-2 py-1 font-mono text-[8px] uppercase tracking-[0.12em] ${style.text}`}>{STATUS_LABELS[slot.status]}</span>
+        <div className="flex flex-wrap gap-1.5">
+          <span className={`rounded-[2px] border ${optional ? "border-[#695019] text-[#d3a236]" : "border-[#743029] text-[#dc6257]"} px-2 py-1 font-mono text-[8px] uppercase tracking-[0.12em]`}>{optional ? "optional review" : "required"}</span>
+          <span className={`rounded-[2px] border ${style.border} px-2 py-1 font-mono text-[8px] uppercase tracking-[0.12em] ${style.text}`}>{STATUS_LABELS[issue.status]}</span>
+        </div>
       </div>
       <div className="mt-2 grid gap-2 lg:grid-cols-[120px_1fr]">
-        <FrameThumb moment={slot.moment} label={slot.moment?.sourceRefLabel ?? "no source"} />
+        <FrameThumb moment={issue.moment} label={sourceLabel} />
         <div className="space-y-2">
+          <div className={`rounded-[2px] border ${style.border} ${style.bg} p-2 text-[10px] leading-5 ${style.text}`}>
+            <span className="font-mono uppercase tracking-[0.1em]">Why:</span> {describeCoverageIssue(issue)}
+          </div>
           <div className="rounded-[2px] border border-[#181818] bg-[#070707] p-2 text-[10px] leading-5 text-[#9a9a9a]">
-            <span className="text-[#e05c00]">Prompt:</span> {slot.item.prompt}
+            <span className="text-[#e05c00]">Current source:</span> {sourceLabel} · {sourceRange}
             <br />
-            <span className="text-[#e05c00]">Caption:</span> {getMomentCaption(slot.moment) ?? "No captioned source assigned."}
+            <span className="text-[#e05c00]">Caption:</span> {getMomentCaption(issue.moment) ?? "No captioned source assigned."}
+          </div>
+          <div className="rounded-[2px] border border-[#181818] bg-[#070707] p-2 text-[10px] leading-5 text-[#777]">
+            <span className="text-[#e05c00]">Story intent:</span> {issue.slots[0]?.item.prompt ?? "No story prompt attached."}
           </div>
           <div className="flex flex-wrap gap-1.5">
-            {slot.needs.length ? slot.needs.map((need) => <NeedPill key={need} need={need} />) : <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-[#555]">No generation required</span>}
+            <span className={`mr-1 font-mono text-[8px] uppercase tracking-[0.12em] ${optional ? "text-[#d3a236]" : "text-[#dc6257]"}`}>{optional ? "Optional actions" : "Required actions"}</span>
+            {issue.needs.map((need) => <NeedPill key={need} need={need} optional={optional} />)}
           </div>
           <div className="flex flex-wrap items-center gap-2 text-[9px] uppercase tracking-[0.12em] text-[#555]">
-            <span>score <span className={style.text}>{Math.round(slot.score * 100)}%</span></span>
+            <span>score <span className={style.text}>{Math.round(issue.score * 100)}%</span> / 45% threshold</span>
             <span>motion <span className="text-[#888]">{motion}</span></span>
             <div className="flex h-3 min-w-[90px] overflow-hidden rounded-[1px] border border-[#111]">
-              {palette.map((color, index) => <span key={`${slot.item.id}-${color}-${index}`} className="flex-1" style={{ background: color }} />)}
+              {palette.map((color, index) => <span key={`${issue.id}-${color}-${index}`} className="flex-1" style={{ background: color }} />)}
             </div>
           </div>
         </div>
@@ -680,13 +840,13 @@ function ShotNeedCard({ slot, selected, onSelect }: { slot: CoverageSlot; select
   );
 }
 
-function NeedPill({ need }: { need: GenerationNeed }) {
+function NeedPill({ need, optional = false }: { need: GenerationNeed; optional?: boolean }) {
   return (
     <button
       type="button"
       disabled
       title="Generation endpoint is not connected in this UI slice yet."
-      className="cursor-not-allowed rounded-[2px] border border-[#2a2a2a] bg-[#0b0b0b] px-2 py-1 text-[8px] uppercase tracking-[0.12em] text-[#777] opacity-80"
+      className={`cursor-not-allowed rounded-[2px] border bg-[#0b0b0b] px-2 py-1 text-[8px] uppercase tracking-[0.12em] opacity-80 ${optional ? "border-[#4a3916] text-[#a9822f]" : "border-[#4a2420] text-[#b45c53]"}`}
     >
       {NEED_LABELS[need]}
     </button>
