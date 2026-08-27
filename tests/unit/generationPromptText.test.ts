@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
-import { getGenerationMomentCaption } from "@/components/studio/panels/GenerateTab";
-import type { VideoMoment } from "@/components/studio/musicVideoProject";
+import { getGenerationMomentCaption, resolveGenerationFrameMoment } from "@/components/studio/panels/GenerateTab";
+import type { EditPlanPreviewSegment, VideoMoment } from "@/components/studio/musicVideoProject";
 
 function moment(caption: string): VideoMoment {
   return {
@@ -28,5 +28,27 @@ describe("generation prompt caption safety", () => {
       moment("A red door opens into the Underground Club as the crowd moves toward the stage."),
       ["Diego", "Valentina"],
     )).toContain("Underground Club");
+  });
+
+  test("anchors continuation frames to the selected resolved cut instead of a section fallback", () => {
+    const sectionFallback = { ...moment("Section fallback"), id: "moment-fallback", sourceRefLabel: "S2 · Scene 07" };
+    const selectedMoment = { ...moment("Selected cut"), id: "moment-selected", sourceRefLabel: "S10 · Scene 01", lastFrameUrl: "https://media.example/s10-last.jpg" };
+    const selectedSegment: EditPlanPreviewSegment = {
+      videoUrl: "https://media.example/s10.mp4",
+      startTime: 0,
+      endTime: 2.94,
+      label: "Chorus 3",
+      sectionId: "chorus-3",
+      musicStart: 212.06,
+      musicEnd: 214.99,
+      momentId: selectedMoment.id,
+      sourceRefLabel: selectedMoment.sourceRefLabel,
+    };
+
+    expect(resolveGenerationFrameMoment({
+      videoMoments: [sectionFallback, selectedMoment],
+      focusSlot: undefined,
+      selectedSegment,
+    })).toBe(selectedMoment);
   });
 });

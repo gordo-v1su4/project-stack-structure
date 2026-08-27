@@ -183,7 +183,11 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
     : undefined;
   const selectedReturnSlot = selectedReturnSegment ? findCoverageSlotForSegment(slots, selectedReturnSegment) : undefined;
   const selectedPreset = LOCAL_SWARM_PRESETS.find((preset) => preset.title === selectedPresetTitle) ?? LOCAL_SWARM_PRESETS[0];
-  const frameMoment = focusSlot?.moment ?? project?.videoMoments.find((moment) => moment.firstFrameUrl || moment.thumbnailUrl);
+  const frameMoment = resolveGenerationFrameMoment({
+    videoMoments: project?.videoMoments ?? [],
+    focusSlot,
+    selectedSegment: selectedReturnSegment,
+  });
   const effectiveReferenceSelection = useMemo(() => fillDefaultReferenceSelection(referenceSelection, referenceAssets), [referenceAssets, referenceSelection]);
   const hasRequiredInputs = storyGenerated && Boolean(project?.editPlan.timelineItems.length);
   const checkLocalGenerator = async () => {
@@ -473,6 +477,7 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
             projectId={project?.id ?? "music-video-project-draft"}
             slot={focusSlot}
             moment={frameMoment}
+            selectedSegment={selectedReturnSegment}
             referenceAssets={referenceAssets}
             referenceSelection={effectiveReferenceSelection}
             onReferenceSelection={setReferenceSelection}
@@ -920,6 +925,20 @@ function findCoverageSlotForSegment(slots: CoverageSlot[], segment: EditPlanPrev
     .sort((left, right) => right.overlap - left.overlap)[0]?.slot;
 }
 
+export function resolveGenerationFrameMoment(args: {
+  videoMoments: VideoMoment[];
+  focusSlot?: CoverageSlot;
+  selectedSegment?: EditPlanPreviewSegment;
+}) {
+  if (args.selectedSegment?.momentId) {
+    const selectedMoment = args.videoMoments.find((moment) => moment.id === args.selectedSegment?.momentId);
+    if (selectedMoment) return selectedMoment;
+  }
+
+  return args.focusSlot?.moment
+    ?? args.videoMoments.find((moment) => moment.firstFrameUrl || moment.thumbnailUrl);
+}
+
 function IssueGroupSection({
   title,
   detail,
@@ -1049,6 +1068,7 @@ function FrameExtensionPanel({
   projectId,
   slot,
   moment,
+  selectedSegment,
   referenceAssets,
   referenceSelection,
   onReferenceSelection,
@@ -1069,6 +1089,7 @@ function FrameExtensionPanel({
   projectId: string;
   slot?: CoverageSlot;
   moment?: VideoMoment;
+  selectedSegment?: EditPlanPreviewSegment;
   referenceAssets: ReferenceAsset[];
   referenceSelection: GenerationReferenceSelection;
   onReferenceSelection: (selection: GenerationReferenceSelection) => void;
@@ -1094,7 +1115,7 @@ function FrameExtensionPanel({
   const anchorUrl = moment?.firstFrameUrl ?? moment?.thumbnailUrl;
   const referencePlan = buildGenerationReferenceInputs({
     anchorUrl,
-    anchorLabel: slot?.item.label ?? moment?.sourceRefLabel ?? "source frame",
+    anchorLabel: selectedSegment?.sourceRefLabel ?? slot?.item.label ?? moment?.sourceRefLabel ?? "source frame",
     assets: referenceAssets,
     selection: referenceSelection,
   });
@@ -1134,11 +1155,11 @@ function FrameExtensionPanel({
     .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))[0];
   const seedancePacket = buildSeedanceContinuationPacket({
     projectId,
-    sectionId: slot?.item.sectionId ?? "unassigned-section",
+    sectionId: selectedSegment?.sectionId ?? slot?.item.sectionId ?? "unassigned-section",
     sectionLabel: slot?.item.label ?? "Current section",
     storyIntent: slot?.item.prompt ?? "advance the current music-video section",
-    songStart: slot?.item.start ?? 0,
-    songEnd: slot?.item.end ?? 0,
+    songStart: selectedSegment?.musicStart ?? slot?.item.start ?? 0,
+    songEnd: selectedSegment?.musicEnd ?? slot?.item.end ?? 0,
     moment,
     referenceAssets,
     referenceSelection,
@@ -1156,6 +1177,11 @@ function FrameExtensionPanel({
 
   return (
     <div className="space-y-3">
+      {selectedSegment ? (
+        <div className="rounded-[2px] border border-[#2b2119] bg-[#100a06] px-2 py-1.5 font-mono text-[8px] text-[#b27a56]">
+          Selected cut anchor · {selectedSegment.sourceRefLabel ?? moment?.sourceRefLabel ?? "source"} · song {fmtCutTime(selectedSegment.musicStart)}–{fmtCutTime(selectedSegment.musicEnd)} · source {fmtCutTime(selectedSegment.startTime)}–{fmtCutTime(selectedSegment.endTime)}
+        </div>
+      ) : null}
       <div className="grid grid-cols-3 gap-2">
         {frames.map((frame) => (
           <div key={frame.label} className="overflow-hidden rounded-[2px] border border-[#202020] bg-[#070707]">
