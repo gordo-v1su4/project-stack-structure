@@ -453,7 +453,7 @@ function sanitizeCaptionSettings(settings: SceneCaptionSettings | undefined): Sc
   return {
     mode: settings?.mode === "fast" ? "fast" : "smart",
     context: settings?.context,
-    referenceImages: settings?.referenceImages?.slice(0, 2),
+    referenceImages: settings?.referenceImages?.slice(0, 3),
   };
 }
 

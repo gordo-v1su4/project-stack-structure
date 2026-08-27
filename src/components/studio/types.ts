@@ -118,11 +118,15 @@ export interface SceneCaptionContext {
     role: "primary" | "secondary";
     identityInstruction?: string;
   }>;
+  locations?: Array<{
+    name: string;
+    continuityInstruction?: string;
+  }>;
 }
 
 export interface SceneCaptionReferenceImage {
   name: string;
-  role: "primary" | "secondary";
+  role: "primary" | "secondary" | "environment";
   bucket: string;
   objectKey: string;
   fileName?: string;

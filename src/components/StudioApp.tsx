@@ -2024,8 +2024,6 @@ export default function StudioApp() {
                 segments={splitSegments}
                 activeClip={splitActiveClip}
                 onVideoUpload={handleVideoUpload}
-                onAppendVideos={handleAppendVideos}
-                onRemoveVideo={handleRemoveVideo}
                 onClipDur={setClipDur}
                 onModeChange={setSplitMode}
                 onActiveClip={setActiveClip}
@@ -2290,8 +2288,16 @@ function buildSceneCaptionSettings(
       identityInstruction: asset.promptHint.trim() || undefined,
     }))
     .filter((character) => Boolean(character.name));
+  const locations = referenceAssets
+    .filter((asset) => asset.storageStatus === "uploaded" && asset.role === "environment")
+    .map((asset) => ({
+      name: asset.displayName.trim(),
+      continuityInstruction: asset.promptHint.trim() || undefined,
+    }))
+    .filter((location) => Boolean(location.name))
+    .slice(0, 1);
   const referenceImages = referenceAssets
-    .filter((asset) => asset.storageStatus === "uploaded" && (asset.role === "character-1" || asset.role === "character-2"))
+    .filter((asset) => asset.storageStatus === "uploaded" && (asset.role === "character-1" || asset.role === "character-2" || asset.role === "environment"))
     .flatMap((asset) => {
       const name = asset.displayName.trim();
       const bucket = asset.storageBucket?.trim();
@@ -2299,13 +2305,17 @@ function buildSceneCaptionSettings(
       if (!name || !bucket || !objectKey) return [];
       return [{
         name,
-        role: asset.role === "character-1" ? "primary" as const : "secondary" as const,
+        role: asset.role === "character-1"
+          ? "primary" as const
+          : asset.role === "character-2"
+            ? "secondary" as const
+            : "environment" as const,
         bucket,
         objectKey,
         fileName: asset.fileName,
       }];
     })
-    .slice(0, 2);
+    .slice(0, 3);
   return {
     mode,
     referenceImages,
@@ -2321,6 +2331,7 @@ function buildSceneCaptionSettings(
       projectIntent: "Music-video source footage captioning for later semantic matching against lyrics, story sections, action, mood, and setting.",
       captionStyle: "detailed-cinematic" as const,
       characters,
+      locations,
     },
   };
 }
@@ -2330,13 +2341,13 @@ function formatSplitModeLabel(mode: SplitMode) {
     case "scene":
       return "Scene";
     case "beat":
-      return "Beat";
+      return "Rhythm";
     case "onset":
-      return "Onset";
+      return "Rhythm";
     case "scene-beat":
-      return "Scene + Beat";
+      return "Scene + Rhythm";
     case "scene-onset":
-      return "Scene + Onset";
+      return "Scene + Rhythm";
   }
 }
 
@@ -2348,7 +2359,7 @@ function getSplitModeLockedReason(mode: SplitMode, state: { hasAnalysis: boolean
     return "Scene detection must return cuts before this split mode can build.";
   }
   if (needsAnalysis && !state.hasAnalysis) {
-    return "Upload and analyze the master song before beat/onset split modes.";
+    return "Upload and analyze the master song before using a rhythm split strategy.";
   }
   return "No split cuts are ready for this mode.";
 }

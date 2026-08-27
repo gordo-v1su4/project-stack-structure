@@ -97,6 +97,36 @@ describe("musicVideoProject story sections", () => {
     expect(sections.map((section) => section.label)).toEqual(["Verse 1", "Chorus 1", "Verse 2", "Chorus 2", "Part A"]);
   });
 
+  test("keeps every repeated detected role addressable after starter templates run out", () => {
+    const sections = buildStorySections({
+      analysis: mockAnalysis({
+        duration: 28,
+        sections: [
+          { label: "verse", start: 0, end: 4 },
+          { label: "verse", start: 4, end: 8 },
+          { label: "verse", start: 8, end: 12 },
+          { label: "verse", start: 12, end: 16 },
+          { label: "chorus", start: 16, end: 20 },
+          { label: "chorus", start: 20, end: 24 },
+          { label: "chorus", start: 24, end: 28 },
+        ],
+      }),
+      duration: 28,
+      drafts: getDefaultStorySectionDrafts(),
+    });
+
+    expect(sections.map((section) => section.id)).toEqual([
+      "verse-1",
+      "verse-2",
+      "verse-3",
+      "verse-4",
+      "chorus-1",
+      "chorus-2",
+      "chorus-3",
+    ]);
+    expect(new Set(sections.map((section) => section.id)).size).toBe(sections.length);
+  });
+
   test("uses explicit edited timing as the canonical downstream story plan", () => {
     const sections = buildStorySections({
       analysis: mockAnalysis({ sections: [{ label: "verse", start: 0, end: 8 }] }),

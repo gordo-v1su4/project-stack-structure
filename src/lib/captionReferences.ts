@@ -2,7 +2,7 @@ import { normalizeMediaPath } from "./mediaGateway";
 
 export type DurableCaptionReference = {
   name: string;
-  role: "primary" | "secondary";
+  role: "primary" | "secondary" | "environment";
   bucket: string;
   objectKey: string;
   fileName?: string;
@@ -19,8 +19,8 @@ export function parseDurableCaptionReferences(value: unknown, expectedBucket: st
     }
   }
   if (parsed == null) return [];
-  if (!Array.isArray(parsed) || parsed.length > 2) {
-    throw new Error("Caption references must contain at most two character images.");
+  if (!Array.isArray(parsed) || parsed.length > 3) {
+    throw new Error("Caption references must contain at most two character images and one environment image.");
   }
 
   return parsed.map((item) => {
@@ -32,7 +32,13 @@ export function parseDurableCaptionReferences(value: unknown, expectedBucket: st
     const bucket = boundedString(record.bucket, 160);
     const objectKey = normalizeMediaPath(boundedString(record.objectKey, 2_000));
     const fileName = boundedString(record.fileName, 240, false);
-    const role = record.role === "secondary" ? "secondary" : record.role === "primary" ? "primary" : null;
+    const role = record.role === "secondary"
+      ? "secondary"
+      : record.role === "primary"
+        ? "primary"
+        : record.role === "environment"
+          ? "environment"
+          : null;
     if (!name || !bucket || !objectKey || !role || bucket !== expectedBucket) {
       throw new Error("Caption reference contains an invalid name, role, bucket, or object key.");
     }

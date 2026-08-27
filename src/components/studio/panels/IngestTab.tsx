@@ -158,7 +158,7 @@ export function IngestTab({
           <div>
             <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Caption mode</div>
             <div className="mt-1 max-w-3xl text-[11px] leading-5 text-[#6d6d6d]">
-              Fast uses the lightweight LFM lane. Smart sends the scene plus uploaded character identity references and project/lyric/story context to Qwen3-VL for detailed cinematic captions.
+              Fast uses the lightweight LFM lane. Smart sends the scene plus uploaded character and named-location references, with project/lyric/story context, to Qwen3-VL for detailed cinematic captions.
             </div>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
@@ -189,7 +189,7 @@ export function IngestTab({
           </div>
         </div>
         <div className="mb-3 text-[10px] leading-4 text-[#555]">
-          Recaption refreshes every detected scene with the current lane, project context, and character identity references.
+          Recaption refreshes every detected scene with the current lane, project context, character identities, and named-location continuity reference.
         </div>
         <div className="grid gap-2 md:grid-cols-2">
           <ReadinessCard label="Active caption lane" value={captionMode === "fast" ? "Fast · LFM" : "Smart · Qwen3-VL"} tone="ready" detail={captionMode === "fast" ? "Lower latency draft captions" : "Detailed cinematic captions with named-character matching"} />

@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 import { fmt } from "../math";
 import { SourceVideoTimeline } from "../SourceVideoTimeline";
 import type { SourceClipSpan, SourceTimelineSegment, SplitMode } from "../sourceTimeline";
-import { SourceVideoLibrary } from "../SourceVideoLibrary";
 import { UploadControl } from "../UploadControl";
 import type { BeatJoinAnalysis, DetectedSceneSegment, UploadedVideoSource } from "../types";
 
@@ -21,8 +20,6 @@ type SplitTabProps = {
   segments: SourceTimelineSegment[];
   activeClip: number;
   onVideoUpload: (files: File[]) => void | Promise<void>;
-  onAppendVideos: (files: File[]) => void | Promise<void>;
-  onRemoveVideo: (sourceId: number) => void;
   onClipDur: (v: number) => void;
   onModeChange: (mode: SplitMode) => void;
   onActiveClip: (i: number) => void;
@@ -39,12 +36,16 @@ type SplitModeOption = {
 };
 
 const SPLIT_MODE_OPTIONS: SplitModeOption[] = [
-  { mode: "scene", label: "Scene", description: "Use PySceneDetect cuts exactly as returned.", needsScenes: true, needsAudio: false },
-  { mode: "beat", label: "Beat", description: "Cut from master-track beat intervals.", needsScenes: false, needsAudio: true },
-  { mode: "onset", label: "Onset", description: "Denser music cuts from detected attacks.", needsScenes: false, needsAudio: true },
-  { mode: "scene-beat", label: "Scene + Beat", description: "Keep scene boundaries, then subdivide by beats.", needsScenes: true, needsAudio: true },
-  { mode: "scene-onset", label: "Scene + Onset", description: "Keep scene boundaries, then subdivide by onsets.", needsScenes: true, needsAudio: true },
+  { mode: "scene", label: "Scene", description: "Use the visual scene changes already detected in the source footage.", needsScenes: true, needsAudio: false },
+  { mode: "onset", label: "Rhythm", description: "Create cut windows from grouped musical attacks—not every beat.", needsScenes: false, needsAudio: true },
+  { mode: "scene-onset", label: "Scene + Rhythm", description: "Preserve visual scenes and add musical cut points inside them.", needsScenes: true, needsAudio: true },
 ];
+
+const CUT_PACE_OPTIONS = [
+  { label: "Relaxed", clipDur: 10, detail: "Fewer, longer windows" },
+  { label: "Balanced", clipDur: 6, detail: "Grouped rhythm windows" },
+  { label: "Fast", clipDur: 2, detail: "More short windows" },
+] as const;
 
 export function SplitTab({
   playhead,
@@ -59,8 +60,6 @@ export function SplitTab({
   segments,
   activeClip,
   onVideoUpload,
-  onAppendVideos,
-  onRemoveVideo,
   onClipDur,
   onModeChange,
   onActiveClip,
@@ -68,13 +67,15 @@ export function SplitTab({
   const [captionSearch, setCaptionSearch] = useState("");
   const totalDuration = sourceClips[sourceClips.length - 1]?.end ?? 0;
   const hasSources = videoSources.length > 0;
-  const activeSourceIds = segments[activeClip]?.sourceClipIds ?? [];
   const stats = getSplitStats(videoSources);
   const selectedSegment = segments[activeClip];
   const selectedCut = selectedSegment ? describeSegment(selectedSegment, activeClip, videoSources, sourceClips) : null;
-  const activeMode = SPLIT_MODE_OPTIONS.find((option) => option.mode === mode) ?? SPLIT_MODE_OPTIONS[0]!;
+  const visibleMode = mode === "beat" ? "onset" : mode === "scene-beat" ? "scene-onset" : mode;
+  const activeMode = SPLIT_MODE_OPTIONS.find((option) => option.mode === visibleMode) ?? SPLIT_MODE_OPTIONS[0]!;
   const eventsPerCut = Math.max(1, Math.round(clipDur / 2));
   const splitReady = hasSources && segments.length > 0;
+  const durationSummary = summarizeDurations(segments);
+  const railWidth = Math.max(960, segments.length * 24, totalDuration * 8);
   const visibleCuts = useMemo(
     () =>
       segments
@@ -88,26 +89,26 @@ export function SplitTab({
       <section className="rounded-[2px] border border-[#1a1a1a] bg-[#0b0b0b] p-3">
         <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
           <div>
-            <div className="text-[10px] uppercase tracking-[0.2em] text-[#e05c00]">Unified Split</div>
+            <div className="text-[10px] uppercase tracking-[0.2em] text-[#e05c00]">Create source cut windows</div>
             <div className="mt-1 max-w-4xl text-[11px] leading-5 text-[#707070]">
-              Choose one split strategy. Scene modes only use returned PySceneDetect cuts; beat/onset modes require the master audio analysis. Build Split commits this output to Match and Join.
+              Choose how the uploaded source footage becomes searchable edit windows. These are candidates for Match—not the final edit sequence.
             </div>
           </div>
           <div className={`rounded-[2px] border px-3 py-2 font-mono text-[10px] ${splitReady ? "border-[#245c2c] text-[#79c779]" : "border-[#402018] text-[#e05c00]"}`}>
-            {splitReady ? `${segments.length} cuts ready` : getModeWaitLabel(activeMode, stats, analysis)}
+            {splitReady ? `${segments.length} candidate window${segments.length === 1 ? "" : "s"}` : getModeWaitLabel(activeMode, stats, analysis)}
           </div>
         </div>
 
-        <div className="grid gap-2 lg:grid-cols-5">
+        <div className="grid gap-2 lg:grid-cols-3">
           {SPLIT_MODE_OPTIONS.map((option) => {
             const readiness = getModeReadiness(option, { hasSources, stats, analysis });
-            const isActive = option.mode === mode;
+            const isActive = option.mode === visibleMode;
             return (
               <button
                 key={option.mode}
                 type="button"
                 onClick={() => onModeChange(option.mode)}
-                className={`min-h-[92px] rounded-[2px] border p-3 text-left transition-colors ${
+                className={`rounded-[2px] border p-3 text-left transition-colors ${
                   isActive
                     ? "border-[#e05c00] bg-[#170c05]"
                     : "border-[#202020] bg-[#080808] hover:border-[#383838]"
@@ -124,31 +125,21 @@ export function SplitTab({
           })}
         </div>
 
-        <div className="mt-3 grid gap-2 md:grid-cols-4">
-          <RequirementCard label="Videos" tone={hasSources ? "ready" : isPreparingVideos ? "processing" : "waiting"} value={hasSources ? `${videoSources.length} uploaded` : "Waiting"} />
-          <RequirementCard label="Scenes" tone={stats.sceneFailed ? "failed" : stats.sceneCount ? "ready" : stats.detecting ? "processing" : "waiting"} value={`${stats.sceneCount} cuts`} />
-          <RequirementCard label="Master audio" tone={analysis ? "ready" : "waiting"} value={analysis ? `${analysis.beats.length} beats · ${analysis.onsets.length} onsets` : "Waiting"} />
-          <RequirementCard label="Captions" tone={stats.captionFailed ? "failed" : stats.captionReady && stats.captionReady === stats.captionTotal ? "ready" : stats.captioning ? "processing" : stats.captionTotal ? "waiting" : "waiting"} value={`${stats.captionReady}/${stats.captionTotal}`} />
+        <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 border-t border-[#171717] pt-2">
+          <StatusChip label="Videos" tone={hasSources ? "ready" : isPreparingVideos ? "processing" : "waiting"} value={hasSources ? `${videoSources.length} uploaded` : "waiting"} />
+          <StatusChip label="Scenes" tone={stats.sceneFailed ? "failed" : stats.sceneCount ? "ready" : stats.detecting ? "processing" : "waiting"} value={`${stats.sceneCount} detected`} />
+          <StatusChip label="Audio" tone={analysis ? "ready" : "waiting"} value={analysis ? "analyzed" : "waiting"} />
+          <StatusChip label="Captions" tone={stats.captionFailed ? "failed" : stats.captionReady && stats.captionReady === stats.captionTotal ? "ready" : stats.captioning ? "processing" : "waiting"} value={`${stats.captionReady}/${stats.captionTotal}`} />
         </div>
       </section>
 
       {hasSources ? (
-        <div className="space-y-3">
-          <SourceVideoTimeline
-            sources={videoSources}
-            playhead={playhead}
-            label={buildSourceLabel(videoSources, sourceClips.length, totalDuration, mode, segments.length)}
-            height={124}
-          />
-          <SourceVideoLibrary
-            sources={videoSources}
-            isPreparingVideos={isPreparingVideos}
-            onAppendVideos={onAppendVideos}
-            onReplaceVideos={onVideoUpload}
-            onRemoveVideo={onRemoveVideo}
-            activeSourceIds={activeSourceIds}
-          />
-        </div>
+        <SourceVideoTimeline
+          sources={videoSources}
+          playhead={playhead}
+          label={buildSourceLabel(videoSources, sourceClips.length, totalDuration, visibleMode, segments.length)}
+          height={86}
+        />
       ) : (
         <div className="border border-[#1e1e1e] rounded-[2px] bg-[#070707] p-4">
           <div className="text-[10px] uppercase tracking-[0.18em] text-[#3a3a3a] mb-3">Source Video</div>
@@ -168,50 +159,54 @@ export function SplitTab({
       )}
 
       <section className="rounded-[2px] border border-[#1a1a1a] bg-[#0b0b0b] p-3">
-        <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+        <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
           <div>
-            <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Duration-scaled split output</div>
+            <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Cut map</div>
             <div className="mt-1 text-[11px] text-[#606060]">
-              Blocks are scaled against the stitched source length. Select a cut to inspect thumbnail, caption, and downstream readiness.
+              Cut numbers are candidate windows, not frames. Scroll horizontally to inspect dense results; switching strategy redraws this map immediately.
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <button type="button" onClick={() => onClipDur(Math.max(2, clipDur - 1))} className="rounded-[2px] border border-[#242424] px-2 py-1 font-mono text-[10px] text-[#777] hover:border-[#e05c00] hover:text-[#e05c00]">-</button>
-            <div className="rounded-[2px] border border-[#242424] px-3 py-1 font-mono text-[10px] text-[#e05c00]">{eventsPerCut} events/cut</div>
-            <button type="button" onClick={() => onClipDur(Math.min(20, clipDur + 1))} className="rounded-[2px] border border-[#242424] px-2 py-1 font-mono text-[10px] text-[#777] hover:border-[#e05c00] hover:text-[#e05c00]">+</button>
-          </div>
+          {visibleMode === "scene" ? <div className="rounded-[2px] border border-[#244429] px-3 py-2 text-[9px] uppercase tracking-[0.12em] text-[#72a97a]">Original scene boundaries</div> : (
+            <div className="flex gap-1.5" aria-label="Cut pace">
+              {CUT_PACE_OPTIONS.map((option) => {
+                const active = Math.abs(clipDur - option.clipDur) <= 1;
+                return <button key={option.label} type="button" title={option.detail} onClick={() => onClipDur(option.clipDur)} className={`rounded-[2px] border px-3 py-2 text-[8px] uppercase tracking-[0.12em] ${active ? "border-[#e05c00] bg-[#170c05] text-[#e05c00]" : "border-[#242424] text-[#777] hover:border-[#444]"}`}>{option.label}</button>;
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="mb-2 flex flex-wrap gap-x-5 gap-y-1 font-mono text-[9px] text-[#666]">
+          <span><b className="font-normal text-[#aaa]">{segments.length}</b> windows</span>
+          <span><b className="font-normal text-[#aaa]">{durationSummary.average.toFixed(2)}s</b> average</span>
+          <span><b className="font-normal text-[#aaa]">{durationSummary.minimum.toFixed(2)}s</b> shortest</span>
+          <span><b className="font-normal text-[#aaa]">{durationSummary.maximum.toFixed(2)}s</b> longest</span>
+          {visibleMode !== "scene" ? <span>{eventsPerCut} grouped events/window</span> : null}
         </div>
 
         {segments.length ? (
-          <div className="relative h-14 bg-[#070707] border border-[#1a1a1a] rounded-[2px] flex overflow-hidden">
-            {segments.map((segment, i) => {
-              const cut = describeSegment(segment, i, videoSources, sourceClips);
-              return (
-                <button
-                  key={`${segment.id}-${segment.start}-${segment.end}`}
-                  type="button"
-                  className={`relative border-r border-[#0d0d0d] flex-shrink-0 text-left transition-colors ${
-                    i === activeClip
-                      ? "bg-[#e05c0035]"
-                      : cut.tone === "ready"
-                        ? "bg-[#0b1810] hover:bg-[#102415]"
-                        : cut.tone === "failed"
-                          ? "bg-[#190a08] hover:bg-[#24100d]"
-                          : i % 2 === 0
-                            ? "bg-[#111] hover:bg-[#171717]"
-                            : "bg-[#0e0e0e] hover:bg-[#161616]"
-                  }`}
-                  style={{ width: `${(segment.duration / Math.max(totalDuration, 0.001)) * 100}%` }}
-                  onClick={() => onActiveClip(i)}
-                >
-                  {i === activeClip && <div className="absolute top-0 left-0 right-0 h-[2px] bg-[#e05c00]" />}
-                  <span className={`absolute left-[3px] top-[4px] h-[5px] w-[5px] ${getToneColor(cut.tone, "dot")}`} />
-                  <span className="absolute bottom-[3px] left-[3px] text-[7px] font-mono text-[#6a6a6a]">{i + 1}</span>
-                  <span className="absolute top-[3px] right-[3px] text-[7px] font-mono text-[#555]">{cut.sourceLabel}</span>
-                </button>
-              );
-            })}
-            <div className="absolute inset-y-0 w-[1px] bg-[#e05c00]" style={{ left: `${playhead * 100}%` }} />
+          <div className="overflow-x-auto rounded-[2px] border border-[#1a1a1a] bg-[#050505] pb-1">
+            <div className="relative flex h-16" style={{ width: `${railWidth}px` }}>
+              {segments.map((segment, i) => {
+                const cut = describeSegment(segment, i, videoSources, sourceClips);
+                return (
+                  <button
+                    key={`${segment.id}-${segment.start}-${segment.end}`}
+                    type="button"
+                    title={`Cut ${i + 1} · ${cut.sourceTimeLabel} · ${segment.duration.toFixed(2)}s`}
+                    className={`relative flex-shrink-0 border-r border-[#0d0d0d] text-left transition-colors ${i === activeClip ? "bg-[#e05c0040]" : cut.tone === "ready" ? "bg-[#0b1810] hover:bg-[#102415]" : cut.tone === "failed" ? "bg-[#190a08] hover:bg-[#24100d]" : "bg-[#101010] hover:bg-[#171717]"}`}
+                    style={{ width: `${(segment.duration / Math.max(totalDuration, 0.001)) * 100}%` }}
+                    onClick={() => onActiveClip(i)}
+                  >
+                    {i === activeClip ? <div className="absolute inset-x-0 top-0 h-[2px] bg-[#e05c00]" /> : null}
+                    <span className={`absolute left-1 top-1 h-[5px] w-[5px] ${getToneColor(cut.tone, "dot")}`} />
+                    <span className="absolute bottom-1 left-1 font-mono text-[8px] text-[#777]">{i + 1}</span>
+                    <span className="absolute right-1 top-1 truncate font-mono text-[7px] text-[#555]">{cut.shortSourceLabel}</span>
+                  </button>
+                );
+              })}
+              <div className="pointer-events-none absolute inset-y-0 w-[1px] bg-[#e05c00]" style={{ left: `${playhead * 100}%` }} />
+            </div>
           </div>
         ) : (
           <div className="rounded-[2px] border border-dashed border-[#2a1d16] bg-[#080604] px-3 py-6 text-center">
@@ -221,7 +216,7 @@ export function SplitTab({
         )}
       </section>
 
-      <div className="grid gap-3 xl:grid-cols-[360px_1fr]">
+      <div className="grid gap-3 xl:grid-cols-[320px_1fr]">
         <section className="rounded-[2px] border border-[#1a1a1a] bg-[#0b0b0b] p-3">
           <div className="mb-3 text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Selected cut</div>
           {selectedCut ? (
@@ -236,24 +231,37 @@ export function SplitTab({
         <section className="rounded-[2px] border border-[#1a1a1a] bg-[#0b0b0b] p-3">
           <div className="mb-3 flex items-center justify-between gap-3">
             <div>
-              <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Cut thumbnails + caption readiness</div>
-              <div className="mt-1 text-[11px] text-[#606060]">Green cuts have caption text ready for Match. Red cuts carry a caption/scene error. Orange/gray cuts are waiting or unmapped.</div>
+              <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Candidate cut table</div>
+              <div className="mt-1 text-[11px] text-[#606060]">Repeated captions mean multiple rhythm windows came from the same detected visual scene.</div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <input
                 value={captionSearch}
                 onChange={(event) => setCaptionSearch(event.target.value)}
-                placeholder="Search captions, tags, actions…"
+                placeholder="Search scene captions, tags, actions…"
                 className="w-64 rounded-[2px] border border-[#242424] bg-[#060606] px-3 py-2 font-mono text-[10px] text-[#d0d0d0] outline-none placeholder:text-[#444] focus:border-[#e05c00]"
               />
               <div className="font-mono text-[10px] text-[#777]">{visibleCuts.length}/{segments.length} cuts</div>
             </div>
           </div>
           {segments.length && visibleCuts.length ? (
-            <div className="grid max-h-[520px] grid-cols-2 gap-2 overflow-y-auto pr-1 md:grid-cols-3 2xl:grid-cols-4">
-              {visibleCuts.slice(0, 64).map((cut) => (
-                <CutCard key={`${cut.segment.id}-${cut.segment.start}-${cut.segment.end}`} cut={cut} active={cut.index === activeClip} onClick={() => onActiveClip(cut.index)} />
-              ))}
+            <div className="max-h-[560px] overflow-auto rounded-[2px] border border-[#171717] bg-[#070707]">
+              <table className="w-full min-w-[720px] table-fixed border-collapse text-left">
+                <thead className="sticky top-0 z-10 bg-[#0d0d0d] text-[8px] uppercase tracking-[0.13em] text-[#5f5f5f]">
+                  <tr><th className="w-[10%] border-b border-[#202020] px-3 py-2 font-medium">Cut</th><th className="w-[24%] border-b border-[#202020] px-3 py-2 font-medium">Source time</th><th className="w-[10%] border-b border-[#202020] px-3 py-2 font-medium">Length</th><th className="w-[56%] border-b border-[#202020] px-3 py-2 font-medium">Detected scene caption</th></tr>
+                </thead>
+                <tbody>
+                  {visibleCuts.slice(0, 100).map((cut) => (
+                    <tr key={`${cut.segment.id}-${cut.segment.start}-${cut.segment.end}`} className={cut.index === activeClip ? "bg-[#160d08]" : "odd:bg-[#080808]"}>
+                      <td className="border-b border-[#151515] px-3 py-2"><button type="button" onClick={() => onActiveClip(cut.index)} className="font-mono text-[9px] text-[#e05c00] hover:underline">{cut.index + 1}</button></td>
+                      <td className="border-b border-[#151515] px-3 py-2 font-mono text-[9px] text-[#888]">{cut.sourceTimeLabel}</td>
+                      <td className="border-b border-[#151515] px-3 py-2 font-mono text-[9px] text-[#aaa]">{cut.segment.duration.toFixed(2)}s</td>
+                      <td className="border-b border-[#151515] px-3 py-2 text-[9px] leading-4 text-[#8f8f8f]"><span className={`mr-2 inline-block h-1.5 w-1.5 ${getToneColor(cut.tone, "dot")}`} />{cut.captionText}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {visibleCuts.length > 100 ? <div className="border-t border-[#171717] px-3 py-2 text-[9px] text-[#555]">Showing the first 100 of {visibleCuts.length} matches. Refine the search to narrow the table.</div> : null}
             </div>
           ) : segments.length ? (
             <div className="rounded-[2px] border border-dashed border-[#202020] bg-[#070707] px-3 py-10 text-center text-[10px] uppercase tracking-[0.14em] text-[#4f4f4f]">
@@ -270,14 +278,12 @@ export function SplitTab({
   );
 }
 
-function RequirementCard({ label, value, tone }: { label: string; value: string; tone: ReadinessTone }) {
+function StatusChip({ label, value, tone }: { label: string; value: string; tone: ReadinessTone }) {
   return (
-    <div className={`rounded-[2px] border p-3 ${getToneColor(tone, "panel")}`}>
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <span className="text-[8px] uppercase tracking-[0.16em] text-[#606060]">{label}</span>
-        <span className={`h-2 w-2 ${getToneColor(tone, "dot")}`} />
-      </div>
-      <div className={`font-mono text-[11px] ${getToneColor(tone, "text")}`}>{value}</div>
+    <div className="flex items-center gap-2">
+      <span className={`h-1.5 w-1.5 ${getToneColor(tone, "dot")}`} />
+      <span className="text-[8px] uppercase tracking-[0.14em] text-[#555]">{label}</span>
+      <span className={`font-mono text-[9px] ${getToneColor(tone, "text")}`}>{value}</span>
     </div>
   );
 }
@@ -290,13 +296,13 @@ function CutInspector({ cut }: { cut: SegmentCut }) {
       <div className="relative aspect-video overflow-hidden rounded-[2px] border border-[#181818] bg-[#050505]">
         {cut.thumbnailUrl ? <ThumbnailFill src={cut.thumbnailUrl} /> : null}
         <div className="absolute left-2 top-2 rounded-[2px] bg-[#000000aa] px-2 py-1 font-mono text-[9px] text-[#e05c00]">CUT {cut.index + 1}</div>
-        <div className="absolute bottom-2 right-2 rounded-[2px] bg-[#000000aa] px-2 py-1 font-mono text-[9px] text-[#d0d0d0]">{fmt(cut.segment.start)}–{fmt(cut.segment.end)}</div>
+        <div className="absolute bottom-2 right-2 rounded-[2px] bg-[#000000aa] px-2 py-1 font-mono text-[9px] text-[#d0d0d0]">{cut.sourceTimeLabel}</div>
       </div>
       <div className={`rounded-[2px] border p-3 ${getToneColor(cut.tone, "panel")}`}>
         <div className={`mb-2 text-[9px] uppercase tracking-[0.14em] ${getToneColor(cut.tone, "text")}`}>{cut.statusLabel}</div>
         <div className="text-[11px] leading-5 text-[#b0b0b0]">{cut.captionText}</div>
         <div className="mt-3 grid grid-cols-2 gap-2 font-mono text-[9px] text-[#666]">
-          <div>Source: <span className="text-[#999]">{cut.sourceLabel}</span></div>
+          <div>Source: <span className="text-[#999]">{cut.shortSourceLabel}</span></div>
           <div>Dur: <span className="text-[#999]">{cut.segment.duration.toFixed(2)}s</span></div>
           <div>Scene: <span className="text-[#999]">{cut.scene?.label ?? "unmapped"}</span></div>
           <div>Match: <span className={cut.tone === "ready" ? "text-[#79c779]" : "text-[#d24b3f]"}>{cut.tone === "ready" ? "searchable" : "needs caption"}</span></div>
@@ -307,33 +313,10 @@ function CutInspector({ cut }: { cut: SegmentCut }) {
   );
 }
 
-function CutCard({ cut, active, onClick }: { cut: SegmentCut; active: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`rounded-[2px] border bg-[#080808] p-2 text-left transition-colors ${active ? "border-[#e05c00]" : "border-[#1d1d1d] hover:border-[#333]"}`}
-    >
-      <div className="relative mb-2 aspect-video overflow-hidden rounded-[2px] border border-[#151515] bg-[#050505]">
-        {cut.thumbnailUrl ? <ThumbnailFill src={cut.thumbnailUrl} /> : null}
-        <div className="absolute left-[6px] top-[6px] rounded-[2px] bg-[#00000099] px-1 py-[2px] font-mono text-[8px] text-[#e05c00]">{cut.index + 1}</div>
-        <div className="absolute bottom-[6px] right-[6px] rounded-[2px] bg-[#00000099] px-1 py-[2px] font-mono text-[8px] text-[#d0d0d0]">{cut.segment.duration.toFixed(1)}s</div>
-      </div>
-      <div className="mb-1 flex items-center justify-between gap-2">
-        <span className="truncate font-mono text-[8px] uppercase tracking-[0.1em] text-[#777]">{cut.sourceLabel}</span>
-        <span className={`h-2 w-2 shrink-0 ${getToneColor(cut.tone, "dot")}`} />
-      </div>
-      <div className={`mb-1 text-[8px] uppercase tracking-[0.12em] ${getToneColor(cut.tone, "text")}`}>{cut.statusLabel}</div>
-      <div className="line-clamp-2 text-[9px] leading-4 text-[#8a8a8a]" title={cut.captionText}>{cut.captionText}</div>
-      <CaptionBadges scene={cut.scene} compact />
-    </button>
-  );
-}
-
-function CaptionBadges({ scene, compact = false }: { scene: DetectedSceneSegment | null; compact?: boolean }) {
+function CaptionBadges({ scene }: { scene: DetectedSceneSegment | null }) {
   if (!scene?.captionMode && !scene?.captionSource && !scene?.captionModel) return null;
   return (
-    <div className={`flex flex-wrap gap-1 font-mono uppercase tracking-[0.1em] text-[#555] ${compact ? "mt-2 text-[7px]" : "mt-3 text-[8px]"}`}>
+    <div className="mt-3 flex flex-wrap gap-1 font-mono text-[8px] uppercase tracking-[0.1em] text-[#555]">
       {scene.captionMode ? <span className="rounded-[2px] border border-[#1c1c1c] px-1 py-[1px]">{scene.captionMode}</span> : null}
       {scene.captionSource ? <span className="rounded-[2px] border border-[#1c1c1c] px-1 py-[1px]">{scene.captionSource}</span> : null}
       {scene.captionModel ? <span className="max-w-full truncate rounded-[2px] border border-[#1c1c1c] px-1 py-[1px]" title={scene.captionModel}>{scene.captionModel}</span> : null}
@@ -417,13 +400,14 @@ function getModeReadiness(option: SplitModeOption, state: { hasSources: boolean;
 
 function getModeWaitLabel(option: SplitModeOption, stats: ReturnType<typeof getSplitStats>, analysis: BeatJoinAnalysis | null) {
   if (option.needsScenes && stats.sceneCount === 0) return stats.detecting ? "Waiting for scene detection to finish." : "Scene detection has not returned cuts for this mode.";
-  if (option.needsAudio && !analysis) return "Upload and analyze the master song before beat/onset split modes.";
+  if (option.needsAudio && !analysis) return "Upload and analyze the master song before using a rhythm strategy.";
   return "Upload videos or select a mode with ready prerequisites.";
 }
 
 function describeSegment(segment: SourceTimelineSegment, index: number, sources: UploadedVideoSource[], sourceClips: SourceClipSpan[]) {
   const sourceId = segment.sourceClipIds[0] ?? -1;
   const source = sources.find((candidate) => candidate.id === sourceId);
+  const shortSourceLabel = formatSourceRefs(segment.sourceClipIds);
   const scene = resolveScene(segment, source, sourceClips);
   const captionError = scene?.captionError ?? source?.captionError ?? null;
   const caption = scene?.caption ?? null;
@@ -437,10 +421,35 @@ function describeSegment(segment: SourceTimelineSegment, index: number, sources:
     scene,
     tone,
     statusLabel,
-    sourceLabel: segment.sceneLabel ? `${formatSourceRefs(segment.sourceClipIds)} · ${segment.sceneLabel}` : scene ? `${formatSourceRefs(segment.sourceClipIds)} · ${scene.label}` : formatSourceRefs(segment.sourceClipIds),
+    shortSourceLabel,
+    sourceLabel: segment.sceneLabel ? `${shortSourceLabel} · ${segment.sceneLabel}` : scene ? `${shortSourceLabel} · ${scene.label}` : shortSourceLabel,
+    sourceTimeLabel: formatSourceTimeLabel(segment, sourceClips),
     thumbnailUrl: segment.thumbnailUrl ?? scene?.thumbnailUrl ?? source?.thumbnailUrl,
     captionText: captionError ?? caption ?? "No caption text returned for this cut yet.",
   };
+}
+
+function formatSourceTimeLabel(segment: SourceTimelineSegment, sourceClips: SourceClipSpan[]) {
+  if (segment.sourceClipIds.length !== 1) return `${formatSourceRefs(segment.sourceClipIds)} · crosses source boundary`;
+  const sourceId = segment.sourceClipIds[0] ?? -1;
+  const span = sourceClips.find((clip) => clip.id === sourceId);
+  if (!span) return `${formatSourceRefs(segment.sourceClipIds)} · ${fmt(segment.start)}–${fmt(segment.end)}`;
+  const start = Math.max(0, segment.start - span.start);
+  const end = Math.min(span.duration, Math.max(start, segment.end - span.start));
+  return `${formatSourceRefs(segment.sourceClipIds)} · ${fmt(start)}–${fmt(end)}`;
+}
+
+function summarizeDurations(segments: SourceTimelineSegment[]) {
+  if (!segments.length) return { average: 0, minimum: 0, maximum: 0 };
+  let total = 0;
+  let minimum = Number.POSITIVE_INFINITY;
+  let maximum = 0;
+  for (const segment of segments) {
+    total += segment.duration;
+    minimum = Math.min(minimum, segment.duration);
+    maximum = Math.max(maximum, segment.duration);
+  }
+  return { average: total / segments.length, minimum, maximum };
 }
 
 function resolveScene(segment: SourceTimelineSegment, source: UploadedVideoSource | undefined, sourceClips: SourceClipSpan[]): DetectedSceneSegment | null {
@@ -473,13 +482,13 @@ function formatModeLabel(mode: SplitMode) {
     case "scene":
       return "SCENE";
     case "beat":
-      return "BEAT";
+      return "RHYTHM";
     case "onset":
-      return "ONSET";
+      return "RHYTHM";
     case "scene-beat":
-      return "SCENE+BEAT";
+      return "SCENE+RHYTHM";
     case "scene-onset":
-      return "SCENE+ONSET";
+      return "SCENE+RHYTHM";
   }
 }
 

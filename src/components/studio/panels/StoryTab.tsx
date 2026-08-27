@@ -14,16 +14,13 @@ import {
   type StoryEditSettings,
   type StorySectionDraft,
 } from "../musicVideoProject";
-import { StoryPlanEditor, StoryStructureRuler } from "../StoryStructurePlanner";
+import { StoryStructureEditor } from "../StoryStructurePlanner";
 import {
-  insertStoryTemplateInSongOrder,
   moveStorySectionBoundary,
   removeTimedStorySection,
   splitStorySectionWithTemplate,
   toTimedStoryDrafts,
 } from "../storyStructure";
-import { ParamSlider } from "../ParamSlider";
-import { UploadControl } from "../UploadControl";
 import type { BeatJoinAnalysis, SegmentPreview, UploadedVideoSource } from "../types";
 
 export type StoryBeatDraft = StoryPlanDraft;
@@ -54,6 +51,11 @@ const DEFAULT_STORY_BEATS: StoryBeatDraft[] = getDefaultStorySectionDrafts().map
 }));
 
 const STORY_SECTION_TEMPLATES = getDefaultStorySectionDrafts();
+const STORY_PACE_OPTIONS = [
+  { label: "Relaxed", density: 0.3, detail: "Longer phrases" },
+  { label: "Balanced", density: 0.55, detail: "Musical rough cut" },
+  { label: "Fast", density: 0.82, detail: "Shorter rhythmic cuts" },
+] as const;
 
 export function createDefaultStoryTabState(): StoryTabState {
   return {
@@ -74,6 +76,7 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews,
   const [transcriptStatus, setTranscriptStatus] = useState(() => formatTranscriptStatus(state.transcriptSummary));
   const [transcriptError, setTranscriptError] = useState<string | null>(null);
   const progressTimer = useRef<number | null>(null);
+  const vocalStemInputRef = useRef<HTMLInputElement>(null);
 
   function updateState(patch: Partial<StoryTabState>) {
     onStateChange((current) => ({ ...current, ...patch }));
@@ -123,8 +126,6 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews,
   );
 
   const storyRail = musicVideoProject.storySections;
-  const activeBeat = storyRail.find((beat) => beat.id === activeBeatId) ?? storyRail[0];
-
   useEffect(() => {
     if (!isTranscribingAudio && !transcriptError) {
       setTranscriptStatus(formatTranscriptStatus(transcriptSummary));
@@ -202,16 +203,6 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews,
     updatePlannedStoryBeats(next, nextActiveId);
   }
 
-  function insertStoryTemplate(template: StoryPlanDraft) {
-    const next = insertStoryTemplateInSongOrder({
-      drafts: plannedStoryBeats,
-      template,
-      cueTimes: getStoryBoundaryCues(analysis, transcriptSummary),
-    });
-    if (next === plannedStoryBeats) return;
-    updatePlannedStoryBeats(next, template.id ?? activeBeatId);
-  }
-
   function addStoryPart() {
     const partNumber = plannedStoryBeats.filter((beat) => /^part\b/i.test(beat.label)).length;
     const partLabel = `Part ${String.fromCharCode(65 + (partNumber % 26))}`;
@@ -252,118 +243,98 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews,
 
   return (
     <div className="space-y-3">
-      <section className="grid gap-3 xl:grid-cols-[minmax(380px,0.9fr)_minmax(560px,1.45fr)]">
-        <StoryPlanEditor
-          plannedSections={storyRail}
-          templates={STORY_SECTION_TEMPLATES}
-          activeSectionId={activeBeatId}
-          onSelect={setActiveBeatId}
-          onUpdate={updateStoryBeat}
-          onInsertTemplate={insertStoryTemplate}
-          onAddPart={addStoryPart}
-          onRemove={removeStoryBeat}
-          onMoveBoundary={moveStoryBoundary}
-          onResetFromDetection={resetStoryPlanFromDetection}
-        />
+      <StoryStructureEditor
+        detectedSections={analysis?.sections ?? []}
+        plannedSections={storyRail}
+        duration={totalDuration || 0}
+        activeSectionId={activeBeatId}
+        onSelect={setActiveBeatId}
+        onUpdate={updateStoryBeat}
+        onMoveBoundary={moveStoryBoundary}
+        onSplit={addStoryPart}
+        onRemove={removeStoryBeat}
+        onResetFromDetection={resetStoryPlanFromDetection}
+      />
 
-        <div className="rounded-[2px] border border-[#1a1a1a] bg-[#0b0b0b] p-3">
-          <div className="mb-3">
-            <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Lyrics / Deepgram lane</div>
-            <div className="mt-1 text-[11px] text-[#6d6d6d]">
-              Upload the vocal stem; Deepgram returns the lyrics plus timed SRT chunks. This is the main AI input for Generate Story.
-            </div>
-          </div>
-
-          <UploadControl
-            accept="audio/*,.wav,.mp3,.m4a,.aac,.ogg"
-            multiple={false}
-            title="Upload isolated vocal stem"
-            detail="Progress stays visible while Deepgram transcribes, then all lyrics/SRT chunks appear below."
-            actionLabel={vocalStemName ? "Replace Stem" : "Upload Vocal Stem"}
-            disabled={isTranscribingAudio}
-            isProcessing={isTranscribingAudio}
-            processingProgress={transcriptProgress}
-            status={transcriptStatus}
-            error={transcriptError}
-            onFiles={handleVocalStemUpload}
-          />
-
-          <div className="mt-3 grid gap-2 md:grid-cols-4">
-            <Metric label="Audio markers" value={analysis ? `${analysis.beats.length} beat markers` : audioStatus} />
-            <Metric label="Vocal Stem" value={vocalStemName || "Not uploaded"} />
-            <Metric label="Timed SRT" value={`${srtChunkCount} chunks`} />
-            <Metric label="Source Moments" value={`${musicVideoProject.videoMoments.length} clips/segments`} />
-          </div>
-
-          <div className="mt-3 rounded-[2px] border border-[#171717] bg-[#070707] p-3">
-            <div className="mb-2 flex items-center justify-between gap-2">
+      <section className="rounded-[2px] border border-[#1a1a1a] bg-[#0b0b0b] p-3">
+        <div className="grid gap-3 xl:grid-cols-[1.15fr_0.85fr]">
+          <div>
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
               <div>
-                <div className="text-[8px] uppercase tracking-[0.16em] text-[#e05c00]">Live edit density</div>
-                <div className="mt-1 text-[10px] text-[#666]">
-                  Drives Story preview/export cut windows from sparse section cuts to fast onset cuts.
-                </div>
+                <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Lyrics timing</div>
+                <div className="mt-1 text-[11px] text-[#6d6d6d]">Deepgram turns the vocal stem into timed lyric lines for the section map.</div>
               </div>
-              <div className="font-mono text-[10px] text-[#bdbdbd]">{Math.round(editSettings.cutDensity * 100)}%</div>
+              <input
+                ref={vocalStemInputRef}
+                type="file"
+                accept="audio/*,.wav,.mp3,.m4a,.aac,.ogg"
+                disabled={isTranscribingAudio}
+                className="sr-only"
+                onChange={(event) => {
+                  const files = Array.from(event.target.files ?? []);
+                  event.target.value = "";
+                  void handleVocalStemUpload(files);
+                }}
+              />
+              <button type="button" disabled={isTranscribingAudio} onClick={() => vocalStemInputRef.current?.click()} className="rounded-[2px] bg-[#e05c00] px-3 py-2 text-[9px] font-semibold uppercase tracking-[0.14em] text-white hover:bg-[#c95200] disabled:cursor-not-allowed disabled:bg-[#252525] disabled:text-[#666]">
+                {isTranscribingAudio ? `Transcribing ${transcriptProgress}%` : vocalStemName ? "Replace vocal stem" : "Upload vocal stem"}
+              </button>
             </div>
-            <ParamSlider
-              label="Density"
-              value={Math.round(editSettings.cutDensity * 100)}
-              min={15}
-              max={100}
-              step={5}
-              unit="%"
-              onChange={(value) => updateEditSettings({ cutDensity: value / 100 })}
-            />
-            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[9px] uppercase tracking-[0.12em] text-[#5f5f5f]">
-              <span>Sparser phrases</span>
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={editSettings.preferOnsets}
-                  onChange={(event) => updateEditSettings({ preferOnsets: event.target.checked })}
-                  className="accent-[#e05c00]"
-                />
-                Prefer onsets
-              </label>
-              <span>Fast music cuts</span>
+
+            <div className={`rounded-[2px] border px-3 py-2 text-[10px] ${transcriptError ? "border-[#5a1f1a] bg-[#120706] text-[#d66a61]" : "border-[#171717] bg-[#070707] text-[#777]"}`}>
+              <div className="flex items-center justify-between gap-3">
+                <span className="truncate">{transcriptError ?? transcriptStatus}</span>
+                <span className="shrink-0 font-mono text-[#a5a5a5]">{vocalStemName || "No stem"}</span>
+              </div>
+              {isTranscribingAudio ? <div className="mt-2 h-1 overflow-hidden bg-[#151515]"><div className="h-full bg-[#e05c00] transition-[width]" style={{ width: `${transcriptProgress}%` }} /></div> : null}
+            </div>
+
+            <div className="mt-2 flex flex-wrap gap-x-5 gap-y-2 border-t border-[#151515] pt-2">
+              <InlineMetric label="Audio" value={analysis ? `${analysis.beats.length} markers` : audioStatus} />
+              <InlineMetric label="Lyrics" value={`${srtChunkCount} timed lines`} />
+              <InlineMetric label="Sources" value={`${musicVideoProject.videoMoments.length} searchable moments`} />
             </div>
           </div>
 
-          <div className="mt-3 grid gap-2 lg:grid-cols-[0.9fr_1.1fr]">
-            <div className="rounded-[2px] border border-[#171717] bg-[#070707] p-2">
-              <div className="mb-2 text-[8px] uppercase tracking-[0.16em] text-[#494949]">Full lyrics from Deepgram</div>
-              <div className="max-h-56 overflow-auto whitespace-pre-wrap rounded-[2px] bg-[#030303] p-2 text-[10px] leading-4 text-[#a7a7a7]">
-                {transcriptSummary?.transcript || "Lyrics will appear here after vocal stem transcription."}
-              </div>
+          <div className="rounded-[2px] border border-[#171717] bg-[#070707] p-3">
+            <div className="mb-2 text-[9px] uppercase tracking-[0.16em] text-[#777]">Edit pace</div>
+            <div className="grid grid-cols-3 gap-1.5">
+              {STORY_PACE_OPTIONS.map((option) => {
+                const active = Math.abs(editSettings.cutDensity - option.density) < 0.13;
+                return (
+                  <button key={option.label} type="button" onClick={() => updateEditSettings({ cutDensity: option.density, preferOnsets: true })} className={`rounded-[2px] border px-2 py-2 text-left ${active ? "border-[#e05c00] bg-[#170c05]" : "border-[#242424] bg-[#090909] hover:border-[#444]"}`}>
+                    <span className={`block text-[9px] uppercase tracking-[0.12em] ${active ? "text-[#e05c00]" : "text-[#aaa]"}`}>{option.label}</span>
+                    <span className="mt-1 block text-[8px] text-[#555]">{option.detail}</span>
+                  </button>
+                );
+              })}
             </div>
-            <div className="rounded-[2px] border border-[#171717] bg-[#070707] p-2">
-              <div className="mb-2 flex items-center justify-between text-[8px] uppercase tracking-[0.16em] text-[#494949]">
-                <span>All SRT chunks</span>
-                <span>{srtChunkCount}</span>
-              </div>
-              <div className="max-h-56 space-y-1 overflow-auto rounded-[2px] bg-[#030303] p-2 font-mono text-[9px] text-[#878787]">
-                {musicVideoProject.lyricChunks.length ? (
-                  musicVideoProject.lyricChunks.map((chunk) => (
-                    <div key={chunk.id} className="grid grid-cols-[86px_1fr] gap-2 border-b border-[#101010] pb-1 last:border-b-0">
-                      <span className="text-[#e05c00]">{fmt(chunk.start)}–{fmt(chunk.end)}</span>
-                      <span className="text-[#9c9c9c]">{chunk.text}</span>
-                    </div>
-                  ))
-                ) : (
-                  <div>No SRT chunks yet.</div>
-                )}
-              </div>
-            </div>
+            <div className="mt-2 text-[9px] leading-4 text-[#555]">This controls final edit rhythm. It does not create more source footage or change scene captions.</div>
           </div>
         </div>
+
+        <details className="mt-3 rounded-[2px] border border-[#171717] bg-[#070707]">
+          <summary className="cursor-pointer px-3 py-2 text-[9px] uppercase tracking-[0.14em] text-[#777]">View lyrics and {srtChunkCount} timed lines</summary>
+          <div className="grid gap-2 border-t border-[#171717] p-2 lg:grid-cols-2">
+            <div className="max-h-56 overflow-auto whitespace-pre-wrap rounded-[2px] bg-[#030303] p-2 text-[10px] leading-4 text-[#a7a7a7]">{transcriptSummary?.transcript || "Lyrics will appear here after vocal stem transcription."}</div>
+            <div className="max-h-56 space-y-1 overflow-auto rounded-[2px] bg-[#030303] p-2 font-mono text-[9px] text-[#878787]">
+              {musicVideoProject.lyricChunks.length ? musicVideoProject.lyricChunks.map((chunk) => (
+                <div key={chunk.id} className="grid grid-cols-[86px_1fr] gap-2 border-b border-[#101010] pb-1 last:border-b-0">
+                  <span className="text-[#e05c00]">{fmt(chunk.start)}–{fmt(chunk.end)}</span>
+                  <span className="text-[#9c9c9c]">{chunk.text}</span>
+                </div>
+              )) : <div>No timed lyrics yet.</div>}
+            </div>
+          </div>
+        </details>
       </section>
 
       <section className="rounded-[2px] border border-[#1a1a1a] bg-[#0b0b0b] p-3">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Generate Story output</div>
+            <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Story section map</div>
             <div className="mt-1 text-[11px] text-[#6d6d6d]">
-              Click Generate Story after lyrics/SRT are ready. This turns the page into a section-card layout: prompt, lyrics window, source/scene references, and image/video placeholders.
+              Each row shows what belongs together: song section, timed lyrics, story intent, selected footage, and match confidence.
             </div>
           </div>
           <button
@@ -374,54 +345,67 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews,
               transcriptSummary && !isTranscribingAudio ? "bg-[#e05c00] text-white hover:bg-[#c95200]" : "bg-[#252525] text-[#646464] cursor-not-allowed"
             }`}
           >
-            Generate Story
+            {storyGenerated ? "Story map ready" : "Use this story map"}
           </button>
         </div>
 
-        <StoryStructureRuler
-          detectedSections={analysis?.sections ?? []}
-          plannedSections={storyRail}
-          duration={totalDuration || 0}
-          activeSectionId={activeBeatId}
-          onSelect={setActiveBeatId}
-        />
-
-        {storyGenerated ? (
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {storyRail.map((beat, index) => {
+        {totalDuration > 0 ? <div className="overflow-x-auto rounded-[2px] border border-[#171717] bg-[#070707]">
+            <table className="w-full min-w-[1080px] table-fixed border-collapse text-left">
+              <thead className="bg-[#0d0d0d] text-[8px] uppercase tracking-[0.14em] text-[#5f5f5f]">
+                <tr>
+                  <th className="w-[13%] border-b border-[#202020] px-3 py-2 font-medium">Section</th>
+                  <th className="w-[23%] border-b border-[#202020] px-3 py-2 font-medium">Lyrics in window</th>
+                  <th className="w-[25%] border-b border-[#202020] px-3 py-2 font-medium">Story intent</th>
+                  <th className="w-[25%] border-b border-[#202020] px-3 py-2 font-medium">Matched source</th>
+                  <th className="w-[14%] border-b border-[#202020] px-3 py-2 font-medium">Match</th>
+                </tr>
+              </thead>
+              <tbody>
+            {storyRail.map((beat) => {
               const relatedChunks = musicVideoProject.lyricChunks.filter((chunk) => beat.lyricChunkIds.includes(chunk.id));
-              const sourceMoment = musicVideoProject.videoMoments.find((moment) => moment.id === beat.videoMomentIds[0]) ?? musicVideoProject.videoMoments[index % Math.max(1, musicVideoProject.videoMoments.length)];
+              const sourceMoment = musicVideoProject.videoMoments.find((moment) => moment.id === beat.videoMomentIds[0]);
               const timelineItem = musicVideoProject.editPlan.timelineItems.find((item) => item.sectionId === beat.id);
               const semanticMatch = timelineItem?.semanticMatch ?? beat.semanticMatch;
               return (
-                <div key={beat.id} className="overflow-hidden rounded-[2px] border border-[#171717] bg-[#070707]">
-                  <div className="aspect-video bg-[linear-gradient(135deg,#161616,#050505)]">
-                    {sourceMoment?.thumbnailUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={sourceMoment.thumbnailUrl} alt="" className="h-full w-full object-cover opacity-75" loading="lazy" decoding="async" />
-                    ) : null}
-                  </div>
-                  <div className="space-y-2 border-t border-[#141414] p-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="truncate text-[10px] font-semibold uppercase tracking-[0.14em] text-[#d0d0d0]">{beat.label}</div>
-                      <div className="font-mono text-[9px] text-[#707070]">{fmt(beat.start)}–{fmt(beat.end)}</div>
+                <tr key={beat.id} className={`align-top ${activeBeatId === beat.id ? "bg-[#120c08]" : "odd:bg-[#080808]"}`}>
+                  <td className="border-b border-[#151515] px-3 py-3">
+                    <button type="button" onClick={() => setActiveBeatId(beat.id)} className="w-full text-left">
+                      <span className="block truncate text-[10px] font-semibold uppercase tracking-[0.13em] text-[#d0d0d0]">{beat.label}</span>
+                      <span className="mt-1 block font-mono text-[9px] text-[#707070]">{fmt(beat.start)}–{fmt(beat.end)}</span>
+                      <span className="mt-2 block text-[7px] uppercase tracking-[0.12em] text-[#555]">{beat.source === "analysis" ? "Detected" : "Adjusted"}</span>
+                    </button>
+                  </td>
+                  <td className="border-b border-[#151515] px-3 py-3 text-[9px] leading-4 text-[#8f8f8f]">
+                    <div className="max-h-24 overflow-auto pr-1">
+                      {relatedChunks.length ? relatedChunks.map((chunk) => <div key={chunk.id}><span className="mr-2 font-mono text-[#b86432]">{fmt(chunk.start)}</span>{chunk.text}</div>) : "No lyric chunk overlaps this section."}
                     </div>
-                    <div className="rounded-[2px] border border-[#191919] bg-[#030303] p-2 text-[10px] leading-4 text-[#a7a7a7]">
-                      <span className="text-[#e05c00]">Prompt:</span> {beat.prompt}
-                    </div>
-                    <div className="max-h-28 overflow-auto rounded-[2px] border border-[#191919] bg-[#030303] p-2 text-[9px] leading-4 text-[#8f8f8f]">
-                      {relatedChunks.length ? relatedChunks.map((chunk) => <div key={chunk.id}>{fmt(chunk.start)} {chunk.text}</div>) : "No lyric chunk overlaps this section yet."}
-                    </div>
-                    <div className="rounded-[2px] border border-[#191919] bg-[#030303] p-2 text-[8px] uppercase tracking-[0.12em] text-[#666]">
-                      Source: {sourceMoment ? `${sourceMoment.sourceRefLabel ?? `S${sourceMoment.sourceClipId + 1}`} · ${sourceMoment.label}` : "No source clip yet"}
-                    </div>
-                    {semanticMatch ? (
-                      <div className="rounded-[2px] border border-[#191919] bg-[#030303] p-2">
-                        <div className="mb-2 flex items-center justify-between gap-2">
-                          <span className="text-[8px] uppercase tracking-[0.14em] text-[#e05c00]">Semantic edit choice</span>
-                          <span className="font-mono text-[9px] text-[#bdbdbd]">{Math.round(semanticMatch.score * 100)}%</span>
+                  </td>
+                  <td className="border-b border-[#151515] px-3 py-3 text-[10px] leading-4 text-[#a7a7a7]">
+                    {beat.prompt}
+                  </td>
+                  <td className="border-b border-[#151515] px-3 py-3">
+                    {sourceMoment ? (
+                      <div className="flex gap-2">
+                        <div className="h-12 w-20 shrink-0 overflow-hidden rounded-[2px] border border-[#1d1d1d] bg-[#030303]">
+                          {sourceMoment.thumbnailUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={sourceMoment.thumbnailUrl} alt="" className="h-full w-full object-cover opacity-80" loading="lazy" decoding="async" />
+                          ) : null}
                         </div>
-                        <div className="grid grid-cols-2 gap-1 font-mono text-[8px] uppercase tracking-[0.08em] text-[#747474]">
+                        <div className="min-w-0">
+                          <div className="font-mono text-[8px] uppercase tracking-[0.1em] text-[#b86432]">{sourceMoment.sourceRefLabel ?? `S${sourceMoment.sourceClipId + 1}`}</div>
+                          <div className="mt-1 line-clamp-3 text-[9px] leading-4 text-[#858585]">{sourceMoment.label}</div>
+                        </div>
+                      </div>
+                    ) : <span className="text-[9px] text-[#555]">No matched source</span>}
+                  </td>
+                  <td className="border-b border-[#151515] px-3 py-3">
+                    {semanticMatch ? (
+                      <details>
+                        <summary className="cursor-pointer list-none rounded-[2px] border border-[#2b211a] bg-[#100b08] px-2 py-1.5 font-mono text-[10px] text-[#d0956f]">
+                          {Math.round(semanticMatch.score * 100)}% <span className="float-right text-[8px] uppercase tracking-[0.1em] text-[#6d5547]">details</span>
+                        </summary>
+                        <div className="mt-2 grid grid-cols-2 gap-1 font-mono text-[8px] uppercase tracking-[0.08em] text-[#747474]">
                           <ScorePill label="caption" value={semanticMatch.semanticScore} />
                           <ScorePill label="lyrics" value={semanticMatch.lyricCaptionScore} />
                           <ScorePill label="action" value={semanticMatch.actionIntentScore} />
@@ -429,36 +413,17 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews,
                           <ScorePill label="duration" value={semanticMatch.durationFitScore} />
                           <ScorePill label="motion" value={semanticMatch.motionContinuityScore} />
                         </div>
-                        <div className="mt-2 flex flex-wrap gap-1">
-                          {semanticMatch.reasons.map((reason) => (
-                            <span key={reason} className="rounded-[2px] border border-[#202020] px-1.5 py-1 text-[8px] uppercase tracking-[0.1em] text-[#8f8f8f]">
-                              {reason}
-                            </span>
-                          ))}
-                          {semanticMatch.repetitionPenalty > 0 ? (
-                            <span className="rounded-[2px] border border-[#2a160f] px-1.5 py-1 text-[8px] uppercase tracking-[0.1em] text-[#b96c43]">
-                              repeat -{Math.round(semanticMatch.repetitionPenalty * 100)}%
-                            </span>
-                          ) : null}
-                        </div>
-                      </div>
-                    ) : null}
-                    <div className="grid grid-cols-3 gap-1 text-center text-[8px] uppercase tracking-[0.12em] text-[#666]">
-                      <div className="rounded-[2px] border border-[#202020] py-1">Image prompt</div>
-                      <div className="rounded-[2px] border border-[#202020] py-1">Video prompt</div>
-                      <div className="rounded-[2px] border border-[#202020] py-1">Stitch slot</div>
-                    </div>
-                  </div>
-                </div>
+                        {semanticMatch.reasons.length ? <div className="mt-2 text-[8px] leading-3 text-[#666]">{semanticMatch.reasons.join(" · ")}</div> : null}
+                        {semanticMatch.repetitionPenalty > 0 ? <div className="mt-1 text-[8px] text-[#b96c43]">repeat -{Math.round(semanticMatch.repetitionPenalty * 100)}%</div> : null}
+                      </details>
+                    ) : <span className="text-[9px] text-[#555]">Not scored</span>}
+                  </td>
+                </tr>
               );
             })}
-          </div>
-        ) : (
-          <div className="rounded-[2px] border border-dashed border-[#222] bg-[#060606] p-6 text-center text-[11px] text-[#6d6d6d]">
-            Story cards will appear here after Generate Story. This replaces the vague placeholder card/gap-fill area with the actual music-video section layout.
-            {activeBeat ? <div className="mt-2 font-mono text-[9px] text-[#4f4f4f]">Selected: {activeBeat.label} · {fmt(activeBeat.start)}–{fmt(activeBeat.end)}</div> : null}
-          </div>
-        )}
+              </tbody>
+            </table>
+        </div> : <div className="rounded-[2px] border border-dashed border-[#202020] bg-[#070707] px-3 py-8 text-center text-[10px] uppercase tracking-[0.14em] text-[#555]">Analyze the master song to build the timed story map.</div>}
       </section>
     </div>
   );
@@ -477,11 +442,11 @@ function getStoryBoundaryCues(analysis: BeatJoinAnalysis | null, transcriptSumma
   ])).sort((left, right) => left - right);
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function InlineMetric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-[2px] border border-[#171717] bg-[#070707] px-2 py-2">
-      <div className="text-[8px] uppercase tracking-[0.16em] text-[#494949]">{label}</div>
-      <div className="mt-1 truncate font-mono text-[10px] text-[#a5a5a5]" title={value}>{value}</div>
+    <div className="min-w-0">
+      <span className="mr-2 text-[8px] uppercase tracking-[0.14em] text-[#4f4f4f]">{label}</span>
+      <span className="font-mono text-[9px] text-[#a5a5a5]" title={value}>{value}</span>
     </div>
   );
 }

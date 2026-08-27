@@ -451,7 +451,7 @@ function buildBatchCaptionContext(value: string | undefined, sampleTimes: Record
   return JSON.stringify({
     ...projectContext,
     sampleTimes,
-    instruction: "Caption motion and change across the three scene panels; use character references only for visual identity matching.",
+    instruction: "Caption motion and change across the three scene panels; use character references for visual identity and the environment reference for named-location continuity.",
   });
 }
 

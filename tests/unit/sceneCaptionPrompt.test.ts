@@ -15,13 +15,22 @@ const settings: SceneCaptionSettings = {
       { name: "Diego", role: "primary" },
       { name: "Valentina", role: "secondary" },
     ],
+    locations: [{ name: "The Ember Ballroom" }],
   },
-  referenceImages: [{
-    name: "Diego",
-    role: "primary",
-    bucket: "stack-structure",
-    objectKey: "reference-assets/character-1/diego.png",
-  }],
+  referenceImages: [
+    {
+      name: "Diego",
+      role: "primary",
+      bucket: "stack-structure",
+      objectKey: "reference-assets/character-1/diego.png",
+    },
+    {
+      name: "The Ember Ballroom",
+      role: "environment",
+      bucket: "stack-structure",
+      objectKey: "reference-assets/environment/ember-ballroom.png",
+    },
+  ],
 };
 
 describe("detailed Qwen scene caption profile", () => {
@@ -31,6 +40,8 @@ describe("detailed Qwen scene caption profile", () => {
     expect(prompt).toContain("shot size and composition");
     expect(prompt).toContain("exact character name");
     expect(prompt).toContain("Do not assign a listed name");
+    expect(prompt).toContain("exact location name");
+    expect(prompt).toContain("close-up or detail shot");
   });
 
   test("serializes project identity context separately from durable reference images", () => {
@@ -38,6 +49,7 @@ describe("detailed Qwen scene caption profile", () => {
       projectContext: {
         captionStyle: "detailed-cinematic",
         characters: [{ name: "Diego" }, { name: "Valentina" }],
+        locations: [{ name: "The Ember Ballroom" }],
       },
     });
     expect(JSON.parse(serializeSceneCaptionReferences(settings))).toEqual(settings.referenceImages);
