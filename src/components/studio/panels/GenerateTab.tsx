@@ -10,6 +10,7 @@ import { buildAdaptiveCueMap } from "../adaptiveCueMap";
 import type { EditPlanPreviewSegment, MusicVideoProject, TimelineItem, VideoMoment } from "../musicVideoProject";
 import { selectPreviewCutRange, selectPreviewSectionRange, type PreviewCutRange } from "../resolvedPreviewSelection";
 import { waitForTriggerRunOutput } from "@/lib/clientTriggerRuns";
+import type { MediaGatewayUploadResult } from "@/lib/mediaGateway";
 
 type GenerateTabProps = {
   project: MusicVideoProject | null;
@@ -162,6 +163,8 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
   const [selectedPresetTitle, setSelectedPresetTitle] = useState(LOCAL_SWARM_PRESETS[0].title);
   const [higgsfieldStatus, setHiggsfieldStatus] = useState("Higgsfield not checked yet.");
   const [isHiggsfieldGenerating, setIsHiggsfieldGenerating] = useState(false);
+  const [generatedImportStatus, setGeneratedImportStatus] = useState("Select exactly one resolved cut below, then import its completed Seedance candidates.");
+  const [isImportingGenerated, setIsImportingGenerated] = useState(false);
   const cueMap = useMemo(() => buildAdaptiveCueMap({
     analysis,
     project,
@@ -175,6 +178,10 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
   const requiredIssues = issueGroups.filter((issue) => issue.status === "missing" || issue.status === "short");
   const reviewIssues = issueGroups.filter((issue) => issue.status === "weak");
   const focusSlot = slots.find((slot) => slot.item.id === selectedSlotId) ?? slots.find((slot) => slot.status !== "filled") ?? slots[0];
+  const selectedReturnSegment = selectedPreviewRange && selectedPreviewRange.startIndex === selectedPreviewRange.endIndex
+    ? previewSegments[selectedPreviewRange.startIndex]
+    : undefined;
+  const selectedReturnSlot = selectedReturnSegment ? findCoverageSlotForSegment(slots, selectedReturnSegment) : undefined;
   const selectedPreset = LOCAL_SWARM_PRESETS.find((preset) => preset.title === selectedPresetTitle) ?? LOCAL_SWARM_PRESETS[0];
   const frameMoment = focusSlot?.moment ?? project?.videoMoments.find((moment) => moment.firstFrameUrl || moment.thumbnailUrl);
   const effectiveReferenceSelection = useMemo(() => fillDefaultReferenceSelection(referenceSelection, referenceAssets), [referenceAssets, referenceSelection]);
@@ -188,6 +195,61 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
       setGenerationStatus(status ? `${status.reachable ? "Ready" : "Offline"}: ${status.message} (${status.baseUrl})` : "No SwarmUI status returned.");
     } catch (error) {
       setGenerationStatus(error instanceof Error ? error.message : "Provider check failed.");
+    }
+  };
+
+  const importGeneratedClips = async (files: File[]) => {
+    if (!selectedReturnSegment || !files.length) {
+      setGeneratedImportStatus("Select exactly one resolved cut below before importing its generated replacement.");
+      return;
+    }
+    const videos = files.filter((file) => file.type.startsWith("video/") || /\.(mp4|mov|webm)$/i.test(file.name));
+    if (!videos.length) {
+      setGeneratedImportStatus("Choose at least one MP4, MOV, or WebM generated clip.");
+      return;
+    }
+    setIsImportingGenerated(true);
+    setGeneratedImportStatus(`Uploading ${videos.length} generated clip${videos.length === 1 ? "" : "s"} to RustFS...`);
+    try {
+      for (const file of videos) {
+        const durationSeconds = await readVideoDuration(file);
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("folder", `media-uploads/generated/higgsfield/seedance/${project?.id ?? "draft"}/${selectedReturnSlot?.item.id ?? `cut-${selectedPreviewRange!.startIndex + 1}`}`);
+        const response = await fetch("/api/storage/upload", { method: "POST", body: formData });
+        const payload = await response.json() as MediaGatewayUploadResult & { error?: string };
+        if (!response.ok || payload.error) throw new Error(payload.error ?? `Generated clip upload failed with HTTP ${response.status}`);
+        const resultUrl = payload.mediaUrl ?? payload.publicUrl;
+        const model = inferSeedanceModel(file.name);
+        onGeneratedAsset({
+          id: `seedance:${crypto.randomUUID()}`,
+          provider: "higgsfield",
+          model,
+          title: file.name.replace(/\.[^.]+$/, ""),
+          prompt: "Imported completed Seedance continuation for explicit review.",
+          createdAt: new Date().toISOString(),
+          status: "completed",
+          resultUrl,
+          fullStorage: payload,
+          mediaKind: "video",
+          durationSeconds,
+          trimStart: 0,
+          reviewStatus: "pending",
+          target: {
+            timelineItemId: selectedReturnSlot?.item.id ?? `resolved-cut-${selectedPreviewRange!.startIndex + 1}`,
+            sectionId: selectedReturnSegment.sectionId,
+            sectionLabel: selectedReturnSlot?.item.label ?? selectedReturnSegment.label,
+            parentMomentId: selectedReturnSegment.momentId,
+            songStart: selectedReturnSegment.musicStart,
+            songEnd: selectedReturnSegment.musicEnd,
+          },
+        });
+      }
+      setGeneratedImportStatus(`Returned ${videos.length} generated clip${videos.length === 1 ? "" : "s"} to cut ${selectedPreviewRange!.startIndex + 1} at ${fmtCutTime(selectedReturnSegment.musicStart)}–${fmtCutTime(selectedReturnSegment.musicEnd)}. Review before Join.`);
+    } catch (error) {
+      setGeneratedImportStatus(error instanceof Error ? error.message : "Generated clip import failed.");
+    } finally {
+      setIsImportingGenerated(false);
     }
   };
 
@@ -434,11 +496,29 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Generated shot bank / approval queue</div>
-            <div className="mt-1 text-[11px] text-[#6d6d6d]">Generated assets from the local SwarmUI gateway appear in the source-frame lab first; approval and timeline replacement remain explicit so nothing silently enters Join.</div>
+            <div className="mt-1 text-[11px] text-[#6d6d6d]">Select one resolved cut, return its completed Seedance candidates, then approve exactly what enters Join. Rejected clips remain attached as review history and never replace the edit.</div>
           </div>
-          <span className="rounded-[2px] border border-[#6e3425] bg-[#160905] px-2 py-1 font-mono text-[9px] uppercase tracking-[0.12em] text-[#d26c42]">local bridge ready</span>
+          <label className={`rounded-[2px] border border-[#6e3425] bg-[#160905] px-3 py-2 text-[8px] uppercase tracking-[0.12em] text-[#d26c42] ${isImportingGenerated || !selectedReturnSegment ? "cursor-not-allowed opacity-45" : "cursor-pointer hover:border-[#e05c00]"}`}>
+            {isImportingGenerated ? "Importing..." : "Import generated clips"}
+            <input
+              type="file"
+              accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm"
+              multiple
+              disabled={isImportingGenerated || !selectedReturnSegment}
+              className="sr-only"
+              onChange={(event) => {
+                const files = Array.from(event.target.files ?? []);
+                event.target.value = "";
+                void importGeneratedClips(files);
+              }}
+            />
+          </label>
         </div>
-        <GeneratedShotBank slots={slots} />
+        <div className="mb-3 rounded-[2px] border border-[#171717] bg-[#050505] px-2 py-1.5 font-mono text-[8px] leading-4 text-[#777]">{generatedImportStatus}</div>
+        <GeneratedShotBank
+          assets={persistedGeneratedAssets}
+          onUpdate={onGeneratedAsset}
+        />
       </section>
 
       <section className="rounded-[2px] border border-[#1a1a1a] bg-[#0b0b0b] p-3">
@@ -1378,29 +1458,85 @@ function fillDefaultReferenceSelection(selection: GenerationReferenceSelection, 
   };
 }
 
-function GeneratedShotBank({ slots }: { slots: CoverageSlot[] }) {
-  const candidates = slots.filter((slot) => slot.status !== "filled").slice(0, 6);
-  if (!candidates.length) {
-    return <EmptyState label="No generated shots needed" detail="Current match coverage has no blockers. Optional Camera B generation can still be added later." />;
+function GeneratedShotBank({ assets, onUpdate }: { assets: GeneratedStudioAsset[]; onUpdate: (asset: GeneratedStudioAsset) => void }) {
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  const videos = assets
+    .filter((asset) => asset.mediaKind === "video")
+    .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
+  if (!videos.length) {
+    return <EmptyState label="No returned generated clips" detail="Import completed Seedance videos here. They stay out of Join until you explicitly approve one for its assigned song slot." />;
   }
   return (
     <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-      {candidates.map((slot, index) => (
-        <article key={slot.item.id} className="rounded-[2px] border border-[#242424] bg-[#080808] p-2">
+      {videos.map((asset, index) => {
+        const videoUrl = asset.fullStorage?.mediaUrl ?? asset.fullStorage?.publicUrl ?? asset.resultUrl;
+        const reviewStatus = asset.reviewStatus ?? "pending";
+        const requiredDuration = Math.max(0, (asset.target?.songEnd ?? 0) - (asset.target?.songStart ?? 0));
+        const note = notes[asset.id] ?? asset.reviewNotes ?? "";
+        return (
+        <article key={asset.id} className={`rounded-[2px] border bg-[#080808] p-2 ${reviewStatus === "approved" ? "border-[#245c2c]" : reviewStatus === "rejected" ? "border-[#743029]" : "border-[#695019]"}`}>
           <div className="mb-2 flex items-center justify-between gap-2">
-            <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-[#d0d0d0]">GEN_{String(index + 1).padStart(2, "0")} · {slot.item.label}</div>
-            <span className="rounded-[2px] border border-[#6e3425] px-1.5 py-0.5 text-[7px] uppercase tracking-[0.1em] text-[#d26c42]">pending</span>
+            <div className="min-w-0 truncate font-mono text-[9px] uppercase tracking-[0.14em] text-[#d0d0d0]">GEN_{String(index + 1).padStart(2, "0")} · {asset.model}</div>
+            <span className={`rounded-[2px] border px-1.5 py-0.5 text-[7px] uppercase tracking-[0.1em] ${reviewStatus === "approved" ? "border-[#245c2c] text-[#78c878]" : reviewStatus === "rejected" ? "border-[#743029] text-[#dc6257]" : "border-[#695019] text-[#d3a236]"}`}>{reviewStatus}</span>
           </div>
-          <div className="grid grid-cols-3 gap-1">
-            {["image", "clip", "caption"].map((label) => <div key={label} className="flex aspect-video items-center justify-center rounded-[1px] border border-dashed border-[#252525] bg-[#050505] text-[7px] uppercase tracking-[0.1em] text-[#444]">{label}</div>)}
+          <div className="overflow-hidden rounded-[1px] border border-[#1b1b1b] bg-black">
+            {videoUrl ? <video src={videoUrl} controls preload="metadata" className="aspect-video w-full object-contain" /> : <div className="flex aspect-video items-center justify-center text-[8px] uppercase tracking-[0.12em] text-[#555]">Missing video</div>}
           </div>
+          <div className="mt-2 grid grid-cols-[1fr_90px] gap-2 font-mono text-[8px] text-[#777]">
+            <div className="min-w-0">
+              <div className="truncate" title={asset.target?.sectionLabel}>{asset.target?.sectionLabel ?? "Unassigned slot"}</div>
+              <div className="mt-1">SONG {fmtCutTime(asset.target?.songStart ?? 0)}–{fmtCutTime(asset.target?.songEnd ?? 0)} · need {requiredDuration.toFixed(2)}s</div>
+            </div>
+            <label className="block">
+              <span className="mb-1 block uppercase tracking-[0.1em] text-[#555]">Trim in</span>
+              <input
+                type="number"
+                min={0}
+                max={Math.max(0, (asset.durationSeconds ?? requiredDuration) - requiredDuration)}
+                step={0.1}
+                value={asset.trimStart ?? 0}
+                onChange={(event) => onUpdate({ ...asset, trimStart: Number(event.target.value) || 0 })}
+                className="w-full rounded-[1px] border border-[#202020] bg-[#040404] px-2 py-1 text-[#aaa] outline-none focus:border-[#e05c00]"
+              />
+            </label>
+          </div>
+          <textarea
+            value={note}
+            onChange={(event) => setNotes((current) => ({ ...current, [asset.id]: event.target.value }))}
+            placeholder="Review notes: identity, duplicates, continuity, action..."
+            rows={2}
+            className="mt-2 w-full resize-y rounded-[1px] border border-[#202020] bg-[#040404] px-2 py-1 font-mono text-[8px] leading-4 text-[#aaa] outline-none placeholder:text-[#444] focus:border-[#e05c00]"
+          />
           <div className="mt-2 flex gap-1.5">
-            {(["Approve", "Reject", "Reroll"] as const).map((label) => <button key={label} type="button" disabled className="flex-1 cursor-not-allowed rounded-[2px] border border-[#202020] px-2 py-1 text-[8px] uppercase tracking-[0.1em] text-[#555]">{label}</button>)}
+            <button type="button" disabled={!videoUrl} onClick={() => onUpdate({ ...asset, reviewStatus: "approved", reviewNotes: note })} className="flex-1 rounded-[2px] border border-[#245c2c] px-2 py-1 text-[8px] uppercase tracking-[0.1em] text-[#78c878] disabled:cursor-not-allowed disabled:opacity-40">Approve into Join</button>
+            <button type="button" onClick={() => onUpdate({ ...asset, reviewStatus: "rejected", reviewNotes: note })} className="flex-1 rounded-[2px] border border-[#743029] px-2 py-1 text-[8px] uppercase tracking-[0.1em] text-[#dc6257]">Reject</button>
+            <button type="button" onClick={() => onUpdate({ ...asset, reviewStatus: "pending", reviewNotes: note })} className="rounded-[2px] border border-[#303030] px-2 py-1 text-[8px] uppercase tracking-[0.1em] text-[#777]">Reopen</button>
           </div>
         </article>
-      ))}
+      )})}
     </div>
   );
+}
+
+function inferSeedanceModel(filename: string) {
+  if (/seedance[-_. ]?2[._-]?5/i.test(filename)) return "seedance_2_5";
+  if (/seedance[-_. ]?2[._-]?0/i.test(filename)) return "seedance_2_0";
+  return "seedance";
+}
+
+function readVideoDuration(file: File) {
+  return new Promise<number>((resolve) => {
+    const url = URL.createObjectURL(file);
+    const video = document.createElement("video");
+    const finish = (duration: number) => {
+      URL.revokeObjectURL(url);
+      resolve(Number.isFinite(duration) ? duration : 0);
+    };
+    video.preload = "metadata";
+    video.onloadedmetadata = () => finish(video.duration);
+    video.onerror = () => finish(0);
+    video.src = url;
+  });
 }
 
 function TrackLaneBoard({ slots, duration }: { slots: CoverageSlot[]; duration: number }) {

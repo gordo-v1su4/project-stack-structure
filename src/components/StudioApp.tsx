@@ -26,7 +26,7 @@ import {
   type RuntimeStudioProjectDraft,
 } from "./studio/projectPersistence";
 import type { StudioProjectSummary } from "@/lib/studioProjectStore";
-import type { GeneratedStudioAsset } from "./studio/generatedAssets";
+import { applyApprovedGeneratedAssets, type GeneratedStudioAsset } from "./studio/generatedAssets";
 import { createLocalReferenceAsset, uploadReferenceAssetToRustFs, type ReferenceAsset, type ReferenceAssetRole } from "./studio/referenceAssets";
 import { BrowserPreviewPlayer, createPreviewPlayerState, type PreviewPlayerState, type PreviewSegment } from "./studio/previewPlayer";
 import { slicePreviewCutRange, type PreviewCutRange } from "./studio/resolvedPreviewSelection";
@@ -527,17 +527,15 @@ export default function StudioApp() {
     [videoSources, sourceClips, workingBeatSplitSegments]
   );
 
-  const storyPreviewSegments = useMemo<EditPlanPreviewSegment[]>(
-    () =>
-      storyState.storyGenerated
-        ? buildEditPlanPreviewSegments({
-            project: musicVideoProject,
-            videoSources,
-            editSettings: storyState.editSettings,
-          })
-        : [],
-    [musicVideoProject, storyState.editSettings, storyState.storyGenerated, videoSources],
-  );
+  const storyPreviewSegments = useMemo<EditPlanPreviewSegment[]>(() => {
+    if (!storyState.storyGenerated) return [];
+    const resolved = buildEditPlanPreviewSegments({
+      project: musicVideoProject,
+      videoSources,
+      editSettings: storyState.editSettings,
+    });
+    return applyApprovedGeneratedAssets(resolved, generatedAssets);
+  }, [generatedAssets, musicVideoProject, storyState.editSettings, storyState.storyGenerated, videoSources]);
 
   async function ingestVideoFiles(files: File[], mode: "replace" | "append") {
     const videoFiles = files.filter((file) => file.type.startsWith("video/"));

@@ -1,0 +1,90 @@
+import { describe, expect, test } from "bun:test";
+
+import { applyApprovedGeneratedAssets, type GeneratedStudioAsset } from "@/components/studio/generatedAssets";
+import type { EditPlanPreviewSegment } from "@/components/studio/musicVideoProject";
+
+const sourceSegments: EditPlanPreviewSegment[] = [
+  {
+    videoUrl: "https://media.example/source.mp4",
+    startTime: 10,
+    endTime: 13,
+    label: "Hallway pass 1",
+    sectionId: "chorus-3",
+    musicStart: 200,
+    musicEnd: 203,
+    momentId: "hallway-scene",
+    sourceClipId: 15,
+    sourceRefLabel: "S16",
+  },
+  {
+    videoUrl: "https://media.example/source.mp4",
+    startTime: 13,
+    endTime: 15.9,
+    label: "Hallway pass 2",
+    sectionId: "chorus-3",
+    musicStart: 212.06,
+    musicEnd: 214.99,
+    momentId: "hallway-scene",
+    sourceClipId: 15,
+    sourceRefLabel: "S16",
+  },
+];
+
+function generatedAsset(overrides: Partial<GeneratedStudioAsset>): GeneratedStudioAsset {
+  return {
+    id: "generated-1",
+    provider: "higgsfield",
+    model: "seedance_2_5",
+    prompt: "Continuation",
+    createdAt: "2026-08-27T18:58:32.000Z",
+    status: "completed",
+    mediaKind: "video",
+    durationSeconds: 15.04,
+    reviewStatus: "approved",
+    resultUrl: "https://media.example/seedance-2.5.mp4",
+    target: {
+      timelineItemId: "chorus-3-item",
+      sectionId: "chorus-3",
+      sectionLabel: "Chorus 3",
+      parentMomentId: "hallway-scene",
+      songStart: 212.06,
+      songEnd: 214.99,
+    },
+    ...overrides,
+  };
+}
+
+describe("generated clip approval", () => {
+  test("replaces only the exact approved song slot when a source scene repeats", () => {
+    const resolved = applyApprovedGeneratedAssets(sourceSegments, [generatedAsset({ trimStart: 1.5 })]);
+
+    expect(resolved[0]).toEqual(sourceSegments[0]);
+    expect(resolved[1]).toMatchObject({
+      videoUrl: "https://media.example/seedance-2.5.mp4",
+      startTime: 1.5,
+      label: "seedance_2_5 generated replacement",
+      sourceRefLabel: "GEN · seedance_2_5",
+      momentId: undefined,
+      sourceClipId: undefined,
+    });
+    expect(resolved[1]?.endTime).toBeCloseTo(4.43, 5);
+  });
+
+  test("keeps rejected candidates out and lets the latest approved candidate win", () => {
+    const rejected = generatedAsset({
+      id: "seedance-2.0",
+      model: "seedance_2_0",
+      resultUrl: "https://media.example/seedance-2.0.mp4",
+      reviewStatus: "rejected",
+    });
+    const latest = generatedAsset({
+      id: "seedance-2.5-latest",
+      resultUrl: "https://media.example/seedance-2.5-latest.mp4",
+      createdAt: "2026-08-27T19:00:00.000Z",
+    });
+
+    const resolved = applyApprovedGeneratedAssets(sourceSegments, [rejected, generatedAsset({}), latest]);
+
+    expect(resolved[1]?.videoUrl).toBe("https://media.example/seedance-2.5-latest.mp4");
+  });
+});
