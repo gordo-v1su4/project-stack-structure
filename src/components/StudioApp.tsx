@@ -177,6 +177,8 @@ export default function StudioApp() {
   const [activeProjectName, setActiveProjectName] = useState("Untitled project");
   const pendingAutosaveRef = useRef<PendingStudioAutosave | null>(null);
   const autosaveInFlightRef = useRef(false);
+  const flushPendingAutosaveRef = useRef<(() => Promise<void>) | null>(null);
+  const referenceAutosaveRequestedRef = useRef(false);
 
   const audioFileRef = useRef<File | null>(null);
   const videoFilesByMediaKeyRef = useRef(new Map<string, Blob>());
@@ -349,8 +351,32 @@ export default function StudioApp() {
     const saveTimer = window.setInterval(() => {
       void flushPendingAutosave();
     }, STUDIO_AUTOSAVE_INTERVAL_MS);
-    return () => window.clearInterval(saveTimer);
+    flushPendingAutosaveRef.current = flushPendingAutosave;
+    return () => {
+      window.clearInterval(saveTimer);
+      if (flushPendingAutosaveRef.current === flushPendingAutosave) {
+        flushPendingAutosaveRef.current = null;
+      }
+    };
   }, [draftRestored]);
+
+  useEffect(() => {
+    if (!draftRestored || !referenceAutosaveRequestedRef.current) return;
+    referenceAutosaveRequestedRef.current = false;
+
+    let saveTimer: number | null = null;
+    const flushReferenceAutosave = () => {
+      if (autosaveInFlightRef.current) {
+        saveTimer = window.setTimeout(flushReferenceAutosave, 250);
+        return;
+      }
+      void flushPendingAutosaveRef.current?.();
+    };
+    saveTimer = window.setTimeout(flushReferenceAutosave, 250);
+    return () => {
+      if (saveTimer !== null) window.clearTimeout(saveTimer);
+    };
+  }, [draftRestored, referenceAssets]);
 
   useEffect(() => {
     referenceAssetsRef.current = referenceAssets;
@@ -770,6 +796,7 @@ export default function StudioApp() {
 
     try {
       const storage = await uploadReferenceAssetToRustFs(file, role);
+      referenceAutosaveRequestedRef.current = true;
       setReferenceAssets((currentAssets) => currentAssets.map((asset) => asset.id === localAsset.id ? { ...asset, ...storage, previewUrl: storage.storageUrl ?? asset.previewUrl } : asset));
       if (previewUrl.startsWith("blob:")) URL.revokeObjectURL(previewUrl);
     } catch (error) {
