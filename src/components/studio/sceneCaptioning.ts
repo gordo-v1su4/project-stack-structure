@@ -180,7 +180,7 @@ async function captionSceneFrameViaServer(
     }
     const runId = readServerCaptionRunId(initialPayload);
     const payload = response.status === 202 && runId
-      ? await waitForTriggerRunOutput(runId, { timeoutMs: 145_000, pollIntervalMs: 1_500 })
+      ? await waitForTriggerRunOutput(runId, { timeoutMs: 420_000, pollIntervalMs: 2_000 })
       : initialPayload;
     return normalizeServerCaptionPayload(payload);
   } finally {

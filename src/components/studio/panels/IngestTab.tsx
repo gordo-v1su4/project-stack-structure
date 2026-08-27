@@ -142,16 +142,6 @@ export function IngestTab({
                 {isRerunningSceneAnalysis ? "Re-running…" : `Rerun failed scene detect (${rerunFailedCount})`}
               </button>
             ) : null}
-            {mismatchedCaptionCount > 0 ? (
-              <button
-                type="button"
-                onClick={() => onRerunSceneAnalysis("all")}
-                disabled={isRerunningSceneAnalysis || isPreparingVideos}
-                className="rounded-[2px] border border-[#e05c00] px-3 py-2 text-[9px] uppercase tracking-[0.14em] text-[#e05c00] hover:bg-[#1c0f04] disabled:cursor-not-allowed disabled:border-[#3a3a3a] disabled:text-[#555]"
-              >
-                {isRerunningSceneAnalysis ? "Re-running…" : `Recaption all · ${captionMode === "smart" ? "Qwen3-VL" : "LFM"}`}
-              </button>
-            ) : null}
           </div>
         ) : null}
       </section>
@@ -171,22 +161,35 @@ export function IngestTab({
               Fast uses the lightweight LFM lane. Smart sends the scene plus uploaded character identity references and project/lyric/story context to Qwen3-VL for detailed cinematic captions.
             </div>
           </div>
-          <div className="flex rounded-[2px] border border-[#242424] bg-[#070707] p-1">
-            {(["fast", "smart"] as const).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                onClick={() => onCaptionModeChange(mode)}
-                className={`px-3 py-2 text-[9px] uppercase tracking-[0.16em] transition-colors ${
-                  captionMode === mode
-                    ? "bg-[#e05c00] text-white"
-                    : "text-[#777] hover:bg-[#141414] hover:text-[#d0d0d0]"
-                }`}
-              >
-                {mode === "fast" ? "Fast" : "Smart · Qwen3-VL"}
-              </button>
-            ))}
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <div className="flex rounded-[2px] border border-[#242424] bg-[#070707] p-1">
+              {(["fast", "smart"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => onCaptionModeChange(mode)}
+                  className={`px-3 py-2 text-[9px] uppercase tracking-[0.16em] transition-colors ${
+                    captionMode === mode
+                      ? "bg-[#e05c00] text-white"
+                      : "text-[#777] hover:bg-[#141414] hover:text-[#d0d0d0]"
+                  }`}
+                >
+                  {mode === "fast" ? "Fast" : "Smart · Qwen3-VL"}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => onRerunSceneAnalysis("all")}
+              disabled={isRerunningSceneAnalysis || isPreparingVideos || stats.captionTotal === 0}
+              className="rounded-[2px] border border-[#e05c00] px-3 py-2 text-[9px] uppercase tracking-[0.14em] text-[#e05c00] hover:bg-[#1c0f04] disabled:cursor-not-allowed disabled:border-[#3a3a3a] disabled:text-[#555]"
+            >
+              {isRerunningSceneAnalysis ? "Recaptioning…" : `Recaption all · ${captionMode === "smart" ? "Qwen3-VL" : "LFM"}`}
+            </button>
           </div>
+        </div>
+        <div className="mb-3 text-[10px] leading-4 text-[#555]">
+          Recaption refreshes every detected scene with the current lane, project context, and character identity references.
         </div>
         <div className="grid gap-2 md:grid-cols-2">
           <ReadinessCard label="Active caption lane" value={captionMode === "fast" ? "Fast · LFM" : "Smart · Qwen3-VL"} tone="ready" detail={captionMode === "fast" ? "Lower latency draft captions" : "Detailed cinematic captions with named-character matching"} />
