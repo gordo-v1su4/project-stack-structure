@@ -708,7 +708,7 @@ function ResolvedClipQueue({
               onClick={() => slot && onSelectSlot(slot.item.id)}
               className={`absolute inset-y-1 rounded-[1px] border transition-colors ${slot && selectedSlotId === slot.item.id ? "border-[#ff8a2a]" : "border-[#050505] hover:border-[#e05c00]"}`}
               style={{ left: `${left}%`, width: `${width}%`, background: style.fill, opacity: 0.82 }}
-              title={`${segment.sourceRefLabel ?? segment.label} · song ${fmt(segment.musicStart)}-${fmt(segment.musicEnd)} · source ${fmt(segment.startTime)}-${fmt(segment.endTime)}`}
+              title={`${segment.sourceRefLabel ?? segment.label} · song ${fmtCutTime(segment.musicStart)}-${fmtCutTime(segment.musicEnd)} · source ${fmtCutTime(segment.startTime)}-${fmtCutTime(segment.endTime)}`}
             />
           );
         })}
@@ -736,14 +736,14 @@ function ResolvedClipQueue({
                 )}
                 <div className="absolute left-1 top-1 rounded-[1px] bg-[#000000c0] px-1.5 py-0.5 font-mono text-[7px] text-[#ddd]">{sourceLabel}</div>
                 <div className={`absolute right-1 top-1 rounded-[1px] border px-1.5 py-0.5 font-mono text-[7px] uppercase ${style.border} ${style.text}`}>{STATUS_LABELS[status]}</div>
-                <div className="absolute bottom-1 left-1 rounded-[1px] bg-[#000000c0] px-1.5 py-0.5 font-mono text-[7px] text-[#aaa]">SRC {fmt(segment.startTime)}–{fmt(segment.endTime)}</div>
+                <div className="absolute bottom-1 left-1 rounded-[1px] bg-[#000000c0] px-1.5 py-0.5 font-mono text-[7px] text-[#aaa]">SRC {fmtCutTime(segment.startTime)}–{fmtCutTime(segment.endTime)}</div>
                 <div className="absolute bottom-1 right-1 rounded-[1px] bg-[#000000c0] px-1.5 py-0.5 font-mono text-[7px] text-[#aaa]">{cutDuration.toFixed(1)}s</div>
                 {status !== "filled" ? <div className="absolute inset-0 flex items-center justify-center bg-[#00000055] text-[9px] uppercase tracking-[0.16em] text-[#b96c43]">{status === "weak" ? "review match" : "needs work"}</div> : null}
               </div>
               <div className="border-t border-[#151515] px-2 py-1.5">
                 <div className="truncate font-mono text-[8px] uppercase tracking-[0.1em] text-[#8a8a8a]">CUT {String(index + 1).padStart(3, "0")} · {segment.label}</div>
                 <div className="mt-1 flex justify-between font-mono text-[7px] text-[#555]">
-                  <span>SONG {fmt(segment.musicStart)}–{fmt(segment.musicEnd)}</span>
+                  <span>SONG {fmtCutTime(segment.musicStart)}–{fmtCutTime(segment.musicEnd)}</span>
                   <span>{slot ? `${Math.round(slot.score * 100)}%` : "resolved"}</span>
                 </div>
               </div>
@@ -1412,6 +1412,13 @@ function describeMotion(motion?: MotionDescriptor | null) {
   const strength = motion.cameraMotionStrength ?? motion.dominantMagnitude ?? 0;
   const direction = typeof motion.dominantAngleDeg === "number" ? `${Math.round(motion.dominantAngleDeg)}°` : "no angle";
   return `${type} · ${strength.toFixed(2)} · ${direction}`;
+}
+
+function fmtCutTime(value: number) {
+  const safe = Math.max(0, Number.isFinite(value) ? value : 0);
+  const minutes = Math.floor(safe / 60);
+  const seconds = (safe - minutes * 60).toFixed(2).padStart(5, "0");
+  return `${minutes}:${seconds}`;
 }
 
 function clamp01(value: number) {
