@@ -23,7 +23,7 @@ type GenerateTabProps = {
   onGeneratedAsset: (asset: GeneratedStudioAsset) => void;
 };
 
-type SlotStatus = "filled" | "weak" | "short" | "missing";
+export type SlotStatus = "filled" | "weak" | "short" | "missing";
 type GenerationNeed = "b-roll" | "alt-angle" | "extend-start" | "extend-end" | "bridge" | "reroll-match";
 type TimelineZoomMode = "fit" | "section" | "selected";
 
@@ -96,11 +96,11 @@ const LOCAL_SWARM_PRESETS: LocalSwarmPreset[] = [
   },
 ];
 
-type CoverageSlot = {
+export type CoverageSlot = {
   item: TimelineItem;
   moment?: VideoMoment;
   requiredDuration: number;
-  usableDuration: number;
+  assignedDuration: number;
   missingDuration: number;
   score: number;
   status: SlotStatus;
@@ -154,10 +154,6 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
   const frameMoment = focusSlot?.moment ?? project?.videoMoments.find((moment) => moment.firstFrameUrl || moment.thumbnailUrl);
   const effectiveReferenceSelection = useMemo(() => fillDefaultReferenceSelection(referenceSelection, referenceAssets), [referenceAssets, referenceSelection]);
   const hasRequiredInputs = storyGenerated && Boolean(project?.editPlan.timelineItems.length);
-  const missingSlots = slots.filter((slot) => slot.status === "missing");
-  const weakSlots = slots.filter((slot) => slot.status === "weak");
-  const shortSlots = slots.filter((slot) => slot.status === "short");
-
   const checkLocalGenerator = async () => {
     setGenerationStatus("Checking SwarmUI gateway...");
     try {
@@ -281,12 +277,13 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
           </div>
         </div>
 
-        <div className="mt-3 grid gap-2 md:grid-cols-5">
+        <div className="mt-3 grid gap-2 md:grid-cols-3 xl:grid-cols-6">
           <MetricCard label="Required" value={coverage.requiredDuration > 0 ? fmt(coverage.requiredDuration) : "Waiting"} ready={coverage.requiredDuration > 0} />
-          <MetricCard label="Matched usable" value={fmt(coverage.usableDuration)} ready={coverage.usableDuration > 0} />
-          <MetricCard label="Missing" value={fmt(coverage.missingDuration)} ready={coverage.missingDuration === 0 && coverage.requiredDuration > 0} alert={coverage.missingDuration > 0} />
-          <MetricCard label="Coverage" value={`${coverage.coveragePct}%`} ready={coverage.coveragePct >= 92} alert={coverage.coveragePct < 70 && coverage.requiredDuration > 0} />
-          <MetricCard label="Generate queue" value={`${missingSlots.length + weakSlots.length + shortSlots.length} needs`} ready={missingSlots.length + weakSlots.length + shortSlots.length === 0 && slots.length > 0} alert={missingSlots.length > 0} />
+          <MetricCard label="Real assigned" value={fmt(coverage.assignedDuration)} ready={coverage.coveragePct >= 99} />
+          <MetricCard label="True gaps" value={fmt(coverage.trueGapDuration)} ready={coverage.trueGapDuration === 0 && coverage.requiredDuration > 0} alert={coverage.trueGapDuration > 0} />
+          <MetricCard label="Strong match" value={`${coverage.strongMatchPct}%`} ready={coverage.strongMatchPct >= 70} />
+          <MetricCard label="Required queue" value={`${coverage.requiredNeedCount} needs`} ready={coverage.requiredNeedCount === 0 && slots.length > 0} alert={coverage.requiredNeedCount > 0} />
+          <MetricCard label="Optional rerolls" value={`${coverage.reviewCount} review`} ready={coverage.reviewCount === 0 && slots.length > 0} />
         </div>
       </section>
 
@@ -339,10 +336,10 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
         <section className="rounded-[2px] border border-[#1a1a1a] bg-[#0b0b0b] p-3">
           <div className="mb-3 flex items-center justify-between gap-3">
             <div>
-              <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Missing shot board</div>
-              <div className="mt-1 text-[11px] text-[#6d6d6d]">Each row explains why a slot cannot go straight to Join and which generation action would fill it.</div>
+              <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Coverage review board</div>
+              <div className="mt-1 text-[11px] text-[#6d6d6d]">True gaps and short clips require work before Join. Weak matches already contain real footage and remain optional rerolls.</div>
             </div>
-            <div className="font-mono text-[10px] text-[#777]">{coverage.blockerCount} blockers</div>
+            <div className="font-mono text-[10px] text-[#777]">{coverage.requiredNeedCount} required · {coverage.reviewCount} review</div>
           </div>
           {slots.length ? (
             <div className="space-y-2">
@@ -403,7 +400,7 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
   );
 }
 
-function buildCoverageSlots(project: MusicVideoProject | null, chunks: Array<{ id: string; sectionId: string; sectionLabel: string; start: number; end: number; strength: number; cueCount: number }>): CoverageSlot[] {
+export function buildCoverageSlots(project: MusicVideoProject | null, chunks: Array<{ id: string; sectionId: string; sectionLabel: string; start: number; end: number; strength: number; cueCount: number }>): CoverageSlot[] {
   if (!project) return [];
   const momentsById = new Map(project.videoMoments.map((moment) => [moment.id, moment]));
   const itemsBySection = new Map(project.editPlan.timelineItems.map((item) => [item.sectionId, item]));
@@ -426,13 +423,12 @@ function buildCoverageSlots(project: MusicVideoProject | null, chunks: Array<{ i
     const requiredDuration = Math.max(0, item.end - item.start);
     const score = item.semanticMatch?.score ?? 0;
     const availableDuration = moment?.duration ?? 0;
-    const trusted = Boolean(moment && score >= 0.45);
-    const usableDuration = trusted ? Math.min(requiredDuration, availableDuration) : 0;
-    const missingDuration = Math.max(0, requiredDuration - usableDuration);
-    const status: SlotStatus = !moment ? "missing" : score < 0.45 ? "weak" : missingDuration > 0.5 ? "short" : "filled";
+    const assignedDuration = moment ? Math.min(requiredDuration, availableDuration) : 0;
+    const missingDuration = Math.max(0, requiredDuration - assignedDuration);
+    const status: SlotStatus = !moment ? "missing" : missingDuration > 0.5 ? "short" : score < 0.45 ? "weak" : "filled";
     const needs = deriveGenerationNeeds(status, requiredDuration, availableDuration);
 
-    return { item, moment, requiredDuration, usableDuration, missingDuration, score, status, needs };
+    return { item, moment, requiredDuration, assignedDuration, missingDuration, score, status, needs };
   });
 }
 
@@ -448,14 +444,18 @@ function deriveGenerationNeeds(status: SlotStatus, requiredDuration: number, ava
   return [];
 }
 
-function summarizeCoverage(slots: CoverageSlot[], cueDuration = 0) {
+export function summarizeCoverage(slots: CoverageSlot[], cueDuration = 0) {
   const requiredDuration = slots.reduce((total, slot) => total + slot.requiredDuration, 0);
-  const usableDuration = slots.reduce((total, slot) => total + slot.usableDuration, 0);
-  const missingDuration = Math.max(0, requiredDuration - usableDuration);
-  const coveragePct = requiredDuration > 0 ? Math.round((usableDuration / requiredDuration) * 100) : 0;
+  const assignedDuration = slots.reduce((total, slot) => total + slot.assignedDuration, 0);
+  const trueGapDuration = slots.reduce((total, slot) => total + slot.missingDuration, 0);
+  const strongMatchDuration = slots.reduce((total, slot) => total + (slot.status === "filled" ? slot.assignedDuration : 0), 0);
+  const weakMatchDuration = slots.reduce((total, slot) => total + (slot.status === "weak" ? slot.assignedDuration : 0), 0);
+  const coveragePct = requiredDuration > 0 ? Math.round((assignedDuration / requiredDuration) * 100) : 0;
+  const strongMatchPct = requiredDuration > 0 ? Math.round((strongMatchDuration / requiredDuration) * 100) : 0;
   const duration = Math.max(cueDuration, slots[slots.length - 1]?.item.end ?? 0, requiredDuration, 1);
-  const blockerCount = slots.filter((slot) => slot.status !== "filled").length;
-  return { requiredDuration, usableDuration, missingDuration, coveragePct, duration, blockerCount };
+  const requiredNeedCount = slots.filter((slot) => slot.status === "missing" || slot.status === "short").length;
+  const reviewCount = slots.filter((slot) => slot.status === "weak").length;
+  return { requiredDuration, assignedDuration, trueGapDuration, strongMatchDuration, weakMatchDuration, coveragePct, strongMatchPct, duration, requiredNeedCount, reviewCount };
 }
 
 function MetricCard({ label, value, ready, alert = false }: { label: string; value: string; ready: boolean; alert?: boolean }) {
@@ -513,7 +513,7 @@ function CoverageTimeline({
             >
               <div className="absolute left-1 top-1 max-w-[130px] truncate text-[8px] uppercase tracking-[0.12em] text-[#8a4b20]">{slot.item.label}</div>
               <div className="absolute bottom-2 left-1 right-1 h-16 rounded-[1px] border border-[#111] bg-[#0a0a0a]">
-                <div className="h-full rounded-[1px]" style={{ width: `${Math.max(5, (slot.usableDuration / Math.max(slot.requiredDuration, 0.01)) * 100)}%`, background: style.fill, opacity: slot.status === "missing" ? 0.24 : 0.82 }} />
+                <div className="h-full rounded-[1px]" style={{ width: `${Math.max(5, (slot.assignedDuration / Math.max(slot.requiredDuration, 0.01)) * 100)}%`, background: style.fill, opacity: slot.status === "missing" ? 0.24 : 0.82 }} />
                 {slot.status !== "filled" ? <div className="absolute inset-y-0 right-0 min-w-[10px] bg-[#d24b3f22]" style={{ width: `${Math.max(12, (slot.missingDuration / Math.max(slot.requiredDuration, 0.01)) * 100)}%` }} /> : null}
               </div>
             </button>
@@ -615,7 +615,7 @@ function AdaptiveClipQueue({ slots, selectedSlotId, onSelectSlot }: { slots: Cov
                 <div className="absolute left-1 top-1 rounded-[1px] bg-[#000000c0] px-1.5 py-0.5 font-mono text-[7px] text-[#aaa]">S{String(index + 1).padStart(2, "0")}</div>
                 <div className={`absolute right-1 top-1 rounded-[1px] border px-1.5 py-0.5 font-mono text-[7px] uppercase ${style.border} ${style.text}`}>{STATUS_LABELS[slot.status]}</div>
                 <div className="absolute bottom-1 right-1 rounded-[1px] bg-[#000000c0] px-1.5 py-0.5 font-mono text-[7px] text-[#aaa]">{slot.requiredDuration.toFixed(1)}s</div>
-                {slot.status !== "filled" ? <div className="absolute inset-0 flex items-center justify-center bg-[#00000055] text-[9px] uppercase tracking-[0.16em] text-[#b96c43]">needs work</div> : null}
+                {slot.status !== "filled" ? <div className="absolute inset-0 flex items-center justify-center bg-[#00000055] text-[9px] uppercase tracking-[0.16em] text-[#b96c43]">{slot.status === "weak" ? "review match" : "needs work"}</div> : null}
               </div>
               <div className="border-t border-[#151515] px-2 py-1.5">
                 <div className="truncate font-mono text-[8px] uppercase tracking-[0.1em] text-[#8a8a8a]">{slot.item.label}</div>
@@ -652,7 +652,7 @@ function ShotNeedCard({ slot, selected, onSelect }: { slot: CoverageSlot; select
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#d0d0d0]">{slot.item.label}</div>
-          <div className="mt-1 text-[10px] text-[#777]">{fmt(slot.item.start)}–{fmt(slot.item.end)} · need {slot.requiredDuration.toFixed(1)}s · have {slot.usableDuration.toFixed(1)}s usable</div>
+          <div className="mt-1 text-[10px] text-[#777]">{fmt(slot.item.start)}–{fmt(slot.item.end)} · need {slot.requiredDuration.toFixed(1)}s · have {slot.assignedDuration.toFixed(1)}s assigned</div>
         </div>
         <span className={`rounded-[2px] border ${style.border} px-2 py-1 font-mono text-[8px] uppercase tracking-[0.12em] ${style.text}`}>{STATUS_LABELS[slot.status]}</span>
       </div>

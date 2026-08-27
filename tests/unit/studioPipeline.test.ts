@@ -15,6 +15,7 @@ function makeInput(overrides: Partial<PipelineStageInput> = {}): PipelineStageIn
     editSlotCount: 0,
     matchedSlotCount: 0,
     gapSlotCount: 0,
+    weakMatchSlotCount: 0,
     storySegmentCount: 0,
     hasCommittedSplit: false,
     shaderPresetLabel: "Beat Pulse",
@@ -73,8 +74,35 @@ describe("studio pipeline state", () => {
     const match = state.stages.find((stage) => stage.key === "shuffle");
     const generate = state.stages.find((stage) => stage.key === "generate");
     expect(match).toMatchObject({ ready: true, status: "7/9 slots matched" });
-    expect(generate).toMatchObject({ ready: true, status: "2 gaps to fill" });
-    expect(state.nextStage?.key).toBe("join");
+    expect(generate).toMatchObject({ ready: false, status: "2 true gaps to fill" });
+    expect(state.stages.find((stage) => stage.key === "join")).toMatchObject({ available: false, prerequisiteKey: "generate" });
+    expect(state.nextStage?.key).toBe("generate");
+  });
+
+  test("weak assigned footage stays optional and does not masquerade as a true gap", () => {
+    const state = buildPipelineState(
+      makeInput({
+        hasAudioAnalysis: true,
+        hasTranscript: true,
+        videoCount: 2,
+        sceneCount: 10,
+        captionReadyCount: 10,
+        captionTotalCount: 10,
+        storyGenerated: true,
+        editSlotCount: 9,
+        matchedSlotCount: 9,
+        gapSlotCount: 0,
+        weakMatchSlotCount: 4,
+        storySegmentCount: 40,
+        hasCommittedSplit: true,
+      }),
+    );
+
+    expect(state.stages.find((stage) => stage.key === "generate")).toMatchObject({
+      ready: true,
+      status: "4 weak sections · optional",
+    });
+    expect(state.stages.find((stage) => stage.key === "join")?.available).toBe(true);
   });
 
   test("fully ready project has no next stage and an export hint", () => {
