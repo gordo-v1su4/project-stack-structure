@@ -314,6 +314,40 @@ describe("Next route Trigger.dev dispatch boundary", () => {
     expect(triggerMocks.triggerMediaSceneDetection).toHaveBeenCalledTimes(1);
   });
 
+  test("validates and forwards detailed caption context and character references", async () => {
+    resetMocks();
+    const response = await postMediaJob(new Request("http://localhost/api/media/video/jobs", {
+      method: "POST",
+      body: JSON.stringify({
+        bucket: "stack-structure",
+        objectKey: "media-uploads/source.mp4",
+        captionPrompt: "  detailed cinematic prompt  ",
+        captionContext: JSON.stringify({ projectContext: { characters: [{ name: "Diego" }] } }),
+        captionReferences: [{
+          name: "Diego",
+          role: "primary",
+          bucket: "stack-structure",
+          objectKey: "reference-assets/character-1/diego.png",
+          fileName: "diego.png",
+        }],
+      }),
+      headers: { "content-type": "application/json" },
+    }));
+
+    expect(response.status).toBe(202);
+    const dispatches = triggerMocks.triggerMediaSceneDetection.mock.calls as unknown as Array<Array<Record<string, unknown>>>;
+    expect(dispatches[0]?.[0]).toMatchObject({
+      captionPrompt: "detailed cinematic prompt",
+      captionReferences: [{
+        name: "Diego",
+        role: "primary",
+        bucket: "stack-structure",
+        objectKey: "reference-assets/character-1/diego.png",
+        fileName: "diego.png",
+      }],
+    });
+  });
+
   test("queues media scene detection from authenticated video chunk references", async () => {
     resetMocks();
     const uploadId = "87f25c0c-90f0-4c8d-8451-e7a08d56f57a";

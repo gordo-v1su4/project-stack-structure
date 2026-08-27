@@ -8,7 +8,7 @@ import {
   unwrapMediaWorkerManifest,
 } from "@/trigger/media";
 
-describe("media pipeline v2 contracts", () => {
+describe("media pipeline v3 contracts", () => {
   test("caps Qwen batches at six scenes and preserves every scene", () => {
     const scenes = Array.from({ length: 16 }, (_, index) => ({ index: index + 1 }));
     const batches = chunk(scenes, CAPTION_BATCH_SIZE);
@@ -32,10 +32,30 @@ describe("media pipeline v2 contracts", () => {
       sourceName: "source.mp4",
       prompt: "describe",
       model: "qwen-test",
+      captionContext: JSON.stringify({
+        projectContext: {
+          captionStyle: "detailed-cinematic",
+          characters: [{ name: "Diego", role: "primary" }],
+        },
+      }),
+      captionReferences: [{
+        name: "Diego",
+        role: "primary",
+        bucket: "stack-structure",
+        objectKey: "reference-assets/character-1/diego.png",
+      }],
     });
     expect(payload.scenes).toHaveLength(1);
     expect(payload.scenes[0]?.sceneIndex).toBe(7);
     expect(payload.scenes[0]?.objectKey).toContain("analysis/v2");
+    expect(payload.scenes[0]?.captionReferences?.[0]?.name).toBe("Diego");
+    expect(JSON.parse(payload.scenes[0]?.captionContext ?? "{}")).toMatchObject({
+      projectContext: {
+        captionStyle: "detailed-cinematic",
+        characters: [{ name: "Diego", role: "primary" }],
+      },
+      sampleTimes: { first: 2, middle: 3.5, last: 5 },
+    });
   });
 
   test("merges successful captions and leaves missing scenes reusable", () => {

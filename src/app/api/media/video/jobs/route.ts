@@ -1,4 +1,5 @@
 import { validateOrderedChunkManifest } from "@/lib/chunkedMediaUpload";
+import { parseDurableCaptionReferences } from "@/lib/captionReferences";
 import { essentiaUploadOwnerSegment } from "@/lib/essentiaUpload";
 import { getMediaGatewayConfig, normalizeMediaPath } from "@/lib/mediaGateway";
 import { getSessionUser, unauthorizedResponse } from "@/lib/session";
@@ -23,6 +24,9 @@ export async function POST(request: Request) {
       mode?: string;
       profile?: string;
       metadata?: Record<string, unknown>;
+      captionPrompt?: unknown;
+      captionContext?: unknown;
+      captionReferences?: unknown;
       uploadChunks?: { size?: unknown; chunks?: unknown };
     };
     const objectKey = normalizeMediaPath(payload.objectKey ?? payload.storagePath ?? "");
@@ -62,6 +66,9 @@ export async function POST(request: Request) {
       mode: payload.mode,
       profile: payload.profile,
       metadata: payload.metadata,
+      captionPrompt: readBoundedString(payload.captionPrompt, 12_000),
+      captionContext: readBoundedString(payload.captionContext, 16_000),
+      captionReferences: parseDurableCaptionReferences(payload.captionReferences, config?.bucket ?? bucket),
       uploadChunks,
     });
     return Response.json({
@@ -76,7 +83,19 @@ export async function POST(request: Request) {
     }, { status: 202 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Video job creation failed";
-    const status = /not configured/i.test(message) ? 503 : /sign in with github/i.test(message) ? 401 : 500;
+    const status = /not configured/i.test(message)
+      ? 503
+      : /sign in with github/i.test(message)
+        ? 401
+        : /caption reference/i.test(message)
+          ? 400
+          : 500;
     return Response.json({ error: message }, { status });
   }
+}
+
+function readBoundedString(value: unknown, maxLength: number) {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim();
+  return normalized ? normalized.slice(0, maxLength) : undefined;
 }

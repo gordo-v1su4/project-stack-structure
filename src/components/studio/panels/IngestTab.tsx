@@ -168,7 +168,7 @@ export function IngestTab({
           <div>
             <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Caption mode</div>
             <div className="mt-1 max-w-3xl text-[11px] leading-5 text-[#6d6d6d]">
-              Fast uses the lightweight LFM lane. Smart sends the same scene frame plus project/lyric/story context to the Qwen3-VL gateway when configured.
+              Fast uses the lightweight LFM lane. Smart sends the scene plus uploaded character identity references and project/lyric/story context to Qwen3-VL for detailed cinematic captions.
             </div>
           </div>
           <div className="flex rounded-[2px] border border-[#242424] bg-[#070707] p-1">
@@ -189,7 +189,7 @@ export function IngestTab({
           </div>
         </div>
         <div className="grid gap-2 md:grid-cols-2">
-          <ReadinessCard label="Active caption lane" value={captionMode === "fast" ? "Fast · LFM" : "Smart · Qwen3-VL"} tone="ready" detail={captionMode === "fast" ? "Lower latency draft captions" : "Richer searchable captions with context"} />
+          <ReadinessCard label="Active caption lane" value={captionMode === "fast" ? "Fast · LFM" : "Smart · Qwen3-VL"} tone="ready" detail={captionMode === "fast" ? "Lower latency draft captions" : "Detailed cinematic captions with named-character matching"} />
           <ReadinessCard label="Caption context" value={transcriptSummary ? `${transcriptSummary.chunks.length} lyric chunks` : "Video-only"} tone={transcriptSummary ? "ready" : "waiting"} detail={transcriptSummary ? "lyrics/story context included for new captions" : "upload stem/SRT first if you want lyric context"} />
         </div>
       </section>

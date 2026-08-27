@@ -112,11 +112,26 @@ export interface SceneCaptionContext {
   storySummary?: string;
   storyPrompts?: string[];
   projectIntent?: string;
+  captionStyle?: "detailed-cinematic";
+  characters?: Array<{
+    name: string;
+    role: "primary" | "secondary";
+    identityInstruction?: string;
+  }>;
+}
+
+export interface SceneCaptionReferenceImage {
+  name: string;
+  role: "primary" | "secondary";
+  bucket: string;
+  objectKey: string;
+  fileName?: string;
 }
 
 export interface SceneCaptionSettings {
   mode: SceneCaptionMode;
   context?: SceneCaptionContext;
+  referenceImages?: SceneCaptionReferenceImage[];
 }
 
 export interface SceneCaptionData {

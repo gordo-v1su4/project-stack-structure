@@ -1,4 +1,5 @@
-import type { ColorPaletteSwatch, DetectedSceneSegment, MotionDescriptor, SceneColorAnalysis, SceneVisualAnalysis } from "./types";
+import { buildSceneCaptionPrompt, serializeSceneCaptionContext, serializeSceneCaptionReferences } from "./sceneCaptionPrompt";
+import type { ColorPaletteSwatch, DetectedSceneSegment, MotionDescriptor, SceneCaptionSettings, SceneColorAnalysis, SceneVisualAnalysis } from "./types";
 
 const DEFAULT_POLL_INTERVAL_MS = 2500;
 const MAX_POLL_INTERVAL_MS = 15_000;
@@ -351,7 +352,7 @@ function roundSceneTime(value: number) {
 export async function detectScenesFromStoredVideo(
   storage: StoredVideoSceneReference,
   sourceClipId: number,
-  options: { timeoutMs?: number; pollIntervalMs?: number } = {},
+  options: { timeoutMs?: number; pollIntervalMs?: number; captionSettings?: SceneCaptionSettings } = {},
 ): Promise<StoredSceneDetectionResult> {
   const bucket = storage.bucket;
   const objectKey = storage.objectKey ?? storage.storagePath;
@@ -366,6 +367,11 @@ export async function detectScenesFromStoredVideo(
       mode: "scene-detect",
       profile: "pyscenedetect-adaptive",
       uploadChunks: storage.uploadChunks ?? undefined,
+      captionPrompt: options.captionSettings ? buildSceneCaptionPrompt(options.captionSettings) : undefined,
+      captionContext: options.captionSettings ? serializeSceneCaptionContext(options.captionSettings) : undefined,
+      captionReferences: options.captionSettings?.referenceImages?.length
+        ? JSON.parse(serializeSceneCaptionReferences(options.captionSettings))
+        : undefined,
     }),
   })) as MediaVideoJobCreatedResponse;
 

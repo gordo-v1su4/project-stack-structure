@@ -1,9 +1,9 @@
 "use client";
 
-import { LFM_SCENE_CAPTION_PROMPT } from "@/review/lib/analysis/scene-caption-format";
 import { waitForTriggerRunOutput } from "@/lib/clientTriggerRuns";
 import { captionFrame as captionFrameWithLfm } from "@/review/lib/analysis/caption-client";
 import { createAnalysisVideo, grabBitmap } from "@/review/lib/video/frame-grab";
+import { buildSceneCaptionPrompt, serializeSceneCaptionContext, serializeSceneCaptionReferences } from "./sceneCaptionPrompt";
 import { normalizeServerCaptionAvailability, normalizeServerCaptionPayload } from "./sceneCaptioningServer";
 import type { DetectedSceneSegment, SceneCaptionSettings, UploadedVideoSource } from "./types";
 
@@ -153,7 +153,7 @@ async function captionSceneFrameViaServer(
     const image = await bitmapToJpegBlob(bitmap);
     const form = new FormData();
     form.set("image", image, `${source.id}-${scene.id}.jpg`);
-    form.set("prompt", buildCaptionPrompt(settings));
+    form.set("prompt", buildSceneCaptionPrompt(settings));
     form.set("mode", settings.mode);
     form.set("sourceName", source.name);
     form.set("sceneId", String(scene.id));
@@ -163,6 +163,9 @@ async function captionSceneFrameViaServer(
     form.set("sceneDuration", scene.duration.toFixed(3));
     const context = buildCaptionContextPayload(source, scene, settings);
     if (context) form.set("captionContext", context);
+    if (settings.referenceImages?.length) {
+      form.set("captionReferences", serializeSceneCaptionReferences(settings));
+    }
 
     const response = await fetch("/api/caption/scene", {
       method: "POST",
@@ -185,19 +188,8 @@ async function captionSceneFrameViaServer(
   }
 }
 
-function buildCaptionPrompt(settings: SceneCaptionSettings) {
-  if (settings.mode === "fast") return LFM_SCENE_CAPTION_PROMPT;
-  return `${LFM_SCENE_CAPTION_PROMPT}
-
-Additional smart-caption rules:
-- Prefer concrete, searchable words that can later match music-video lyrics, themes, actions, and moods.
-- Do not force the caption to match the song; describe the visible video truth first.
-- Include action verbs, subject nouns, mood words, and setting details when visible.
-- Use the supplied project context only as disambiguating context, never as a substitute for what is visible.`;
-}
-
 function buildCaptionContextPayload(source: UploadedVideoSource, scene: DetectedSceneSegment, settings: SceneCaptionSettings) {
-  const payload = {
+  return serializeSceneCaptionContext(settings, {
     sourceName: source.name,
     sourceDuration: source.duration,
     sceneId: scene.id,
@@ -205,9 +197,7 @@ function buildCaptionContextPayload(source: UploadedVideoSource, scene: Detected
     sceneStart: scene.start,
     sceneEnd: scene.end,
     sceneDuration: scene.duration,
-    projectContext: settings.context ?? {},
-  };
-  return JSON.stringify(payload);
+  });
 }
 
 async function bitmapToJpegBlob(bitmap: ImageBitmap) {

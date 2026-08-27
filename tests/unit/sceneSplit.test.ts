@@ -215,6 +215,59 @@ describe("sceneSplit.detectScenesFromStoredVideo", () => {
     }
   });
 
+  test("forwards detailed Qwen instructions and durable character references to the initial media pipeline", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const previousFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      const href = String(url);
+      calls.push({ url: href, init });
+      if (href === "/api/media/video/jobs") {
+        return Response.json({ job: { job_id: "video-job-context", status: "completed" } });
+      }
+      if (href === "/api/media/video/jobs/video-job-context/result") {
+        return Response.json({ manifest: mediaSceneManifest });
+      }
+      return Response.json({ error: `unexpected ${href}` }, { status: 500 });
+    }) as typeof fetch;
+
+    try {
+      await detectScenesFromStoredVideo({
+        bucket: "stack-structure",
+        objectKey: "media-uploads/2026/clip.mp4",
+      }, 4, {
+        pollIntervalMs: 0,
+        captionSettings: {
+          mode: "smart",
+          context: {
+            captionStyle: "detailed-cinematic",
+            characters: [{ name: "Diego", role: "primary" }],
+          },
+          referenceImages: [{
+            name: "Diego",
+            role: "primary",
+            bucket: "stack-structure",
+            objectKey: "reference-assets/character-1/diego.png",
+          }],
+        },
+      });
+
+      const body = JSON.parse(String(calls[0]?.init?.body));
+      expect(body.captionPrompt).toContain("30-60 word sentence");
+      expect(body.captionPrompt).toContain("exact character name");
+      expect(JSON.parse(body.captionContext)).toMatchObject({
+        projectContext: { characters: [{ name: "Diego", role: "primary" }] },
+      });
+      expect(body.captionReferences).toEqual([{
+        name: "Diego",
+        role: "primary",
+        bucket: "stack-structure",
+        objectKey: "reference-assets/character-1/diego.png",
+      }]);
+    } finally {
+      globalThis.fetch = previousFetch;
+    }
+  });
+
   test("keeps polling long-running processing jobs without dispatching a duplicate", async () => {
     const calls: string[] = [];
     const previousFetch = globalThis.fetch;
