@@ -5,6 +5,7 @@ import { fmt } from "../math";
 import { buildGenerationReferenceInputs, type GenerationReferenceSelection, type ReferenceAsset } from "../referenceAssets";
 import type { BeatJoinAnalysis, ColorPaletteSwatch, MotionDescriptor } from "../types";
 import type { GeneratedStudioAsset } from "../generatedAssets";
+import { buildSeedanceContinuationPacket, serializeSeedanceContinuationPacket } from "../seedanceContinuation";
 import { buildAdaptiveCueMap } from "../adaptiveCueMap";
 import type { EditPlanPreviewSegment, MusicVideoProject, TimelineItem, VideoMoment } from "../musicVideoProject";
 import { selectPreviewCutRange, selectPreviewSectionRange, type PreviewCutRange } from "../resolvedPreviewSelection";
@@ -406,6 +407,7 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
             <div className="mt-1 text-[11px] text-[#6d6d6d]">Start/middle/end frames are retained so generation can extend an intro/outro, bridge between clips, or create a related Camera B angle.</div>
           </div>
           <FrameExtensionPanel
+            projectId={project?.id ?? "music-video-project-draft"}
             slot={focusSlot}
             moment={frameMoment}
             referenceAssets={referenceAssets}
@@ -963,6 +965,7 @@ function NeedPill({ need, optional = false }: { need: GenerationNeed; optional?:
 }
 
 function FrameExtensionPanel({
+  projectId,
   slot,
   moment,
   referenceAssets,
@@ -982,6 +985,7 @@ function FrameExtensionPanel({
   onGenerateImage,
   onGenerateVideo,
 }: {
+  projectId: string;
   slot?: CoverageSlot;
   moment?: VideoMoment;
   referenceAssets: ReferenceAsset[];
@@ -1044,6 +1048,30 @@ function FrameExtensionPanel({
   };
   const setHiggsfieldForm = (update: Partial<HiggsfieldGenerationFormState>) => setEditedForm((current) => ({ ...current, ...update }));
   const higgsfieldInputCount = buildHiggsfieldInputImages(referenceAssets, referenceSelection, higgsfieldForm.extraReferenceUrls).length;
+  const latestContactSheet = [...persistedGeneratedAssets]
+    .filter((asset) => asset.status === "completed" && Boolean(asset.fullStorage || asset.resultUrl))
+    .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))[0];
+  const seedancePacket = buildSeedanceContinuationPacket({
+    projectId,
+    sectionId: slot?.item.sectionId ?? "unassigned-section",
+    sectionLabel: slot?.item.label ?? "Current section",
+    storyIntent: slot?.item.prompt ?? "advance the current music-video section",
+    songStart: slot?.item.start ?? 0,
+    songEnd: slot?.item.end ?? 0,
+    moment,
+    referenceAssets,
+    referenceSelection,
+    contactSheet: latestContactSheet,
+  });
+  const [seedanceCopyStatus, setSeedanceCopyStatus] = useState("Ready to copy the operator packet.");
+  const copySeedancePacket = async () => {
+    try {
+      await navigator.clipboard.writeText(serializeSeedanceContinuationPacket(seedancePacket));
+      setSeedanceCopyStatus("Copied prompt, exact reference order, and verified test settings.");
+    } catch {
+      setSeedanceCopyStatus("Clipboard access failed. Copy the prompt and reference URLs below manually.");
+    }
+  };
 
   return (
     <div className="space-y-3">
@@ -1089,6 +1117,35 @@ function FrameExtensionPanel({
             <div key={`${input.role}-${input.assetId ?? input.url}`} className="truncate" title={input.url}>[{index}] {input.role} · {input.label} · {input.url}</div>
           ))}
           {!referencePlan.inputs.length ? <div>No source frame or references selected.</div> : null}
+        </div>
+      </div>
+
+      <div className="rounded-[2px] border border-[#24476f] bg-[#050b16] p-2">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <div className="text-[8px] uppercase tracking-[0.16em] text-[#6ca6d2]">Seedance continuation handoff</div>
+            <div className="mt-1 text-[9px] leading-4 text-[#7d8fa1]">Uses the selected shot&apos;s real last frame as @Image_1, then the named character/location sheets and latest contact sheet with strict role boundaries. This is the project&apos;s manual Unlimited lane, not the paid Nano Banana API task.</div>
+          </div>
+          <div className="rounded-[2px] border border-[#24476f] px-2 py-1 font-mono text-[8px] uppercase tracking-[0.12em] text-[#6ca6d2]">Fast · Unlimited · 15s · 16:9 · 720p</div>
+        </div>
+        <div className="mt-2 rounded-[2px] border border-[#14283d] bg-[#03070c] p-2 font-mono text-[8px] leading-4 text-[#72879a]">
+          <div>{seedancePacket.references.length} ordered references · @Image_1 must be the accepted ending frame · 720p is the lowest verified setting on this existing Unlimited surface.</div>
+          {seedancePacket.references.map((reference) => (
+            <div key={`${reference.tag}-${reference.url}`} className="mt-1 truncate" title={reference.url}>{reference.tag} · {reference.role} · {reference.label} · {reference.url}</div>
+          ))}
+        </div>
+        {seedancePacket.errors.length ? (
+          <div className="mt-2 rounded-[2px] border border-[#743029] bg-[#160706] p-2 text-[9px] leading-4 text-[#d24b3f]">
+            {seedancePacket.errors.map((error) => <div key={error}>{error}</div>)}
+          </div>
+        ) : null}
+        <label className="mt-2 block">
+          <span className="mb-1 block text-[8px] uppercase tracking-[0.14em] text-[#6c8294]">Current-clip prompt only</span>
+          <textarea readOnly value={seedancePacket.prompt} rows={9} className="w-full resize-y rounded-[2px] border border-[#14283d] bg-[#03070c] px-2 py-1.5 font-mono text-[9px] leading-4 text-[#9fb4c5] outline-none" />
+        </label>
+        <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_auto]">
+          <div className="rounded-[2px] border border-[#14283d] bg-[#03070c] p-2 font-mono text-[8px] leading-4 text-[#72879a]">{seedanceCopyStatus}</div>
+          <button type="button" disabled={seedancePacket.errors.length > 0} onClick={copySeedancePacket} className="rounded-[2px] border border-[#24476f] bg-[#07111e] px-3 py-2 text-[8px] uppercase tracking-[0.12em] text-[#6ca6d2] disabled:cursor-not-allowed disabled:opacity-45">Copy Seedance packet</button>
         </div>
       </div>
 

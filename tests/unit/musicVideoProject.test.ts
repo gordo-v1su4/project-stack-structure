@@ -432,6 +432,52 @@ describe("musicVideoProject source moments and review contract", () => {
     ]);
   });
 
+  test("reserves fresh visual vocabulary for later song sections", () => {
+    const sections = [
+      { id: "verse-1", label: "Verse 1", prompt: "performance develops", start: 0, end: 12 },
+      { id: "verse-2", label: "Verse 2", prompt: "performance develops", start: 12, end: 24 },
+      { id: "chorus-1", label: "Chorus", prompt: "performance develops", start: 24, end: 36 },
+    ];
+    const videoSources: UploadedVideoSource[] = Array.from({ length: 24 }, (_, index) => ({
+      id: index,
+      name: `source-${index}.mp4`,
+      duration: 4,
+      size: 10,
+      thumbnailUrl: `thumb:${index}`,
+      videoUrl: `blob:${index}`,
+      scenes: [{
+        id: 0,
+        sourceClipId: index,
+        label: `Distinct scene ${index}`,
+        start: 0,
+        end: 4,
+        duration: 4,
+        detector: "pyscenedetect-adaptive",
+        caption: `Distinct performance scene ${index}`,
+        captionMeta: { action: index % 2 ? "performing" : "dancing", setting: `set ${index}` },
+        captionSource: "lfm-webgpu",
+      }],
+    }));
+    const project = createMusicVideoProject({
+      analysis: mockAnalysis({
+        duration: 36,
+        sections: sections.map(({ label, start, end }) => ({ label, start, end, energy: 0.65 })),
+        beats: Array.from({ length: 37 }, (_, index) => index),
+        onsets: [],
+      }),
+      duration: 36,
+      storyDrafts: sections,
+      videoSources,
+      createdAt: "2026-08-27T00:00:00.000Z",
+    });
+    const pools = project.storySections.map((section) => new Set(section.videoMomentIds));
+
+    expect(pools.every((pool) => pool.size === 6)).toBe(true);
+    expect([...pools[0]!].filter((momentId) => pools[1]!.has(momentId))).toHaveLength(0);
+    expect([...pools[0]!].filter((momentId) => pools[2]!.has(momentId))).toHaveLength(0);
+    expect([...pools[1]!].filter((momentId) => pools[2]!.has(momentId))).toHaveLength(0);
+  });
+
   test("prefers a moment that covers the music window over a higher-ranked short moment", () => {
     const videoSources: UploadedVideoSource[] = [{
       id: 0,
@@ -638,7 +684,7 @@ describe("musicVideoProject preview mapping", () => {
     });
 
     expect(buildEditPlanPreviewSegments({ project, videoSources: [{ id: 0, name: "source.mov", duration: 10, size: 10, thumbnailUrl: "thumb", videoUrl: "blob:video" }] })).toEqual([
-      { videoUrl: "blob:video", startTime: 3, endTime: 5, sectionId: "intro", musicStart: 0, musicEnd: 2, momentId: "segment-moment-1", sourceClipId: 0, sourceRefLabel: "S1", thumbnailUrl: "thumb", label: "Intro · Scene A · beat" },
+      { videoUrl: "blob:video", startTime: 3, endTime: 5, sectionId: "intro", musicStart: 0, musicEnd: 2, momentId: "segment-moment-1", sourceClipId: 0, sourceRefLabel: "S1", thumbnailUrl: "thumb", label: "Intro · Scene A" },
       { videoUrl: "blob:video", startTime: 3, endTime: 5, sectionId: "chorus", musicStart: 2, musicEnd: 4, momentId: "segment-moment-1", sourceClipId: 0, sourceRefLabel: "S1", thumbnailUrl: "thumb", label: "Chorus · Scene A · beat · loop 2" },
       { videoUrl: "blob:video", startTime: 3, endTime: 5, sectionId: "chorus", musicStart: 4, musicEnd: 6, momentId: "segment-moment-1", sourceClipId: 0, sourceRefLabel: "S1", thumbnailUrl: "thumb", label: "Chorus · Scene A · beat · loop 3" },
     ]);
@@ -674,14 +720,74 @@ describe("musicVideoProject preview mapping", () => {
     });
 
     expect(segments.map((segment) => [segment.musicStart, segment.musicEnd])).toEqual([
-      [0, 1],
-      [1, 2],
-      [2, 3],
-      [3, 4],
-      [4, 5],
-      [5, 6],
+      [0, 2],
+      [2, 4],
+      [4, 6],
     ]);
+    expect(segments.every((segment) => segment.musicEnd - segment.musicStart >= 1.5)).toBe(true);
     expect(segments.every((segment) => segment.label.includes("beat"))).toBe(true);
+  });
+
+  test("uses varied onset-aligned phrasing instead of a mechanically even cut grid", () => {
+    const project = createMusicVideoProject({
+      analysis: mockAnalysis({
+        duration: 18,
+        beats: Array.from({ length: 36 }, (_, index) => index * 0.5),
+        onsets: [1.6, 3.9, 5.2, 7.8, 9.1, 12.4, 14, 16.2],
+        sections: [{ label: "Chorus", start: 0, end: 18, energy: 0.9 }],
+      }),
+      duration: 18,
+      storyDrafts: [{ id: "chorus", label: "Chorus", prompt: "rising dance performance" }],
+      videoSources: [{ id: 0, name: "long.mp4", duration: 24, size: 10, thumbnailUrl: "thumb", videoUrl: "blob:long" }],
+      segmentPreviews: [{ clipId: 1, label: "Long performance", duration: 24, sourceClipIds: [0], sourceStart: 0, sourceEnd: 24 }],
+      createdAt: "2026-08-27T00:00:00.000Z",
+    });
+
+    const segments = buildEditPlanPreviewSegments({
+      project,
+      videoSources: [{ id: 0, name: "long.mp4", duration: 24, size: 10, thumbnailUrl: "thumb", videoUrl: "blob:long" }],
+      editSettings: { cutDensity: 0.8, preferOnsets: true },
+    });
+    const durations = segments.map((segment) => Number((segment.musicEnd - segment.musicStart).toFixed(2)));
+
+    expect(segments.reduce((total, segment) => total + segment.musicEnd - segment.musicStart, 0)).toBeCloseTo(18, 5);
+    expect(durations.every((duration) => duration >= 1.5)).toBe(true);
+    expect(new Set(durations).size).toBeGreaterThan(2);
+  });
+
+  test("limits repeated action families when distinct scenes can carry the section", () => {
+    const videoSources: UploadedVideoSource[] = Array.from({ length: 8 }, (_, index) => ({
+      id: index,
+      name: `source-${index}.mp4`,
+      duration: 6,
+      size: 10,
+      thumbnailUrl: `thumb:${index}`,
+      videoUrl: `blob:${index}`,
+    }));
+    const moments = [
+      ...Array.from({ length: 3 }, (_, index) => ({ id: `hallway-${index}`, sourceClipId: index, label: "Hallway walk", start: 0, end: 4, duration: 4, caption: "Diego walks through the dim hallway.", captionMeta: { action: "walking", setting: "hallway" } })),
+      { id: "dance-wide", sourceClipId: 3, label: "Dance wide", start: 0, end: 4, duration: 4, caption: "Wide dance floor performance.", captionMeta: { action: "dancing", setting: "dance floor", shotType: "wide shot" } },
+      { id: "stage-close", sourceClipId: 4, label: "Stage close", start: 0, end: 4, duration: 4, caption: "Close-up singing on stage.", captionMeta: { action: "singing", setting: "stage", shotType: "close-up" } },
+      { id: "stairs-run", sourceClipId: 5, label: "Stairs run", start: 0, end: 4, duration: 4, caption: "Diego runs up the stairs.", captionMeta: { action: "running", setting: "stairs" } },
+      { id: "crowd-spin", sourceClipId: 6, label: "Crowd spin", start: 0, end: 4, duration: 4, caption: "Valentina spins among the crowd.", captionMeta: { action: "spinning", setting: "crowd" } },
+      { id: "feet-dance", sourceClipId: 7, label: "Footwork", start: 0, end: 4, duration: 4, caption: "Feet perform quick footwork on the dance floor.", captionMeta: { action: "dancing", setting: "dance floor", shotType: "feet" } },
+    ];
+    const project: MusicVideoProject = {
+      id: "family-variety",
+      song: mockAnalysis({ duration: 18, beats: Array.from({ length: 19 }, (_, index) => index), onsets: [], sections: [{ label: "Verse", start: 0, end: 18, energy: 0.7 }] }),
+      duration: 18,
+      lyricChunks: [],
+      storySections: [{ id: "verse", label: "Verse", prompt: "story progression", start: 0, end: 18, source: "analysis", lyricChunkIds: [], videoMomentIds: moments.map((moment) => moment.id) }],
+      videoMoments: moments,
+      editPlan: { id: "plan", createdAt: "2026-08-27T00:00:00.000Z", timelineItems: [{ id: "timeline-verse", sectionId: "verse", lyricChunkIds: [], videoMomentId: "hallway-0", start: 0, end: 18, label: "Verse", prompt: "story progression" }] },
+      reviewFindings: [],
+    };
+
+    const segments = buildEditPlanPreviewSegments({ project, videoSources, editSettings: { cutDensity: 0.75, preferOnsets: false } });
+    const hallwayUses = segments.filter((segment) => segment.momentId?.startsWith("hallway-")).length;
+
+    expect(new Set(segments.map((segment) => segment.momentId)).size).toBeGreaterThan(4);
+    expect(hallwayUses).toBeLessThanOrEqual(3);
   });
 
   test("edit density changes the number of cue-aligned story preview cuts", () => {
