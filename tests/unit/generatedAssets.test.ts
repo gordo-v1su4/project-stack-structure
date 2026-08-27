@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { applyApprovedGeneratedAssets, buildGeneratedAssetContextPreview, type GeneratedStudioAsset } from "@/components/studio/generatedAssets";
+import { applyApprovedGeneratedAssets, buildGeneratedAssetContextPreview, buildGeneratedAssetPlaybackUrl, type GeneratedStudioAsset } from "@/components/studio/generatedAssets";
 import type { EditPlanPreviewSegment } from "@/components/studio/musicVideoProject";
 
 const sourceSegments: EditPlanPreviewSegment[] = [
@@ -113,5 +113,22 @@ describe("generated clip approval", () => {
     expect(preview?.segments).toHaveLength(1);
     expect(preview?.segments[0]?.startTime).toBeCloseTo(12.11, 5);
     expect(preview?.segments[0]?.endTime).toBeCloseTo(15.04, 5);
+  });
+
+  test("uses the authenticated same-origin media stream for durable generated clips", () => {
+    const asset = generatedAsset({
+      fullStorage: {
+        bucket: "stack-structure",
+        objectKey: "media-uploads/github-123/generated/bridge clip.mp4",
+        storagePath: "media-uploads/github-123/generated/bridge clip.mp4",
+        publicUrl: "https://media.example/bridge.mp4",
+        mediaUrl: "https://media.example/files/bridge.mp4",
+        mime: "video/mp4",
+      },
+    });
+
+    expect(buildGeneratedAssetPlaybackUrl(asset)).toBe(
+      "/api/storage/media?bucket=stack-structure&objectKey=media-uploads%2Fgithub-123%2Fgenerated%2Fbridge+clip.mp4",
+    );
   });
 });
