@@ -75,7 +75,7 @@ export function SplitTab({
   const eventsPerCut = Math.max(1, Math.round(clipDur / 2));
   const splitReady = hasSources && segments.length > 0;
   const durationSummary = summarizeDurations(segments);
-  const railWidth = Math.max(960, segments.length * 24, totalDuration * 8);
+  const railWidth = getCutMapRailWidth(totalDuration);
   const visibleCuts = useMemo(
     () =>
       segments
@@ -182,6 +182,7 @@ export function SplitTab({
           <span><b className="font-normal text-[#aaa]">{durationSummary.minimum.toFixed(2)}s</b> shortest</span>
           <span><b className="font-normal text-[#aaa]">{durationSummary.maximum.toFixed(2)}s</b> longest</span>
           {visibleMode !== "scene" ? <span>{eventsPerCut} grouped events/window</span> : null}
+          <span>fixed timeline scale</span>
         </div>
 
         {segments.length ? (
@@ -276,6 +277,10 @@ export function SplitTab({
       </div>
     </div>
   );
+}
+
+export function getCutMapRailWidth(totalDuration: number) {
+  return Math.max(960, Math.ceil(Math.max(0, totalDuration) * 8));
 }
 
 function StatusChip({ label, value, tone }: { label: string; value: string; tone: ReadinessTone }) {

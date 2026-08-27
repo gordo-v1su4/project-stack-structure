@@ -2,11 +2,16 @@ import { describe, expect, test } from "bun:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { SplitTab } from "@/components/studio/panels/SplitTab";
+import { getCutMapRailWidth, SplitTab } from "@/components/studio/panels/SplitTab";
 import { buildSceneSplitSegments, buildSourceClipSpans } from "@/components/studio/sourceTimeline";
 import { makeBeatJoinAnalysis, makeVideoSources } from "../helpers/studioFixtures";
 
 describe("SplitTab simplified workflow", () => {
+  test("keeps one duration scale when pace changes the candidate count", () => {
+    expect(getCutMapRailWidth(357)).toBe(2856);
+    expect(getCutMapRailWidth(20)).toBe(960);
+  });
+
   test("presents three understandable strategies and a readable cut table", () => {
     const [source] = makeVideoSources();
     const sources = [{

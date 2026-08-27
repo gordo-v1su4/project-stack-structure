@@ -95,7 +95,10 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews,
   }
 
   function updateEditSettings(patch: Partial<StoryEditSettings>) {
-    updateState({ editSettings: normalizeStoryEditSettings({ ...editSettings, ...patch }) });
+    updateState({
+      editSettings: normalizeStoryEditSettings({ ...editSettings, ...patch }),
+      storyGenerated: false,
+    });
   }
 
   const transcriptDuration = transcriptSummary?.duration && transcriptSummary.duration > 0 ? transcriptSummary.duration : null;
@@ -345,8 +348,16 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews,
               transcriptSummary && !isTranscribingAudio ? "bg-[#e05c00] text-white hover:bg-[#c95200]" : "bg-[#252525] text-[#646464] cursor-not-allowed"
             }`}
           >
-            {storyGenerated ? "Story map ready" : "Use this story map"}
+            {storyGenerated ? "Story map confirmed" : "Confirm story map"}
           </button>
+        </div>
+
+        <div className={`mb-3 rounded-[2px] border px-3 py-2 text-[9px] leading-4 ${storyGenerated ? "border-[#245c2c] bg-[#071107] text-[#78c878]" : "border-[#5a3219] bg-[#120a05] text-[#c68152]"}`}>
+          {storyGenerated
+            ? "Confirmed. Split and downstream stages may use this Story map."
+            : transcriptSummary
+              ? "Draft ready. Confirm this map to unlock Split; later Story changes will mark downstream work stale."
+              : "Add the vocal stem or timed lyrics before confirming this Story map."}
         </div>
 
         {totalDuration > 0 ? <div className="overflow-x-auto rounded-[2px] border border-[#171717] bg-[#070707]">

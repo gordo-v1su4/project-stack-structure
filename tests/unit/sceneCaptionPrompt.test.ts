@@ -39,6 +39,8 @@ describe("detailed Qwen scene caption profile", () => {
     expect(prompt).toContain("30-60 word sentence");
     expect(prompt).toContain("shot size and composition");
     expect(prompt).toContain("exact character name");
+    expect(prompt).toContain("identify them by name only");
+    expect(prompt).toContain("reference image is authoritative");
     expect(prompt).toContain("Do not assign a listed name");
     expect(prompt).toContain("exact location name");
     expect(prompt).toContain("close-up or detail shot");
