@@ -1,124 +1,121 @@
 "use client";
 
-import type { Dispatch, SetStateAction } from "react";
 import { fmt } from "../math";
-import { VideoClip } from "../VideoClip";
-import type { JoinClip, SegmentPreview, ShuffleMode } from "../types";
+import type { EditPlanPreviewSegment } from "../musicVideoProject";
 
 type JoinTabProps = {
-  joinClips: JoinClip[];
-  clipOrder: number[];
-  segmentPreviews: SegmentPreview[];
-  shuffleMode: ShuffleMode;
-  isUsingCommittedSplit?: boolean;
+  previewSegments: EditPlanPreviewSegment[];
   activeClip: number;
-  onJoinClips: Dispatch<SetStateAction<JoinClip[]>>;
-  onActiveClip: (i: number) => void;
+  onActiveClip: (index: number) => void;
 };
 
-export function JoinTab({
-  joinClips,
-  clipOrder,
-  segmentPreviews,
-  shuffleMode,
-  isUsingCommittedSplit = false,
-  activeClip,
-  onJoinClips,
-  onActiveClip,
-}: JoinTabProps) {
-  if (!joinClips.length) {
+export function JoinTab({ previewSegments, activeClip, onActiveClip }: JoinTabProps) {
+  if (!previewSegments.length) {
     return (
       <div className="rounded-[2px] border border-dashed border-[#222] bg-[#090909] px-4 py-10 text-center">
-        <div className="text-[13px] text-[#b0b0b0]">Join is waiting for source clips.</div>
+        <div className="text-[13px] text-[#b0b0b0]">Join is waiting for the resolved edit.</div>
         <div className="mt-2 text-[10px] uppercase tracking-[0.14em] text-[#555]">
-          Upload video clips and generate split segments first so the join queue has something real to rebuild.
+          Finish Match and resolve required Generate gaps so Join can show the exact preview/export sequence.
         </div>
       </div>
     );
   }
 
-  const ordered = clipOrder
-    .map((id) => joinClips.find((clip) => clip.id === id))
-    .filter((clip): clip is JoinClip => Boolean(clip));
-  const inactive = joinClips.filter((clip) => !clipOrder.includes(clip.id));
-  const orderedClips = [...ordered, ...inactive];
-  const active = orderedClips.filter((clip) => clip.on);
-  const totalDur = active.reduce((sum, clip) => sum + (segmentPreviews[clip.id]?.duration ?? 0), 0);
+  const totalDuration = Math.max(previewSegments.at(-1)?.musicEnd ?? 0, 0.001);
+  const sourceCount = new Set(previewSegments.map((segment) => segment.sourceClipId).filter((id) => id !== undefined)).size;
+  const sectionCount = new Set(previewSegments.map((segment) => segment.sectionId)).size;
+  const selectedIndex = Math.min(activeClip, previewSegments.length - 1);
 
   return (
-    <>
-      {!isUsingCommittedSplit ? (
-        <div className="rounded-[2px] border border-[#3a220c] bg-[#120b06] px-3 py-2 text-[10px] uppercase tracking-[0.14em] text-[#d5a56a]">
-          Build Split and Match first so Join assembles the same approved working segment set.
+    <div className="space-y-3">
+      <div className="rounded-[2px] border border-[#26351f] bg-[#091008] px-3 py-2">
+        <div className="text-[10px] uppercase tracking-[0.16em] text-[#78b96a]">Resolved edit locked to preview / export</div>
+        <div className="mt-1 text-[10px] leading-4 text-[#707a6d]">
+          This is the actual Match result in song order—not the larger Split candidate pool. Review replacements in Match or Generate; Join does not silently reshuffle or omit cuts.
         </div>
-      ) : null}
+      </div>
 
-      <div className="border border-[#1a1a1a] rounded-[2px] bg-[#080808] overflow-hidden">
-        <div className="flex items-center gap-3 px-3 py-2 border-b border-[#181818] text-[10px]">
-          <span className="uppercase tracking-[0.18em] text-[#404040]">Clip Queue</span>
-          <span className="font-mono text-[#555]">
-            {active.length} clips · <span className="text-[#e05c00]">{fmt(totalDur)}</span>
+      <div className="overflow-hidden rounded-[2px] border border-[#1a1a1a] bg-[#080808]">
+        <div className="flex flex-wrap items-center gap-3 border-b border-[#181818] px-3 py-2 text-[10px]">
+          <span className="uppercase tracking-[0.18em] text-[#8a8a8a]">Resolved edit timeline</span>
+          <span className="font-mono text-[#666]">
+            {previewSegments.length} cuts · <span className="text-[#e05c00]">{fmt(totalDuration)}</span>
           </span>
-          <span className="font-mono text-[#444] uppercase">{shuffleMode}</span>
+          <span className="font-mono text-[#555]">{sectionCount} sections · {sourceCount} sources</span>
+          <span className="ml-auto font-mono uppercase text-[#4f6f46]">combined Match output</span>
         </div>
-        <div className="relative h-12 flex">
-          {active.map((c, i) => {
-            const w = segmentPreviews[c.id]?.duration ?? 0;
-            const total = active.reduce((sum, clip) => sum + (segmentPreviews[clip.id]?.duration ?? 0), 0);
+        <div className="relative h-14 bg-[#050505]">
+          {previewSegments.map((segment, index) => {
+            const left = (segment.musicStart / totalDuration) * 100;
+            const width = Math.max(0.25, ((segment.musicEnd - segment.musicStart) / totalDuration) * 100);
+            const selected = index === selectedIndex;
             return (
-              <div
-                key={c.id}
-                className={`relative border-r border-[#0a0a0a] cursor-pointer ${
-                  c.id === activeClip ? "bg-[#e05c0020]" : i % 2 === 0 ? "bg-[#0e0e0e]" : "bg-[#0b0b0b]"
-                }`}
-                style={{ width: `${(w / Math.max(total, 0.001)) * 100}%` }}
-                onClick={() => onActiveClip(c.id)}
+              <button
+                key={`${segment.sectionId}-${segment.musicStart}-${index}`}
+                type="button"
+                aria-label={`Cut ${index + 1} · ${segment.sourceRefLabel ?? segment.label}`}
+                aria-pressed={selected}
+                onClick={() => onActiveClip(index)}
+                className={`absolute inset-y-1 overflow-hidden rounded-[1px] border transition-colors ${selected ? "z-10 border-[#e05c00] bg-[#3a1808]" : "border-[#0a0a0a] bg-[#102014] hover:border-[#8a421d]"}`}
+                style={{ left: `${left}%`, width: `${width}%` }}
+                title={`${segment.sourceRefLabel ?? segment.label} · song ${formatCutTime(segment.musicStart)}-${formatCutTime(segment.musicEnd)}`}
               >
-                {c.id === activeClip && <div className="absolute top-0 left-0 right-0 h-[2px] bg-[#e05c00]" />}
-                <span className="absolute left-[2px] top-[3px] text-[7px] font-mono text-[#444]">S{c.id + 1}</span>
-                <span className="absolute right-[2px] bottom-[2px] text-[7px] font-mono text-[#3f3f3f]">
-                  {(segmentPreviews[c.id]?.duration ?? 0).toFixed(1)}s
-                </span>
-              </div>
+                <span className="absolute left-[2px] top-[2px] font-mono text-[7px] text-[#777]">{index + 1}</span>
+              </button>
             );
           })}
         </div>
       </div>
 
       <div>
-        <div className="mb-2 text-[10px] uppercase tracking-[0.18em] text-[#404040]">
-          Clip Queue — click to toggle on/off
+        <div className="mb-2 flex items-end justify-between gap-3">
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.18em] text-[#6a6a6a]">Final cut order</div>
+            <div className="mt-1 text-[9px] text-[#555]">Click a cut to focus its exact source and song position.</div>
+          </div>
+          <div className="font-mono text-[9px] text-[#555]">CUT {String(selectedIndex + 1).padStart(3, "0")} / {previewSegments.length}</div>
         </div>
-        <div className="grid grid-cols-6 gap-2">
-          {orderedClips.map((c, index) => (
-            <div
-              key={c.id}
-              className="relative"
-              onClick={() => {
-                onJoinClips((prev) => prev.map((cc) => (cc.id === c.id ? { ...cc, on: !cc.on } : cc)));
-                onActiveClip(c.id);
-              }}
-            >
-              <VideoClip
-                idx={c.id}
-                active={c.id === activeClip}
-                mode="simple"
-                label={`S${String(c.id + 1).padStart(2, "0")}`}
-                durationLabel={segmentPreviews[c.id] ? `${segmentPreviews[c.id].duration.toFixed(1)}s` : undefined}
-                thumbnailUrl={segmentPreviews[c.id]?.thumbnailUrl}
-              />
-              <div className="absolute top-[3px] right-[3px] text-[7px] font-mono text-[#ffffff88] bg-[#00000055] px-1 rounded-[1px]">
-                {String(index + 1).padStart(2, "0")}
-              </div>
-              {!c.on && (
-                <div className="absolute inset-0 bg-[#00000099] flex items-center justify-center rounded-[2px]">
-                  <span className="text-[9px] font-mono text-[#383838]">SKIP</span>
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-6">
+          {previewSegments.map((segment, index) => {
+            const selected = index === selectedIndex;
+            const duration = Math.max(0, segment.musicEnd - segment.musicStart);
+            const sourceLabel = segment.sourceRefLabel
+              ?? (segment.sourceClipId !== undefined ? `S${segment.sourceClipId + 1}` : "Unknown source");
+            return (
+              <button
+                key={`${segment.sectionId}-${segment.musicStart}-${segment.startTime}-${index}`}
+                type="button"
+                aria-pressed={selected}
+                onClick={() => onActiveClip(index)}
+                className={`group overflow-hidden rounded-[2px] border bg-[#070707] text-left transition-colors ${selected ? "border-[#e05c00]" : "border-[#202020] hover:border-[#6a3218]"}`}
+              >
+                <div className="relative aspect-video bg-[#030303]">
+                  {segment.thumbnailUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={segment.thumbnailUrl} alt={`${sourceLabel} final cut`} className="h-full w-full object-cover opacity-80 group-hover:opacity-100" loading="lazy" decoding="async" />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center text-[8px] uppercase tracking-[0.12em] text-[#444]">No frame</div>
+                  )}
+                  <div className="absolute left-1 top-1 rounded-[1px] bg-[#000000c0] px-1.5 py-0.5 font-mono text-[7px] text-[#ddd]">{sourceLabel}</div>
+                  <div className="absolute right-1 top-1 rounded-[1px] bg-[#000000c0] px-1.5 py-0.5 font-mono text-[7px] text-[#aaa]">{duration.toFixed(1)}s</div>
+                  <div className="absolute bottom-1 left-1 rounded-[1px] bg-[#000000c0] px-1.5 py-0.5 font-mono text-[7px] text-[#aaa]">SRC {formatCutTime(segment.startTime)}–{formatCutTime(segment.endTime)}</div>
                 </div>
-              )}
-            </div>
-          ))}
+                <div className="border-t border-[#151515] px-2 py-1.5">
+                  <div className="truncate font-mono text-[8px] uppercase tracking-[0.1em] text-[#8a8a8a]">CUT {String(index + 1).padStart(3, "0")} · {segment.label}</div>
+                  <div className="mt-1 font-mono text-[7px] text-[#555]">SONG {formatCutTime(segment.musicStart)}–{formatCutTime(segment.musicEnd)}</div>
+                </div>
+              </button>
+            );
+          })}
         </div>
       </div>
-    </>
+    </div>
   );
+}
+
+function formatCutTime(value: number) {
+  const safe = Math.max(0, value);
+  const minutes = Math.floor(safe / 60);
+  const seconds = safe - minutes * 60;
+  return `${minutes}:${seconds.toFixed(2).padStart(5, "0")}`;
 }
