@@ -12,11 +12,12 @@ import {
   type MediaGatewayUploadResult,
 } from "@/lib/mediaGateway";
 import { createTriggerIdempotencyKey } from "@/lib/triggerIdempotency";
+import type { DurableCaptionReference } from "@/lib/captionReferences";
 import { sceneCaptionBatchTask, type SceneCaptionBatchPayload } from "./caption";
 import { mediaFinalizationQueue, mediaPipelineQueue, sceneDetectionQueue } from "./queues";
 
 export const CAPTION_BATCH_SIZE = 6;
-export const MEDIA_PIPELINE_VERSION = "stack-structure-media-pipeline-v2";
+export const MEDIA_PIPELINE_VERSION = "stack-structure-media-pipeline-v3";
 
 export type MediaSceneDetectionPayload = {
   bucket: string;
@@ -26,6 +27,9 @@ export type MediaSceneDetectionPayload = {
   profile?: string;
   metadata?: Record<string, unknown>;
   timeoutSeconds?: number;
+  captionPrompt?: string;
+  captionContext?: string;
+  captionReferences?: DurableCaptionReference[];
   /** Present when the source traveled as ordered gateway chunks (Vercel body cap). */
   uploadChunks?: { size: number; chunks: Array<{ bucket: string; objectKey: string }> };
 };
@@ -211,7 +215,7 @@ export const mediaVideoPipelineTask = task({
     });
     const segments = readSegments(manifest);
     const model = process.env.QWEN_GGUF_MODEL || "Qwen/Qwen3-VL-4B-Instruct-GGUF:Q4_K_M";
-    const prompt = process.env.SCENE_CAPTION_PROMPT ||
+    const prompt = payload.captionPrompt || process.env.SCENE_CAPTION_PROMPT ||
       "Analyze this three-panel video scene storyboard. Describe what changes from the first frame to the middle frame to the last frame, and return JSON with caption, shotType, subjects, action, setting, lighting, timeOfDay, and weather.";
     const batches = chunk(segments, CAPTION_BATCH_SIZE);
     metadata
@@ -232,12 +236,16 @@ export const mediaVideoPipelineTask = task({
           sourceName: payload.objectKey.split("/").pop() || payload.objectKey,
           prompt,
           model,
+          captionContext: payload.captionContext,
+          captionReferences: payload.captionReferences,
         }),
         {
-          idempotencyKey: createTriggerIdempotencyKey("qwen-caption-batch-v2", [
+          idempotencyKey: createTriggerIdempotencyKey("qwen-caption-batch-v3", [
             sceneOutput.sourceContentHash,
             model,
             hashText(prompt),
+            hashText(payload.captionContext ?? ""),
+            hashText(JSON.stringify(payload.captionReferences ?? [])),
             String(batchIndex),
             ...batch.map((segment) => String(segment.index ?? "")),
           ]),
@@ -401,6 +409,8 @@ export function buildCaptionBatchPayload(args: {
   sourceName: string;
   prompt: string;
   model: string;
+  captionContext?: string;
+  captionReferences?: DurableCaptionReference[];
 }): SceneCaptionBatchPayload {
   return {
     batchIndex: args.batchIndex,
@@ -421,10 +431,28 @@ export function buildCaptionBatchPayload(args: {
         sceneStart: String(segment.start_seconds ?? ""),
         sceneEnd: String(segment.end_seconds ?? ""),
         sceneDuration: String(segment.duration_seconds ?? ""),
-        captionContext: JSON.stringify({ sampleTimes, instruction: "Caption motion and change across the three panels." }),
+        captionContext: buildBatchCaptionContext(args.captionContext, sampleTimes),
+        captionReferences: args.captionReferences,
       };
     }),
   };
+}
+
+function buildBatchCaptionContext(value: string | undefined, sampleTimes: Record<string, unknown>) {
+  let projectContext: Record<string, unknown> = {};
+  if (value) {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      if (isRecord(parsed)) projectContext = parsed;
+    } catch {
+      projectContext = { operatorContext: value };
+    }
+  }
+  return JSON.stringify({
+    ...projectContext,
+    sampleTimes,
+    instruction: "Caption motion and change across the three scene panels; use character references only for visual identity matching.",
+  });
 }
 
 export function mergeCaptionBatchResults(

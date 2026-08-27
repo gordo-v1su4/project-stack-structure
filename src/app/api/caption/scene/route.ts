@@ -2,7 +2,8 @@ import { createHash } from "node:crypto";
 
 import { LFM_SCENE_CAPTION_PROMPT } from "@/review/lib/analysis/scene-caption-format";
 import type { SceneCaptionMode, SceneCaptionSource } from "@/components/studio/types";
-import { uploadFileToMediaGateway } from "@/lib/mediaGateway";
+import { parseDurableCaptionReferences } from "@/lib/captionReferences";
+import { getMediaGatewayConfig, uploadFileToMediaGateway } from "@/lib/mediaGateway";
 import { getSessionUser, unauthorizedResponse } from "@/lib/session";
 import { triggerSmartSceneCaption } from "@/lib/triggerOrchestration";
 
@@ -26,6 +27,7 @@ type CaptionGatewayConfig = {
 
 type CaptionGatewayHealth = {
   reachable: boolean;
+  backendReady?: boolean;
   status?: number;
   error?: string;
 };
@@ -98,6 +100,7 @@ export async function GET() {
       smart: {
         configured: smart.configured,
         reachable: smartHealth.reachable,
+        backendReady: smartHealth.backendReady,
         status: smartHealth.status,
         error: smartHealth.error,
         model: smart.model,
@@ -142,6 +145,14 @@ export async function POST(request: Request) {
     }
     const bytes = await image.arrayBuffer();
     const imageDigest = createHash("sha256").update(new Uint8Array(bytes)).digest("hex");
+    const mediaConfig = getMediaGatewayConfig();
+    if (!mediaConfig) {
+      return Response.json({ ok: false, error: "Media gateway is not configured." }, { status: 503 });
+    }
+    const captionReferences = parseDurableCaptionReferences(
+      readFormString(formData, "captionReferences"),
+      mediaConfig.bucket,
+    );
     const uploaded = await uploadFileToMediaGateway({
       file: image,
       folder: "media-uploads/caption-frames",
@@ -159,6 +170,7 @@ export async function POST(request: Request) {
       sceneEnd: readFormString(formData, "sceneEnd"),
       sceneDuration: readFormString(formData, "sceneDuration"),
       captionContext: readFormString(formData, "captionContext"),
+      captionReferences,
     }, imageDigest);
     return Response.json({
       ok: true,
@@ -172,7 +184,10 @@ export async function POST(request: Request) {
     }, { status: 202 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Server scene captioning failed.";
-    return Response.json({ ok: false, configured: false, error: message }, { status: 502 });
+    return Response.json(
+      { ok: false, configured: false, error: message },
+      { status: /caption reference/i.test(message) ? 400 : 502 },
+    );
   }
 }
 
@@ -193,8 +208,12 @@ async function checkCaptionGatewayHealth(config: CaptionGatewayConfig): Promise<
       headers,
       signal: controller.signal,
     });
+    const payload = await response.json().catch(() => null) as Record<string, unknown> | null;
     return {
       reachable: response.ok,
+      backendReady: typeof payload?.qwenBackendHealthy === "boolean"
+        ? payload.qwenBackendHealthy
+        : undefined,
       status: response.status,
       error: response.ok ? undefined : `${response.status} ${response.statusText}`,
     };

@@ -32,7 +32,7 @@ export const STACK_STRUCTURE_TRIGGER_TASKS = {
 
 export async function triggerMediaSceneDetection(payload: MediaSceneDetectionPayload) {
   assertTriggerConfigured();
-  const dispatch = await buildDispatchContext(["stack-structure", "media", "pipeline-v2"], {
+  const dispatch = await buildDispatchContext(["stack-structure", "media", "pipeline-v3"], {
     stageLabel: "Waiting for media pipeline capacity",
     progressMode: "exact",
   });
@@ -40,12 +40,15 @@ export async function triggerMediaSceneDetection(payload: MediaSceneDetectionPay
     ...payload,
     applicationUserId: dispatch.userId,
   }, {
-    idempotencyKey: createTriggerIdempotencyKey("media-video-pipeline-v2", [
+    idempotencyKey: createTriggerIdempotencyKey("media-video-pipeline-v3", [
       payload.bucket,
       payload.objectKey,
       payload.mode ?? "scene-detect",
       payload.profile ?? "pyscenedetect-adaptive",
-      "stack-structure-media-pipeline-v2",
+      payload.captionPrompt ?? "",
+      payload.captionContext ?? "",
+      JSON.stringify(payload.captionReferences ?? []),
+      "stack-structure-media-pipeline-v3",
     ]),
     idempotencyKeyTTL: "24h",
     maxAttempts: 1,
@@ -93,6 +96,7 @@ export async function triggerSmartSceneCaption(payload: SmartSceneCaptionPayload
       payload.sceneEnd ?? "",
       payload.sceneDuration ?? "",
       payload.captionContext ?? "",
+      JSON.stringify(payload.captionReferences ?? []),
       imageDigest,
     ]),
     idempotencyKeyTTL: "24h",

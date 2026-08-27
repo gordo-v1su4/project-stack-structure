@@ -291,7 +291,7 @@ export default function StudioApp() {
         musicVideoProject,
         referenceAssets,
         generatedAssets,
-        captionSettings: buildSceneCaptionSettings(captionMode, beatJoinAnalysis, storyState),
+        captionSettings: buildSceneCaptionSettings(captionMode, beatJoinAnalysis, storyState, referenceAssets),
         workflowUiSettings: {
           activeTab: tab,
           splitMode,
@@ -569,7 +569,7 @@ export default function StudioApp() {
         files,
         mergePreparedSourceUpdate,
         mergePreparedSourceUpdate,
-        buildSceneCaptionSettings(captionMode, beatJoinAnalysis, storyState),
+        buildSceneCaptionSettings(captionMode, beatJoinAnalysis, storyState, referenceAssets),
       );
       if (!prepared.length) {
         throw new Error("No readable video files were selected.");
@@ -710,7 +710,7 @@ export default function StudioApp() {
       // requests into proxy-timeout errors instead of throughput. Scenes
       // that miss (timeout / gateway error) keep their previous caption and
       // are retried in follow-up rounds once the pass finishes.
-      const captionSettings = buildSceneCaptionSettings(captionMode, beatJoinAnalysis, storyState);
+      const captionSettings = buildSceneCaptionSettings(captionMode, beatJoinAnalysis, storyState, referenceAssets);
       const maxRounds = 3;
       let pending = targets;
 
@@ -971,7 +971,7 @@ export default function StudioApp() {
           musicVideoProject,
           referenceAssets,
           generatedAssets,
-          captionSettings: buildSceneCaptionSettings(captionMode, beatJoinAnalysis, storyState),
+          captionSettings: buildSceneCaptionSettings(captionMode, beatJoinAnalysis, storyState, referenceAssets),
           workflowUiSettings: {
             activeTab: tab,
             splitMode,
@@ -1133,7 +1133,7 @@ export default function StudioApp() {
               musicVideoProject,
               referenceAssets,
               generatedAssets,
-              captionSettings: buildSceneCaptionSettings(captionMode, beatJoinAnalysis, storyState),
+              captionSettings: buildSceneCaptionSettings(captionMode, beatJoinAnalysis, storyState, referenceAssets),
               workflowUiSettings: {
                 activeTab: tab,
                 splitMode,
@@ -1816,7 +1816,7 @@ export default function StudioApp() {
     musicVideoProject,
     referenceAssets,
     generatedAssets,
-    captionSettings: buildSceneCaptionSettings(captionMode, beatJoinAnalysis, storyState),
+    captionSettings: buildSceneCaptionSettings(captionMode, beatJoinAnalysis, storyState, referenceAssets),
     workflowUiSettings: {
       activeTab: tab,
       splitMode,
@@ -2279,10 +2279,36 @@ function buildSceneCaptionSettings(
   mode: SceneCaptionMode,
   analysis: BeatJoinAnalysis | null,
   storyState: ReturnType<typeof createDefaultStoryTabState>,
+  referenceAssets: ReferenceAsset[],
 ) {
   const transcript = storyState.transcriptSummary?.transcript ?? "";
+  const characters = referenceAssets
+    .filter((asset) => asset.storageStatus === "uploaded" && (asset.role === "character-1" || asset.role === "character-2"))
+    .map((asset) => ({
+      name: asset.displayName.trim(),
+      role: asset.role === "character-1" ? "primary" as const : "secondary" as const,
+      identityInstruction: asset.promptHint.trim() || undefined,
+    }))
+    .filter((character) => Boolean(character.name));
+  const referenceImages = referenceAssets
+    .filter((asset) => asset.storageStatus === "uploaded" && (asset.role === "character-1" || asset.role === "character-2"))
+    .flatMap((asset) => {
+      const name = asset.displayName.trim();
+      const bucket = asset.storageBucket?.trim();
+      const objectKey = asset.storagePath?.trim();
+      if (!name || !bucket || !objectKey) return [];
+      return [{
+        name,
+        role: asset.role === "character-1" ? "primary" as const : "secondary" as const,
+        bucket,
+        objectKey,
+        fileName: asset.fileName,
+      }];
+    })
+    .slice(0, 2);
   return {
     mode,
+    referenceImages,
     context: {
       songTitle: analysis?.sourceLabel,
       vocalStemName: storyState.vocalStemName || undefined,
@@ -2293,6 +2319,8 @@ function buildSceneCaptionSettings(
         .filter(Boolean)
         .slice(0, 10),
       projectIntent: "Music-video source footage captioning for later semantic matching against lyrics, story sections, action, mood, and setting.",
+      captionStyle: "detailed-cinematic" as const,
+      characters,
     },
   };
 }

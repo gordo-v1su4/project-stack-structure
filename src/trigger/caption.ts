@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { logger, task, wait } from "@trigger.dev/sdk";
 
 import { downloadMediaGatewayFile, uploadJsonToMediaGateway } from "@/lib/mediaGateway";
+import type { DurableCaptionReference } from "@/lib/captionReferences";
 
 import { vm100HeavyQueue } from "./queues";
 import { markWorkCompleted, markWorkRunning, setWorkProgress } from "./workMetadata";
@@ -19,6 +20,7 @@ export type SmartSceneCaptionPayload = {
   sceneEnd?: string;
   sceneDuration?: string;
   captionContext?: string;
+  captionReferences?: DurableCaptionReference[];
 };
 
 export const smartSceneCaptionTask = task({
@@ -153,6 +155,18 @@ async function runSmartSceneCaption(payload: SmartSceneCaptionPayload, triggerRu
     copyOptional(form, payload, "sceneEnd");
     copyOptional(form, payload, "sceneDuration");
     copyOptional(form, payload, "captionContext");
+    for (const reference of (payload.captionReferences ?? []).slice(0, 2)) {
+      const storedReference = await downloadMediaGatewayFile({
+        bucket: reference.bucket,
+        objectKey: reference.objectKey,
+        fileName: reference.fileName || `${reference.name}.jpg`,
+      });
+      form.append(
+        "referenceImages",
+        new File([storedReference.bytes], storedReference.fileName, { type: storedReference.mime }),
+      );
+      form.append("referenceLabels", JSON.stringify({ name: reference.name, role: reference.role }));
+    }
 
     const response = await fetch(`${gatewayUrl}/caption/scene`, {
       method: "POST",
