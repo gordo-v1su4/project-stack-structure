@@ -25,6 +25,7 @@ export interface PipelineStage {
   step: number;
   status: string;
   ready: boolean;
+  complete: boolean;
   available: boolean;
   blockedReason: string | null;
   prerequisiteKey: Tab | null;
@@ -59,6 +60,7 @@ export function buildPipelineState(input: PipelineStageInput): PipelineState {
       key: "review",
       label: "Ingest",
       ready: ingestReady,
+      complete: ingestReady,
       available: true,
       blockedReason: null,
       prerequisiteKey: null,
@@ -68,6 +70,7 @@ export function buildPipelineState(input: PipelineStageInput): PipelineState {
       key: "story",
       label: "Story",
       ready: storyReady,
+      complete: storyReady,
       available: ingestReady,
       blockedReason: ingestReady ? null : "Finish audio analysis, scene detection, and scene captions in Ingest first.",
       prerequisiteKey: ingestReady ? null : "review",
@@ -83,6 +86,7 @@ export function buildPipelineState(input: PipelineStageInput): PipelineState {
       key: "split",
       label: "Split",
       ready: splitReady,
+      complete: splitReady,
       available: storyReady,
       blockedReason: storyReady ? null : "Confirm the Story map before building source cut windows.",
       prerequisiteKey: storyReady ? null : "story",
@@ -96,6 +100,7 @@ export function buildPipelineState(input: PipelineStageInput): PipelineState {
       key: "shuffle",
       label: "Match",
       ready: matchReady,
+      complete: matchReady && input.matchedSlotCount === input.editSlotCount,
       available: splitReady,
       blockedReason: splitReady ? null : "Build and commit Split before reviewing matches.",
       prerequisiteKey: splitReady ? null : "split",
@@ -109,6 +114,7 @@ export function buildPipelineState(input: PipelineStageInput): PipelineState {
       key: "generate",
       label: "Generate",
       ready: generateReady,
+      complete: generateReady,
       available: matchReady,
       blockedReason: matchReady ? null : "Finish Match before planning missing or replacement shots.",
       prerequisiteKey: matchReady ? null : "shuffle",
@@ -124,28 +130,31 @@ export function buildPipelineState(input: PipelineStageInput): PipelineState {
       key: "join",
       label: "Join",
       ready: joinReady,
+      complete: input.finalExportReady,
       available: generateReady,
       blockedReason: generateReady ? null : "Resolve required Generate gaps before assembling the approved Join timeline.",
       prerequisiteKey: generateReady ? null : "generate",
-      status: joinReady ? `${input.storySegmentCount} cuts` : "Waiting for story preview",
+      status: joinReady ? `${input.storySegmentCount} cuts · review` : "Waiting for story preview",
     },
     {
       key: "ramp",
       label: "Effects",
       ready: effectsReady,
+      complete: input.finalExportReady,
       available: joinReady,
       blockedReason: joinReady ? null : "Build the Join timeline before applying transitions or effects.",
       prerequisiteKey: joinReady ? null : "join",
-      status: input.shaderPresetLabel,
+      status: input.finalExportReady ? `${input.shaderPresetLabel} · applied` : `${input.shaderPresetLabel} · review`,
     },
     {
       key: "compose",
       label: "Export",
       ready: exportReady,
+      complete: input.finalExportReady,
       available: effectsReady,
       blockedReason: effectsReady ? null : "Finish Join and review Effects before opening export controls.",
       prerequisiteKey: effectsReady ? null : "ramp",
-      status: input.finalExportReady ? "MP4 ready" : input.storySegmentCount > 0 ? "Preview ready" : "Waiting",
+      status: input.finalExportReady ? "MP4 ready" : input.storySegmentCount > 0 ? "Preview ready · export pending" : "Waiting",
     },
   ];
 

@@ -1982,9 +1982,11 @@ export default function StudioApp() {
                         ? "border-[#e05c00] bg-[#120b06]"
                         : stage.isNext
                           ? "border-[#7a3a10] bg-[#0d0803] hover:border-[#e05c00]"
-                          : stage.ready
+                          : stage.complete
                             ? "border-[#202020] bg-[#0a0a0a] hover:border-[#333]"
-                            : "border-[#151515] bg-[#070707] hover:border-[#242424]"
+                            : stage.ready || stage.available
+                              ? "border-[#32200f] bg-[#0d0905] hover:border-[#7a3a10]"
+                              : "border-[#151515] bg-[#070707] hover:border-[#242424]"
                     }`}
                     title={`${stage.label}: ${stage.status}`}
                   >
@@ -1994,7 +1996,7 @@ export default function StudioApp() {
                         {stage.label}
                         {stage.isNext && !stage.active ? <span className="ml-1 text-[#c07a3f]">· next</span> : null}
                       </span>
-                      <span className={`h-1.5 w-1.5 rounded-full ${stage.ready ? "bg-[#3a8a3a]" : "bg-[#3d3d3d]"}`} />
+                      <span className={`h-1.5 w-1.5 rounded-full ${stage.complete ? "bg-[#3a8a3a]" : stage.ready || stage.available ? "bg-[#b46721]" : "bg-[#3d3d3d]"}`} />
                     </div>
                     <div className="mt-[2px] truncate font-mono text-[9px] text-[#777]">{stage.status}</div>
                   </button>
@@ -2128,6 +2130,7 @@ export default function StudioApp() {
                 onsetDensity={matchOnsetDensity}
                 lyricCueBlend={matchLyricCueBlend}
                 lyricMergeWindow={matchLyricMergeWindow}
+                previewSegments={storyPreviewSegments}
                 referenceAssets={referenceAssets}
                 persistedGeneratedAssets={generatedAssets}
                 onGeneratedAsset={(asset) => setGeneratedAssets((current) => [asset, ...current.filter((candidate) => candidate.id !== asset.id)])}

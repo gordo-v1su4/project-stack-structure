@@ -423,6 +423,8 @@ describe("musicVideoProject source moments and review contract", () => {
 
     expect(segments.reduce((total, segment) => total + segment.musicEnd - segment.musicStart, 0)).toBe(8);
     expect(new Set(segments.map((segment) => segment.startTime)).size).toBeGreaterThan(1);
+    expect(new Set(segments.map((segment) => segment.momentId)).size).toBeGreaterThan(1);
+    expect(segments.every((segment) => segment.sourceClipId === 0 && segment.thumbnailUrl === "thumb")).toBe(true);
     expect(segments.slice(0, 3).map((segment) => segment.label)).toEqual([
       "Chorus · Dancers move through night rain in a city. · beat",
       "Chorus · Fast night city motion with wet streets. · beat",
@@ -593,9 +595,9 @@ describe("musicVideoProject preview mapping", () => {
     });
 
     expect(buildEditPlanPreviewSegments({ project, videoSources: [{ id: 0, name: "source.mov", duration: 10, size: 10, thumbnailUrl: "thumb", videoUrl: "blob:video" }] })).toEqual([
-      { videoUrl: "blob:video", startTime: 3, endTime: 5, sectionId: "intro", musicStart: 0, musicEnd: 2, label: "Intro · Scene A · beat" },
-      { videoUrl: "blob:video", startTime: 3, endTime: 5, sectionId: "chorus", musicStart: 2, musicEnd: 4, label: "Chorus · Scene A · beat" },
-      { videoUrl: "blob:video", startTime: 3, endTime: 5, sectionId: "chorus", musicStart: 4, musicEnd: 6, label: "Chorus · Scene A · beat · loop 2" },
+      { videoUrl: "blob:video", startTime: 3, endTime: 5, sectionId: "intro", musicStart: 0, musicEnd: 2, momentId: "segment-moment-1", sourceClipId: 0, sourceRefLabel: "S1", thumbnailUrl: "thumb", label: "Intro · Scene A · beat" },
+      { videoUrl: "blob:video", startTime: 3, endTime: 5, sectionId: "chorus", musicStart: 2, musicEnd: 4, momentId: "segment-moment-1", sourceClipId: 0, sourceRefLabel: "S1", thumbnailUrl: "thumb", label: "Chorus · Scene A · beat" },
+      { videoUrl: "blob:video", startTime: 3, endTime: 5, sectionId: "chorus", musicStart: 4, musicEnd: 6, momentId: "segment-moment-1", sourceClipId: 0, sourceRefLabel: "S1", thumbnailUrl: "thumb", label: "Chorus · Scene A · beat · loop 2" },
     ]);
   });
 

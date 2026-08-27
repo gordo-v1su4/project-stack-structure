@@ -6,7 +6,7 @@ import { buildGenerationReferenceInputs, type GenerationReferenceSelection, type
 import type { BeatJoinAnalysis, ColorPaletteSwatch, MotionDescriptor } from "../types";
 import type { GeneratedStudioAsset } from "../generatedAssets";
 import { buildAdaptiveCueMap } from "../adaptiveCueMap";
-import type { MusicVideoProject, TimelineItem, VideoMoment } from "../musicVideoProject";
+import type { EditPlanPreviewSegment, MusicVideoProject, TimelineItem, VideoMoment } from "../musicVideoProject";
 import { waitForTriggerRunOutput } from "@/lib/clientTriggerRuns";
 
 type GenerateTabProps = {
@@ -18,6 +18,7 @@ type GenerateTabProps = {
   onsetDensity: number;
   lyricCueBlend: number;
   lyricMergeWindow: number;
+  previewSegments: EditPlanPreviewSegment[];
   referenceAssets: ReferenceAsset[];
   persistedGeneratedAssets: GeneratedStudioAsset[];
   onGeneratedAsset: (asset: GeneratedStudioAsset) => void;
@@ -146,7 +147,7 @@ const NEED_LABELS: Record<GenerationNeed, string> = {
   "reroll-match": "Reroll Match",
 };
 
-export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, onSelectJoin, onsetDensity, lyricCueBlend, lyricMergeWindow, referenceAssets, persistedGeneratedAssets, onGeneratedAsset }: GenerateTabProps) {
+export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, onSelectJoin, onsetDensity, lyricCueBlend, lyricMergeWindow, previewSegments, referenceAssets, persistedGeneratedAssets, onGeneratedAsset }: GenerateTabProps) {
   const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
   const [timelineZoomMode, setTimelineZoomMode] = useState<TimelineZoomMode>("fit");
   const [referenceSelection, setReferenceSelection] = useState<GenerationReferenceSelection>({});
@@ -343,12 +344,12 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
       <section className="rounded-[2px] border border-[#1a1a1a] bg-[#0b0b0b] p-3">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Adaptive clip queue</div>
-            <div className="mt-1 text-[11px] text-[#6d6d6d]">This brings back the dense thumbnail layout: every card is one Match chunk, scaled from the same adaptive cue map. Click a card to load its frames and generation prompt below.</div>
+            <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Resolved preview clips</div>
+            <div className="mt-1 text-[11px] text-[#6d6d6d]">Every card is an actual preview cut. Its thumbnail, source ID, scene, source time, and song time now come from the resolved edit—not the section&apos;s repeated primary Match image.</div>
           </div>
-          <div className="font-mono text-[10px] text-[#777]">selected {focusSlot?.item.label ?? "none"}</div>
+          <div className="font-mono text-[10px] text-[#777]">{previewSegments.length} resolved cuts · selected {focusSlot?.item.label ?? "none"}</div>
         </div>
-        <AdaptiveClipQueue slots={slots} selectedSlotId={focusSlot?.item.id ?? null} onSelectSlot={setSelectedSlotId} />
+        <ResolvedClipQueue project={project} segments={previewSegments} slots={slots} selectedSlotId={focusSlot?.item.id ?? null} onSelectSlot={setSelectedSlotId} />
       </section>
 
       <div className="grid gap-3 xl:grid-cols-[1.1fr_0.9fr]">
@@ -668,58 +669,82 @@ function getCoverageTimelineView({
   };
 }
 
-function AdaptiveClipQueue({ slots, selectedSlotId, onSelectSlot }: { slots: CoverageSlot[]; selectedSlotId: string | null; onSelectSlot: (id: string) => void }) {
-  if (!slots.length) return <EmptyState label="No adaptive chunks" detail="Match cue chunks will appear here after Story and song analysis are ready." />;
-  const duration = Math.max(slots[slots.length - 1]?.item.end ?? 0, 0.001);
+function ResolvedClipQueue({
+  project,
+  segments,
+  slots,
+  selectedSlotId,
+  onSelectSlot,
+}: {
+  project: MusicVideoProject | null;
+  segments: EditPlanPreviewSegment[];
+  slots: CoverageSlot[];
+  selectedSlotId: string | null;
+  onSelectSlot: (id: string) => void;
+}) {
+  if (!segments.length) return <EmptyState label="No resolved preview cuts" detail="Generate Story and finish Match so the actual source sequence can be resolved." />;
+  const duration = Math.max(segments[segments.length - 1]?.musicEnd ?? 0, 0.001);
+  const momentsById = new Map(project?.videoMoments.map((moment) => [moment.id, moment]) ?? []);
+  const cards = segments.map((segment, index) => {
+    const slot = findCoverageSlotForSegment(slots, segment);
+    const moment = segment.momentId ? momentsById.get(segment.momentId) : undefined;
+    const sourceLabel = segment.sourceRefLabel
+      ?? moment?.sourceRefLabel
+      ?? (segment.sourceClipId !== undefined ? `S${segment.sourceClipId + 1}` : "Unknown source");
+    return { segment, slot, moment, sourceLabel, index };
+  });
 
   return (
     <div className="space-y-2">
       <div className="relative h-12 overflow-hidden rounded-[2px] border border-[#151515] bg-[#050505]">
-        {slots.map((slot) => {
-          const left = clamp01(slot.item.start / duration) * 100;
-          const width = Math.max(0.35, clamp01(slot.requiredDuration / duration) * 100);
-          const style = STATUS_STYLES[slot.status];
+        {cards.map(({ segment, slot, index }) => {
+          const left = clamp01(segment.musicStart / duration) * 100;
+          const width = Math.max(0.35, clamp01((segment.musicEnd - segment.musicStart) / duration) * 100);
+          const style = STATUS_STYLES[slot?.status ?? "filled"];
           return (
             <button
-              key={`mini-${slot.item.id}`}
+              key={`mini-${segment.sectionId}-${segment.musicStart}-${index}`}
               type="button"
-              onClick={() => onSelectSlot(slot.item.id)}
-              className={`absolute inset-y-1 rounded-[1px] border transition-colors ${selectedSlotId === slot.item.id ? "border-[#ff8a2a]" : "border-[#050505] hover:border-[#e05c00]"}`}
-              style={{ left: `${left}%`, width: `${width}%`, background: style.fill, opacity: slot.status === "missing" ? 0.32 : 0.82 }}
-              title={`${slot.item.label} · ${fmt(slot.item.start)}-${fmt(slot.item.end)}`}
+              onClick={() => slot && onSelectSlot(slot.item.id)}
+              className={`absolute inset-y-1 rounded-[1px] border transition-colors ${slot && selectedSlotId === slot.item.id ? "border-[#ff8a2a]" : "border-[#050505] hover:border-[#e05c00]"}`}
+              style={{ left: `${left}%`, width: `${width}%`, background: style.fill, opacity: 0.82 }}
+              title={`${segment.sourceRefLabel ?? segment.label} · song ${fmt(segment.musicStart)}-${fmt(segment.musicEnd)} · source ${fmt(segment.startTime)}-${fmt(segment.endTime)}`}
             />
           );
         })}
       </div>
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-6">
-        {slots.map((slot, index) => {
-          const style = STATUS_STYLES[slot.status];
-          const thumb = slot.moment?.firstFrameUrl ?? slot.moment?.thumbnailUrl;
-          const selected = selectedSlotId === slot.item.id;
+        {cards.map(({ segment, slot, moment, sourceLabel, index }) => {
+          const status = slot?.status ?? "filled";
+          const style = STATUS_STYLES[status];
+          const thumb = segment.thumbnailUrl ?? moment?.firstFrameUrl ?? moment?.thumbnailUrl;
+          const selected = Boolean(slot && selectedSlotId === slot.item.id);
+          const cutDuration = Math.max(0, segment.musicEnd - segment.musicStart);
           return (
             <button
-              key={slot.item.id}
+              key={`${segment.sectionId}-${segment.musicStart}-${segment.startTime}-${index}`}
               type="button"
-              onClick={() => onSelectSlot(slot.item.id)}
+              onClick={() => slot && onSelectSlot(slot.item.id)}
               className={`group overflow-hidden rounded-[2px] border bg-[#070707] text-left transition-colors ${selected ? "border-[#e05c00]" : "border-[#202020] hover:border-[#6a3218]"}`}
             >
               <div className="relative aspect-video bg-[#030303]">
                 {thumb ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={thumb} alt={slot.item.label} className={`h-full w-full object-cover ${slot.status === "missing" ? "opacity-30 grayscale" : "opacity-75 group-hover:opacity-100"}`} loading="lazy" decoding="async" />
+                  <img src={thumb} alt={`${sourceLabel} resolved cut`} className="h-full w-full object-cover opacity-75 group-hover:opacity-100" loading="lazy" decoding="async" />
                 ) : (
                   <div className="flex h-full w-full items-center justify-center text-[8px] uppercase tracking-[0.12em] text-[#444]">No frame</div>
                 )}
-                <div className="absolute left-1 top-1 rounded-[1px] bg-[#000000c0] px-1.5 py-0.5 font-mono text-[7px] text-[#aaa]">S{String(index + 1).padStart(2, "0")}</div>
-                <div className={`absolute right-1 top-1 rounded-[1px] border px-1.5 py-0.5 font-mono text-[7px] uppercase ${style.border} ${style.text}`}>{STATUS_LABELS[slot.status]}</div>
-                <div className="absolute bottom-1 right-1 rounded-[1px] bg-[#000000c0] px-1.5 py-0.5 font-mono text-[7px] text-[#aaa]">{slot.requiredDuration.toFixed(1)}s</div>
-                {slot.status !== "filled" ? <div className="absolute inset-0 flex items-center justify-center bg-[#00000055] text-[9px] uppercase tracking-[0.16em] text-[#b96c43]">{slot.status === "weak" ? "review match" : "needs work"}</div> : null}
+                <div className="absolute left-1 top-1 rounded-[1px] bg-[#000000c0] px-1.5 py-0.5 font-mono text-[7px] text-[#ddd]">{sourceLabel}</div>
+                <div className={`absolute right-1 top-1 rounded-[1px] border px-1.5 py-0.5 font-mono text-[7px] uppercase ${style.border} ${style.text}`}>{STATUS_LABELS[status]}</div>
+                <div className="absolute bottom-1 left-1 rounded-[1px] bg-[#000000c0] px-1.5 py-0.5 font-mono text-[7px] text-[#aaa]">SRC {fmt(segment.startTime)}–{fmt(segment.endTime)}</div>
+                <div className="absolute bottom-1 right-1 rounded-[1px] bg-[#000000c0] px-1.5 py-0.5 font-mono text-[7px] text-[#aaa]">{cutDuration.toFixed(1)}s</div>
+                {status !== "filled" ? <div className="absolute inset-0 flex items-center justify-center bg-[#00000055] text-[9px] uppercase tracking-[0.16em] text-[#b96c43]">{status === "weak" ? "review match" : "needs work"}</div> : null}
               </div>
               <div className="border-t border-[#151515] px-2 py-1.5">
-                <div className="truncate font-mono text-[8px] uppercase tracking-[0.1em] text-[#8a8a8a]">{slot.item.label}</div>
+                <div className="truncate font-mono text-[8px] uppercase tracking-[0.1em] text-[#8a8a8a]">CUT {String(index + 1).padStart(3, "0")} · {segment.label}</div>
                 <div className="mt-1 flex justify-between font-mono text-[7px] text-[#555]">
-                  <span>{fmt(slot.item.start)}-{fmt(slot.item.end)}</span>
-                  <span>{Math.round(slot.score * 100)}%</span>
+                  <span>SONG {fmt(segment.musicStart)}–{fmt(segment.musicEnd)}</span>
+                  <span>{slot ? `${Math.round(slot.score * 100)}%` : "resolved"}</span>
                 </div>
               </div>
             </button>
@@ -728,6 +753,17 @@ function AdaptiveClipQueue({ slots, selectedSlotId, onSelectSlot }: { slots: Cov
       </div>
     </div>
   );
+}
+
+function findCoverageSlotForSegment(slots: CoverageSlot[], segment: EditPlanPreviewSegment) {
+  const sameSection = slots.filter((slot) => slot.item.sectionId === segment.sectionId);
+  const pool = sameSection.length ? sameSection : slots;
+  return pool
+    .map((slot) => ({
+      slot,
+      overlap: Math.max(0, Math.min(slot.item.end, segment.musicEnd) - Math.max(slot.item.start, segment.musicStart)),
+    }))
+    .sort((left, right) => right.overlap - left.overlap)[0]?.slot;
 }
 
 function IssueGroupSection({
@@ -816,9 +852,11 @@ function CoverageIssueCard({ issue, selected, onSelect }: { issue: CoverageIssue
             <span className="font-mono uppercase tracking-[0.1em]">Why:</span> {describeCoverageIssue(issue)}
           </div>
           <div className="rounded-[2px] border border-[#181818] bg-[#070707] p-2 text-[10px] leading-5 text-[#9a9a9a]">
-            <span className="text-[#e05c00]">Current source:</span> {sourceLabel} · {sourceRange}
+            <span className="text-[#e05c00]">Primary Match anchor:</span> {sourceLabel} · {sourceRange}
             <br />
             <span className="text-[#e05c00]">Caption:</span> {getMomentCaption(issue.moment) ?? "No captioned source assigned."}
+            <br />
+            <span className="text-[#666]">The resolved preview queue above shows the actual source used for each cut.</span>
           </div>
           <div className="rounded-[2px] border border-[#181818] bg-[#070707] p-2 text-[10px] leading-5 text-[#777]">
             <span className="text-[#e05c00]">Story intent:</span> {issue.slots[0]?.item.prompt ?? "No story prompt attached."}
