@@ -163,7 +163,7 @@ export function buildGenerationReferenceInputs(params: {
 
 export function buildReferenceInstruction(asset: ReferenceAsset, referenceNumber: number) {
   if (asset.role === "character-1" || asset.role === "character-2") {
-    return `Use Reference ${referenceNumber} as character "${asset.displayName}"; preserve exact facial identity, hair, wardrobe, body type, tattoos, age, and distinctive features. ${asset.promptHint}`.trim();
+    return `Use Reference ${referenceNumber} as character "${asset.displayName}"; treat the attached sheet as authoritative for exact visual identity and continuity. Do not invent or restate visual details in text. ${asset.promptHint}`.trim();
   }
   if (asset.role === "environment") {
     return `Use Reference ${referenceNumber} as the environment/location "${asset.displayName}"; preserve the spatial layout, lighting direction, materials, palette, and atmosphere. ${asset.promptHint}`.trim();

@@ -33,21 +33,23 @@ describe("studio pipeline state", () => {
     expect(state.nextHint).toContain("Upload song + clips");
   });
 
-  test("ingest asks for lyrics when media is present but transcript is missing", () => {
+  test("ingest remains active while uploaded clips are still waiting for scenes", () => {
     const state = buildPipelineState(makeInput({ hasAudioAnalysis: true, videoCount: 3 }));
 
-    expect(state.stages[0]?.status).toBe("Add lyrics / transcript");
+    expect(state.stages[0]?.status).toBe("Detecting scenes");
     expect(state.stages[0]?.ready).toBe(false);
   });
 
-  test("story is the next stage once ingest is complete", () => {
+  test("story is selectable but downstream work stays gated once ingest is complete", () => {
     const state = buildPipelineState(
-      makeInput({ hasAudioAnalysis: true, hasTranscript: true, videoCount: 2, sceneCount: 12, captionReadyCount: 12, captionTotalCount: 12 }),
+      makeInput({ hasAudioAnalysis: true, videoCount: 2, sceneCount: 12, captionReadyCount: 12, captionTotalCount: 12 }),
     );
 
     expect(state.stages[0]?.ready).toBe(true);
     expect(state.stages[0]?.status).toBe("2 clips · 12/12 captions");
     expect(state.nextStage?.key).toBe("story");
+    expect(state.stages.find((stage) => stage.key === "story")).toMatchObject({ available: true, ready: false });
+    expect(state.stages.find((stage) => stage.key === "split")).toMatchObject({ available: false, prerequisiteKey: "story" });
     expect(state.stages.filter((stage) => stage.isNext)).toHaveLength(1);
   });
 
@@ -64,6 +66,7 @@ describe("studio pipeline state", () => {
         editSlotCount: 9,
         matchedSlotCount: 7,
         gapSlotCount: 2,
+        hasCommittedSplit: true,
       }),
     );
 
@@ -88,6 +91,7 @@ describe("studio pipeline state", () => {
         matchedSlotCount: 9,
         gapSlotCount: 0,
         storySegmentCount: 40,
+        hasCommittedSplit: true,
         finalExportReady: true,
       }),
     );

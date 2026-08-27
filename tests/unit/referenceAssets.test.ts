@@ -46,6 +46,8 @@ describe("referenceAssets", () => {
     ]);
     expect(plan.instructions.join("\n")).toContain('character "Milo"');
     expect(plan.instructions.join("\n")).toContain('environment/location "Blue room"');
+    expect(plan.instructions.join("\n")).toContain("Do not invent or restate visual details");
+    expect(plan.instructions.join("\n")).not.toContain("preserve exact facial identity, hair, wardrobe");
   });
 
   test("blocks local-only selected references instead of faking generation input", () => {

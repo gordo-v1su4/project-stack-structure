@@ -210,12 +210,13 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
 
   const runLocalGeneration = async (kind: "image" | "video") => {
     if (!focusSlot) return;
+    const selectedCharacterNames = getSelectedCharacterNames(referenceAssets, effectiveReferenceSelection);
     const prompt = buildSuggestedPrompt(focusSlot, frameMoment, buildGenerationReferenceInputs({
       anchorUrl: frameMoment?.firstFrameUrl ?? frameMoment?.thumbnailUrl,
       anchorLabel: focusSlot.item.label,
       assets: referenceAssets,
       selection: effectiveReferenceSelection,
-    }).instructions);
+    }).instructions, selectedCharacterNames);
     setIsGenerating(true);
     setGenerationStatus(`Sending ${kind} request to SwarmUI...`);
     try {
@@ -954,7 +955,7 @@ function buildStoryboardGridPrompt(args: {
   const sectionLine = slot
     ? `This grid continues the section "${slot.item.label}" (${fmt(slot.item.start)}\u2013${fmt(slot.item.end)}). Story intent: ${moderationSafeText(slot.item.prompt)}`
     : "This grid continues the current music-video section.";
-  const caption = getMomentCaption(moment);
+  const caption = getGenerationMomentCaption(moment, characterNames);
   const beatLine = caption ? ` The source beat to continue from (text context only \u2014 it is NOT an attached image): ${caption}.` : "";
 
   // The image map MUST mirror buildHiggsfieldInputImages order exactly —
@@ -964,7 +965,7 @@ function buildStoryboardGridPrompt(args: {
   let imageIndex = 1;
   for (const reference of references) {
     if (reference.kind === "character") {
-      imageMap.push(`Image_${imageIndex} is the character reference for ${reference.name} \u2014 keep this exact face, hair, build, wardrobe, and identity markers consistent in every panel featuring them.`);
+      imageMap.push(`Image_${imageIndex} is the authoritative character reference for ${reference.name} \u2014 keep the exact visual identity and continuity from that sheet in every panel featuring them; do not invent or restate appearance details in text.`);
     } else if (reference.kind === "environment") {
       imageMap.push(`Image_${imageIndex} is the location lock for ${reference.name ?? "the environment"} \u2014 every panel takes place inside this exact space; preserve its layout, materials, palette, and lighting direction.`);
     } else {
@@ -1128,11 +1129,11 @@ function EmptyState({ label, detail }: { label: string; detail: string }) {
   );
 }
 
-function buildSuggestedPrompt(slot?: CoverageSlot, moment?: VideoMoment, referenceInstructions: string[] = []) {
+function buildSuggestedPrompt(slot?: CoverageSlot, moment?: VideoMoment, referenceInstructions: string[] = [], characterNames: string[] = []) {
   if (!slot) return "Select a weak, short, or missing timeline slot to draft an extension prompt.";
   const action = slot.status === "missing" ? "Create a new connected music-video shot" : slot.status === "short" ? "Extend this source clip naturally" : slot.status === "weak" ? "Create an alternate angle that better matches the lyric/story intent" : "Create an optional Camera B variation";
   const motion = describeMotion(moment?.motionDescriptor ?? moment?.visualAnalysis?.motion);
-  const momentCaption = getMomentCaption(moment);
+  const momentCaption = getGenerationMomentCaption(moment, characterNames);
   const caption = momentCaption ? ` Source caption: ${momentCaption}` : "";
   const references = referenceInstructions.length ? ` References: ${referenceInstructions.join(" ")}` : "";
   return `${action} for ${slot.item.label} (${fmt(slot.item.start)}–${fmt(slot.item.end)}). Story intent: ${slot.item.prompt}.${caption} Maintain motion continuity (${motion}), preserve the color palette, and leave handles for a music-video edit.${references}`;
@@ -1141,6 +1142,23 @@ function buildSuggestedPrompt(slot?: CoverageSlot, moment?: VideoMoment, referen
 function getMomentCaption(moment?: VideoMoment) {
   const caption = parseCaptionText(moment?.captionMeta?.caption) ?? parseCaptionText(moment?.caption);
   return caption ? moderationSafeText(caption) : undefined;
+}
+
+export function getGenerationMomentCaption(moment: VideoMoment | undefined, characterNames: string[]) {
+  const caption = getMomentCaption(moment);
+  if (!caption || !characterNames.some((name) => containsCharacterName(caption, name))) return caption;
+  return undefined;
+}
+
+function getSelectedCharacterNames(assets: ReferenceAsset[], selection: GenerationReferenceSelection) {
+  return [selection.character1Id, selection.character2Id]
+    .flatMap((id) => id ? assets.filter((asset) => asset.id === id).map((asset) => asset.displayName.trim()) : [])
+    .filter(Boolean);
+}
+
+function containsCharacterName(value: string, name: string) {
+  const escaped = name.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return Boolean(escaped) && new RegExp(`\\b${escaped}\\b`, "i").test(value);
 }
 
 // Nano Banana Pro rejects prompts with NSFW-flagged vocabulary even when it

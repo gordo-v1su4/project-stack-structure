@@ -46,6 +46,7 @@ import { StudioRightPanel } from "./studio/StudioRightPanel";
 import { StudioSidebar } from "./studio/StudioSidebar";
 import { StudioStatusBar } from "./studio/StudioStatusBar";
 import { buildPipelineState } from "./studio/studioPipeline";
+import { WorkflowPrerequisitePanel } from "./studio/WorkflowPrerequisitePanel";
 import { buildShuffleQueue } from "./studio/shuffleQueue";
 import { waitForTriggerRunOutput } from "@/lib/clientTriggerRuns";
 import { rankManifestCandidates } from "./studio/manifestRanking";
@@ -152,6 +153,7 @@ export default function StudioApp() {
   const [done, setDone] = useState(false);
   const [previewState, setPreviewState] = useState(createSectionRecomputeState);
   const [committedBeatSplit, setCommittedBeatSplit] = useState<{
+    kind: "workflow" | "legacy";
     segments: SourceTimelineSegment[];
     signature: string;
     committedAt: string;
@@ -468,8 +470,10 @@ export default function StudioApp() {
         sourceCount: sourceClips.length,
         sourceDuration: sourceClips[sourceClips.length - 1]?.end ?? 0,
         audioSource: beatJoinAnalysis?.sourceLabel ?? null,
+        story: storyState.storyBeats.map((beat) => [beat.id, beat.label, beat.start, beat.end, beat.prompt]),
+        storyPace: normalizeStoryEditSettings(storyState.editSettings).cutDensity,
       }),
-    [beatJoinAnalysis?.sourceLabel, clipDur, sensitivity, sourceClips, splitMode],
+    [beatJoinAnalysis?.sourceLabel, clipDur, sensitivity, sourceClips, splitMode, storyState.editSettings, storyState.storyBeats],
   );
   const beatSplitSignature = useMemo(
     () =>
@@ -483,8 +487,10 @@ export default function StudioApp() {
       }),
     [beatJoinAnalysis?.sourceLabel, barsPerSeg, beatSplitMode, sensitivity, sourceClips],
   );
-  const workingBeatSplitSegments = committedBeatSplit?.segments ?? beatSplitSegments;
-  const isCommittedBeatSplitCurrent = committedBeatSplit?.signature === beatSplitSignature;
+  const isCommittedSplitCurrent = committedBeatSplit?.kind === "workflow" && committedBeatSplit.signature === splitSignature;
+  const isCommittedBeatSplitCurrent = committedBeatSplit?.kind === "legacy" && committedBeatSplit.signature === beatSplitSignature;
+  const isAnyCommittedSplitCurrent = isCommittedSplitCurrent || isCommittedBeatSplitCurrent;
+  const workingBeatSplitSegments = isAnyCommittedSplitCurrent ? committedBeatSplit!.segments : beatSplitSegments;
   const beatSplitClipCount = workingBeatSplitSegments.length;
   const joinClips = useMemo(
     () =>
@@ -1470,6 +1476,7 @@ export default function StudioApp() {
     if (!beatSplitSegments.length) return;
 
     setCommittedBeatSplit({
+      kind: "legacy",
       segments: beatSplitSegments.map((segment) => ({
         ...segment,
         sourceClipIds: [...segment.sourceClipIds],
@@ -1487,6 +1494,7 @@ export default function StudioApp() {
     if (!splitSegments.length) return;
 
     setCommittedBeatSplit({
+      kind: "workflow",
       segments: splitSegments.map((segment) => ({
         ...segment,
         sourceClipIds: [...segment.sourceClipIds],
@@ -1678,6 +1686,11 @@ export default function StudioApp() {
         : [],
     [musicVideoProject, storyState.editSettings, storyState.storyGenerated, videoSources],
   );
+
+  useEffect(() => {
+    const density = normalizeStoryEditSettings(storyState.editSettings).cutDensity;
+    setClipDur(density >= 0.7 ? 2 : density <= 0.4 ? 10 : 6);
+  }, [storyState.editSettings]);
   const shaderPresetSummary = useMemo(() => describeMusicVideoShaderPreset(shaderPresetId), [shaderPresetId]);
 
   const browserPreviewSegments = useMemo<PreviewSegment[]>(() => {
@@ -1791,7 +1804,7 @@ export default function StudioApp() {
       matchedSlotCount: timelineItems.filter((item) => item.videoMomentId).length,
       gapSlotCount: timelineItems.filter((item) => !item.videoMomentId || (item.semanticMatch?.score ?? 0) < 0.45).length,
       storySegmentCount: storyPreviewSegments.length,
-      hasCommittedSplit: Boolean(committedBeatSplit),
+      hasCommittedSplit: isCommittedSplitCurrent,
       shaderPresetLabel: shaderPresetSummary.preset.label,
       finalExportReady: Boolean(finalExportUrl),
     });
@@ -1804,10 +1817,12 @@ export default function StudioApp() {
     ingestStats,
     musicVideoProject,
     storyPreviewSegments.length,
-    committedBeatSplit,
+    isCommittedSplitCurrent,
     shaderPresetSummary.preset.label,
     finalExportUrl,
   ]);
+  const activePipelineStage = pipeline.stages.find((stage) => stage.active) ?? null;
+  const activeStageBlocked = Boolean(activePipelineStage && !activePipelineStage.available);
 
   const persistableProjectDraft = useMemo(() => createPersistableStudioProjectDraft({
     analysis: beatJoinAnalysis,
@@ -1832,10 +1847,12 @@ export default function StudioApp() {
   }), [beatJoinAnalysis, captionMode, colorGradient, generatedAssets, isPreviewExpanded, matchLyricCueBlend, matchLyricMergeWindow, matchMode, matchOnsetDensity, musicVideoProject, referenceAssets, shaderAccentKinds, shaderPresetId, splitMode, storyState, tab, videoSources]);
 
   useEffect(() => {
-    if (tab === "beatsplit" && committedBeatSplit && !isCommittedBeatSplitCurrent) {
+    const staleWorkflowSplit = tab === "split" && committedBeatSplit?.kind === "workflow" && !isCommittedSplitCurrent;
+    const staleLegacySplit = tab === "beatsplit" && committedBeatSplit?.kind === "legacy" && !isCommittedBeatSplitCurrent;
+    if (staleWorkflowSplit || staleLegacySplit) {
       setDone(false);
     }
-  }, [committedBeatSplit, isCommittedBeatSplitCurrent, tab]);
+  }, [committedBeatSplit, isCommittedBeatSplitCurrent, isCommittedSplitCurrent, tab]);
 
   function resetPreparedPreview(options: { preserveBrowserPreview?: boolean } = {}) {
     setDone(false);
@@ -1860,8 +1877,10 @@ export default function StudioApp() {
     hasAudioSource: beatJoinAnalysis !== null,
     activeRequestKey: previewState.activeRequestKey,
   });
-  const storyActionReason = !storyState.storyGenerated
-    ? "Generate story first."
+  const storyActionReason = !storyState.transcriptSummary
+    ? "Add lyrics timing first."
+    : !storyState.storyGenerated
+      ? "Confirm story map above."
     : storyPreviewSegments.length === 0
       ? "Upload source clips."
       : previewState.activeRequestKey
@@ -1982,6 +2001,14 @@ export default function StudioApp() {
               </div>
             </div>
 
+            {activeStageBlocked && activePipelineStage ? (
+              <WorkflowPrerequisitePanel
+                stage={activePipelineStage}
+                onOpenPrerequisite={() => {
+                  if (activePipelineStage.prerequisiteKey) handleSelectTab(activePipelineStage.prerequisiteKey);
+                }}
+              />
+            ) : <>
             {tab === "review" && (
               <IngestTab
                 analysis={beatJoinAnalysis}
@@ -2114,7 +2141,7 @@ export default function StudioApp() {
                 clipOrder={effectiveClipOrder}
                 segmentPreviews={segmentPreviews}
                 shuffleMode={shuffleMode}
-                isUsingCommittedSplit={Boolean(committedBeatSplit)}
+                isUsingCommittedSplit={isAnyCommittedSplitCurrent}
                 activeClip={beatActiveClip}
                 onJoinClips={handleJoinClips}
                 onActiveClip={setActiveClip}
@@ -2127,7 +2154,7 @@ export default function StudioApp() {
                 bpm={bpm}
                 analysis={beatJoinAnalysis}
                 segmentPreviews={segmentPreviews}
-                isUsingCommittedSplit={Boolean(committedBeatSplit)}
+                isUsingCommittedSplit={isAnyCommittedSplitCurrent}
                 rampPreset={rampPreset}
                 minSpeed={minSpeed}
                 maxSpeed={maxSpeed}
@@ -2145,7 +2172,9 @@ export default function StudioApp() {
               />
             )}
 
-            {tab !== "review" ? (
+            </>}
+
+            {tab !== "review" && !activeStageBlocked ? (
               <ProcessActionBar
                 tab={tab}
                 done={done}
