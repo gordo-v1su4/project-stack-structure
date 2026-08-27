@@ -95,7 +95,7 @@ export function applyApprovedGeneratedAssets(
 
   for (const asset of approved) {
     const target = asset.target;
-    const videoUrl = asset.fullStorage?.mediaUrl ?? asset.fullStorage?.publicUrl ?? asset.resultUrl;
+    const videoUrl = buildGeneratedAssetPlaybackUrl(asset);
     if (!target || !videoUrl) continue;
     const index = next.findIndex((segment) => segment.sectionId === target.sectionId
       && rangesMatch(segment.musicStart, segment.musicEnd, target.songStart, target.songEnd));
@@ -126,7 +126,7 @@ export function buildGeneratedAssetContextPreview(
   contextRadius = 2,
 ): GeneratedAssetContextPreview | null {
   const target = asset.target;
-  const videoUrl = asset.fullStorage?.mediaUrl ?? asset.fullStorage?.publicUrl ?? asset.resultUrl;
+  const videoUrl = buildGeneratedAssetPlaybackUrl(asset);
   if (!target || !videoUrl || asset.mediaKind !== "video") return null;
 
   const targetIndex = segments.findIndex((segment) => segment.sectionId === target.sectionId
@@ -156,6 +156,16 @@ export function buildGeneratedAssetContextPreview(
   };
 
   return { segments: context, startIndex, endIndex, targetIndex };
+}
+
+export function buildGeneratedAssetPlaybackUrl(asset: GeneratedStudioAsset): string | undefined {
+  const bucket = asset.fullStorage?.bucket;
+  const objectKey = asset.fullStorage?.objectKey ?? asset.fullStorage?.storagePath;
+  if (bucket && objectKey) {
+    const params = new URLSearchParams({ bucket, objectKey });
+    return `/api/storage/media?${params.toString()}`;
+  }
+  return asset.fullStorage?.mediaUrl ?? asset.fullStorage?.publicUrl ?? asset.resultUrl;
 }
 
 function rangesMatch(leftStart: number, leftEnd: number, rightStart: number, rightEnd: number) {
