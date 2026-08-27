@@ -566,7 +566,24 @@ export function buildEditPlanPreviewSegments(params: {
   const project = params.project;
   const editSettings = normalizeStoryEditSettings(params.editSettings);
   const momentsById = new Map(project.videoMoments.map((moment) => [moment.id, moment]));
-  const sectionsById = new Map(project.storySections.map((section) => [section.id, section]));
+  // Saved projects can carry a narrow candidate list produced by an older
+  // planner. Refresh the semantic alternatives at playback time while keeping
+  // persisted/promoted choices first, so existing projects gain new visual
+  // vocabulary without discarding a user's explicit Match decision.
+  const refreshedSectionsById = new Map(
+    mapVideoMomentsToStorySections(project.storySections, project.videoMoments, project.lyricChunks)
+      .map((section) => [section.id, section]),
+  );
+  const sectionsById = new Map(project.storySections.map((section) => {
+    const refreshed = refreshedSectionsById.get(section.id);
+    return [section.id, {
+      ...(refreshed ?? section),
+      videoMomentIds: uniqueStrings([
+        ...section.videoMomentIds,
+        ...(refreshed?.videoMomentIds ?? []),
+      ]),
+    } satisfies StorySection];
+  }));
   const continuity: PreviewSequenceContinuity = {
     momentUseCounts: new Map(),
     sourceUseCounts: new Map(),
