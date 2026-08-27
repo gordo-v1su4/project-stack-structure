@@ -1,7 +1,6 @@
 "use client";
 
 import { startTransition, useEffect, useMemo, useRef, useState } from "react";
-import type { Dispatch, SetStateAction } from "react";
 import { extractWaveformData, fetchEssentiaAnalysis, getEssentiaStorageFromPayload, parseEssentiaPayload } from "./studio/audioAnalysis";
 import { buildArrangementSegments } from "./studio/arrangementBuilder";
 import type { ArrangementSegment } from "./studio/arrangementBuilder";
@@ -78,7 +77,6 @@ import { assignVideoSourceIds, getNextVideoSourceId, removeVideoSourceById, with
 import type {
   BeatJoinAnalysis,
   ColorGradient,
-  JoinClip,
   RampPreset,
   SceneCaptionMode,
   SegmentPreview,
@@ -529,22 +527,17 @@ export default function StudioApp() {
     [videoSources, sourceClips, workingBeatSplitSegments]
   );
 
-  const handleJoinClips: Dispatch<SetStateAction<JoinClip[]>> = (value) => {
-    setJoinClipStates((previous) => {
-      const current = Array.from({ length: beatSplitClipCount }, (_, index) => ({
-        id: index,
-        on: previous[index] ?? true,
-      }));
-      const next = typeof value === "function" ? value(current) : value;
-
-      return next.reduce<Record<number, boolean>>((accumulator, clip) => {
-        if (clip.id >= 0 && clip.id < beatSplitClipCount) {
-          accumulator[clip.id] = clip.on;
-        }
-        return accumulator;
-      }, {});
-    });
-  };
+  const storyPreviewSegments = useMemo<EditPlanPreviewSegment[]>(
+    () =>
+      storyState.storyGenerated
+        ? buildEditPlanPreviewSegments({
+            project: musicVideoProject,
+            videoSources,
+            editSettings: storyState.editSettings,
+          })
+        : [],
+    [musicVideoProject, storyState.editSettings, storyState.storyGenerated, videoSources],
+  );
 
   async function ingestVideoFiles(files: File[], mode: "replace" | "append") {
     const videoFiles = files.filter((file) => file.type.startsWith("video/"));
@@ -1532,6 +1525,8 @@ export default function StudioApp() {
         minScore,
         lookahead,
         joinClips,
+        resolvedJoinClipCount: storyPreviewSegments.length,
+        resolvedJoinDuration: storyPreviewSegments.at(-1)?.musicEnd ?? 0,
         minDur,
         maxDur,
         lowEnergyRange,
@@ -1556,6 +1551,7 @@ export default function StudioApp() {
       minScore,
       lookahead,
       joinClips,
+      storyPreviewSegments,
       minDur,
       maxDur,
       lowEnergyRange,
@@ -1678,18 +1674,6 @@ export default function StudioApp() {
     });
   }, [tab, beatJoinAnalysis, effectiveClipOrder, minDur, maxDur, energyResp, energyReactive, lowEnergyRange, highEnergyRange, onsetBoost, chaos]);
 
-  const storyPreviewSegments = useMemo<EditPlanPreviewSegment[]>(
-    () =>
-      storyState.storyGenerated
-        ? buildEditPlanPreviewSegments({
-            project: musicVideoProject,
-            videoSources,
-            editSettings: storyState.editSettings,
-          })
-        : [],
-    [musicVideoProject, storyState.editSettings, storyState.storyGenerated, videoSources],
-  );
-
   useEffect(() => {
     setGeneratePreviewRange((current) => {
       if (!current) return current;
@@ -1716,7 +1700,11 @@ export default function StudioApp() {
       return storyPreviewSegments;
     }
 
-    if (tab === "shuffle" || tab === "join") {
+    if (tab === "join") {
+      return storyPreviewSegments;
+    }
+
+    if (tab === "shuffle") {
       return effectiveClipOrder
         .map((clipId): PreviewSegment | null => {
           const segment = workingBeatSplitSegments[clipId];
@@ -1798,14 +1786,16 @@ export default function StudioApp() {
 
   const displayedBrowserPreviewSegments = tab === "generate" && browserPreviewSegments.length > 0
     ? browserPreviewSegments
-    : (tab === "story" || tab === "compose") && browserPreviewSegments.length > 0
+    : (tab === "story" || tab === "compose" || tab === "join") && browserPreviewSegments.length > 0
     ? browserPreviewSegments
     : retainedBrowserPreviewSegments.length > 0
       ? retainedBrowserPreviewSegments
       : browserPreviewSegments.length > 0
         ? browserPreviewSegments
         : previewPlayerRef.current.getSegments();
-  const displayedPreviewEffectCues = tab === "generate" && generatePreviewRange
+  const displayedPreviewEffectCues = tab === "join"
+    ? []
+    : tab === "generate" && generatePreviewRange
     ? []
     : (tab === "story" || tab === "compose") && shaderEffectCues.length > 0
     ? shaderEffectCues
@@ -2176,13 +2166,8 @@ export default function StudioApp() {
 
             {tab === "join" && (
               <JoinTab
-                joinClips={joinClips}
-                clipOrder={effectiveClipOrder}
-                segmentPreviews={segmentPreviews}
-                shuffleMode={shuffleMode}
-                isUsingCommittedSplit={isAnyCommittedSplitCurrent}
-                activeClip={beatActiveClip}
-                onJoinClips={handleJoinClips}
+                previewSegments={storyPreviewSegments}
+                activeClip={Math.min(activeClip, Math.max(0, storyPreviewSegments.length - 1))}
                 onActiveClip={setActiveClip}
               />
             )}

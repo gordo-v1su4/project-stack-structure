@@ -12,6 +12,8 @@ export function buildReadout(params: {
   minScore: number;
   lookahead: number;
   joinClips: JoinClip[];
+  resolvedJoinClipCount?: number;
+  resolvedJoinDuration?: number;
   minDur: number;
   maxDur: number;
   lowEnergyRange: number;
@@ -36,6 +38,8 @@ export function buildReadout(params: {
     minScore,
     lookahead,
     joinClips,
+    resolvedJoinClipCount,
+    resolvedJoinDuration,
     minDur,
     maxDur,
     lowEnergyRange,
@@ -121,12 +125,11 @@ export function buildReadout(params: {
         ["Output", "/output/"],
       ];
     }
-    const active = joinClips.filter((c) => c.on);
     return [
-      ["Active", active.length],
-      ["Duration", fmt(active.reduce((a, c) => a + sv(c.id + 1) * 8 + 1, 0))],
+      ["Cuts", resolvedJoinClipCount ?? joinClips.filter((clip) => clip.on).length],
+      ["Duration", fmt(resolvedJoinDuration ?? joinClips.filter((clip) => clip.on).reduce((total, clip) => total + sv(clip.id + 1) * 8 + 1, 0))],
       ["Format", "MP4"],
-      ["Output", "/output/"],
+      ["Source", "Resolved edit"],
     ];
   }
   if (tab === "beatjoin") {
