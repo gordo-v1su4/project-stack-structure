@@ -26,7 +26,7 @@ import {
   type RuntimeStudioProjectDraft,
 } from "./studio/projectPersistence";
 import type { StudioProjectSummary } from "@/lib/studioProjectStore";
-import { applyApprovedGeneratedAssets, type GeneratedStudioAsset } from "./studio/generatedAssets";
+import { applyApprovedGeneratedAssets, buildGeneratedAssetContextPreview, type GeneratedStudioAsset } from "./studio/generatedAssets";
 import { createLocalReferenceAsset, uploadReferenceAssetToRustFs, type ReferenceAsset, type ReferenceAssetRole } from "./studio/referenceAssets";
 import { BrowserPreviewPlayer, createPreviewPlayerState, type PreviewPlayerState, type PreviewSegment } from "./studio/previewPlayer";
 import { slicePreviewCutRange, type PreviewCutRange } from "./studio/resolvedPreviewSelection";
@@ -536,6 +536,17 @@ export default function StudioApp() {
     });
     return applyApprovedGeneratedAssets(resolved, generatedAssets);
   }, [generatedAssets, musicVideoProject, storyState.editSettings, storyState.storyGenerated, videoSources]);
+
+  const auditionGeneratedAsset = (asset: GeneratedStudioAsset, contextRadius: number) => {
+    const preview = buildGeneratedAssetContextPreview(storyPreviewSegments, asset, contextRadius);
+    if (!preview) return;
+    setGeneratePreviewRange({ startIndex: preview.startIndex, endIndex: preview.endIndex });
+    setIsDockCollapsed(false);
+    setIsPreviewExpanded(true);
+    const player = previewPlayerRef.current;
+    player.load(preview.segments);
+    void player.play();
+  };
 
   async function ingestVideoFiles(files: File[], mode: "replace" | "append") {
     const videoFiles = files.filter((file) => file.type.startsWith("video/"));
@@ -2157,6 +2168,7 @@ export default function StudioApp() {
                   setGeneratePreviewRange(range);
                   setPreviewAuditionRequest((request) => request + 1);
                 }}
+                onAuditionGeneratedAsset={auditionGeneratedAsset}
                 onSelectMatch={() => handleSelectTab("shuffle")}
                 onSelectJoin={() => handleSelectTab("join")}
               />
