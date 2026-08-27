@@ -261,12 +261,16 @@ function mapDetectedSectionsToStoryDrafts(analysisSections: BeatJoinSection[], d
     const occurrence = (roleOccurrences.get(role) ?? 0) + 1;
     roleOccurrences.set(role, occurrence);
     const matchingDrafts = drafts.filter((draft) => getSongSectionRole(draft.label) === role);
-    const matchedDraft = matchingDrafts[occurrence - 1] ?? matchingDrafts[0];
+    const exactDraft = matchingDrafts[occurrence - 1];
+    const matchedDraft = exactDraft ?? matchingDrafts.at(-1) ?? matchingDrafts[0];
     const label = formatDetectedRoleLabel(role, occurrence, roleCounts.get(role) ?? 1);
     return buildStorySection({
       draft: {
         ...matchedDraft,
-        id: matchedDraft?.id ?? `${role}-${occurrence}`,
+        // A song can contain more repeated roles than the starter palette.
+        // Never reuse a fallback template id or React/edit selection will
+        // treat separate Verse/Chorus rows as the same section.
+        id: exactDraft?.id ?? `${role}-${occurrence}`,
         label,
         detectedLabel: analysisSection.label,
       },

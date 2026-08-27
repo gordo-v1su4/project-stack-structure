@@ -24,7 +24,7 @@ function actionLabel(tab: Tab): string {
     case "beatsplit":
       return "Commit Beat Split";
     case "story":
-      return "Generate Story Package";
+      return "Preview Story Edit";
     case "shuffle":
       return "Confirm Match Set";
     case "generate":

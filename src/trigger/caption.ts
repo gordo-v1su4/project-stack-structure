@@ -155,7 +155,7 @@ async function runSmartSceneCaption(payload: SmartSceneCaptionPayload, triggerRu
     copyOptional(form, payload, "sceneEnd");
     copyOptional(form, payload, "sceneDuration");
     copyOptional(form, payload, "captionContext");
-    for (const reference of (payload.captionReferences ?? []).slice(0, 2)) {
+    for (const reference of (payload.captionReferences ?? []).slice(0, 3)) {
       const storedReference = await downloadMediaGatewayFile({
         bucket: reference.bucket,
         objectKey: reference.objectKey,

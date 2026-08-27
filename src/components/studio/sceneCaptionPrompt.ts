@@ -14,6 +14,8 @@ Additional detailed-cinematic rules:
 - Describe the visible subject identity, performance or action, body position, shot size and composition, setting depth, lighting, color, atmosphere, and emotional tone when visible.
 - If project context lists named characters, use the exact character name whenever that corresponding recurring character is visible; do not reduce a known character to generic terms such as man, woman, person, performer, or subject.
 - Do not assign a listed name to an unrelated or visually ambiguous person.
+- If project context lists a named location, use that exact location name whenever the scene remains in the referenced environment; do not rename the same place from shot to shot.
+- A close-up or detail shot that hides most of the environment is not evidence that the location changed. Keep the named location unless visible details clearly contradict the reference.
 - Describe visible video truth first. Song lyrics and story context may disambiguate meaning but must never replace visual evidence.
 - Use concrete nouns and active verbs; avoid vague filler such as cinematic, dramatic, or atmospheric unless the visible details explain why.`;
 }
@@ -29,5 +31,5 @@ export function serializeSceneCaptionContext(
 }
 
 export function serializeSceneCaptionReferences(settings: SceneCaptionSettings) {
-  return JSON.stringify((settings.referenceImages ?? []).slice(0, 2));
+  return JSON.stringify((settings.referenceImages ?? []).slice(0, 3));
 }
