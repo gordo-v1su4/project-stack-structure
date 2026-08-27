@@ -790,6 +790,41 @@ describe("musicVideoProject preview mapping", () => {
     expect(hallwayUses).toBeLessThanOrEqual(3);
   });
 
+  test("refreshes narrow saved candidate lists so older projects do not loop one action", () => {
+    const videoSources: UploadedVideoSource[] = Array.from({ length: 8 }, (_, index) => ({
+      id: index,
+      name: `source-${index}.mp4`,
+      duration: 6,
+      size: 10,
+      thumbnailUrl: `thumb:${index}`,
+      videoUrl: `blob:${index}`,
+    }));
+    const moments = [
+      ...Array.from({ length: 3 }, (_, index) => ({ id: `hallway-${index}`, sourceClipId: index, label: "Hallway walk", start: 0, end: 4, duration: 4, caption: "Diego walks through the dim hallway.", captionMeta: { action: "walking", setting: "hallway" } })),
+      { id: "dance-wide", sourceClipId: 3, label: "Dance wide", start: 0, end: 4, duration: 4, caption: "Wide dance floor performance.", captionMeta: { action: "dancing", setting: "dance floor", shotType: "wide shot" } },
+      { id: "stage-close", sourceClipId: 4, label: "Stage close", start: 0, end: 4, duration: 4, caption: "Close-up singing on stage.", captionMeta: { action: "singing", setting: "stage", shotType: "close-up" } },
+      { id: "stairs-run", sourceClipId: 5, label: "Stairs run", start: 0, end: 4, duration: 4, caption: "Diego runs up the stairs.", captionMeta: { action: "running", setting: "stairs" } },
+      { id: "crowd-spin", sourceClipId: 6, label: "Crowd spin", start: 0, end: 4, duration: 4, caption: "Valentina spins among the crowd.", captionMeta: { action: "spinning", setting: "crowd" } },
+      { id: "feet-dance", sourceClipId: 7, label: "Footwork", start: 0, end: 4, duration: 4, caption: "Feet perform quick footwork on the dance floor.", captionMeta: { action: "dancing", setting: "dance floor", shotType: "feet" } },
+    ];
+    const project: MusicVideoProject = {
+      id: "saved-narrow-candidates",
+      song: mockAnalysis({ duration: 18, beats: Array.from({ length: 19 }, (_, index) => index), onsets: [], sections: [{ label: "Verse", start: 0, end: 18, energy: 0.7 }] }),
+      duration: 18,
+      lyricChunks: [],
+      storySections: [{ id: "verse", label: "Verse", prompt: "story progression", start: 0, end: 18, source: "analysis", lyricChunkIds: [], videoMomentIds: ["hallway-0"] }],
+      videoMoments: moments,
+      editPlan: { id: "plan", createdAt: "2026-08-27T00:00:00.000Z", timelineItems: [{ id: "timeline-verse", sectionId: "verse", lyricChunkIds: [], videoMomentId: "hallway-0", start: 0, end: 18, label: "Verse", prompt: "story progression" }] },
+      reviewFindings: [],
+    };
+
+    const segments = buildEditPlanPreviewSegments({ project, videoSources, editSettings: { cutDensity: 0.75, preferOnsets: false } });
+    const hallwayUses = segments.filter((segment) => segment.momentId?.startsWith("hallway-")).length;
+
+    expect(new Set(segments.map((segment) => segment.momentId)).size).toBeGreaterThan(4);
+    expect(hallwayUses).toBeLessThanOrEqual(3);
+  });
+
   test("edit density changes the number of cue-aligned story preview cuts", () => {
     const project = createMusicVideoProject({
       analysis: mockAnalysis({
