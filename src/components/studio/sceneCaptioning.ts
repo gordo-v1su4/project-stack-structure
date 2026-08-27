@@ -17,9 +17,9 @@ export type SceneCaptionProgress = {
 
 export type SceneCaptionOptions = {
   /**
-   * Recaption scenes whose existing caption was not produced by the requested
-   * mode (e.g. captions imported from the scene-detect worker). The previous
-   * caption is kept when the new pass fails, so a rerun never loses data.
+   * Replace every existing caption with a fresh result from the requested
+   * lane. The previous caption is kept when the new pass fails, so a rerun
+   * never loses data.
    */
   force?: boolean;
 };
@@ -57,7 +57,7 @@ export async function captionDetectedScenes(
 
     for (let index = 0; index < captioned.length; index += 1) {
       const scene = captioned[index]!;
-      const skipExisting = options.force ? sceneCaptionMatchesMode(scene, settings.mode) : Boolean(scene.caption);
+      const skipExisting = !options.force && Boolean(scene.caption);
       if (skipExisting) {
         onProgress?.({ completed: index + 1, total: captioned.length, sceneId: scene.id }, [...captioned]);
         continue;

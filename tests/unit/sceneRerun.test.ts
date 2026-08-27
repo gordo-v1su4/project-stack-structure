@@ -92,13 +92,15 @@ describe("selectSceneRetrySources", () => {
       makeSource({ id: 0, ...stored, sceneStatus: "ready", scenes: [makeScene({ caption: "x", captionSource: "qwen3-vl-server" })] }),
       // missed caption (kept BLIP + captionError): retry
       makeSource({ id: 1, ...stored, sceneStatus: "ready", scenes: [makeScene({ caption: "x", captionSource: "self-hosted-blip-cpu" as DetectedSceneSegment["captionSource"], captionError: "proxy timeout" })] }),
+      // failed refresh kept the prior Qwen caption: retry despite matching lane
+      makeSource({ id: 4, ...stored, sceneStatus: "ready", scenes: [makeScene({ caption: "x", captionSource: "qwen3-vl-server", captionError: "cold start timeout" })] }),
       // detection failed: retry
       makeSource({ id: 2, ...stored, sceneStatus: "failed", scenes: [] }),
       // not in RustFS: cannot retry
       makeSource({ id: 3, sceneStatus: "failed", scenes: [] }),
     ];
 
-    expect(selectSceneRetrySources(sources, "smart").map((source) => source.id)).toEqual([1, 2]);
+    expect(selectSceneRetrySources(sources, "smart").map((source) => source.id)).toEqual([1, 4, 2]);
   });
 
   test("keeps stored clips with active scene detection out of the retry queue", () => {

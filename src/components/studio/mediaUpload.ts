@@ -156,7 +156,7 @@ export function selectSceneRetrySources(sources: UploadedVideoSource[], mode: Sc
     if (!source.storageBucket || !source.storagePath) return false;
     if (source.sceneStatus === "detecting") return false;
     if (needsSceneDetectionRetry(source)) return true;
-    return (source.scenes ?? []).some((scene) => !sceneCaptionMatchesMode(scene, mode));
+    return (source.scenes ?? []).some((scene) => Boolean(scene.captionError) || !sceneCaptionMatchesMode(scene, mode));
   });
 }
 
@@ -182,7 +182,7 @@ export function countMismatchedSceneCaptions(sources: UploadedVideoSource[], mod
  * source. Used for clips restored from a draft after a transient gateway
  * failure, and to recaption scenes with the currently selected caption lane.
  * Detection is skipped when the source already has ready scenes; captioning
- * always runs and replaces captions that do not match the requested mode
+ * always runs and replaces every scene caption with the requested mode
  * (keeping the previous caption when a recaption attempt fails).
  */
 export async function rerunSourceSceneAnalysis(
@@ -281,11 +281,14 @@ async function captionAndPersistSourceScenes(
         },
       });
     }, captionOptions);
+    const failedCaptionCount = captionedScenes.filter((scene) => Boolean(scene.captionError)).length;
     let captionedSource: UploadedVideoSource = {
       ...source,
       scenes: captionedScenes,
-      captionStatus: "ready",
-      captionError: null,
+      captionStatus: failedCaptionCount ? "failed" : "ready",
+      captionError: failedCaptionCount
+        ? `${failedCaptionCount} scene caption${failedCaptionCount === 1 ? "" : "s"} did not refresh.`
+        : null,
     };
 
     if (source.storageProvider === "rustfs" && source.storageBucket && source.storagePath) {
