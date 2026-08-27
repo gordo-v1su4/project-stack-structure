@@ -113,6 +113,10 @@ export const DEFAULT_STORY_EDIT_SETTINGS: StoryEditSettings = {
 };
 
 const MAX_SECTION_CANDIDATE_MATCHES = 6;
+const MAX_SECTION_PREVIEW_CANDIDATES = 16;
+const MIN_READABLE_PREVIEW_CUT_SECONDS = 1.5;
+const MAX_PREVIEW_MOMENT_USES_BEFORE_EXHAUSTION = 2;
+const MAX_PREVIEW_SHOT_FAMILY_USES_BEFORE_EXHAUSTION = 3;
 
 export interface EditPlan {
   id: string;
@@ -446,13 +450,30 @@ export function mapVideoMomentsToStorySections(sections: StorySection[], moments
       entryColor: getMomentPaletteColor(moment, "entry"),
       exitColor: getMomentPaletteColor(moment, "exit"),
     }) satisfies SemanticVideoMomentInput);
-  const rankedBySection = rankSectionsWithContinuity(semanticSections, semanticMoments);
+  const { rankedBySection, reservations } = rankSectionsWithContinuity(semanticSections, semanticMoments);
+  const sectionMomentUseCounts = new Map<string, number>();
+  const sectionFamilyUseCounts = new Map<string, number>();
 
   return sections.map((section) => {
     const ranked = rankedBySection.get(section.id) ?? [];
     const assigned = ranked[0];
     const overlapping = moments.filter((moment) => overlaps(section.start, section.end, moment.start, moment.end));
-    const rankedMomentIds = pickDiverseSectionMomentIds(ranked, section.end - section.start);
+    const rankedMomentIds = pickDiverseSectionMomentIds(ranked, section.end - section.start, {
+      momentUseCounts: sectionMomentUseCounts,
+      familyUseCounts: sectionFamilyUseCounts,
+      reservedForOtherSections: new Set(
+        [...reservations.entries()]
+          .filter(([sectionId]) => sectionId !== section.id)
+          .map(([, momentId]) => momentId),
+      ),
+    });
+    for (const momentId of rankedMomentIds) {
+      const moment = moments.find((candidate) => candidate.id === momentId);
+      if (!moment) continue;
+      const familyKey = buildPreviewShotFamilyKey(moment);
+      sectionMomentUseCounts.set(momentId, (sectionMomentUseCounts.get(momentId) ?? 0) + 1);
+      sectionFamilyUseCounts.set(familyKey, (sectionFamilyUseCounts.get(familyKey) ?? 0) + 1);
+    }
     const candidateMatches = ranked.slice(0, MAX_SECTION_CANDIDATE_MATCHES).map(toSemanticClipMatch);
     return {
       ...section,
@@ -549,9 +570,12 @@ export function buildEditPlanPreviewSegments(params: {
   const continuity: PreviewSequenceContinuity = {
     momentUseCounts: new Map(),
     sourceUseCounts: new Map(),
+    shotFamilyUseCounts: new Map(),
     recentMomentIds: [],
+    recentShotFamilyKeys: [],
     lastMomentId: null,
     lastSourceClipId: null,
+    lastShotFamilyKey: null,
   };
   const segments: EditPlanPreviewSegment[] = [];
 
@@ -719,26 +743,64 @@ function rankSectionsWithContinuity(sections: SemanticSectionInput[], moments: S
     }
   }
 
-  return rankedBySection;
+  return { rankedBySection, reservations };
 }
 
-function pickDiverseSectionMomentIds(ranked: SemanticEditAssignment[], sectionDuration: number) {
+function pickDiverseSectionMomentIds(
+  ranked: SemanticEditAssignment[],
+  sectionDuration: number,
+  progression: {
+    momentUseCounts: Map<string, number>;
+    familyUseCounts: Map<string, number>;
+    reservedForOtherSections: Set<string>;
+  },
+) {
   if (!ranked.length) return [];
 
-  const targetCount = Math.min(ranked.length, Math.max(1, Math.min(8, Math.ceil(Math.max(0.05, sectionDuration) / 3))));
+  const targetCount = Math.min(
+    ranked.length,
+    Math.max(1, Math.min(MAX_SECTION_PREVIEW_CANDIDATES, Math.ceil(Math.max(0.05, sectionDuration) / 2))),
+  );
   const selected: SemanticEditAssignment[] = [ranked[0]!];
   const selectedIds = new Set([ranked[0]!.momentId]);
   const sourceCounts = new Map<number, number>([[ranked[0]!.moment.sourceClipId, 1]]);
+  const familyCounts = new Map<string, number>([[buildSemanticShotFamilyKey(ranked[0]!.moment), 1]]);
 
-  for (const candidate of ranked.slice(1)) {
+  const candidates = ranked
+    .slice(1)
+    .filter((candidate) => !progression.reservedForOtherSections.has(candidate.momentId))
+    .sort((left, right) => {
+      const leftMomentUse = progression.momentUseCounts.get(left.momentId) ?? 0;
+      const rightMomentUse = progression.momentUseCounts.get(right.momentId) ?? 0;
+      if (leftMomentUse !== rightMomentUse) return leftMomentUse - rightMomentUse;
+      const leftFamilyUse = progression.familyUseCounts.get(buildSemanticShotFamilyKey(left.moment)) ?? 0;
+      const rightFamilyUse = progression.familyUseCounts.get(buildSemanticShotFamilyKey(right.moment)) ?? 0;
+      if (leftFamilyUse !== rightFamilyUse) return leftFamilyUse - rightFamilyUse;
+      return ranked.indexOf(left) - ranked.indexOf(right);
+    });
+
+  for (const candidate of candidates) {
     if (selected.length >= targetCount) break;
     if (selectedIds.has(candidate.momentId)) continue;
-    if ((sourceCounts.get(candidate.moment.sourceClipId) ?? 0) > 0 && hasUnusedSource(ranked, sourceCounts, selectedIds)) continue;
+    const familyKey = buildSemanticShotFamilyKey(candidate.moment);
+    if ((sourceCounts.get(candidate.moment.sourceClipId) ?? 0) > 0 && hasUnusedSource(candidates, sourceCounts, selectedIds)) continue;
+    if ((familyCounts.get(familyKey) ?? 0) > 0 && hasUnusedFamily(candidates, familyCounts, selectedIds)) continue;
     selected.push(candidate);
     selectedIds.add(candidate.momentId);
     sourceCounts.set(candidate.moment.sourceClipId, (sourceCounts.get(candidate.moment.sourceClipId) ?? 0) + 1);
+    familyCounts.set(familyKey, (familyCounts.get(familyKey) ?? 0) + 1);
   }
 
+  for (const candidate of candidates) {
+    if (selected.length >= targetCount) break;
+    if (selectedIds.has(candidate.momentId)) continue;
+    selected.push(candidate);
+    selectedIds.add(candidate.momentId);
+  }
+
+  // Small projects may not have enough moments to keep every future section's
+  // reservation out of earlier candidate pools. Reuse those only after all
+  // unreserved vocabulary has been exhausted so coverage remains complete.
   for (const candidate of ranked.slice(1)) {
     if (selected.length >= targetCount) break;
     if (selectedIds.has(candidate.momentId)) continue;
@@ -751,6 +813,10 @@ function pickDiverseSectionMomentIds(ranked: SemanticEditAssignment[], sectionDu
 
 function hasUnusedSource(ranked: SemanticEditAssignment[], sourceCounts: Map<number, number>, selectedIds: Set<string>) {
   return ranked.some((candidate) => !selectedIds.has(candidate.momentId) && (sourceCounts.get(candidate.moment.sourceClipId) ?? 0) === 0);
+}
+
+function hasUnusedFamily(ranked: SemanticEditAssignment[], familyCounts: Map<string, number>, selectedIds: Set<string>) {
+  return ranked.some((candidate) => !selectedIds.has(candidate.momentId) && (familyCounts.get(buildSemanticShotFamilyKey(candidate.moment)) ?? 0) === 0);
 }
 
 function uniqueStrings(values: string[]) {
@@ -776,9 +842,12 @@ function buildMusicCueWindows(params: {
   const density = clamp01(editSettings.cutDensity);
   const densityTargetDuration = lerp(4.2, 0.85, density);
   const energyMultiplier = lerp(1.2, 0.72, energy);
-  const targetDuration = roundTime(Math.max(beatInterval, densityTargetDuration * energyMultiplier));
-  const minDuration = roundTime(Math.max(0.42, Math.min(beatInterval * 0.9, targetDuration * 0.52)));
-  const maxDuration = roundTime(Math.max(targetDuration * 1.45, minDuration + 0.25));
+  const targetDuration = roundTime(Math.max(MIN_READABLE_PREVIEW_CUT_SECONDS, beatInterval, densityTargetDuration * energyMultiplier));
+  const minDuration = roundTime(Math.min(
+    duration,
+    Math.max(MIN_READABLE_PREVIEW_CUT_SECONDS, Math.min(beatInterval * 0.9, targetDuration * 0.52)),
+  ));
+  const maxDuration = roundTime(Math.max(targetDuration * 1.85, minDuration + 0.25));
 
   const onsets = uniqueSortedTimes(analysis.onsets, Math.max(analysis.duration, end))
     .filter((time) => time > start + minDuration && time < end - minDuration);
@@ -791,14 +860,25 @@ function buildMusicCueWindows(params: {
 
   const cutTimes = [start];
   let cursor = start;
+  let cutIndex = 0;
 
-  for (const cueTime of cueSource) {
-    const elapsed = cueTime - cursor;
-    if (elapsed < minDuration) continue;
-    if (elapsed >= targetDuration || elapsed >= maxDuration) {
-      cutTimes.push(roundTime(cueTime));
-      cursor = cueTime;
-    }
+  while (end - cursor >= minDuration * 2 - 0.025) {
+    const desiredDuration = roundTime(Math.max(
+      minDuration,
+      Math.min(maxDuration, targetDuration * cadenceMultiplier(cutIndex, energy)),
+    ));
+    const latest = Math.min(end - minDuration, cursor + maxDuration);
+    const available = cueSource.filter((cueTime) => cueTime >= cursor + minDuration - 0.025 && cueTime <= latest + 0.025);
+    if (!available.length) break;
+    const desiredTime = cursor + desiredDuration;
+    const nextCue = available.reduce((best, candidate) => {
+      const candidateDistance = Math.abs(candidate - desiredTime);
+      const bestDistance = Math.abs(best - desiredTime);
+      return candidateDistance < bestDistance - 0.001 ? candidate : best;
+    });
+    cutTimes.push(roundTime(nextCue));
+    cursor = nextCue;
+    cutIndex += 1;
   }
 
   if (end - cursor < minDuration && cutTimes.length > 1) {
@@ -814,6 +894,15 @@ function buildMusicCueWindows(params: {
       return { start: roundTime(previous), end: roundTime(time), cue: cueKind } satisfies MusicCueWindow;
     })
     .filter((window): window is MusicCueWindow => window !== null);
+}
+
+function cadenceMultiplier(index: number, energy: number) {
+  const patterns = energy >= 0.72
+    ? [0.82, 1.35, 0.94, 1.62, 1.08, 1.42]
+    : energy <= 0.36
+      ? [1.28, 0.9, 1.52, 1.08, 1.72, 1.18]
+      : [1, 1.42, 0.84, 1.58, 1.16, 1.3];
+  return patterns[index % patterns.length] ?? 1;
 }
 
 export function normalizeStoryEditSettings(settings?: Partial<StoryEditSettings>): StoryEditSettings {
@@ -882,12 +971,22 @@ function expandMomentsToSectionPreviewSegments(params: {
         candidate.moment.sourceClipId,
         (params.continuity.sourceUseCounts.get(candidate.moment.sourceClipId) ?? 0) + 1,
       );
+      const shotFamilyKey = buildPreviewShotFamilyKey(candidate.moment);
+      params.continuity.shotFamilyUseCounts.set(
+        shotFamilyKey,
+        (params.continuity.shotFamilyUseCounts.get(shotFamilyKey) ?? 0) + 1,
+      );
       params.continuity.recentMomentIds = [
         candidate.moment.id,
         ...params.continuity.recentMomentIds.filter((momentId) => momentId !== candidate.moment.id),
-      ].slice(0, 4);
+      ].slice(0, 8);
+      params.continuity.recentShotFamilyKeys = [
+        shotFamilyKey,
+        ...params.continuity.recentShotFamilyKeys.filter((familyKey) => familyKey !== shotFamilyKey),
+      ].slice(0, 6);
       params.continuity.lastMomentId = candidate.moment.id;
       params.continuity.lastSourceClipId = candidate.moment.sourceClipId;
+      params.continuity.lastShotFamilyKey = shotFamilyKey;
 
       segments.push({
         videoUrl: candidate.source.videoUrl,
@@ -927,20 +1026,20 @@ interface PreparedPreviewCandidate {
 interface PreviewSequenceContinuity {
   momentUseCounts: Map<string, number>;
   sourceUseCounts: Map<number, number>;
+  shotFamilyUseCounts: Map<string, number>;
   recentMomentIds: string[];
+  recentShotFamilyKeys: string[];
   lastMomentId: string | null;
   lastSourceClipId: number | null;
+  lastShotFamilyKey: string | null;
 }
 
 /**
- * Picks the source moment for the next music window slice. A slice shorter
- * than the remaining window forces an extra cut at a non-musical position, so
- * moments that cover the window win first; among those, semantic rank (the
- * candidates array is already ranked) decides. Variety is tracked across the
- * complete edit, not reset per Story section, so a new verse cannot silently
- * restart the same shot cycle. Semantic candidates are already the top-ranked
- * matches for the section; within that set we prefer least-used moments and
- * sources while avoiding the shot that just played.
+ * Picks the source moment for the next music window slice. Readable moments
+ * that do not leave a sub-minimum tail are considered first. Within that pool,
+ * variety is tracked across the complete edit, not reset per Story section, so
+ * a new verse cannot silently restart the same action or shot cycle. Coverage
+ * and semantic rank break ties only after moment, family, and source reuse.
  */
 function pickPreviewCandidate(params: {
   candidates: PreparedPreviewCandidate[];
@@ -948,37 +1047,124 @@ function pickPreviewCandidate(params: {
   continuity: PreviewSequenceContinuity;
 }): PreparedPreviewCandidate {
   const { candidates, remaining, continuity } = params;
-  const pool = continuity.lastMomentId && candidates.length > 1
-    ? candidates.filter((candidate) => candidate.moment.id !== continuity.lastMomentId)
-    : candidates;
+  const readableCandidates = candidates.filter((candidate) => {
+    const sliceDuration = Math.min(candidate.momentDuration, remaining);
+    const tailDuration = remaining - sliceDuration;
+    return sliceDuration >= Math.min(MIN_READABLE_PREVIEW_CUT_SECONDS, remaining) - 0.025
+      && (tailDuration <= 0.025 || tailDuration >= MIN_READABLE_PREVIEW_CUT_SECONDS - 0.025);
+  });
+  let pool = readableCandidates.length ? readableCandidates : candidates;
+
+  pool = preferCandidatesWhenAvailable(pool, (candidate) => candidate.moment.id !== continuity.lastMomentId);
+  pool = preferCandidatesWhenAvailable(pool, (candidate) => buildPreviewShotFamilyKey(candidate.moment) !== continuity.lastShotFamilyKey);
+  pool = preferCandidatesWhenAvailable(
+    pool,
+    (candidate) => (continuity.momentUseCounts.get(candidate.moment.id) ?? 0) < MAX_PREVIEW_MOMENT_USES_BEFORE_EXHAUSTION,
+  );
+  pool = preferCandidatesWhenAvailable(
+    pool,
+    (candidate) => (continuity.shotFamilyUseCounts.get(buildPreviewShotFamilyKey(candidate.moment)) ?? 0) < MAX_PREVIEW_SHOT_FAMILY_USES_BEFORE_EXHAUSTION,
+  );
 
   const scored = pool.map((candidate) => ({
     candidate,
     rank: candidates.indexOf(candidate),
-    covers: candidate.momentDuration >= remaining - 0.025,
     useCount: continuity.momentUseCounts.get(candidate.moment.id) ?? 0,
     sourceUseCount: continuity.sourceUseCounts.get(candidate.moment.sourceClipId) ?? 0,
     recentIndex: continuity.recentMomentIds.indexOf(candidate.moment.id),
+    shotFamilyKey: buildPreviewShotFamilyKey(candidate.moment),
     repeatsSource: continuity.lastSourceClipId === candidate.moment.sourceClipId,
+    covers: candidate.momentDuration >= remaining - 0.025,
   }));
 
   scored.sort((left, right) => {
-    if (left.covers !== right.covers) return left.covers ? -1 : 1;
-    if (!left.covers && left.candidate.momentDuration !== right.candidate.momentDuration) {
-      // Nothing covers the window: the longest moment forces the fewest off-cue cuts.
-      return right.candidate.momentDuration - left.candidate.momentDuration;
-    }
     if (left.useCount !== right.useCount) return left.useCount - right.useCount;
-    const leftRecent = left.recentIndex < 0 ? 0 : 4 - left.recentIndex;
-    const rightRecent = right.recentIndex < 0 ? 0 : 4 - right.recentIndex;
+    const leftFamilyUseCount = continuity.shotFamilyUseCounts.get(left.shotFamilyKey) ?? 0;
+    const rightFamilyUseCount = continuity.shotFamilyUseCounts.get(right.shotFamilyKey) ?? 0;
+    if (leftFamilyUseCount !== rightFamilyUseCount) return leftFamilyUseCount - rightFamilyUseCount;
+    const leftFamilyRecentIndex = continuity.recentShotFamilyKeys.indexOf(left.shotFamilyKey);
+    const rightFamilyRecentIndex = continuity.recentShotFamilyKeys.indexOf(right.shotFamilyKey);
+    const leftFamilyRecent = leftFamilyRecentIndex < 0 ? 0 : 6 - leftFamilyRecentIndex;
+    const rightFamilyRecent = rightFamilyRecentIndex < 0 ? 0 : 6 - rightFamilyRecentIndex;
+    if (leftFamilyRecent !== rightFamilyRecent) return leftFamilyRecent - rightFamilyRecent;
+    const leftRecent = left.recentIndex < 0 ? 0 : 8 - left.recentIndex;
+    const rightRecent = right.recentIndex < 0 ? 0 : 8 - right.recentIndex;
     if (leftRecent !== rightRecent) return leftRecent - rightRecent;
     if (left.repeatsSource !== right.repeatsSource) return left.repeatsSource ? 1 : -1;
     if (left.sourceUseCount !== right.sourceUseCount) return left.sourceUseCount - right.sourceUseCount;
+    if (left.covers !== right.covers) return left.covers ? -1 : 1;
     return left.rank - right.rank;
   });
 
   return scored[0]!.candidate;
 }
+
+function preferCandidatesWhenAvailable(
+  candidates: PreparedPreviewCandidate[],
+  predicate: (candidate: PreparedPreviewCandidate) => boolean,
+) {
+  if (candidates.length <= 1) return candidates;
+  const preferred = candidates.filter(predicate);
+  return preferred.length ? preferred : candidates;
+}
+
+function buildPreviewShotFamilyKey(moment: VideoMoment) {
+  return buildShotFamilyKey(cleanText([
+    moment.captionMeta?.action,
+    moment.captionMeta?.setting,
+    moment.caption,
+    moment.label,
+  ].filter(Boolean).join(" ").toLowerCase()), moment.id);
+}
+
+function buildSemanticShotFamilyKey(moment: SemanticVideoMomentInput) {
+  return buildShotFamilyKey(cleanText([
+    moment.action,
+    moment.setting,
+    moment.caption,
+    moment.label,
+  ].filter(Boolean).join(" ").toLowerCase()), moment.id);
+}
+
+function buildShotFamilyKey(rawText: string, fallbackId: string) {
+  const text = rawText
+    .replace(/\b(?:corridor|hallway|passageway|passage)\b/g, "hallway")
+    .replace(/\b(?:walks|walking|walked|move through|moves through|moving through)\b/g, "walk")
+    .replace(/\b(?:runs|running|ran)\b/g, "run")
+    .replace(/\b(?:dances|dancing|danced)\b/g, "dance")
+    .replace(/\b(?:spins|spinning|spun)\b/g, "spin")
+    .replace(/\b(?:lifts|lifting|lifted)\b/g, "lift")
+    .replace(/\b(?:turns|turning|turned)\b/g, "turn")
+    .replace(/\b(?:stands|standing|stood)\b/g, "stand");
+
+  const tags = SHOT_FAMILY_TAGS
+    .filter(({ pattern }) => pattern.test(text))
+    .map(({ tag }) => tag);
+  return tags.length >= 2 ? tags.join("|") : `moment:${fallbackId}`;
+}
+
+const SHOT_FAMILY_TAGS = [
+  { tag: "walk", pattern: /\bwalk\b/ },
+  { tag: "run", pattern: /\brun\b/ },
+  { tag: "dance", pattern: /\bdance\b/ },
+  { tag: "spin", pattern: /\bspin\b/ },
+  { tag: "lift", pattern: /\blift\b/ },
+  { tag: "turn", pattern: /\bturn\b/ },
+  { tag: "stand", pattern: /\bstand\b/ },
+  { tag: "reach", pattern: /\b(?:reach|reaches|reaching)\b/ },
+  { tag: "touch", pattern: /\b(?:touch|touches|touching)\b/ },
+  { tag: "embrace", pattern: /\b(?:embrace|embraces|embracing|hug|hugs|hugging)\b/ },
+  { tag: "kiss", pattern: /\b(?:kiss|kisses|kissing)\b/ },
+  { tag: "sing", pattern: /\b(?:sing|sings|singing|perform|performs|performing)\b/ },
+  { tag: "hallway", pattern: /\bhallway\b/ },
+  { tag: "stairs", pattern: /\b(?:stairs|staircase|stairwell)\b/ },
+  { tag: "stage", pattern: /\bstage\b/ },
+  { tag: "dance-floor", pattern: /\b(?:dance floor|dancefloor)\b/ },
+  { tag: "crowd", pattern: /\b(?:crowd|dancers)\b/ },
+  { tag: "feet", pattern: /\b(?:feet|footwork)\b/ },
+  { tag: "close-up", pattern: /\b(?:close-up|close up|portrait)\b/ },
+  { tag: "wide", pattern: /\b(?:wide shot|wide-angle|wide angle)\b/ },
+] as const;
 
 function buildPreviewSegmentLabel(params: {
   sectionLabel: string;
