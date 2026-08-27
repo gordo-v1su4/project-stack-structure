@@ -98,11 +98,12 @@ export function MatchCard({
             </div>
             <div className="rounded-[2px] border border-[#171717] bg-[#050505] p-2">
               <div className="mb-2 text-[8px] uppercase tracking-[0.14em] text-[#555]">Weights</div>
-              <ScoreBar label="Mode" value={modeScore} active />
+              <ScoreBar label="Overall" value={modeScore} active />
               <ScoreBar label="Caption" value={match?.lyricCaptionScore ?? 0} />
               <ScoreBar label="Action" value={match?.actionIntentScore ?? 0} />
               <ScoreBar label="Motion" value={match?.motionContinuityScore ?? 0} />
               <ScoreBar label="Energy" value={match?.motionEnergyScore ?? 0} />
+              <ScoreBar label="Color" value={match?.colorContinuityScore ?? 0.5} />
             </div>
           </div>
         </div>

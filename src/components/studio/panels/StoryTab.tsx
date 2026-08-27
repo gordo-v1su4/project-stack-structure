@@ -423,6 +423,7 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews,
                           <ScorePill label="energy" value={semanticMatch.motionEnergyScore} />
                           <ScorePill label="duration" value={semanticMatch.durationFitScore} />
                           <ScorePill label="motion" value={semanticMatch.motionContinuityScore} />
+                          <ScorePill label="color" value={semanticMatch.colorContinuityScore ?? 0.5} />
                         </div>
                         {semanticMatch.reasons.length ? <div className="mt-2 text-[8px] leading-3 text-[#666]">{semanticMatch.reasons.join(" · ")}</div> : null}
                         {semanticMatch.repetitionPenalty > 0 ? <div className="mt-1 text-[8px] text-[#b96c43]">repeat -{Math.round(semanticMatch.repetitionPenalty * 100)}%</div> : null}

@@ -65,6 +65,7 @@ export interface SemanticClipMatch {
   durationFitScore: number;
   motionContinuityScore: number;
   motionEnergyScore: number;
+  colorContinuityScore?: number;
   repetitionPenalty: number;
   reasons: string[];
 }
@@ -442,6 +443,8 @@ export function mapVideoMomentsToStorySections(sections: StorySection[], moments
       setting: moment.captionMeta?.setting,
       shotType: moment.captionMeta?.shotType,
       motionDescriptor: moment.motionDescriptor ?? null,
+      entryColor: getMomentPaletteColor(moment, "entry"),
+      exitColor: getMomentPaletteColor(moment, "exit"),
     }) satisfies SemanticVideoMomentInput);
   const rankedBySection = rankSectionsWithContinuity(semanticSections, semanticMoments);
 
@@ -543,36 +546,45 @@ export function buildEditPlanPreviewSegments(params: {
   const editSettings = normalizeStoryEditSettings(params.editSettings);
   const momentsById = new Map(project.videoMoments.map((moment) => [moment.id, moment]));
   const sectionsById = new Map(project.storySections.map((section) => [section.id, section]));
+  const continuity: PreviewSequenceContinuity = {
+    momentUseCounts: new Map(),
+    sourceUseCounts: new Map(),
+    recentMomentIds: [],
+    lastMomentId: null,
+    lastSourceClipId: null,
+  };
+  const segments: EditPlanPreviewSegment[] = [];
 
-  return project.editPlan.timelineItems
-    .flatMap((item) => {
-      const section = sectionsById.get(item.sectionId);
-      const candidateIds = uniqueStrings([
-        ...(section?.videoMomentIds ?? []),
-        ...(item.videoMomentId ? [item.videoMomentId] : []),
-      ]);
-      const candidates = candidateIds
-        .map((momentId) => {
-          const moment = momentsById.get(momentId);
-          if (!moment) return null;
-          const source = params.videoSources.find((candidate) => candidate.id === moment.sourceClipId);
-          if (!source?.videoUrl) return null;
-          return { moment, source };
-        })
-        .filter((candidate): candidate is { moment: VideoMoment; source: UploadedVideoSource } => candidate !== null);
+  for (const item of project.editPlan.timelineItems) {
+    const section = sectionsById.get(item.sectionId);
+    const candidateIds = uniqueStrings([
+      ...(section?.videoMomentIds ?? []),
+      ...(item.videoMomentId ? [item.videoMomentId] : []),
+    ]);
+    const candidates = candidateIds
+      .map((momentId) => {
+        const moment = momentsById.get(momentId);
+        if (!moment) return null;
+        const source = params.videoSources.find((candidate) => candidate.id === moment.sourceClipId);
+        if (!source?.videoUrl) return null;
+        return { moment, source };
+      })
+      .filter((candidate): candidate is { moment: VideoMoment; source: UploadedVideoSource } => candidate !== null);
 
-      return expandMomentsToSectionPreviewSegments({
+    segments.push(...expandMomentsToSectionPreviewSegments({
+      item,
+      candidates,
+      continuity,
+      cutWindows: buildMusicCueWindows({
         item,
-        candidates,
-        cutWindows: buildMusicCueWindows({
-          item,
-          analysis: project.song,
-          section: section ?? null,
-          editSettings,
-        }),
-      });
-    })
-    .filter((segment): segment is EditPlanPreviewSegment => segment !== null);
+        analysis: project.song,
+        section: section ?? null,
+        editSettings,
+      }),
+    }));
+  }
+
+  return segments;
 }
 
 export function validateMusicVideoProject(project: MusicVideoProject): ReviewFinding[] {
@@ -648,6 +660,7 @@ function toSemanticClipMatch(assignment: SemanticEditAssignment): SemanticClipMa
     durationFitScore: assignment.durationFitScore,
     motionContinuityScore: assignment.motionContinuityScore,
     motionEnergyScore: assignment.motionEnergyScore,
+    colorContinuityScore: assignment.colorContinuityScore,
     repetitionPenalty: assignment.repetitionPenalty,
     reasons: assignment.reasons,
   };
@@ -655,6 +668,22 @@ function toSemanticClipMatch(assignment: SemanticEditAssignment): SemanticClipMa
 
 function overlaps(leftStart: number, leftEnd: number, rightStart: number, rightEnd: number) {
   return leftStart < rightEnd && leftEnd > rightStart;
+}
+
+function getMomentPaletteColor(moment: VideoMoment, edge: "entry" | "exit"): [number, number, number] | null {
+  const color = moment.visualAnalysis?.color;
+  const palette = edge === "entry"
+    ? color?.firstPalette ?? color?.middlePalette ?? color?.palette
+    : color?.lastPalette ?? color?.middlePalette ?? color?.palette;
+  const swatch = palette?.filter((candidate) => candidate.weight > 0).sort((left, right) => right.weight - left.weight)[0];
+  if (!swatch?.hex) return null;
+  const match = swatch.hex.trim().match(/^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
+  if (!match) return null;
+  return [
+    Number.parseInt(match[1]!, 16) / 255,
+    Number.parseInt(match[2]!, 16) / 255,
+    Number.parseInt(match[3]!, 16) / 255,
+  ];
 }
 
 function cleanText(value: string) {
@@ -797,6 +826,7 @@ export function normalizeStoryEditSettings(settings?: Partial<StoryEditSettings>
 function expandMomentsToSectionPreviewSegments(params: {
   item: TimelineItem;
   candidates: Array<{ moment: VideoMoment; source: UploadedVideoSource }>;
+  continuity: PreviewSequenceContinuity;
   cutWindows?: MusicCueWindow[];
 }): EditPlanPreviewSegment[] {
   const { item } = params;
@@ -823,8 +853,6 @@ function expandMomentsToSectionPreviewSegments(params: {
   if (!candidates.length) return [];
 
   const segments: EditPlanPreviewSegment[] = [];
-  let lastMomentId: string | null = null;
-  const labelCounts = new Map<string, number>();
 
   const cutWindows = params.cutWindows?.length
     ? params.cutWindows
@@ -838,7 +866,7 @@ function expandMomentsToSectionPreviewSegments(params: {
 
     while (musicCursor < window.end - 0.025 && localLoopCount < maxSegmentsPerWindow) {
       const remaining = window.end - musicCursor;
-      const candidate = pickPreviewCandidate({ candidates, remaining, lastMomentId, useCounts: labelCounts });
+      const candidate = pickPreviewCandidate({ candidates, remaining, continuity: params.continuity });
       const sliceDuration = roundTime(Math.min(candidate.momentDuration, remaining));
       const startTime = candidate.momentStart;
       const endTime = roundTime(Math.min(candidate.momentEnd, startTime + sliceDuration));
@@ -848,8 +876,18 @@ function expandMomentsToSectionPreviewSegments(params: {
       const musicEnd = roundTime(Math.min(window.end, musicStart + (endTime - startTime)));
       if (musicEnd <= musicStart) break;
 
-      const useCount = (labelCounts.get(candidate.moment.id) ?? 0) + 1;
-      labelCounts.set(candidate.moment.id, useCount);
+      const useCount = (params.continuity.momentUseCounts.get(candidate.moment.id) ?? 0) + 1;
+      params.continuity.momentUseCounts.set(candidate.moment.id, useCount);
+      params.continuity.sourceUseCounts.set(
+        candidate.moment.sourceClipId,
+        (params.continuity.sourceUseCounts.get(candidate.moment.sourceClipId) ?? 0) + 1,
+      );
+      params.continuity.recentMomentIds = [
+        candidate.moment.id,
+        ...params.continuity.recentMomentIds.filter((momentId) => momentId !== candidate.moment.id),
+      ].slice(0, 4);
+      params.continuity.lastMomentId = candidate.moment.id;
+      params.continuity.lastSourceClipId = candidate.moment.sourceClipId;
 
       segments.push({
         videoUrl: candidate.source.videoUrl,
@@ -871,7 +909,6 @@ function expandMomentsToSectionPreviewSegments(params: {
       });
 
       musicCursor = roundTime(musicEnd);
-      lastMomentId = candidate.moment.id;
       localLoopCount += 1;
     }
   }
@@ -887,38 +924,56 @@ interface PreparedPreviewCandidate {
   momentDuration: number;
 }
 
+interface PreviewSequenceContinuity {
+  momentUseCounts: Map<string, number>;
+  sourceUseCounts: Map<number, number>;
+  recentMomentIds: string[];
+  lastMomentId: string | null;
+  lastSourceClipId: number | null;
+}
+
 /**
  * Picks the source moment for the next music window slice. A slice shorter
  * than the remaining window forces an extra cut at a non-musical position, so
  * moments that cover the window win first; among those, semantic rank (the
- * candidates array is already ranked) decides. Also avoids repeating the
- * moment that just played and prefers moments used least so far for variety.
+ * candidates array is already ranked) decides. Variety is tracked across the
+ * complete edit, not reset per Story section, so a new verse cannot silently
+ * restart the same shot cycle. Semantic candidates are already the top-ranked
+ * matches for the section; within that set we prefer least-used moments and
+ * sources while avoiding the shot that just played.
  */
 function pickPreviewCandidate(params: {
   candidates: PreparedPreviewCandidate[];
   remaining: number;
-  lastMomentId: string | null;
-  useCounts: Map<string, number>;
+  continuity: PreviewSequenceContinuity;
 }): PreparedPreviewCandidate {
-  const { candidates, remaining, lastMomentId, useCounts } = params;
-  const pool = lastMomentId && candidates.length > 1
-    ? candidates.filter((candidate) => candidate.moment.id !== lastMomentId)
+  const { candidates, remaining, continuity } = params;
+  const pool = continuity.lastMomentId && candidates.length > 1
+    ? candidates.filter((candidate) => candidate.moment.id !== continuity.lastMomentId)
     : candidates;
 
   const scored = pool.map((candidate) => ({
     candidate,
     rank: candidates.indexOf(candidate),
     covers: candidate.momentDuration >= remaining - 0.025,
-    useCount: useCounts.get(candidate.moment.id) ?? 0,
+    useCount: continuity.momentUseCounts.get(candidate.moment.id) ?? 0,
+    sourceUseCount: continuity.sourceUseCounts.get(candidate.moment.sourceClipId) ?? 0,
+    recentIndex: continuity.recentMomentIds.indexOf(candidate.moment.id),
+    repeatsSource: continuity.lastSourceClipId === candidate.moment.sourceClipId,
   }));
 
   scored.sort((left, right) => {
-    if (left.useCount !== right.useCount) return left.useCount - right.useCount;
     if (left.covers !== right.covers) return left.covers ? -1 : 1;
     if (!left.covers && left.candidate.momentDuration !== right.candidate.momentDuration) {
       // Nothing covers the window: the longest moment forces the fewest off-cue cuts.
       return right.candidate.momentDuration - left.candidate.momentDuration;
     }
+    if (left.useCount !== right.useCount) return left.useCount - right.useCount;
+    const leftRecent = left.recentIndex < 0 ? 0 : 4 - left.recentIndex;
+    const rightRecent = right.recentIndex < 0 ? 0 : 4 - right.recentIndex;
+    if (leftRecent !== rightRecent) return leftRecent - rightRecent;
+    if (left.repeatsSource !== right.repeatsSource) return left.repeatsSource ? 1 : -1;
+    if (left.sourceUseCount !== right.sourceUseCount) return left.sourceUseCount - right.sourceUseCount;
     return left.rank - right.rank;
   });
 

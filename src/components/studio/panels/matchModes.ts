@@ -1,8 +1,9 @@
 import type { SemanticClipMatch } from "../musicVideoProject";
 
-export type MatchMode = "semantic" | "story" | "motion" | "energy" | "color";
+export type MatchMode = "balanced" | "semantic" | "story" | "motion" | "energy" | "color";
 
 export const MATCH_MODE_LABELS: Record<MatchMode, string> = {
+  balanced: "Balanced",
   semantic: "Semantic",
   story: "Story Intent",
   motion: "Motion",
@@ -11,6 +12,7 @@ export const MATCH_MODE_LABELS: Record<MatchMode, string> = {
 };
 
 export const MATCH_MODE_DETAILS: Record<MatchMode, string> = {
+  balanced: "Lyrics, story intent, motion, energy, duration, color, and repetition are scored together.",
   semantic: "Caption/theme meaning fits the lyric and section prompt.",
   story: "Beginning/middle/end story intent gets stronger weight.",
   motion: "Clip edge direction and action continuity are favored.",
@@ -21,6 +23,8 @@ export const MATCH_MODE_DETAILS: Record<MatchMode, string> = {
 export function getMatchModeScore(mode: MatchMode, match?: SemanticClipMatch) {
   if (!match) return 0;
   switch (mode) {
+    case "balanced":
+      return match.score;
     case "story":
       return Math.max(match.semanticScore, match.actionIntentScore);
     case "motion":

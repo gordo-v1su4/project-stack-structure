@@ -7,6 +7,7 @@ import type { BeatJoinAnalysis, ColorPaletteSwatch, MotionDescriptor } from "../
 import type { GeneratedStudioAsset } from "../generatedAssets";
 import { buildAdaptiveCueMap } from "../adaptiveCueMap";
 import type { EditPlanPreviewSegment, MusicVideoProject, TimelineItem, VideoMoment } from "../musicVideoProject";
+import { selectPreviewCutRange, selectPreviewSectionRange, type PreviewCutRange } from "../resolvedPreviewSelection";
 import { waitForTriggerRunOutput } from "@/lib/clientTriggerRuns";
 
 type GenerateTabProps = {
@@ -22,6 +23,9 @@ type GenerateTabProps = {
   referenceAssets: ReferenceAsset[];
   persistedGeneratedAssets: GeneratedStudioAsset[];
   onGeneratedAsset: (asset: GeneratedStudioAsset) => void;
+  selectedPreviewRange: PreviewCutRange | null;
+  onSelectedPreviewRange: (range: PreviewCutRange | null) => void;
+  onAuditionPreviewRange: (range: PreviewCutRange) => void;
 };
 
 export type SlotStatus = "filled" | "weak" | "short" | "missing";
@@ -147,7 +151,7 @@ const NEED_LABELS: Record<GenerationNeed, string> = {
   "reroll-match": "Reroll Match",
 };
 
-export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, onSelectJoin, onsetDensity, lyricCueBlend, lyricMergeWindow, previewSegments, referenceAssets, persistedGeneratedAssets, onGeneratedAsset }: GenerateTabProps) {
+export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, onSelectJoin, onsetDensity, lyricCueBlend, lyricMergeWindow, previewSegments, referenceAssets, persistedGeneratedAssets, onGeneratedAsset, selectedPreviewRange, onSelectedPreviewRange, onAuditionPreviewRange }: GenerateTabProps) {
   const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
   const [timelineZoomMode, setTimelineZoomMode] = useState<TimelineZoomMode>("fit");
   const [referenceSelection, setReferenceSelection] = useState<GenerationReferenceSelection>({});
@@ -347,9 +351,18 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
             <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Resolved preview clips</div>
             <div className="mt-1 text-[11px] text-[#6d6d6d]">Every card is an actual preview cut. Its thumbnail, source ID, scene, source time, and song time now come from the resolved edit—not the section&apos;s repeated primary Match image.</div>
           </div>
-          <div className="font-mono text-[10px] text-[#777]">{previewSegments.length} resolved cuts · selected {focusSlot?.item.label ?? "none"}</div>
+          <div className="font-mono text-[10px] text-[#777]">{previewSegments.length} resolved cuts · {describePreviewSelection(previewSegments, selectedPreviewRange)}</div>
         </div>
-        <ResolvedClipQueue project={project} segments={previewSegments} slots={slots} selectedSlotId={focusSlot?.item.id ?? null} onSelectSlot={setSelectedSlotId} />
+        <ResolvedClipQueue
+          project={project}
+          segments={previewSegments}
+          slots={slots}
+          selectedSlotId={focusSlot?.item.id ?? null}
+          selectedPreviewRange={selectedPreviewRange}
+          onSelectSlot={setSelectedSlotId}
+          onSelectedPreviewRange={onSelectedPreviewRange}
+          onAuditionPreviewRange={onAuditionPreviewRange}
+        />
       </section>
 
       <div className="grid gap-3 xl:grid-cols-[1.1fr_0.9fr]">
@@ -674,13 +687,19 @@ function ResolvedClipQueue({
   segments,
   slots,
   selectedSlotId,
+  selectedPreviewRange,
   onSelectSlot,
+  onSelectedPreviewRange,
+  onAuditionPreviewRange,
 }: {
   project: MusicVideoProject | null;
   segments: EditPlanPreviewSegment[];
   slots: CoverageSlot[];
   selectedSlotId: string | null;
+  selectedPreviewRange: PreviewCutRange | null;
   onSelectSlot: (id: string) => void;
+  onSelectedPreviewRange: (range: PreviewCutRange | null) => void;
+  onAuditionPreviewRange: (range: PreviewCutRange) => void;
 }) {
   if (!segments.length) return <EmptyState label="No resolved preview cuts" detail="Generate Story and finish Match so the actual source sequence can be resolved." />;
   const duration = Math.max(segments[segments.length - 1]?.musicEnd ?? 0, 0.001);
@@ -693,9 +712,46 @@ function ResolvedClipQueue({
       ?? (segment.sourceClipId !== undefined ? `S${segment.sourceClipId + 1}` : "Unknown source");
     return { segment, slot, moment, sourceLabel, index };
   });
+  const selectedSectionRange = selectPreviewSectionRange(segments, selectedPreviewRange);
+  const selectedCount = selectedPreviewRange ? selectedPreviewRange.endIndex - selectedPreviewRange.startIndex + 1 : 0;
+  const handleCutSelection = (index: number, extend: boolean) => {
+    const nextRange = selectPreviewCutRange({ current: selectedPreviewRange, index, segmentCount: segments.length, extend });
+    onSelectedPreviewRange(nextRange);
+    const slot = cards[index]?.slot;
+    if (slot) onSelectSlot(slot.item.id);
+  };
 
   return (
     <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-2 rounded-[2px] border border-[#171717] bg-[#070707] px-2 py-2">
+        <span className="mr-auto text-[9px] leading-4 text-[#777]">
+          Click one cut; Shift-click another to select a contiguous edit range. Audition plays only that range against the master song.
+        </span>
+        <button
+          type="button"
+          disabled={!selectedSectionRange}
+          onClick={() => selectedSectionRange && onSelectedPreviewRange(selectedSectionRange)}
+          className="rounded-[2px] border border-[#2a2a2a] px-2 py-1 text-[8px] uppercase tracking-[0.12em] text-[#888] hover:border-[#e05c00] hover:text-[#e05c00] disabled:cursor-not-allowed disabled:opacity-35"
+        >
+          Select section
+        </button>
+        <button
+          type="button"
+          disabled={!selectedPreviewRange}
+          onClick={() => selectedPreviewRange && onAuditionPreviewRange(selectedPreviewRange)}
+          className="rounded-[2px] border border-[#e05c00] bg-[#120b06] px-2 py-1 text-[8px] uppercase tracking-[0.12em] text-[#e05c00] hover:bg-[#211006] disabled:cursor-not-allowed disabled:border-[#2a2a2a] disabled:bg-transparent disabled:text-[#555]"
+        >
+          Audition {selectedCount || ""} cut{selectedCount === 1 ? "" : "s"}
+        </button>
+        <button
+          type="button"
+          disabled={!selectedPreviewRange}
+          onClick={() => onSelectedPreviewRange(null)}
+          className="rounded-[2px] border border-[#2a2a2a] px-2 py-1 text-[8px] uppercase tracking-[0.12em] text-[#666] hover:border-[#555] hover:text-[#999] disabled:cursor-not-allowed disabled:opacity-35"
+        >
+          Show full edit
+        </button>
+      </div>
       <div className="relative h-12 overflow-hidden rounded-[2px] border border-[#151515] bg-[#050505]">
         {cards.map(({ segment, slot, index }) => {
           const left = clamp01(segment.musicStart / duration) * 100;
@@ -705,8 +761,9 @@ function ResolvedClipQueue({
             <button
               key={`mini-${segment.sectionId}-${segment.musicStart}-${index}`}
               type="button"
-              onClick={() => slot && onSelectSlot(slot.item.id)}
-              className={`absolute inset-y-1 rounded-[1px] border transition-colors ${slot && selectedSlotId === slot.item.id ? "border-[#ff8a2a]" : "border-[#050505] hover:border-[#e05c00]"}`}
+              onClick={(event) => handleCutSelection(index, event.shiftKey)}
+              aria-pressed={isCutInRange(index, selectedPreviewRange)}
+              className={`absolute inset-y-1 rounded-[1px] border transition-colors ${isCutInRange(index, selectedPreviewRange) ? "border-[#ff8a2a] brightness-125" : slot && selectedSlotId === slot.item.id ? "border-[#8a4a20]" : "border-[#050505] hover:border-[#e05c00]"}`}
               style={{ left: `${left}%`, width: `${width}%`, background: style.fill, opacity: 0.82 }}
               title={`${segment.sourceRefLabel ?? segment.label} · song ${fmtCutTime(segment.musicStart)}-${fmtCutTime(segment.musicEnd)} · source ${fmtCutTime(segment.startTime)}-${fmtCutTime(segment.endTime)}`}
             />
@@ -718,13 +775,14 @@ function ResolvedClipQueue({
           const status = slot?.status ?? "filled";
           const style = STATUS_STYLES[status];
           const thumb = segment.thumbnailUrl ?? moment?.firstFrameUrl ?? moment?.thumbnailUrl;
-          const selected = Boolean(slot && selectedSlotId === slot.item.id);
+          const selected = isCutInRange(index, selectedPreviewRange);
           const cutDuration = Math.max(0, segment.musicEnd - segment.musicStart);
           return (
             <button
               key={`${segment.sectionId}-${segment.musicStart}-${segment.startTime}-${index}`}
               type="button"
-              onClick={() => slot && onSelectSlot(slot.item.id)}
+              onClick={(event) => handleCutSelection(index, event.shiftKey)}
+              aria-pressed={selected}
               className={`group overflow-hidden rounded-[2px] border bg-[#070707] text-left transition-colors ${selected ? "border-[#e05c00]" : "border-[#202020] hover:border-[#6a3218]"}`}
             >
               <div className="relative aspect-video bg-[#030303]">
@@ -753,6 +811,19 @@ function ResolvedClipQueue({
       </div>
     </div>
   );
+}
+
+function isCutInRange(index: number, range: PreviewCutRange | null) {
+  return Boolean(range && index >= range.startIndex && index <= range.endIndex);
+}
+
+function describePreviewSelection(segments: EditPlanPreviewSegment[], range: PreviewCutRange | null) {
+  if (!range) return "full edit in player";
+  const selected = segments.slice(range.startIndex, range.endIndex + 1);
+  const first = selected[0];
+  const last = selected[selected.length - 1];
+  if (!first || !last) return "no cut selected";
+  return `${selected.length} selected · song ${fmtCutTime(first.musicStart)}–${fmtCutTime(last.musicEnd)}`;
 }
 
 function findCoverageSlotForSegment(slots: CoverageSlot[], segment: EditPlanPreviewSegment) {
