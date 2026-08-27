@@ -27,6 +27,11 @@ export type MediaGatewayDeleteResult = {
   failed: number;
 };
 
+export type MediaGatewayChunkReference = {
+  bucket: string;
+  objectKey: string;
+};
+
 const DEFAULT_MEDIA_UPLOAD_PREFIX = "media-uploads";
 
 export function buildMediaGatewayFileUrl(config: Pick<MediaGatewayConfig, "url">, bucket: string, objectKey: string) {
@@ -100,6 +105,56 @@ export async function deleteMediaGatewayFiles(args: {
   return { deleted, failed };
 }
 
+export async function assembleMediaGatewayChunks(args: {
+  chunks: MediaGatewayChunkReference[];
+  expectedSize: number;
+  fileName: string;
+  contentType: string;
+  folder: string;
+  env?: Record<string, string | undefined>;
+  fetchImpl?: typeof fetch;
+}): Promise<MediaGatewayUploadResult> {
+  if (!args.chunks.length) throw new Error("At least one media chunk is required.");
+
+  const parts: ArrayBuffer[] = [];
+  let assembledSize = 0;
+  for (const [index, chunk] of args.chunks.entries()) {
+    const part = await downloadMediaGatewayFile({
+      bucket: chunk.bucket,
+      objectKey: chunk.objectKey,
+      fileName: `part-${String(index).padStart(5, "0")}.part`,
+      env: args.env,
+      fetchImpl: args.fetchImpl,
+    });
+    parts.push(part.bytes);
+    assembledSize += part.bytes.byteLength;
+  }
+
+  if (assembledSize !== args.expectedSize) {
+    throw new Error(`Assembled media size mismatch: expected ${args.expectedSize}, received ${assembledSize}.`);
+  }
+
+  const uploaded = await uploadFileToMediaGateway({
+    file: new File(parts, args.fileName, { type: args.contentType }),
+    folder: args.folder,
+    env: args.env,
+    fetchImpl: args.fetchImpl,
+  });
+
+  try {
+    await deleteMediaGatewayFiles({
+      bucket: args.chunks[0]?.bucket ?? "",
+      objectKeys: args.chunks.map((chunk) => chunk.objectKey),
+      env: args.env,
+      fetchImpl: args.fetchImpl,
+    });
+  } catch {
+    // The assembled object is already durable. Temporary-part cleanup is best effort.
+  }
+
+  return uploaded;
+}
+
 export async function downloadJsonFromMediaGateway<T = Record<string, unknown>>(args: {
   bucket: string;
   objectKey: string;
@@ -158,7 +213,7 @@ export function buildStudioMediaFolder(config: Pick<MediaGatewayConfig, "uploadP
   return normalizeMediaPath(`${config.uploadPrefix}/${year}/${month}_${day}`);
 }
 
-function resolveMediaGatewayUploadFolder(
+export function resolveMediaGatewayUploadFolder(
   config: Pick<MediaGatewayConfig, "uploadPrefix">,
   explicitFolder?: string,
 ) {

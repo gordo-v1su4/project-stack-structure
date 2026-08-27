@@ -5,12 +5,12 @@ import { fmt } from "../math";
 import { buildGenerationReferenceInputs, type GenerationReferenceSelection, type ReferenceAsset } from "../referenceAssets";
 import type { BeatJoinAnalysis, ColorPaletteSwatch, MotionDescriptor } from "../types";
 import type { GeneratedStudioAsset } from "../generatedAssets";
+import { uploadGeneratedClipToRustFs } from "../generatedClipUpload";
 import { buildSeedanceContinuationPacket, serializeSeedanceContinuationPacket } from "../seedanceContinuation";
 import { buildAdaptiveCueMap } from "../adaptiveCueMap";
 import type { EditPlanPreviewSegment, MusicVideoProject, TimelineItem, VideoMoment } from "../musicVideoProject";
 import { selectPreviewCutRange, selectPreviewSectionRange, type PreviewCutRange } from "../resolvedPreviewSelection";
 import { waitForTriggerRunOutput } from "@/lib/clientTriggerRuns";
-import type { MediaGatewayUploadResult } from "@/lib/mediaGateway";
 
 type GenerateTabProps = {
   project: MusicVideoProject | null;
@@ -213,12 +213,13 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
     try {
       for (const file of videos) {
         const durationSeconds = await readVideoDuration(file);
-        const formData = new FormData();
-        formData.append("file", file);
-        formData.append("folder", `media-uploads/generated/higgsfield/seedance/${project?.id ?? "draft"}/${selectedReturnSlot?.item.id ?? `cut-${selectedPreviewRange!.startIndex + 1}`}`);
-        const response = await fetch("/api/storage/upload", { method: "POST", body: formData });
-        const payload = await response.json() as MediaGatewayUploadResult & { error?: string };
-        if (!response.ok || payload.error) throw new Error(payload.error ?? `Generated clip upload failed with HTTP ${response.status}`);
+        const payload = await uploadGeneratedClipToRustFs({
+          file,
+          folder: `media-uploads/generated/higgsfield/seedance/${project?.id ?? "draft"}/${selectedReturnSlot?.item.id ?? `cut-${selectedPreviewRange!.startIndex + 1}`}`,
+          onPartUploaded: (uploaded, total) => {
+            setGeneratedImportStatus(`Uploading ${file.name}: part ${uploaded}/${total} to RustFS...`);
+          },
+        });
         const resultUrl = payload.mediaUrl ?? payload.publicUrl;
         const model = inferSeedanceModel(file.name);
         onGeneratedAsset({
