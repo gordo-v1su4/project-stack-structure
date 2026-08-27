@@ -163,7 +163,7 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
   const [selectedPresetTitle, setSelectedPresetTitle] = useState(LOCAL_SWARM_PRESETS[0].title);
   const [higgsfieldStatus, setHiggsfieldStatus] = useState("Higgsfield not checked yet.");
   const [isHiggsfieldGenerating, setIsHiggsfieldGenerating] = useState(false);
-  const [generatedImportStatus, setGeneratedImportStatus] = useState("Choose completed Seedance clips to return them to this exact edit slot.");
+  const [generatedImportStatus, setGeneratedImportStatus] = useState("Select exactly one resolved cut below, then import its completed Seedance candidates.");
   const [isImportingGenerated, setIsImportingGenerated] = useState(false);
   const cueMap = useMemo(() => buildAdaptiveCueMap({
     analysis,
@@ -178,6 +178,10 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
   const requiredIssues = issueGroups.filter((issue) => issue.status === "missing" || issue.status === "short");
   const reviewIssues = issueGroups.filter((issue) => issue.status === "weak");
   const focusSlot = slots.find((slot) => slot.item.id === selectedSlotId) ?? slots.find((slot) => slot.status !== "filled") ?? slots[0];
+  const selectedReturnSegment = selectedPreviewRange && selectedPreviewRange.startIndex === selectedPreviewRange.endIndex
+    ? previewSegments[selectedPreviewRange.startIndex]
+    : undefined;
+  const selectedReturnSlot = selectedReturnSegment ? findCoverageSlotForSegment(slots, selectedReturnSegment) : undefined;
   const selectedPreset = LOCAL_SWARM_PRESETS.find((preset) => preset.title === selectedPresetTitle) ?? LOCAL_SWARM_PRESETS[0];
   const frameMoment = focusSlot?.moment ?? project?.videoMoments.find((moment) => moment.firstFrameUrl || moment.thumbnailUrl);
   const effectiveReferenceSelection = useMemo(() => fillDefaultReferenceSelection(referenceSelection, referenceAssets), [referenceAssets, referenceSelection]);
@@ -195,7 +199,10 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
   };
 
   const importGeneratedClips = async (files: File[]) => {
-    if (!focusSlot || !files.length) return;
+    if (!selectedReturnSegment || !files.length) {
+      setGeneratedImportStatus("Select exactly one resolved cut below before importing its generated replacement.");
+      return;
+    }
     const videos = files.filter((file) => file.type.startsWith("video/") || /\.(mp4|mov|webm)$/i.test(file.name));
     if (!videos.length) {
       setGeneratedImportStatus("Choose at least one MP4, MOV, or WebM generated clip.");
@@ -208,7 +215,7 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
         const durationSeconds = await readVideoDuration(file);
         const formData = new FormData();
         formData.append("file", file);
-        formData.append("folder", `media-uploads/generated/higgsfield/seedance/${project?.id ?? "draft"}/${focusSlot.item.id}`);
+        formData.append("folder", `media-uploads/generated/higgsfield/seedance/${project?.id ?? "draft"}/${selectedReturnSlot?.item.id ?? `cut-${selectedPreviewRange!.startIndex + 1}`}`);
         const response = await fetch("/api/storage/upload", { method: "POST", body: formData });
         const payload = await response.json() as MediaGatewayUploadResult & { error?: string };
         if (!response.ok || payload.error) throw new Error(payload.error ?? `Generated clip upload failed with HTTP ${response.status}`);
@@ -229,16 +236,16 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
           trimStart: 0,
           reviewStatus: "pending",
           target: {
-            timelineItemId: focusSlot.item.id,
-            sectionId: focusSlot.item.sectionId,
-            sectionLabel: focusSlot.item.label,
-            parentMomentId: focusSlot.moment?.id,
-            songStart: focusSlot.item.start,
-            songEnd: focusSlot.item.end,
+            timelineItemId: selectedReturnSlot?.item.id ?? `resolved-cut-${selectedPreviewRange!.startIndex + 1}`,
+            sectionId: selectedReturnSegment.sectionId,
+            sectionLabel: selectedReturnSlot?.item.label ?? selectedReturnSegment.label,
+            parentMomentId: selectedReturnSegment.momentId,
+            songStart: selectedReturnSegment.musicStart,
+            songEnd: selectedReturnSegment.musicEnd,
           },
         });
       }
-      setGeneratedImportStatus(`Returned ${videos.length} generated clip${videos.length === 1 ? "" : "s"} to ${focusSlot.item.label}. Review before Join.`);
+      setGeneratedImportStatus(`Returned ${videos.length} generated clip${videos.length === 1 ? "" : "s"} to cut ${selectedPreviewRange!.startIndex + 1} at ${fmtCutTime(selectedReturnSegment.musicStart)}–${fmtCutTime(selectedReturnSegment.musicEnd)}. Review before Join.`);
     } catch (error) {
       setGeneratedImportStatus(error instanceof Error ? error.message : "Generated clip import failed.");
     } finally {
@@ -489,15 +496,15 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Generated shot bank / approval queue</div>
-            <div className="mt-1 text-[11px] text-[#6d6d6d]">Generated assets from the local SwarmUI gateway appear in the source-frame lab first; approval and timeline replacement remain explicit so nothing silently enters Join.</div>
+            <div className="mt-1 text-[11px] text-[#6d6d6d]">Select one resolved cut, return its completed Seedance candidates, then approve exactly what enters Join. Rejected clips remain attached as review history and never replace the edit.</div>
           </div>
-          <label className={`rounded-[2px] border border-[#6e3425] bg-[#160905] px-3 py-2 text-[8px] uppercase tracking-[0.12em] text-[#d26c42] ${isImportingGenerated || !focusSlot ? "cursor-not-allowed opacity-45" : "cursor-pointer hover:border-[#e05c00]"}`}>
+          <label className={`rounded-[2px] border border-[#6e3425] bg-[#160905] px-3 py-2 text-[8px] uppercase tracking-[0.12em] text-[#d26c42] ${isImportingGenerated || !selectedReturnSegment ? "cursor-not-allowed opacity-45" : "cursor-pointer hover:border-[#e05c00]"}`}>
             {isImportingGenerated ? "Importing..." : "Import generated clips"}
             <input
               type="file"
               accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm"
               multiple
-              disabled={isImportingGenerated || !focusSlot}
+              disabled={isImportingGenerated || !selectedReturnSegment}
               className="sr-only"
               onChange={(event) => {
                 const files = Array.from(event.target.files ?? []);
