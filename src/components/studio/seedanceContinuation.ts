@@ -1,8 +1,8 @@
 import type { GeneratedStudioAsset } from "./generatedAssets";
 import type { VideoMoment } from "./musicVideoProject";
-import type { GenerationReferenceSelection, ReferenceAsset } from "./referenceAssets";
+import { getOrderedSelectedReferenceIds, type GenerationReferenceSelection, type ReferenceAsset } from "./referenceAssets";
 
-export type SeedanceReferenceRole = "accepted-final-frame" | "character-identity" | "environment" | "custom" | "contact-sheet";
+export type SeedanceReferenceRole = "accepted-final-frame" | "character-identity" | "environment" | "crowd-extras" | "custom" | "contact-sheet";
 
 export interface SeedanceContinuationReference {
   tag: string;
@@ -75,12 +75,7 @@ export function buildSeedanceContinuationPacket(params: {
     errors.push("The selected source moment has no durable last frame. Finish scene processing before preparing a continuation.");
   }
 
-  const selectedAssets = [
-    params.referenceSelection.character1Id,
-    params.referenceSelection.character2Id,
-    params.referenceSelection.environmentId,
-    params.referenceSelection.customId,
-  ].filter(Boolean) as string[];
+  const selectedAssets = getOrderedSelectedReferenceIds(params.referenceSelection);
 
   for (const assetId of selectedAssets) {
     const asset = params.referenceAssets.find((candidate) => candidate.id === assetId);
@@ -96,6 +91,8 @@ export function buildSeedanceContinuationPacket(params: {
     const tag = `@Image_${references.length + 1}`;
     const role: SeedanceReferenceRole = asset.role === "environment"
       ? "environment"
+      : asset.role === "crowd"
+        ? "crowd-extras"
       : asset.role === "character-1" || asset.role === "character-2"
         ? "character-identity"
         : "custom";
@@ -184,6 +181,9 @@ function buildRoleInstruction(tag: string, role: SeedanceReferenceRole, label: s
   }
   if (role === "environment") {
     return `${tag} controls the named location ${label} only; preserve its architecture, layout, materials, palette, and lighting direction, and ignore any people or action shown in that reference.`;
+  }
+  if (role === "crowd-extras") {
+    return `${tag} controls background-dancer identity variety and crowd wardrobe only. It does not control any named lead, the location, composition, camera, lighting, or action. Do not copy a named lead's identity or wardrobe onto any background extra.`;
   }
   return `${tag} controls the custom ${kind} reference ${label} only; ignore unrelated identity, environment, camera, and action.`;
 }

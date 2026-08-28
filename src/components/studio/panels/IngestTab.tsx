@@ -7,7 +7,7 @@ import { sceneCaptionMatchesMode } from "../sceneCaptioning";
 import { SourceVideoLibrary } from "../SourceVideoLibrary";
 import { UploadControl } from "../UploadControl";
 import type { DeepgramTranscriptSummary } from "../deepgramUtils";
-import { REFERENCE_ASSET_SLOT_DETAILS, REFERENCE_ASSET_SLOT_LABELS, type ReferenceAsset, type ReferenceAssetKind, type ReferenceAssetRole } from "../referenceAssets";
+import { REFERENCE_ASSET_SLOT_DETAILS, REFERENCE_ASSET_SLOT_LABELS, type ReferenceAsset, type ReferenceAssetKind, type ReferenceAssetLibraryRole, type ReferenceAssetRole } from "../referenceAssets";
 import type { BeatJoinAnalysis, DetectedSceneSegment, SceneCaptionMode, UploadedVideoSource } from "../types";
 
 type IngestTabProps = {
@@ -30,7 +30,7 @@ type IngestTabProps = {
   onRerunSceneAnalysis: (scope: "failed" | "all") => void;
   onMergeScene: (sourceId: number, sceneId: number) => void;
   referenceAssets: ReferenceAsset[];
-  onReferenceAssetUpload: (role: ReferenceAssetRole, files: File[]) => void | Promise<void>;
+  onReferenceAssetUpload: (role: ReferenceAssetLibraryRole, files: File[]) => void | Promise<void>;
   onReferenceAssetUpdate: (assetId: string, patch: Partial<Pick<ReferenceAsset, "displayName" | "promptHint" | "kind">>) => void;
   onReferenceAssetRemove: (assetId: string) => void;
   onSelectStory: () => void;
@@ -305,11 +305,12 @@ function ReferenceLibrary({
   onRemove,
 }: {
   assets: ReferenceAsset[];
-  onUpload: (role: ReferenceAssetRole, files: File[]) => void | Promise<void>;
+  onUpload: (role: ReferenceAssetLibraryRole, files: File[]) => void | Promise<void>;
   onUpdate: (assetId: string, patch: Partial<Pick<ReferenceAsset, "displayName" | "promptHint" | "kind">>) => void;
   onRemove: (assetId: string) => void;
 }) {
   const roles: ReferenceAssetRole[] = ["character-1", "character-2", "environment", "custom"];
+  const crowdAssets = assets.filter((asset) => asset.role === "crowd");
   const readyCount = assets.filter((asset) => asset.storageStatus === "uploaded" && asset.storageUrl).length;
   const failedCount = assets.filter((asset) => asset.storageStatus === "failed").length;
 
@@ -319,11 +320,11 @@ function ReferenceLibrary({
         <div>
           <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Reference library / character bible</div>
           <div className="mt-1 max-w-4xl text-[11px] leading-5 text-[#6d6d6d]">
-            Upload persistent character sheets and continuity references once. Generate will pass them to Nano Banana Pro in a stable order after the selected source frame: Char 1, Char 2, Environment, Custom.
+            Upload persistent character sheets and continuity references once. Generate keeps a stable order after the selected source frame: Char 1, Char 2, Environment, selected Crowd sheets, Custom.
           </div>
         </div>
         <div className="font-mono text-[10px] text-[#777]">
-          {readyCount}/{assets.length || roles.length} refs ready{failedCount ? <span className="text-[#d24b3f]"> · {failedCount} failed</span> : null}
+          {readyCount}/{assets.length} refs ready{failedCount ? <span className="text-[#d24b3f]"> · {failedCount} failed</span> : null}
         </div>
       </div>
       <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
@@ -338,7 +339,77 @@ function ReferenceLibrary({
           />
         ))}
       </div>
+      <CrowdReferenceTray
+        assets={crowdAssets}
+        onUpload={(files) => onUpload("crowd", files)}
+        onUpdate={onUpdate}
+        onRemove={onRemove}
+      />
     </section>
+  );
+}
+
+function CrowdReferenceTray({
+  assets,
+  onUpload,
+  onUpdate,
+  onRemove,
+}: {
+  assets: ReferenceAsset[];
+  onUpload: (files: File[]) => void | Promise<void>;
+  onUpdate: (assetId: string, patch: Partial<Pick<ReferenceAsset, "displayName" | "promptHint" | "kind">>) => void;
+  onRemove: (assetId: string) => void;
+}) {
+  const readyCount = assets.filter((asset) => asset.storageStatus === "uploaded" && asset.storageUrl).length;
+
+  return (
+    <details className="mt-2 rounded-[2px] border border-[#202020] bg-[#070707]">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 marker:hidden">
+        <div className="min-w-0">
+          <div className="text-[9px] uppercase tracking-[0.16em] text-[#d0d0d0]">Crowd / extras · expandable library</div>
+          <div className="mt-1 truncate text-[9px] text-[#555]">Store as many background-cast sheets as needed; Generate selects up to three for the current shot.</div>
+        </div>
+        <div className="shrink-0 font-mono text-[8px] uppercase tracking-[0.12em] text-[#78c878]">{readyCount}/{assets.length} ready</div>
+      </summary>
+      <div className="border-t border-[#181818] p-2">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <div className="text-[9px] leading-4 text-[#666]">These sheets control background-dancer variety and wardrobe only. They never replace a named lead or the location reference.</div>
+          <UploadControl accept="image/*" multiple title="" detail="" actionLabel="Add crowd sheets" variant="button" onFiles={onUpload} />
+        </div>
+        {assets.length ? (
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {assets.map((asset) => {
+              const ready = asset.storageStatus === "uploaded" && Boolean(asset.storageUrl);
+              const failed = asset.storageStatus === "failed";
+              return (
+                <article key={asset.id} className={`w-[220px] shrink-0 rounded-[2px] border bg-[#050505] p-2 ${failed ? "border-[#743029]" : ready ? "border-[#245c2c]" : "border-[#6e5522]"}`}>
+                  <div className="relative aspect-video overflow-hidden rounded-[2px] border border-[#181818] bg-black">
+                    {asset.previewUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={asset.previewUrl} alt={asset.displayName} className="h-full w-full object-contain" loading="lazy" decoding="async" />
+                    ) : <div className="flex h-full items-center justify-center text-[8px] uppercase tracking-[0.12em] text-[#444]">No preview</div>}
+                    <span className="absolute right-1 top-1 rounded-[1px] bg-[#000000c7] px-1.5 py-0.5 font-mono text-[7px] uppercase text-[#aaa]">{asset.storageStatus}</span>
+                  </div>
+                  <input
+                    value={asset.displayName}
+                    onChange={(event) => onUpdate(asset.id, { displayName: event.target.value })}
+                    className="mt-2 h-[28px] w-full rounded-[2px] border border-[#202020] bg-[#050505] px-2 font-mono text-[9px] text-[#c0c0c0] outline-none focus:border-[#e05c00]"
+                    placeholder="Crowd sheet name"
+                  />
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <div className="min-w-0 truncate font-mono text-[7px] text-[#555]" title={asset.storagePath}>{asset.storagePath ?? asset.fileName}</div>
+                    <button type="button" onClick={() => onRemove(asset.id)} className="shrink-0 text-[8px] uppercase tracking-[0.12em] text-[#777] hover:text-[#d24b3f]">Remove</button>
+                  </div>
+                  {asset.storageError ? <div className="mt-2 text-[8px] leading-4 text-[#d24b3f]">{asset.storageError}</div> : null}
+                </article>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="rounded-[2px] border border-dashed border-[#242424] px-3 py-5 text-center text-[9px] uppercase tracking-[0.14em] text-[#555]">No crowd sheets yet</div>
+        )}
+      </div>
+    </details>
   );
 }
 
@@ -392,7 +463,7 @@ function ReferenceSlotCard({
               onChange={(event) => onUpdate(asset.id, { kind: event.target.value as ReferenceAssetKind })}
               className="h-[30px] w-full rounded-[2px] border border-[#202020] bg-[#050505] px-2 font-mono text-[10px] text-[#9a9a9a] outline-none focus:border-[#e05c00]"
             >
-              {(["character", "environment", "prop", "vehicle", "wardrobe", "custom"] as const).map((kind) => <option key={kind} value={kind}>{kind}</option>)}
+              {(["character", "environment", "crowd", "prop", "vehicle", "wardrobe", "custom"] as const).map((kind) => <option key={kind} value={kind}>{kind}</option>)}
             </select>
             <textarea
               value={asset.promptHint}
