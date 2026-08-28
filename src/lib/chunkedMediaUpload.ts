@@ -86,3 +86,31 @@ export function normalizeChunkedContentType(value: unknown, fallback = "applicat
     ? value.trim()
     : fallback;
 }
+
+const MEDIA_CONTENT_TYPES_BY_EXTENSION: Record<string, string> = {
+  ".aac": "audio/aac",
+  ".flac": "audio/flac",
+  ".m4a": "audio/mp4",
+  ".mp3": "audio/mpeg",
+  ".ogg": "audio/ogg",
+  ".wav": "audio/wav",
+  ".avi": "video/x-msvideo",
+  ".mkv": "video/x-matroska",
+  ".mov": "video/quicktime",
+  ".mp4": "video/mp4",
+  ".webm": "video/webm",
+};
+
+/**
+ * Chunk assembly is deliberately limited to playable audio/video. Browsers can
+ * omit a File MIME type, so a short allowlist of known media extensions is the
+ * only fallback; arbitrary client-supplied content types are never accepted.
+ */
+export function resolveChunkedMediaContentType(value: unknown, fileName: unknown) {
+  const requested = normalizeChunkedContentType(value);
+  if (requested.startsWith("audio/") || requested.startsWith("video/")) return requested;
+
+  const normalizedName = typeof fileName === "string" ? fileName.trim().toLowerCase() : "";
+  const extension = /\.[a-z0-9]+$/.exec(normalizedName)?.[0] ?? "";
+  return MEDIA_CONTENT_TYPES_BY_EXTENSION[extension] ?? null;
+}

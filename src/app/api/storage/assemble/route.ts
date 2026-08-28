@@ -6,7 +6,7 @@ import {
 } from "@/lib/mediaGateway";
 import {
   LARGE_UPLOAD_SINGLE_SHOT_MAX,
-  normalizeChunkedContentType,
+  resolveChunkedMediaContentType,
   validateOrderedChunkManifest,
 } from "@/lib/chunkedMediaUpload";
 import { getSessionUser, unauthorizedResponse } from "@/lib/session";
@@ -58,8 +58,10 @@ export async function POST(request: Request) {
     }
 
     const fileName = sanitizeFileName(payload.fileName);
-    const requestedContentType = normalizeChunkedContentType(payload.contentType, "video/mp4");
-    const contentType = requestedContentType.startsWith("video/") ? requestedContentType : "video/mp4";
+    const contentType = resolveChunkedMediaContentType(payload.contentType, fileName);
+    if (!contentType) {
+      return Response.json({ error: "Only supported audio or video uploads can be assembled." }, { status: 400 });
+    }
     const uploaded = await assembleMediaGatewayChunks({
       chunks,
       expectedSize: size,
@@ -77,7 +79,7 @@ export async function POST(request: Request) {
 }
 
 function sanitizeFileName(value: unknown) {
-  const name = typeof value === "string" ? value.trim() : "assembled.mp4";
+  const name = typeof value === "string" ? value.trim() : "assembled-media";
   const safe = name.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 160);
-  return safe || "assembled.mp4";
+  return safe || "assembled-media";
 }

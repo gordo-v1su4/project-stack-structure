@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   buildUploadChunkRanges,
   LARGE_UPLOAD_CHUNK_BYTES,
+  resolveChunkedMediaContentType,
   validateOrderedChunkManifest,
 } from "@/lib/chunkedMediaUpload";
 
@@ -107,5 +108,22 @@ describe("buildUploadChunkRanges", () => {
     expect(ranges[0]?.start).toBe(0);
     expect(ranges.at(-1)?.end).toBe(size);
     for (const [index, range] of ranges.entries()) expect(range.index).toBe(index);
+  });
+});
+
+describe("resolveChunkedMediaContentType", () => {
+  test("preserves declared audio and video MIME types", () => {
+    expect(resolveChunkedMediaContentType("audio/wav", "master.wav")).toBe("audio/wav");
+    expect(resolveChunkedMediaContentType("video/mp4", "clip.mp4")).toBe("video/mp4");
+  });
+
+  test("infers media MIME types from known extensions when browsers omit them", () => {
+    expect(resolveChunkedMediaContentType("", "master.WAV")).toBe("audio/wav");
+    expect(resolveChunkedMediaContentType(undefined, "clip.webm")).toBe("video/webm");
+  });
+
+  test("rejects non-media payloads instead of coercing them to MP4", () => {
+    expect(resolveChunkedMediaContentType("application/json", "payload.json")).toBeNull();
+    expect(resolveChunkedMediaContentType("application/octet-stream", "payload.bin")).toBeNull();
   });
 });
