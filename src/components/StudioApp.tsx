@@ -27,7 +27,7 @@ import {
 } from "./studio/projectPersistence";
 import type { StudioProjectSummary } from "@/lib/studioProjectStore";
 import { applyApprovedGeneratedAssets, buildGeneratedAssetContextPreview, type GeneratedStudioAsset } from "./studio/generatedAssets";
-import { createLocalReferenceAsset, uploadReferenceAssetToRustFs, type ReferenceAsset, type ReferenceAssetRole } from "./studio/referenceAssets";
+import { createLocalReferenceAsset, uploadReferenceAssetToRustFs, type ReferenceAsset, type ReferenceAssetLibraryRole } from "./studio/referenceAssets";
 import { BrowserPreviewPlayer, createPreviewPlayerState, type PreviewPlayerState, type PreviewSegment } from "./studio/previewPlayer";
 import { slicePreviewCutRange, type PreviewCutRange } from "./studio/resolvedPreviewSelection";
 import { ProcessActionBar } from "./studio/ProcessActionBar";
@@ -780,29 +780,37 @@ export default function StudioApp() {
     }
   }
 
-  async function handleReferenceAssetUpload(role: ReferenceAssetRole, files: File[]) {
-    const file = files.find((candidate) => candidate.type.startsWith("image/"));
-    if (!file) return;
+  async function handleReferenceAssetUpload(role: ReferenceAssetLibraryRole, files: File[]) {
+    const imageFiles = files.filter((candidate) => candidate.type.startsWith("image/"));
+    const selectedFiles = role === "crowd" ? imageFiles : imageFiles.slice(0, 1);
+    if (!selectedFiles.length) return;
 
-    const previewUrl = URL.createObjectURL(file);
-    const localAsset = createLocalReferenceAsset({ role, file, previewUrl });
-
-    setReferenceAssets((currentAssets) => {
-      for (const current of currentAssets.filter((asset) => asset.role === role && asset.previewUrl.startsWith("blob:"))) {
-        URL.revokeObjectURL(current.previewUrl);
-      }
-      return [...currentAssets.filter((asset) => asset.role !== role), localAsset];
+    const localAssets = selectedFiles.map((file) => {
+      const previewUrl = URL.createObjectURL(file);
+      return { file, previewUrl, asset: createLocalReferenceAsset({ role, file, previewUrl }) };
     });
 
-    try {
-      const storage = await uploadReferenceAssetToRustFs(file, role);
-      referenceAutosaveRequestedRef.current = true;
-      setReferenceAssets((currentAssets) => currentAssets.map((asset) => asset.id === localAsset.id ? { ...asset, ...storage, previewUrl: storage.storageUrl ?? asset.previewUrl } : asset));
-      if (previewUrl.startsWith("blob:")) URL.revokeObjectURL(previewUrl);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Reference upload failed";
-      setReferenceAssets((currentAssets) => currentAssets.map((asset) => asset.id === localAsset.id ? { ...asset, storageStatus: "failed", storageError: message } : asset));
-    }
+    setReferenceAssets((currentAssets) => {
+      if (role !== "crowd") {
+        for (const current of currentAssets.filter((asset) => asset.role === role && asset.previewUrl.startsWith("blob:"))) {
+          URL.revokeObjectURL(current.previewUrl);
+        }
+      }
+      const retainedAssets = role === "crowd" ? currentAssets : currentAssets.filter((asset) => asset.role !== role);
+      return [...retainedAssets, ...localAssets.map(({ asset }) => asset)];
+    });
+
+    await Promise.all(localAssets.map(async ({ file, previewUrl, asset: localAsset }) => {
+      try {
+        const storage = await uploadReferenceAssetToRustFs(file, role);
+        referenceAutosaveRequestedRef.current = true;
+        setReferenceAssets((currentAssets) => currentAssets.map((asset) => asset.id === localAsset.id ? { ...asset, ...storage, previewUrl: storage.storageUrl ?? asset.previewUrl } : asset));
+        if (previewUrl.startsWith("blob:")) URL.revokeObjectURL(previewUrl);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Reference upload failed";
+        setReferenceAssets((currentAssets) => currentAssets.map((asset) => asset.id === localAsset.id ? { ...asset, storageStatus: "failed", storageError: message } : asset));
+      }
+    }));
   }
 
   function handleReferenceAssetUpdate(assetId: string, patch: Partial<Pick<ReferenceAsset, "displayName" | "promptHint" | "kind">>) {

@@ -2,7 +2,14 @@
 
 import { useMemo, useRef, useState } from "react";
 import { fmt } from "../math";
-import { buildGenerationReferenceInputs, type GenerationReferenceSelection, type ReferenceAsset } from "../referenceAssets";
+import {
+  buildGenerationReferenceInputs,
+  getOrderedSelectedReferenceIds,
+  MAX_CROWD_REFERENCE_SELECTIONS,
+  normalizeCrowdReferenceIds,
+  type GenerationReferenceSelection,
+  type ReferenceAsset,
+} from "../referenceAssets";
 import type { BeatJoinAnalysis, ColorPaletteSwatch, MotionDescriptor } from "../types";
 import { buildGeneratedAssetContextPreview, type GeneratedStudioAsset } from "../generatedAssets";
 import { uploadGeneratedClipToRustFs } from "../generatedClipUpload";
@@ -1150,13 +1157,16 @@ function FrameExtensionPanel({
   const character1Asset = referenceAssets.find((asset) => asset.id === referenceSelection.character1Id);
   const character2Asset = referenceAssets.find((asset) => asset.id === referenceSelection.character2Id);
   const environmentAsset = referenceAssets.find((asset) => asset.id === referenceSelection.environmentId);
+  const crowdAssets = normalizeCrowdReferenceIds(referenceSelection.crowdIds)
+    .flatMap((id) => referenceAssets.filter((asset) => asset.id === id));
   const customAsset = referenceAssets.find((asset) => asset.id === referenceSelection.customId);
   const characterNames = [character1Asset?.displayName, character2Asset?.displayName].filter(Boolean) as string[];
   const defaultCharacterName = characterNames.join(" & ") || "Character";
-  const gridReferences: Array<{ kind: "character" | "environment" | "custom"; name?: string }> = [];
+  const gridReferences: Array<{ kind: "character" | "environment" | "crowd" | "custom"; name?: string }> = [];
   if (character1Asset) gridReferences.push({ kind: "character", name: character1Asset.displayName });
   if (character2Asset) gridReferences.push({ kind: "character", name: character2Asset.displayName });
   if (environmentAsset) gridReferences.push({ kind: "environment", name: environmentAsset.displayName });
+  for (const crowdAsset of crowdAssets) gridReferences.push({ kind: "crowd", name: crowdAsset.displayName });
   if (customAsset) gridReferences.push({ kind: "custom", name: customAsset.displayName });
   const gridPrompt = buildStoryboardGridPrompt({
     slot,
@@ -1305,6 +1315,11 @@ function FrameExtensionPanel({
           <ReferenceSelect label="Environment" value={referenceSelection.environmentId ?? ""} assets={referenceAssets.filter((asset) => asset.role === "environment")} onChange={(id) => onReferenceSelection({ ...referenceSelection, environmentId: id || undefined })} />
           <ReferenceSelect label="Custom" value={referenceSelection.customId ?? ""} assets={referenceAssets.filter((asset) => asset.role === "custom")} onChange={(id) => onReferenceSelection({ ...referenceSelection, customId: id || undefined })} />
         </div>
+        <CrowdReferenceMultiSelect
+          assets={referenceAssets.filter((asset) => asset.role === "crowd")}
+          values={referenceSelection.crowdIds ?? []}
+          onChange={(crowdIds) => onReferenceSelection({ ...referenceSelection, crowdIds })}
+        />
         {referencePlan.errors.length ? (
           <div className="mt-2 rounded-[2px] border border-[#743029] bg-[#160706] p-2 text-[9px] leading-4 text-[#d24b3f]">
             {referencePlan.errors.map((error) => <div key={error}>{error}</div>)}
@@ -1453,7 +1468,7 @@ function FrameExtensionPanel({
 }
 
 function buildHiggsfieldInputImages(assets: ReferenceAsset[], selection: GenerationReferenceSelection, extraReferenceUrls: string) {
-  const selectedIds = [selection.character1Id, selection.character2Id, selection.environmentId, selection.customId].filter(Boolean) as string[];
+  const selectedIds = getOrderedSelectedReferenceIds(selection);
   const selected = selectedIds.flatMap((id) => {
     const asset = assets.find((candidate) => candidate.id === id);
     const url = asset?.storageUrl || asset?.previewUrl;
@@ -1470,7 +1485,7 @@ function buildHiggsfieldInputImages(assets: ReferenceAsset[], selection: Generat
 function buildStoryboardGridPrompt(args: {
   slot?: CoverageSlot;
   moment?: VideoMoment;
-  references: Array<{ kind: "character" | "environment" | "custom"; name?: string }>;
+  references: Array<{ kind: "character" | "environment" | "crowd" | "custom"; name?: string }>;
 }) {
   const { slot, moment, references } = args;
   const characterNames = references
@@ -1494,6 +1509,8 @@ function buildStoryboardGridPrompt(args: {
       imageMap.push(`Image_${imageIndex} is the authoritative character reference for ${reference.name} \u2014 keep the exact visual identity and continuity from that sheet in every panel featuring them; do not invent or restate appearance details in text.`);
     } else if (reference.kind === "environment") {
       imageMap.push(`Image_${imageIndex} is the location lock for ${reference.name ?? "the environment"} \u2014 every panel takes place inside this exact space; preserve its layout, materials, palette, and lighting direction.`);
+    } else if (reference.kind === "crowd") {
+      imageMap.push(`Image_${imageIndex} is a crowd/extras sheet${reference.name ? ` (${reference.name})` : ""} \u2014 use it only for background-dancer identity variety and crowd wardrobe. Never transfer a named lead's identity or wardrobe onto the crowd, and ignore composition, camera, lighting, location, and action from this sheet.`);
     } else {
       imageMap.push(`Image_${imageIndex} is an additional reference${reference.name ? ` (${reference.name})` : ""} \u2014 honor it wherever relevant.`);
     }
@@ -1568,12 +1585,68 @@ function ReferenceSelect({ label, value, assets, onChange }: { label: string; va
   );
 }
 
+function CrowdReferenceMultiSelect({ assets, values, onChange }: { assets: ReferenceAsset[]; values: string[]; onChange: (ids: string[]) => void }) {
+  const selectedIds = normalizeCrowdReferenceIds(values);
+  const selectedSet = new Set(selectedIds);
+  const atLimit = selectedIds.length >= MAX_CROWD_REFERENCE_SELECTIONS;
+
+  const toggle = (assetId: string) => {
+    if (selectedSet.has(assetId)) {
+      onChange(selectedIds.filter((id) => id !== assetId));
+      return;
+    }
+    if (!atLimit) onChange([...selectedIds, assetId]);
+  };
+
+  return (
+    <details className="mt-2 rounded-[2px] border border-[#202020] bg-[#050505]">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-2 py-2 marker:hidden">
+        <div>
+          <div className="text-[8px] uppercase tracking-[0.14em] text-[#777]">Crowd / extras</div>
+          <div className="mt-1 text-[8px] text-[#555]">Expandable sheet tray · choose up to {MAX_CROWD_REFERENCE_SELECTIONS} for this shot</div>
+        </div>
+        <div className="font-mono text-[8px] text-[#78c878]">{selectedIds.length}/{assets.length} selected</div>
+      </summary>
+      <div className="border-t border-[#181818] p-2">
+        {assets.length ? (
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {assets.map((asset) => {
+              const selected = selectedSet.has(asset.id);
+              const disabled = !selected && atLimit;
+              return (
+                <button
+                  key={asset.id}
+                  type="button"
+                  aria-pressed={selected}
+                  disabled={disabled}
+                  onClick={() => toggle(asset.id)}
+                  className={`w-[184px] shrink-0 overflow-hidden rounded-[2px] border text-left disabled:cursor-not-allowed disabled:opacity-35 ${selected ? "border-[#e05c00] bg-[#120904]" : "border-[#202020] bg-[#070707]"}`}
+                >
+                  <div className="relative aspect-video bg-black">
+                    {asset.previewUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={asset.previewUrl} alt={asset.displayName} className="h-full w-full object-contain" loading="lazy" decoding="async" />
+                    ) : <div className="flex h-full items-center justify-center text-[8px] uppercase text-[#444]">No preview</div>}
+                    <span className={`absolute right-1 top-1 rounded-[1px] px-1.5 py-0.5 font-mono text-[7px] uppercase ${selected ? "bg-[#e05c00] text-black" : "bg-[#000000c7] text-[#777]"}`}>{selected ? "Selected" : "Available"}</span>
+                  </div>
+                  <div className="truncate px-2 py-1.5 font-mono text-[8px] text-[#aaa]">{asset.displayName}</div>
+                </button>
+              );
+            })}
+          </div>
+        ) : <div className="py-3 text-center text-[8px] uppercase tracking-[0.12em] text-[#555]">Add crowd sheets in Ingest</div>}
+      </div>
+    </details>
+  );
+}
+
 function fillDefaultReferenceSelection(selection: GenerationReferenceSelection, assets: ReferenceAsset[]): GenerationReferenceSelection {
   const pick = (role: ReferenceAsset["role"]) => assets.find((asset) => asset.role === role)?.id;
   return {
     character1Id: selection.character1Id ?? pick("character-1"),
     character2Id: selection.character2Id ?? pick("character-2"),
     environmentId: selection.environmentId ?? pick("environment"),
+    crowdIds: selection.crowdIds ?? assets.filter((asset) => asset.role === "crowd").slice(0, MAX_CROWD_REFERENCE_SELECTIONS).map((asset) => asset.id),
     customId: selection.customId ?? pick("custom"),
   };
 }

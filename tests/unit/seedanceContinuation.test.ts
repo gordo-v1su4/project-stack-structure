@@ -33,6 +33,34 @@ const referenceAssets: ReferenceAsset[] = [
     storageStatus: "uploaded",
     createdAt: "2026-08-27T00:00:00.000Z",
   },
+  {
+    id: "crowd-a",
+    role: "crowd",
+    kind: "crowd",
+    displayName: "Club crowd A",
+    fileName: "crowd-a.png",
+    previewUrl: "https://media.example/crowd-a.png",
+    promptHint: "Background extras only.",
+    storageProvider: "rustfs",
+    storagePath: "refs/crowd-a.png",
+    storageUrl: "https://media.example/crowd-a.png",
+    storageStatus: "uploaded",
+    createdAt: "2026-08-27T00:00:00.000Z",
+  },
+  {
+    id: "crowd-b",
+    role: "crowd",
+    kind: "crowd",
+    displayName: "Club crowd B",
+    fileName: "crowd-b.png",
+    previewUrl: "https://media.example/crowd-b.png",
+    promptHint: "Background extras only.",
+    storageProvider: "rustfs",
+    storagePath: "refs/crowd-b.png",
+    storageUrl: "https://media.example/crowd-b.png",
+    storageStatus: "uploaded",
+    createdAt: "2026-08-27T00:00:00.000Z",
+  },
 ];
 
 const contactSheet: GeneratedStudioAsset = {
@@ -74,7 +102,7 @@ describe("Seedance continuation packet", () => {
         captionMeta: { action: "Diego walks through the hallway" },
       },
       referenceAssets,
-      referenceSelection: { character1Id: "diego", environmentId: "club" },
+      referenceSelection: { character1Id: "diego", environmentId: "club", crowdIds: ["crowd-a", "crowd-b"] },
       contactSheet,
       audioVideoReference: {
         tag: "@Video_1",
@@ -95,7 +123,9 @@ describe("Seedance continuation packet", () => {
       ["@Image_1", "accepted-final-frame"],
       ["@Image_2", "character-identity"],
       ["@Image_3", "environment"],
-      ["@Image_4", "contact-sheet"],
+      ["@Image_4", "crowd-extras"],
+      ["@Image_5", "crowd-extras"],
+      ["@Image_6", "contact-sheet"],
     ]);
     expect(packet.resolution).toBe("720p");
     expect(packet.prompt).toContain("without restarting or replaying Diego walks through the hallway");
@@ -103,6 +133,8 @@ describe("Seedance continuation packet", () => {
     expect(packet.prompt).toContain("@Video_1 controls song audio, rhythm, lyric timing, and lip-sync timing only");
     expect(packet.prompt).not.toContain("song is added in post");
     expect(packet.references[1]?.instruction).toContain("identity and wardrobe for Diego only");
+    expect(packet.references[3]?.instruction).toContain("does not control any named lead");
+    expect(packet.references[3]?.instruction).toContain("Do not copy a named lead's identity or wardrobe");
     expect(packet.prompt).not.toContain("red plaid shirt");
     const serialized = serializeSeedanceContinuationPacket(packet);
     expect(serialized).toContain("Project: project-1 · Clip: verse-2-continuation-42.00");

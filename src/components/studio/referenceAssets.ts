@@ -1,10 +1,11 @@
 export type ReferenceAssetRole = "character-1" | "character-2" | "environment" | "custom";
-export type ReferenceAssetKind = "character" | "environment" | "prop" | "vehicle" | "wardrobe" | "custom";
+export type ReferenceAssetLibraryRole = ReferenceAssetRole | "crowd";
+export type ReferenceAssetKind = "character" | "environment" | "crowd" | "prop" | "vehicle" | "wardrobe" | "custom";
 export type ReferenceAssetStatus = "local" | "uploading" | "uploaded" | "failed";
 
 export interface ReferenceAsset {
   id: string;
-  role: ReferenceAssetRole;
+  role: ReferenceAssetLibraryRole;
   kind: ReferenceAssetKind;
   displayName: string;
   fileName: string;
@@ -23,39 +24,45 @@ export interface GenerationReferenceSelection {
   character1Id?: string;
   character2Id?: string;
   environmentId?: string;
+  crowdIds?: string[];
   customId?: string;
 }
 
 export interface GenerationReferenceInput {
-  role: "anchor" | ReferenceAssetRole;
+  role: "anchor" | ReferenceAssetLibraryRole;
   label: string;
   url: string;
   assetId?: string;
   instruction: string;
 }
 
-export const REFERENCE_ASSET_SLOT_LABELS: Record<ReferenceAssetRole, string> = {
+export const REFERENCE_ASSET_SLOT_LABELS: Record<ReferenceAssetLibraryRole, string> = {
   "character-1": "Character 1",
   "character-2": "Character 2",
   environment: "Environment / location",
+  crowd: "Crowd / extras",
   custom: "Custom reference",
 };
 
-export const REFERENCE_ASSET_SLOT_DETAILS: Record<ReferenceAssetRole, string> = {
+export const REFERENCE_ASSET_SLOT_DETAILS: Record<ReferenceAssetLibraryRole, string> = {
   "character-1": "Primary character sheet or hero likeness.",
   "character-2": "Secondary character sheet, duet partner, antagonist, or co-star.",
   environment: "Room, location, vehicle interior, set, or recurring visual world.",
+  crowd: "Background-cast identity and wardrobe sheets. Keep multiple options in the project and select only the ones needed for a shot.",
   custom: "Prop, car, wardrobe, extra person, object, or user-defined reference.",
 };
 
-export function defaultReferenceKindForRole(role: ReferenceAssetRole): ReferenceAssetKind {
+export const MAX_CROWD_REFERENCE_SELECTIONS = 3;
+
+export function defaultReferenceKindForRole(role: ReferenceAssetLibraryRole): ReferenceAssetKind {
   if (role === "environment") return "environment";
+  if (role === "crowd") return "crowd";
   if (role === "custom") return "custom";
   return "character";
 }
 
 export function createLocalReferenceAsset(params: {
-  role: ReferenceAssetRole;
+  role: ReferenceAssetLibraryRole;
   file: File;
   previewUrl: string;
   displayName?: string;
@@ -78,7 +85,7 @@ export function createLocalReferenceAsset(params: {
   };
 }
 
-export async function uploadReferenceAssetToRustFs(file: File, role: ReferenceAssetRole): Promise<Pick<ReferenceAsset, "storageProvider" | "storageBucket" | "storagePath" | "storageUrl" | "storageStatus" | "storageError">> {
+export async function uploadReferenceAssetToRustFs(file: File, role: ReferenceAssetLibraryRole): Promise<Pick<ReferenceAsset, "storageProvider" | "storageBucket" | "storagePath" | "storageUrl" | "storageStatus" | "storageError">> {
   const formData = new FormData();
   formData.append("file", file, file.name);
   formData.append("folder", buildReferenceAssetFolder(role));
@@ -130,6 +137,7 @@ export function buildGenerationReferenceInputs(params: {
     { role: "character-1" as const, id: params.selection.character1Id },
     { role: "character-2" as const, id: params.selection.character2Id },
     { role: "environment" as const, id: params.selection.environmentId },
+    ...normalizeCrowdReferenceIds(params.selection.crowdIds).map((id) => ({ role: "crowd" as const, id })),
     { role: "custom" as const, id: params.selection.customId },
   ];
 
@@ -168,19 +176,38 @@ export function buildReferenceInstruction(asset: ReferenceAsset, referenceNumber
   if (asset.role === "environment") {
     return `Use Reference ${referenceNumber} as the environment/location "${asset.displayName}"; preserve the spatial layout, lighting direction, materials, palette, and atmosphere. ${asset.promptHint}`.trim();
   }
+  if (asset.role === "crowd") {
+    return `Use Reference ${referenceNumber} as the crowd/extras sheet "${asset.displayName}"; it controls background-dancer identity variety and crowd wardrobe only. Do not transfer a background extra's identity or wardrobe to a named lead, and do not copy a named lead's wardrobe onto the crowd. Ignore location, composition, camera, lighting, and action from this sheet. ${asset.promptHint}`.trim();
+  }
   return `Use Reference ${referenceNumber} as the custom ${asset.kind} reference "${asset.displayName}"; keep it visually consistent when it appears. ${asset.promptHint}`.trim();
 }
 
-export function defaultPromptHint(role: ReferenceAssetRole) {
+export function defaultPromptHint(role: ReferenceAssetLibraryRole) {
   switch (role) {
     case "character-1":
     case "character-2":
       return "Do not replace this person with a generic subject.";
     case "environment":
       return "Treat this as the continuity anchor for the scene world.";
+    case "crowd":
+      return "Background extras only. Preserve cast variety and wardrobe range without borrowing a named lead's identity or wardrobe.";
     case "custom":
       return "Use only if the selected shot needs this object or extra visual reference.";
   }
+}
+
+export function normalizeCrowdReferenceIds(ids: string[] | undefined) {
+  return [...new Set((ids ?? []).filter(Boolean))].slice(0, MAX_CROWD_REFERENCE_SELECTIONS);
+}
+
+export function getOrderedSelectedReferenceIds(selection: GenerationReferenceSelection) {
+  return [
+    selection.character1Id,
+    selection.character2Id,
+    selection.environmentId,
+    ...normalizeCrowdReferenceIds(selection.crowdIds),
+    selection.customId,
+  ].filter((id, index, ids): id is string => Boolean(id) && ids.indexOf(id) === index);
 }
 
 export function sanitizeReferenceAssetForStorage(asset: ReferenceAsset): ReferenceAsset {
@@ -198,7 +225,7 @@ export function hydrateReferenceAssets(assets: ReferenceAsset[] = []): Reference
   }));
 }
 
-function buildReferenceAssetFolder(role: ReferenceAssetRole) {
+function buildReferenceAssetFolder(role: ReferenceAssetLibraryRole) {
   const now = new Date();
   const year = String(now.getUTCFullYear());
   const month = String(now.getUTCMonth() + 1).padStart(2, "0");
