@@ -118,6 +118,69 @@ body {
   background: #3a3a3a;
 }
 
+.studio-window-range {
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  cursor: ew-resize;
+  touch-action: pan-y;
+}
+
+.studio-window-range:focus-visible {
+  outline: 1px solid #55c5e5;
+  outline-offset: -2px;
+}
+
+.studio-window-range:disabled {
+  cursor: default;
+}
+
+.studio-window-range::-webkit-slider-runnable-track {
+  height: 100%;
+  background: transparent;
+}
+
+.studio-window-range::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 8px;
+  height: 24px;
+  margin-top: 1px;
+  border: 1px solid #55c5e5;
+  border-radius: 1px;
+  background: #123a45;
+  box-shadow: 0 0 0 1px #050505;
+}
+
+.studio-window-range:hover::-webkit-slider-thumb,
+.studio-window-range:focus-visible::-webkit-slider-thumb {
+  background: #1c5b6d;
+}
+
+.studio-window-range::-moz-range-track {
+  height: 100%;
+  border: 0;
+  background: transparent;
+}
+
+.studio-window-range::-moz-range-progress {
+  background: transparent;
+}
+
+.studio-window-range::-moz-range-thumb {
+  width: 8px;
+  height: 24px;
+  border: 1px solid #55c5e5;
+  border-radius: 1px;
+  background: #123a45;
+  box-shadow: 0 0 0 1px #050505;
+}
+
+.studio-window-range:hover::-moz-range-thumb,
+.studio-window-range:focus-visible::-moz-range-thumb {
+  background: #1c5b6d;
+}
+
 * {
   scrollbar-color: #202020 #070707;
   scrollbar-width: thin;
