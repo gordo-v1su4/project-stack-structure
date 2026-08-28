@@ -48,6 +48,7 @@ describe("Trigger orchestration", () => {
       higgsfieldGeneration: "higgsfield-nano-banana-pro-grid",
       deepgramTranscription: "deepgram-transcribe-stored-audio",
       ffmpegPreview: "ffmpeg-preview-or-concat",
+      seedanceAudioReference: "ffmpeg-seedance-audio-reference",
       finalExport: "ffmpeg-final-music-video-export",
       shaderCaptureExport: "ffmpeg-shader-capture-export",
       ffglitch: "ffglitch-transform",

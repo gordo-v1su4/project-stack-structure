@@ -12,6 +12,19 @@ export interface SeedanceContinuationReference {
   instruction: string;
 }
 
+export interface SeedanceAudioVideoReference {
+  tag: "@Video_1";
+  role: "section-audio-timing";
+  label: string;
+  url: string;
+  instruction: string;
+  clipRange: { start: number; end: number };
+  sectionRange: { start: number; end: number };
+  sectionOffset: { start: number; end: number };
+  handleSeconds: { before: number; after: number };
+  placementKey: string;
+}
+
 export interface SeedanceContinuationPacket {
   projectId: string;
   clipId: string;
@@ -28,6 +41,7 @@ export interface SeedanceContinuationPacket {
   aspectRatio: "16:9";
   resolution: "720p";
   references: SeedanceContinuationReference[];
+  audioVideoReference?: SeedanceAudioVideoReference;
   prompt: string;
   errors: string[];
 }
@@ -43,6 +57,7 @@ export function buildSeedanceContinuationPacket(params: {
   referenceAssets: ReferenceAsset[];
   referenceSelection: GenerationReferenceSelection;
   contactSheet?: GeneratedStudioAsset;
+  audioVideoReference?: SeedanceAudioVideoReference;
 }): SeedanceContinuationPacket {
   const references: SeedanceContinuationReference[] = [];
   const errors: string[] = [];
@@ -111,12 +126,15 @@ export function buildSeedanceContinuationPacket(params: {
 
   const completedAction = cleanClause(params.moment?.captionMeta?.action) || "the action already completed in the source shot";
   const storyIntent = cleanClause(params.storyIntent) || "move the current song section forward with a new visual beat";
-  const referenceContract = references.map((reference) => reference.instruction).join("\n");
+  const referenceContract = [params.audioVideoReference?.instruction, ...references.map((reference) => reference.instruction)].filter(Boolean).join("\n");
+  const audioDirection = params.audioVideoReference
+    ? "Use @Video_1 as the timing clock for the selected song section. Keep visual continuity controlled by the image references; generated production audio may be replaced by the master mix in the final edit."
+    : "The section-timing @Video_1 has not been prepared yet. Do not submit this packet until its exact song placement and handles are rendered.";
   const prompt = `${referenceContract}
 
 Begin exactly where @Image_1 ends. Continue the open motion naturally without restarting or replaying ${completedAction}. This clip only advances the narrative job for ${params.sectionLabel}: ${storyIntent}. Stage one clearly new, readable action that changes the character's position, relationship, discovery, or objective; let the camera reveal that change with one motivated move. End on a materially different composition that gives the editor clean handles and makes the story feel farther along than the source shot.
 
-Preserve canonical identities from their assigned character references and preserve the current location from @Image_1${references.some((reference) => reference.role === "environment") ? " plus the assigned environment reference" : ""}. Do not introduce an unrelated location, duplicate people, restart the completed action, or jump ahead to a later song section. Generate natural ambience only; the song is added in post. No captions, titles, logos, or burned-in text. Stop after this one new beat completes.`;
+Preserve canonical identities from their assigned character references and preserve the current location from @Image_1${references.some((reference) => reference.role === "environment") ? " plus the assigned environment reference" : ""}. ${audioDirection} Do not introduce an unrelated location, duplicate people, restart the completed action, or jump ahead to a later song section. No captions, titles, logos, or burned-in text. Stop after this one new beat completes.`;
 
   return {
     projectId: params.projectId,
@@ -134,12 +152,16 @@ Preserve canonical identities from their assigned character references and prese
     aspectRatio: "16:9",
     resolution: "720p",
     references,
+    audioVideoReference: params.audioVideoReference,
     prompt,
     errors,
   };
 }
 
 export function serializeSeedanceContinuationPacket(packet: SeedanceContinuationPacket) {
+  const audioVideoReference = packet.audioVideoReference
+    ? `${packet.audioVideoReference.tag} | ${packet.audioVideoReference.role} | ${packet.audioVideoReference.label}\n${packet.audioVideoReference.url}\nAudio clip ${packet.audioVideoReference.clipRange.start.toFixed(2)}–${packet.audioVideoReference.clipRange.end.toFixed(2)}; selected section occurs at ${packet.audioVideoReference.sectionOffset.start.toFixed(2)}–${packet.audioVideoReference.sectionOffset.end.toFixed(2)} inside Video_1.`
+    : "@Video_1 | NOT PREPARED — render the exact placed section before submission";
   const referenceList = packet.references
     .map((reference) => `${reference.tag} | ${reference.role} | ${reference.label}\n${reference.url}`)
     .join("\n\n");
@@ -149,6 +171,7 @@ export function serializeSeedanceContinuationPacket(packet: SeedanceContinuation
     `Intent: ${packet.feltIntent}`,
     `${packet.model} · Unlimited · ${packet.durationSeconds}s · ${packet.aspectRatio} · ${packet.resolution}`,
     `Mode: ${packet.generationMode} · ${packet.continuationType}`,
+    audioVideoReference,
     referenceList,
     "PROMPT",
     packet.prompt,
@@ -157,7 +180,7 @@ export function serializeSeedanceContinuationPacket(packet: SeedanceContinuation
 
 function buildRoleInstruction(tag: string, role: SeedanceReferenceRole, label: string, kind: string) {
   if (role === "character-identity") {
-    return `${tag} controls canonical identity for ${label} only; ignore pose, background, camera, lighting, and action from that sheet.`;
+    return `${tag} controls canonical identity and wardrobe for ${label} only. Ignore pose, background, camera, lighting, and action from that sheet.`;
   }
   if (role === "environment") {
     return `${tag} controls the named location ${label} only; preserve its architecture, layout, materials, palette, and lighting direction, and ignore any people or action shown in that reference.`;
