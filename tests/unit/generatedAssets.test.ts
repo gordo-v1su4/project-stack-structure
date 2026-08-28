@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { applyApprovedGeneratedAssets, buildGeneratedAssetContextPreview, buildGeneratedAssetPlaybackUrl, resolveGeneratedAssetTrimWindow, type GeneratedStudioAsset } from "@/components/studio/generatedAssets";
+import { applyApprovedGeneratedAssets, buildGeneratedAssetContextPreview, buildGeneratedAssetPlaybackUrl, resolveGeneratedAssetTrimFrameControl, resolveGeneratedAssetTrimWindow, type GeneratedStudioAsset } from "@/components/studio/generatedAssets";
 import type { EditPlanPreviewSegment } from "@/components/studio/musicVideoProject";
 
 const sourceSegments: EditPlanPreviewSegment[] = [
@@ -76,6 +76,22 @@ describe("generated clip approval", () => {
       trimStart: 12.11,
       trimEnd: 15.04,
     });
+  });
+
+  test("uses integer frame values so keyboard nudges never stall on rounded seconds", () => {
+    expect(resolveGeneratedAssetTrimFrameControl({
+      trimStart: 0.767,
+      maxTrimStart: 12.11,
+    })).toEqual({
+      framesPerSecond: 30,
+      maxFrame: 363,
+      valueFrame: 23,
+    });
+
+    expect(resolveGeneratedAssetTrimFrameControl({
+      trimStart: 99,
+      maxTrimStart: 12.11,
+    }).valueFrame).toBe(363);
   });
 
   test("replaces only the exact approved song slot when a source scene repeats", () => {

@@ -57,6 +57,29 @@ export type GeneratedAssetTrimWindow = {
   selectedWidthPct: number;
 };
 
+export type GeneratedAssetTrimFrameControl = {
+  framesPerSecond: number;
+  maxFrame: number;
+  valueFrame: number;
+};
+
+export function resolveGeneratedAssetTrimFrameControl({
+  trimStart,
+  maxTrimStart,
+  framesPerSecond = 30,
+}: {
+  trimStart: number;
+  maxTrimStart: number;
+  framesPerSecond?: number;
+}): GeneratedAssetTrimFrameControl {
+  const normalizedFramesPerSecond = Number.isFinite(framesPerSecond) && framesPerSecond > 0
+    ? Math.round(framesPerSecond)
+    : 30;
+  const maxFrame = Math.max(0, Math.floor(maxTrimStart * normalizedFramesPerSecond + 1e-6));
+  const valueFrame = Math.max(0, Math.min(Math.round(trimStart * normalizedFramesPerSecond), maxFrame));
+  return { framesPerSecond: normalizedFramesPerSecond, maxFrame, valueFrame };
+}
+
 export function resolveGeneratedAssetTrimWindow({
   trimStart,
   sourceDuration,

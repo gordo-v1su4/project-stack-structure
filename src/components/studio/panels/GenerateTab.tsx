@@ -11,7 +11,7 @@ import {
   type ReferenceAsset,
 } from "../referenceAssets";
 import type { BeatJoinAnalysis, ColorPaletteSwatch, MotionDescriptor } from "../types";
-import { buildGeneratedAssetContextPreview, resolveGeneratedAssetTrimWindow, type GeneratedStudioAsset } from "../generatedAssets";
+import { buildGeneratedAssetContextPreview, resolveGeneratedAssetTrimFrameControl, resolveGeneratedAssetTrimWindow, type GeneratedStudioAsset } from "../generatedAssets";
 import { uploadGeneratedClipToRustFs } from "../generatedClipUpload";
 import { buildSeedanceContinuationPacket, serializeSeedanceContinuationPacket } from "../seedanceContinuation";
 import { buildSeedanceAudioPlacementKey, SEEDANCE_AUDIO_HANDLE_SECONDS } from "../seedanceAudioReference";
@@ -1730,6 +1730,10 @@ function GeneratedShotCard({
     sourceDuration: asset.durationSeconds,
     requiredDuration: (asset.target?.songEnd ?? 0) - (asset.target?.songStart ?? 0),
   });
+  const { framesPerSecond: trimFramesPerSecond, maxFrame: maxTrimStartFrame, valueFrame: trimStartFrame } = resolveGeneratedAssetTrimFrameControl({
+    trimStart,
+    maxTrimStart,
+  });
   const context = buildGeneratedAssetContextPreview(previewSegments, asset, 2);
 
   const updateTrimStart = (value: number) => {
@@ -1791,11 +1795,11 @@ function GeneratedShotCard({
                   title={`Selected source window: ${trimStart.toFixed(2)}s–${trimEnd.toFixed(2)}s`}
                   type="range"
                   min={0}
-                  max={maxTrimStart}
-                  step={1 / 30}
-                  value={trimStart}
-                  disabled={maxTrimStart <= 0}
-                  onChange={(event) => updateTrimStart(Number(event.currentTarget.value))}
+                  max={maxTrimStartFrame}
+                  step={1}
+                  value={trimStartFrame}
+                  disabled={maxTrimStartFrame <= 0}
+                  onChange={(event) => updateTrimStart(Number(event.currentTarget.value) / trimFramesPerSecond)}
                   className="studio-window-range absolute inset-0 z-20 h-full w-full"
                 />
               </div>
