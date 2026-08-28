@@ -47,6 +47,53 @@ export type GeneratedAssetContextPreview = {
   targetIndex: number;
 };
 
+export type GeneratedAssetTrimWindow = {
+  sourceDuration: number;
+  requiredDuration: number;
+  maxTrimStart: number;
+  trimStart: number;
+  trimEnd: number;
+  selectedLeftPct: number;
+  selectedWidthPct: number;
+};
+
+export function resolveGeneratedAssetTrimWindow({
+  trimStart,
+  sourceDuration,
+  requiredDuration,
+}: {
+  trimStart?: number;
+  sourceDuration?: number;
+  requiredDuration: number;
+}): GeneratedAssetTrimWindow {
+  const normalizedRequiredDuration = Math.max(0.05, Number.isFinite(requiredDuration) ? requiredDuration : 0.05);
+  const normalizedSourceDuration = Math.max(
+    normalizedRequiredDuration,
+    Number.isFinite(sourceDuration) ? sourceDuration ?? normalizedRequiredDuration : normalizedRequiredDuration,
+  );
+  const maxTrimStart = Math.max(0, normalizedSourceDuration - normalizedRequiredDuration);
+  const normalizedTrimStart = Math.max(
+    0,
+    Math.min(Number.isFinite(trimStart) ? trimStart ?? 0 : 0, maxTrimStart),
+  );
+  const trimEnd = Math.min(normalizedSourceDuration, normalizedTrimStart + normalizedRequiredDuration);
+  const selectedWidthPct = Math.min(100, (normalizedRequiredDuration / normalizedSourceDuration) * 100);
+  const selectedLeftPct = Math.min(
+    100 - selectedWidthPct,
+    (normalizedTrimStart / normalizedSourceDuration) * 100,
+  );
+
+  return {
+    sourceDuration: normalizedSourceDuration,
+    requiredDuration: normalizedRequiredDuration,
+    maxTrimStart,
+    trimStart: normalizedTrimStart,
+    trimEnd,
+    selectedLeftPct,
+    selectedWidthPct,
+  };
+}
+
 export function sanitizeGeneratedStudioAssetForStorage(asset: GeneratedStudioAsset): GeneratedStudioAsset {
   return {
     id: asset.id,
@@ -102,13 +149,16 @@ export function applyApprovedGeneratedAssets(
     if (index < 0) continue;
 
     const replaced = next[index];
-    const requiredDuration = Math.max(0.05, replaced.musicEnd - replaced.musicStart);
-    const trimStart = Math.max(0, Math.min(asset.trimStart ?? 0, Math.max(0, (asset.durationSeconds ?? requiredDuration) - requiredDuration)));
+    const { trimStart, trimEnd } = resolveGeneratedAssetTrimWindow({
+      trimStart: asset.trimStart,
+      sourceDuration: asset.durationSeconds,
+      requiredDuration: replaced.musicEnd - replaced.musicStart,
+    });
     next[index] = {
       ...replaced,
       videoUrl,
       startTime: trimStart,
-      endTime: trimStart + requiredDuration,
+      endTime: trimEnd,
       label: asset.title ?? `${asset.model} generated replacement`,
       momentId: undefined,
       sourceClipId: undefined,
@@ -141,13 +191,16 @@ export function buildGeneratedAssetContextPreview(
   const replaced = context[localTargetIndex];
   if (!replaced) return null;
 
-  const requiredDuration = Math.max(0.05, replaced.musicEnd - replaced.musicStart);
-  const trimStart = Math.max(0, Math.min(asset.trimStart ?? 0, Math.max(0, (asset.durationSeconds ?? requiredDuration) - requiredDuration)));
+  const { trimStart, trimEnd } = resolveGeneratedAssetTrimWindow({
+    trimStart: asset.trimStart,
+    sourceDuration: asset.durationSeconds,
+    requiredDuration: replaced.musicEnd - replaced.musicStart,
+  });
   context[localTargetIndex] = {
     ...replaced,
     videoUrl,
     startTime: trimStart,
-    endTime: trimStart + requiredDuration,
+    endTime: trimEnd,
     label: `GENERATED CANDIDATE · ${asset.model} · ${asset.title ?? target.sectionLabel}`,
     momentId: undefined,
     sourceClipId: undefined,

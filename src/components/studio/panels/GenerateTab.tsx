@@ -11,7 +11,7 @@ import {
   type ReferenceAsset,
 } from "../referenceAssets";
 import type { BeatJoinAnalysis, ColorPaletteSwatch, MotionDescriptor } from "../types";
-import { buildGeneratedAssetContextPreview, type GeneratedStudioAsset } from "../generatedAssets";
+import { buildGeneratedAssetContextPreview, resolveGeneratedAssetTrimWindow, type GeneratedStudioAsset } from "../generatedAssets";
 import { uploadGeneratedClipToRustFs } from "../generatedClipUpload";
 import { buildSeedanceContinuationPacket, serializeSeedanceContinuationPacket } from "../seedanceContinuation";
 import { buildSeedanceAudioPlacementKey, SEEDANCE_AUDIO_HANDLE_SECONDS } from "../seedanceAudioReference";
@@ -1725,13 +1725,11 @@ function GeneratedShotCard({
   const [playingSelection, setPlayingSelection] = useState(false);
   const videoUrl = asset.fullStorage?.mediaUrl ?? asset.fullStorage?.publicUrl ?? asset.resultUrl;
   const reviewStatus = asset.reviewStatus ?? "pending";
-  const requiredDuration = Math.max(0.05, (asset.target?.songEnd ?? 0) - (asset.target?.songStart ?? 0));
-  const sourceDuration = Math.max(requiredDuration, asset.durationSeconds ?? requiredDuration);
-  const maxTrimStart = Math.max(0, sourceDuration - requiredDuration);
-  const trimStart = Math.max(0, Math.min(asset.trimStart ?? 0, maxTrimStart));
-  const trimEnd = Math.min(sourceDuration, trimStart + requiredDuration);
-  const selectedWidthPct = Math.min(100, (requiredDuration / sourceDuration) * 100);
-  const selectedLeftPct = Math.min(100 - selectedWidthPct, (trimStart / sourceDuration) * 100);
+  const { requiredDuration, sourceDuration, maxTrimStart, trimStart, trimEnd, selectedWidthPct, selectedLeftPct } = resolveGeneratedAssetTrimWindow({
+    trimStart: asset.trimStart,
+    sourceDuration: asset.durationSeconds,
+    requiredDuration: (asset.target?.songEnd ?? 0) - (asset.target?.songStart ?? 0),
+  });
   const context = buildGeneratedAssetContextPreview(previewSegments, asset, 2);
 
   const updateTrimStart = (value: number) => {
@@ -1787,17 +1785,20 @@ function GeneratedShotCard({
                 <div className="absolute inset-y-0 w-1 bg-[#55c5e5]" style={{ left: `${selectedLeftPct}%` }} title={`In ${trimStart.toFixed(2)}s`} />
                 <div className="absolute inset-y-0 w-1 -translate-x-full bg-[#55c5e5]" style={{ left: `${selectedLeftPct + selectedWidthPct}%` }} title={`Out ${trimEnd.toFixed(2)}s`} />
                 <div className="pointer-events-none absolute inset-0 flex items-center justify-center uppercase tracking-[0.12em] text-[#b6e6ef]">drag selected window</div>
+                <input
+                  aria-label={`Move source window for ${asset.title ?? asset.model}`}
+                  aria-valuetext={`${trimStart.toFixed(2)} to ${trimEnd.toFixed(2)} seconds`}
+                  title={`Selected source window: ${trimStart.toFixed(2)}s–${trimEnd.toFixed(2)}s`}
+                  type="range"
+                  min={0}
+                  max={maxTrimStart}
+                  step={1 / 30}
+                  value={trimStart}
+                  disabled={maxTrimStart <= 0}
+                  onChange={(event) => updateTrimStart(Number(event.currentTarget.value))}
+                  className="studio-window-range absolute inset-0 z-20 h-full w-full"
+                />
               </div>
-              <input
-                aria-label={`Trim window for ${asset.title ?? asset.model}`}
-                type="range"
-                min={0}
-                max={maxTrimStart}
-                step={1 / 30}
-                value={trimStart}
-                onChange={(event) => updateTrimStart(Number(event.target.value))}
-                className="mt-1 w-full accent-[#55c5e5]"
-              />
               <div className="mt-1 grid grid-cols-2 gap-2">
                 <div className="rounded-[1px] border border-[#1d343a] bg-[#071014] px-2 py-1"><span className="text-[#52737c]">IN / START FRAME</span><div className="mt-0.5 text-[#b6e6ef]">{trimStart.toFixed(2)}s · f{Math.round(trimStart * 30)}</div></div>
                 <div className="rounded-[1px] border border-[#1d343a] bg-[#071014] px-2 py-1"><span className="text-[#52737c]">OUT / LAST FRAME</span><div className="mt-0.5 text-[#b6e6ef]">{trimEnd.toFixed(2)}s · f{Math.round(trimEnd * 30)}</div></div>

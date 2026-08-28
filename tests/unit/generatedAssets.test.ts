@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { applyApprovedGeneratedAssets, buildGeneratedAssetContextPreview, buildGeneratedAssetPlaybackUrl, type GeneratedStudioAsset } from "@/components/studio/generatedAssets";
+import { applyApprovedGeneratedAssets, buildGeneratedAssetContextPreview, buildGeneratedAssetPlaybackUrl, resolveGeneratedAssetTrimWindow, type GeneratedStudioAsset } from "@/components/studio/generatedAssets";
 import type { EditPlanPreviewSegment } from "@/components/studio/musicVideoProject";
 
 const sourceSegments: EditPlanPreviewSegment[] = [
@@ -55,6 +55,29 @@ function generatedAsset(overrides: Partial<GeneratedStudioAsset>): GeneratedStud
 }
 
 describe("generated clip approval", () => {
+  test("moves a fixed-duration generated source window and clamps both edges", () => {
+    expect(resolveGeneratedAssetTrimWindow({
+      trimStart: 4.25,
+      sourceDuration: 15.04,
+      requiredDuration: 2.93,
+    })).toMatchObject({
+      sourceDuration: 15.04,
+      requiredDuration: 2.93,
+      maxTrimStart: 12.11,
+      trimStart: 4.25,
+      trimEnd: 7.18,
+    });
+
+    expect(resolveGeneratedAssetTrimWindow({
+      trimStart: 99,
+      sourceDuration: 15.04,
+      requiredDuration: 2.93,
+    })).toMatchObject({
+      trimStart: 12.11,
+      trimEnd: 15.04,
+    });
+  });
+
   test("replaces only the exact approved song slot when a source scene repeats", () => {
     const resolved = applyApprovedGeneratedAssets(sourceSegments, [generatedAsset({ trimStart: 1.5 })]);
 
