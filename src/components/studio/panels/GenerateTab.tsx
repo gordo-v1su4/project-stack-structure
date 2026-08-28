@@ -33,6 +33,7 @@ type GenerateTabProps = {
   referenceAssets: ReferenceAsset[];
   persistedGeneratedAssets: GeneratedStudioAsset[];
   masterAudioRef: SeedanceMasterAudioRef | null;
+  onEnsureOwnedMasterAudio: () => Promise<SeedanceMasterAudioRef>;
   onGeneratedAsset: (asset: GeneratedStudioAsset) => void;
   selectedPreviewRange: PreviewCutRange | null;
   onSelectedPreviewRange: (range: PreviewCutRange | null) => void;
@@ -40,10 +41,11 @@ type GenerateTabProps = {
   onAuditionGeneratedAsset: (asset: GeneratedStudioAsset, contextRadius: number) => void;
 };
 
-type SeedanceMasterAudioRef = {
+export type SeedanceMasterAudioRef = {
   bucket: string;
   objectKey: string;
   fileName: string;
+  mimeType?: string;
   duration: number;
 };
 
@@ -182,7 +184,7 @@ const NEED_LABELS: Record<GenerationNeed, string> = {
   "reroll-match": "Reroll Match",
 };
 
-export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, onSelectJoin, onsetDensity, lyricCueBlend, lyricMergeWindow, previewSegments, referenceAssets, persistedGeneratedAssets, masterAudioRef, onGeneratedAsset, selectedPreviewRange, onSelectedPreviewRange, onAuditionPreviewRange, onAuditionGeneratedAsset }: GenerateTabProps) {
+export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, onSelectJoin, onsetDensity, lyricCueBlend, lyricMergeWindow, previewSegments, referenceAssets, persistedGeneratedAssets, masterAudioRef, onEnsureOwnedMasterAudio, onGeneratedAsset, selectedPreviewRange, onSelectedPreviewRange, onAuditionPreviewRange, onAuditionGeneratedAsset }: GenerateTabProps) {
   const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
   const [timelineZoomMode, setTimelineZoomMode] = useState<TimelineZoomMode>("fit");
   const [referenceSelection, setReferenceSelection] = useState<GenerationReferenceSelection>({});
@@ -514,6 +516,7 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
             isHiggsfieldGenerating={isHiggsfieldGenerating}
             persistedGeneratedAssets={persistedGeneratedAssets}
             masterAudioRef={masterAudioRef}
+            onEnsureOwnedMasterAudio={onEnsureOwnedMasterAudio}
             onRunHiggsfield={runHiggsfieldGeneration}
             providerStatus={generationStatus}
             isGenerating={isGenerating}
@@ -1108,6 +1111,7 @@ function FrameExtensionPanel({
   isHiggsfieldGenerating,
   persistedGeneratedAssets,
   masterAudioRef,
+  onEnsureOwnedMasterAudio,
   onRunHiggsfield,
   providerStatus,
   isGenerating,
@@ -1130,6 +1134,7 @@ function FrameExtensionPanel({
   isHiggsfieldGenerating: boolean;
   persistedGeneratedAssets: GeneratedStudioAsset[];
   masterAudioRef: SeedanceMasterAudioRef | null;
+  onEnsureOwnedMasterAudio: () => Promise<SeedanceMasterAudioRef>;
   onRunHiggsfield: (params: HiggsfieldGenerationFormState) => void;
   providerStatus: string;
   isGenerating: boolean;
@@ -1242,23 +1247,41 @@ function FrameExtensionPanel({
     setSeedanceAudioStatus(`Rendering black Video_1 for ${fmtCutTime(songStart)}–${fmtCutTime(songEnd)} plus two-second handles...`);
     try {
       const requestKey = sanitizeSeedanceRequestKey(`${projectId}-${slot?.item.id ?? selectedSegment?.sectionId ?? "section"}-${songStart.toFixed(3)}-${songEnd.toFixed(3)}`);
-      const response = await fetch("/api/generate/seedance/audio-reference", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          requestKey,
-          audio: masterAudioRef,
-          songStart,
-          songEnd,
-          songDuration: masterAudioRef.duration,
-          handleSeconds: SEEDANCE_AUDIO_HANDLE_SECONDS,
-        }),
-      });
-      const queued = await response.json() as { runId?: string; error?: string };
+      const queueAudioReference = async (audio: SeedanceMasterAudioRef) => {
+        const response = await fetch("/api/generate/seedance/audio-reference", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            requestKey,
+            audio,
+            songStart,
+            songEnd,
+            songDuration: audio.duration,
+            handleSeconds: SEEDANCE_AUDIO_HANDLE_SECONDS,
+          }),
+        });
+        const queued = await response.json() as { runId?: string; error?: string };
+        return { response, queued };
+      };
+
+      let activeMasterAudio = masterAudioRef;
+      let { response, queued } = await queueAudioReference(activeMasterAudio);
+      if (response.status === 403 && /does not belong to this signed-in user/i.test(queued.error ?? "")) {
+        setSeedanceAudioStatus("Re-registering the restored master audio under this signed-in account...");
+        activeMasterAudio = await onEnsureOwnedMasterAudio();
+        ({ response, queued } = await queueAudioReference(activeMasterAudio));
+      }
       if (!response.ok || !queued.runId) throw new Error(queued.error || `Seedance timing render failed (${response.status}).`);
       const output = await waitForTriggerRunOutput(queued.runId, { timeoutMs: 15 * 60_000 }) as Omit<PreparedSeedanceAudioReference, "placementKey">;
       if (!output.videoUrl) throw new Error("Trigger completed without a durable Video_1 URL.");
-      setPreparedAudioReference({ ...output, placementKey });
+      const activePlacementKey = buildSeedanceAudioPlacementKey({
+        audioObjectKey: activeMasterAudio.objectKey,
+        songStart,
+        songEnd,
+        songDuration: activeMasterAudio.duration,
+        handleSeconds: SEEDANCE_AUDIO_HANDLE_SECONDS,
+      });
+      setPreparedAudioReference({ ...output, placementKey: activePlacementKey });
       setSeedanceAudioStatus(`Video_1 ready · audio ${fmtCutTime(output.clipStart)}–${fmtCutTime(output.clipEnd)} · selected section begins ${output.sectionStartOffset.toFixed(2)}s into the reference.`);
       setSeedanceCopyStatus("Video_1 is ready. Copy the complete submission packet when the prompt is approved.");
     } catch (error) {
@@ -1339,7 +1362,7 @@ function FrameExtensionPanel({
             <div className="text-[8px] uppercase tracking-[0.16em] text-[#6ca6d2]">Seedance continuation handoff</div>
             <div className="mt-1 text-[9px] leading-4 text-[#7d8fa1]">Uses the selected shot&apos;s real last frame as @Image_1. At submission time, Trigger.dev renders the exact placed song range plus two-second handles over solid black as @Video_1. Moving the cut invalidates that timing reference.</div>
           </div>
-          <div className="rounded-[2px] border border-[#24476f] px-2 py-1 font-mono text-[8px] uppercase tracking-[0.12em] text-[#6ca6d2]">Fast · Unlimited · 15s · 16:9 · 720p</div>
+          <div className="rounded-[2px] border border-[#24476f] px-2 py-1 font-mono text-[8px] uppercase tracking-[0.12em] text-[#6ca6d2]">Fast · Unlimited · 15s · 16:9 · 480p</div>
         </div>
         <div className="mt-2 rounded-[2px] border border-[#14283d] bg-[#03070c] p-2 font-mono text-[8px] leading-4 text-[#72879a]">
           <div>{seedancePacket.references.length} ordered image references · @Image_1 is the accepted ending frame · @Video_1 is audio/rhythm/lip-sync timing only.</div>

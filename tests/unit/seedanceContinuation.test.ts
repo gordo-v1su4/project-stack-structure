@@ -127,12 +127,12 @@ describe("Seedance continuation packet", () => {
       ["@Image_5", "crowd-extras"],
       ["@Image_6", "contact-sheet"],
     ]);
-    expect(packet.resolution).toBe("720p");
+    expect(packet.resolution).toBe("480p");
     expect(packet.prompt).toContain("without restarting or replaying Diego walks through the hallway");
     expect(packet.prompt).toContain("one clearly new, readable action");
     expect(packet.prompt).toContain("@Video_1 controls song audio, rhythm, lyric timing, and lip-sync timing only");
     expect(packet.prompt).not.toContain("song is added in post");
-    expect(packet.references[1]?.instruction).toContain("identity and wardrobe for Diego only");
+    expect(packet.references[1]?.instruction).toBe("@Image_2 controls Diego's identity and wardrobe only.");
     expect(packet.references[3]?.instruction).toContain("does not control any named lead");
     expect(packet.references[3]?.instruction).toContain("Do not copy a named lead's identity or wardrobe");
     expect(packet.prompt).not.toContain("red plaid shirt");
