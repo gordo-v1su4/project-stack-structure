@@ -984,17 +984,9 @@ export default function StudioApp() {
     try {
       audioFile = await resolveMasterAudioFile(beatJoinAnalysis, audioFileRef.current);
     } catch {
-      const params = new URLSearchParams({
-        bucket: beatJoinAnalysis.storageBucket,
-        objectKey: beatJoinAnalysis.storagePath,
-      });
-      const resolution = await fetch(`/api/storage/download-url?${params.toString()}`);
-      const payload = (await resolution.json().catch(() => null)) as { fileUrl?: string; error?: string } | null;
-      if (!resolution.ok || !payload?.fileUrl) {
-        throw new Error(payload?.error ?? "Master audio could not be recovered; re-upload the song.");
-      }
-      audioFile = await fetchMediaUrlAsFile(
-        payload.fileUrl,
+      audioFile = await fetchStoredMediaAsFile(
+        beatJoinAnalysis.storageBucket,
+        beatJoinAnalysis.storagePath,
         beatJoinAnalysis.sourceLabel || "master-audio.wav",
         "audio/wav",
       );
@@ -1201,17 +1193,9 @@ export default function StudioApp() {
               if (!beatJoinAnalysis.storageBucket || !beatJoinAnalysis.storagePath) {
                 throw new Error("Master audio could not be recovered for migration; re-upload the song.");
               }
-              const params = new URLSearchParams({
-                bucket: beatJoinAnalysis.storageBucket,
-                objectKey: beatJoinAnalysis.storagePath,
-              });
-              const resolution = await fetch(`/api/storage/download-url?${params.toString()}`);
-              const payload = (await resolution.json().catch(() => null)) as { fileUrl?: string; error?: string } | null;
-              if (!resolution.ok || !payload?.fileUrl) {
-                throw new Error(payload?.error ?? "Could not resolve the master audio download.");
-              }
-              return fetchMediaUrlAsFile(
-                payload.fileUrl,
+              return fetchStoredMediaAsFile(
+                beatJoinAnalysis.storageBucket,
+                beatJoinAnalysis.storagePath,
                 `${beatJoinAnalysis.sourceLabel || "master-audio"}.wav`,
                 "audio/wav",
               );
@@ -1554,6 +1538,17 @@ export default function StudioApp() {
   async function fetchMediaUrlAsFile(url: string, fileName: string, fallbackType: string) {
     const response = await fetch(url);
     if (!response.ok) throw new Error(`Could not read media URL for export: ${response.status}`);
+    const blob = await response.blob();
+    return new File([blob], fileName, { type: blob.type || fallbackType });
+  }
+
+  async function fetchStoredMediaAsFile(bucket: string, objectKey: string, fileName: string, fallbackType: string) {
+    const params = new URLSearchParams({ bucket, objectKey });
+    const response = await fetch(`/api/storage/media?${params.toString()}`);
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+      throw new Error(payload?.error ?? `Could not recover stored project media (${response.status}).`);
+    }
     const blob = await response.blob();
     return new File([blob], fileName, { type: blob.type || fallbackType });
   }
