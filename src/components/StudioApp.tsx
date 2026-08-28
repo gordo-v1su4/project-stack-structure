@@ -1555,12 +1555,26 @@ export default function StudioApp() {
 
   async function reuploadThroughScopedPath(file: File, folderBase: string): Promise<{ bucket: string; objectKey: string; chunks?: Array<{ bucket: string; objectKey: string }> }> {
     const chunked = await uploadFileInChunks(file, folderBase);
-    if (chunked && chunked.chunks[0]) {
-      return {
-        bucket: chunked.chunks[0].bucket,
-        objectKey: chunked.chunks[0].objectKey,
-        chunks: chunked.chunks.map((chunk) => ({ bucket: chunk.bucket, objectKey: chunk.objectKey })),
-      };
+    if (chunked) {
+      const response = await fetch("/api/storage/assemble", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          size: chunked.size,
+          contentType: chunked.contentType || file.type,
+          fileName: file.name,
+          folder: folderBase,
+          chunks: chunked.chunks,
+        }),
+      });
+      const payload = (await response.json().catch(() => null)) as { bucket?: unknown; storagePath?: unknown; objectKey?: unknown; error?: unknown } | null;
+      const bucket = typeof payload?.bucket === "string" ? payload.bucket : "";
+      const objectKey = typeof payload?.objectKey === "string" ? payload.objectKey : typeof payload?.storagePath === "string" ? payload.storagePath : "";
+      if (!response.ok || !bucket || !objectKey) {
+        const message = typeof payload?.error === "string" ? payload.error : `HTTP ${response.status}`;
+        throw new Error(`Scoped chunk assembly failed: ${message}`);
+      }
+      return { bucket, objectKey };
     }
     const formData = new FormData();
     formData.append("file", file);
