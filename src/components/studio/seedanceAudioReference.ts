@@ -10,6 +10,47 @@ export type SeedanceAudioReferenceWindow = {
   sectionEndOffset: number;
 };
 
+export type SeedanceMediaProbeSummary = {
+  duration: number;
+  size: number;
+  hasAudio: boolean;
+  hasVideo: boolean;
+};
+
+const MIN_SOURCE_BYTES = 4_096;
+const MIN_VIDEO_REFERENCE_BYTES = 16_384;
+const DURATION_TOLERANCE_SECONDS = 0.25;
+
+export function validateSeedanceAudioSource(
+  probe: SeedanceMediaProbeSummary,
+  window: Pick<SeedanceAudioReferenceWindow, "clipEnd">,
+) {
+  if (!probe.hasAudio) {
+    throw new Error("The selected master-audio object does not contain an audio stream. Replace it with the real song file before preparing Video_1.");
+  }
+  if (!Number.isFinite(probe.duration) || probe.duration + DURATION_TOLERANCE_SECONDS < window.clipEnd) {
+    throw new Error("The selected master-audio object does not cover the requested song placement.");
+  }
+  if (!Number.isFinite(probe.size) || probe.size < MIN_SOURCE_BYTES) {
+    throw new Error("The selected master-audio object is empty or truncated.");
+  }
+}
+
+export function validateSeedanceVideoReference(
+  probe: SeedanceMediaProbeSummary,
+  window: Pick<SeedanceAudioReferenceWindow, "duration">,
+) {
+  if (!probe.hasVideo || !probe.hasAudio) {
+    throw new Error("Video_1 must contain both a black video stream and the selected song audio stream.");
+  }
+  if (!Number.isFinite(probe.duration) || probe.duration + DURATION_TOLERANCE_SECONDS < window.duration) {
+    throw new Error("Video_1 is shorter than the requested song window and handles.");
+  }
+  if (!Number.isFinite(probe.size) || probe.size < MIN_VIDEO_REFERENCE_BYTES) {
+    throw new Error("Video_1 is empty or truncated.");
+  }
+}
+
 export function resolveSeedanceAudioReferenceWindow(params: {
   songStart: number;
   songEnd: number;

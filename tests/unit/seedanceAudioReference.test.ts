@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 
-import { buildSeedanceAudioPlacementKey, resolveSeedanceAudioReferenceWindow } from "@/components/studio/seedanceAudioReference";
+import {
+  buildSeedanceAudioPlacementKey,
+  resolveSeedanceAudioReferenceWindow,
+  validateSeedanceAudioSource,
+  validateSeedanceVideoReference,
+} from "@/components/studio/seedanceAudioReference";
 
 describe("Seedance audio timing reference", () => {
   test("adds two-second handles around a placed section", () => {
@@ -50,3 +55,28 @@ describe("Seedance audio timing reference", () => {
     expect(outOfSongError instanceof Error).toBe(true);
   });
 });
+
+describe("Seedance audio-reference media validation", () => {
+  test("rejects a restored master object with no audio stream", () => {
+    const error = captureError(() => validateSeedanceAudioSource({ duration: 246, size: 377, hasAudio: false, hasVideo: false }, { clipEnd: 170 }));
+    expect(error?.message.includes("does not contain an audio stream")).toBe(true);
+  });
+
+  test("rejects an empty Video_1 container", () => {
+    const error = captureError(() => validateSeedanceVideoReference({ duration: 0, size: 377, hasAudio: false, hasVideo: false }, { duration: 7 }));
+    expect(error?.message.includes("must contain both")).toBe(true);
+  });
+
+  test("accepts a complete black-video timing reference", () => {
+    expect(captureError(() => validateSeedanceVideoReference({ duration: 7, size: 280_000, hasAudio: true, hasVideo: true }, { duration: 7 }))).toBe(null);
+  });
+});
+
+function captureError(run: () => void) {
+  try {
+    run();
+    return null;
+  } catch (error) {
+    return error instanceof Error ? error : new Error(String(error));
+  }
+}
