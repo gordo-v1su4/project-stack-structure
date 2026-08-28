@@ -6,7 +6,13 @@ import { promisify } from "node:util";
 
 import { AbortTaskRunError, logger, task } from "@trigger.dev/sdk";
 
-import { resolveSeedanceAudioReferenceWindow, type SeedanceAudioReferenceWindow } from "@/components/studio/seedanceAudioReference";
+import { probeMediaFile } from "@/components/studio/mediaProbe";
+import {
+  resolveSeedanceAudioReferenceWindow,
+  validateSeedanceAudioSource,
+  validateSeedanceVideoReference,
+  type SeedanceAudioReferenceWindow,
+} from "@/components/studio/seedanceAudioReference";
 import { downloadMediaGatewayFile, uploadFileToMediaGateway, type MediaGatewayUploadResult } from "@/lib/mediaGateway";
 
 import { MEDIA_ASSEMBLY_MACHINE, mediaAssemblyQueue } from "./queues";
@@ -66,6 +72,13 @@ export const seedanceAudioReferenceTask = task({
       const outputPath = path.join(workspace, `${sanitize(payload.requestKey)}.mp4`);
       await writeFile(inputPath, Buffer.from(source.bytes));
 
+      const inputProbe = await probeMediaFile(inputPath);
+      try {
+        validateSeedanceAudioSource(inputProbe, window);
+      } catch (error) {
+        throw new AbortTaskRunError(error instanceof Error ? error.message : "The selected master-audio object is invalid.");
+      }
+
       await execFileAsync(process.env.FFMPEG_PATH ?? "ffmpeg", [
         "-hide_banner",
         "-loglevel", "error",
@@ -89,6 +102,13 @@ export const seedanceAudioReferenceTask = task({
         outputPath,
       ]);
 
+      const outputProbe = await probeMediaFile(outputPath);
+      try {
+        validateSeedanceVideoReference(outputProbe, window);
+      } catch (error) {
+        throw new AbortTaskRunError(error instanceof Error ? error.message : "The rendered Video_1 is invalid.");
+      }
+
       const output = await readFile(outputPath);
       const storage = await uploadFileToMediaGateway({
         file: new File([output], `${sanitize(payload.requestKey)}.mp4`, { type: "video/mp4" }),
@@ -103,6 +123,9 @@ export const seedanceAudioReferenceTask = task({
         songEnd: payload.songEnd,
         clipStart: window.clipStart,
         clipEnd: window.clipEnd,
+        inputDuration: inputProbe.duration,
+        outputDuration: outputProbe.duration,
+        outputBytes: outputProbe.size,
       });
       markWorkCompleted("Seedance timing reference ready", { completedItems: 1, totalItems: 1 });
       return { ...window, requestKey: payload.requestKey, generatedAt: new Date().toISOString(), videoUrl, storage };
