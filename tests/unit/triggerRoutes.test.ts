@@ -36,6 +36,7 @@ const triggerMocks = {
     higgsfieldGeneration: "higgsfield-nano-banana-pro-grid",
     deepgramTranscription: "deepgram-transcribe-stored-audio",
     ffmpegPreview: "ffmpeg-preview-or-concat",
+    seedanceAudioReference: "ffmpeg-seedance-audio-reference",
     finalExport: "ffmpeg-final-music-video-export",
     shaderCaptureExport: "ffmpeg-shader-capture-export",
     ffglitch: "ffglitch-transform",
@@ -50,6 +51,7 @@ const triggerMocks = {
   }),
   triggerMediaSceneDetection: mock(async () => ({ id: "run-media-123" })),
   triggerFfmpegPreview: mock(async () => ({ id: "run-preview-123" })),
+  triggerSeedanceAudioReference: mock(async () => ({ id: "run-seedance-audio-123" })),
   triggerFinalExport: mock(async () => ({ id: "run-export-123" })),
   triggerShaderCaptureExport: mock(async () => ({ id: "run-shader-123" })),
   triggerFfglitch: mock(async () => ({ id: "run-ffglitch-123" })),
@@ -94,6 +96,7 @@ const { POST: postEssentia } = await import("@/app/api/essentia/full/route");
 const { POST: postStorageUpload } = await import("@/app/api/storage/upload/route");
 const { POST: postMediaJob } = await import("@/app/api/media/video/jobs/route");
 const { POST: postPreviewGateway } = await import("@/app/api/preview/gateway/route");
+const { POST: postSeedanceAudioReference } = await import("@/app/api/generate/seedance/audio-reference/route");
 const { POST: postFinalExport } = await import("@/app/api/export/final/route");
 const { POST: postShaderExport } = await import("@/app/api/export/shader-capture/route");
 const { POST: postFfglitch } = await import("@/app/api/ffglitch/route");
@@ -425,6 +428,69 @@ describe("Next route Trigger.dev dispatch boundary", () => {
     expect(payload.runId).toBe("run-preview-123");
     expect(uploadFileToMediaGatewayMock).toHaveBeenCalledTimes(1);
     expect(triggerMocks.triggerFfmpegPreview).toHaveBeenCalledTimes(1);
+  });
+
+  test("queues a just-in-time Seedance audio timing reference from owned durable audio", async () => {
+    resetMocks();
+    const response = await postSeedanceAudioReference(new Request("http://localhost/api/generate/seedance/audio-reference", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        requestKey: "verse-2-42-57",
+        audio: {
+          bucket: "stack-structure",
+          objectKey: "media-uploads/github-test-user/source-audio/master.wav",
+          fileName: "master.wav",
+        },
+        songStart: 42,
+        songEnd: 57,
+        songDuration: 246,
+        handleSeconds: 2,
+      }),
+    }));
+    const payload = await jsonResponse(response);
+
+    expect(response.status).toBe(202);
+    expect(payload.runId).toBe("run-seedance-audio-123");
+    expect(payload.window).toEqual({
+      clipStart: 40,
+      clipEnd: 59,
+      duration: 19,
+      handleBefore: 2,
+      handleAfter: 2,
+      sectionStartOffset: 2,
+      sectionEndOffset: 17,
+    });
+    expect(triggerMocks.triggerSeedanceAudioReference).toHaveBeenCalledTimes(1);
+  });
+
+  test("rejects anonymous or foreign Seedance audio timing references", async () => {
+    resetMocks();
+    authenticatedUserId = null;
+    const anonymous = await postSeedanceAudioReference(new Request("http://localhost/api/generate/seedance/audio-reference", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    }));
+    expect(anonymous.status).toBe(401);
+
+    resetMocks();
+    const foreign = await postSeedanceAudioReference(new Request("http://localhost/api/generate/seedance/audio-reference", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        requestKey: "foreign-audio",
+        audio: {
+          bucket: "stack-structure",
+          objectKey: "media-uploads/github-other-user/source-audio/master.wav",
+        },
+        songStart: 42,
+        songEnd: 57,
+        songDuration: 246,
+      }),
+    }));
+    expect(foreign.status).toBe(403);
+    expect(triggerMocks.triggerSeedanceAudioReference).toHaveBeenCalledTimes(0);
   });
 
   test("uploads final-export inputs before queuing the export task", async () => {

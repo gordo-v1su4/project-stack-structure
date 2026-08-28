@@ -5,6 +5,7 @@ import type { LocalGenerationPayload, localGenerationTask } from "@/trigger/loca
 import type { HiggsfieldGenerationPayload, higgsfieldGenerationTask } from "@/trigger/higgsfield";
 import type { DeepgramStoredAudioPayload, deepgramTranscriptionTask } from "@/trigger/deepgram";
 import type { FfmpegPreviewPayload, ffmpegPreviewTask } from "@/trigger/ffmpeg";
+import type { SeedanceAudioReferencePayload, seedanceAudioReferenceTask } from "@/trigger/seedanceAudioReference";
 import type { FinalExportPayload, ShaderCaptureExportPayload, finalExportTask, shaderCaptureExportTask } from "@/trigger/export";
 import type { SmartSceneCaptionPayload, smartSceneCaptionTask } from "@/trigger/caption";
 import type { EssentiaStoredAudioPayload, essentiaStoredAudioTask } from "@/trigger/essentia";
@@ -24,6 +25,7 @@ export const STACK_STRUCTURE_TRIGGER_TASKS = {
   higgsfieldGeneration: "higgsfield-nano-banana-pro-grid",
   deepgramTranscription: "deepgram-transcribe-stored-audio",
   ffmpegPreview: "ffmpeg-preview-or-concat",
+  seedanceAudioReference: "ffmpeg-seedance-audio-reference",
   finalExport: "ffmpeg-final-music-video-export",
   shaderCaptureExport: "ffmpeg-shader-capture-export",
   ffglitch: "ffglitch-transform",
@@ -196,6 +198,29 @@ export async function triggerFfmpegPreview(payload: FfmpegPreviewPayload) {
       JSON.stringify(payload.segments ?? []),
       String(payload.startTime ?? 0),
       String(payload.endTime ?? 1),
+    ]),
+    idempotencyKeyTTL: "24h",
+    maxAttempts: 1,
+    tags: dispatch.tags,
+    metadata: dispatch.metadata,
+  });
+}
+
+export async function triggerSeedanceAudioReference(payload: SeedanceAudioReferencePayload) {
+  assertTriggerConfigured();
+  const dispatch = await buildDispatchContext(["stack-structure", "ffmpeg", "seedance-audio", "media-assembly"], {
+    stageLabel: "Preparing Seedance timing reference",
+    progressMode: "indeterminate",
+  });
+  return tasks.trigger<typeof seedanceAudioReferenceTask>(STACK_STRUCTURE_TRIGGER_TASKS.seedanceAudioReference, payload, {
+    idempotencyKey: createTriggerIdempotencyKey("seedance-audio-reference", [
+      payload.requestKey,
+      payload.audio.bucket,
+      payload.audio.objectKey,
+      String(payload.songStart),
+      String(payload.songEnd),
+      String(payload.songDuration),
+      String(payload.handleSeconds ?? 2),
     ]),
     idempotencyKeyTTL: "24h",
     maxAttempts: 1,

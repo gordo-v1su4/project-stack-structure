@@ -76,6 +76,18 @@ describe("Seedance continuation packet", () => {
       referenceAssets,
       referenceSelection: { character1Id: "diego", environmentId: "club" },
       contactSheet,
+      audioVideoReference: {
+        tag: "@Video_1",
+        role: "section-audio-timing",
+        label: "Verse 2 timing reference",
+        url: "https://media.example/verse-2-audio.mp4",
+        instruction: "@Video_1 controls song audio, rhythm, lyric timing, and lip-sync timing only. Ignore its black picture.",
+        clipRange: { start: 40, end: 59 },
+        sectionRange: { start: 42, end: 57 },
+        sectionOffset: { start: 2, end: 17 },
+        handleSeconds: { before: 2, after: 2 },
+        placementKey: "audio:42:57",
+      },
     });
 
     expect(packet.errors).toEqual([]);
@@ -88,8 +100,14 @@ describe("Seedance continuation packet", () => {
     expect(packet.resolution).toBe("720p");
     expect(packet.prompt).toContain("without restarting or replaying Diego walks through the hallway");
     expect(packet.prompt).toContain("one clearly new, readable action");
+    expect(packet.prompt).toContain("@Video_1 controls song audio, rhythm, lyric timing, and lip-sync timing only");
+    expect(packet.prompt).not.toContain("song is added in post");
+    expect(packet.references[1]?.instruction).toContain("identity and wardrobe for Diego only");
     expect(packet.prompt).not.toContain("red plaid shirt");
-    expect(serializeSeedanceContinuationPacket(packet)).toContain("Project: project-1 · Clip: verse-2-continuation-42.00");
+    const serialized = serializeSeedanceContinuationPacket(packet);
+    expect(serialized).toContain("Project: project-1 · Clip: verse-2-continuation-42.00");
+    expect(serialized).toContain("@Video_1 | section-audio-timing");
+    expect(serialized).toContain("selected section occurs at 2.00–17.00 inside Video_1");
   });
 
   test("blocks a speculative continuation when the selected shot has no durable final frame", () => {

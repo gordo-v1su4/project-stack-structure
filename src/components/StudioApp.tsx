@@ -2186,6 +2186,14 @@ export default function StudioApp() {
                 previewSegments={storyPreviewSegments}
                 referenceAssets={referenceAssets}
                 persistedGeneratedAssets={generatedAssets}
+                masterAudioRef={beatJoinAnalysis?.storageBucket && beatJoinAnalysis.storagePath
+                  ? {
+                      bucket: beatJoinAnalysis.storageBucket,
+                      objectKey: beatJoinAnalysis.storagePath,
+                      fileName: beatJoinAnalysis.sourceLabel || "master-audio.wav",
+                      duration: beatJoinAnalysis.duration,
+                    }
+                  : null}
                 onGeneratedAsset={(asset) => setGeneratedAssets((current) => [asset, ...current.filter((candidate) => candidate.id !== asset.id)])}
                 selectedPreviewRange={generatePreviewRange}
                 onSelectedPreviewRange={(range) => {

@@ -7,6 +7,7 @@ import type { BeatJoinAnalysis, ColorPaletteSwatch, MotionDescriptor } from "../
 import { buildGeneratedAssetContextPreview, type GeneratedStudioAsset } from "../generatedAssets";
 import { uploadGeneratedClipToRustFs } from "../generatedClipUpload";
 import { buildSeedanceContinuationPacket, serializeSeedanceContinuationPacket } from "../seedanceContinuation";
+import { buildSeedanceAudioPlacementKey, SEEDANCE_AUDIO_HANDLE_SECONDS } from "../seedanceAudioReference";
 import { buildAdaptiveCueMap } from "../adaptiveCueMap";
 import type { EditPlanPreviewSegment, MusicVideoProject, TimelineItem, VideoMoment } from "../musicVideoProject";
 import { selectPreviewCutRange, selectPreviewSectionRange, type PreviewCutRange } from "../resolvedPreviewSelection";
@@ -24,11 +25,31 @@ type GenerateTabProps = {
   previewSegments: EditPlanPreviewSegment[];
   referenceAssets: ReferenceAsset[];
   persistedGeneratedAssets: GeneratedStudioAsset[];
+  masterAudioRef: SeedanceMasterAudioRef | null;
   onGeneratedAsset: (asset: GeneratedStudioAsset) => void;
   selectedPreviewRange: PreviewCutRange | null;
   onSelectedPreviewRange: (range: PreviewCutRange | null) => void;
   onAuditionPreviewRange: (range: PreviewCutRange) => void;
   onAuditionGeneratedAsset: (asset: GeneratedStudioAsset, contextRadius: number) => void;
+};
+
+type SeedanceMasterAudioRef = {
+  bucket: string;
+  objectKey: string;
+  fileName: string;
+  duration: number;
+};
+
+type PreparedSeedanceAudioReference = {
+  placementKey: string;
+  requestKey: string;
+  videoUrl: string;
+  clipStart: number;
+  clipEnd: number;
+  handleBefore: number;
+  handleAfter: number;
+  sectionStartOffset: number;
+  sectionEndOffset: number;
 };
 
 export type SlotStatus = "filled" | "weak" | "short" | "missing";
@@ -154,7 +175,7 @@ const NEED_LABELS: Record<GenerationNeed, string> = {
   "reroll-match": "Reroll Match",
 };
 
-export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, onSelectJoin, onsetDensity, lyricCueBlend, lyricMergeWindow, previewSegments, referenceAssets, persistedGeneratedAssets, onGeneratedAsset, selectedPreviewRange, onSelectedPreviewRange, onAuditionPreviewRange, onAuditionGeneratedAsset }: GenerateTabProps) {
+export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, onSelectJoin, onsetDensity, lyricCueBlend, lyricMergeWindow, previewSegments, referenceAssets, persistedGeneratedAssets, masterAudioRef, onGeneratedAsset, selectedPreviewRange, onSelectedPreviewRange, onAuditionPreviewRange, onAuditionGeneratedAsset }: GenerateTabProps) {
   const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
   const [timelineZoomMode, setTimelineZoomMode] = useState<TimelineZoomMode>("fit");
   const [referenceSelection, setReferenceSelection] = useState<GenerationReferenceSelection>({});
@@ -485,6 +506,7 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
             higgsfieldStatus={higgsfieldStatus}
             isHiggsfieldGenerating={isHiggsfieldGenerating}
             persistedGeneratedAssets={persistedGeneratedAssets}
+            masterAudioRef={masterAudioRef}
             onRunHiggsfield={runHiggsfieldGeneration}
             providerStatus={generationStatus}
             isGenerating={isGenerating}
@@ -1078,6 +1100,7 @@ function FrameExtensionPanel({
   higgsfieldStatus,
   isHiggsfieldGenerating,
   persistedGeneratedAssets,
+  masterAudioRef,
   onRunHiggsfield,
   providerStatus,
   isGenerating,
@@ -1099,6 +1122,7 @@ function FrameExtensionPanel({
   higgsfieldStatus: string;
   isHiggsfieldGenerating: boolean;
   persistedGeneratedAssets: GeneratedStudioAsset[];
+  masterAudioRef: SeedanceMasterAudioRef | null;
   onRunHiggsfield: (params: HiggsfieldGenerationFormState) => void;
   providerStatus: string;
   isGenerating: boolean;
@@ -1156,19 +1180,83 @@ function FrameExtensionPanel({
   const latestContactSheet = [...persistedGeneratedAssets]
     .filter((asset) => asset.status === "completed" && Boolean(asset.fullStorage || asset.resultUrl))
     .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))[0];
+  const songStart = selectedSegment?.musicStart ?? slot?.item.start ?? 0;
+  const songEnd = selectedSegment?.musicEnd ?? slot?.item.end ?? 0;
+  const placementKey = masterAudioRef && songEnd > songStart
+    ? buildSeedanceAudioPlacementKey({
+        audioObjectKey: masterAudioRef.objectKey,
+        songStart,
+        songEnd,
+        songDuration: masterAudioRef.duration,
+        handleSeconds: SEEDANCE_AUDIO_HANDLE_SECONDS,
+      })
+    : "";
+  const [preparedAudioReference, setPreparedAudioReference] = useState<PreparedSeedanceAudioReference | null>(null);
+  const [isPreparingAudioReference, setIsPreparingAudioReference] = useState(false);
+  const [seedanceAudioStatus, setSeedanceAudioStatus] = useState("Video_1 is rendered only when this exact placement is ready to submit.");
+  const activeAudioReference = preparedAudioReference?.placementKey === placementKey ? preparedAudioReference : null;
+  const visibleAudioStatus = preparedAudioReference && !activeAudioReference
+    ? "This cut moved or another cut was selected. The previous Video_1 is stale; prepare a new timing reference for this placement."
+    : seedanceAudioStatus;
   const seedancePacket = buildSeedanceContinuationPacket({
     projectId,
     sectionId: selectedSegment?.sectionId ?? slot?.item.sectionId ?? "unassigned-section",
     sectionLabel: slot?.item.label ?? "Current section",
     storyIntent: slot?.item.prompt ?? "advance the current music-video section",
-    songStart: selectedSegment?.musicStart ?? slot?.item.start ?? 0,
-    songEnd: selectedSegment?.musicEnd ?? slot?.item.end ?? 0,
+    songStart,
+    songEnd,
     moment,
     referenceAssets,
     referenceSelection,
     contactSheet: latestContactSheet,
+    audioVideoReference: activeAudioReference ? {
+      tag: "@Video_1",
+      role: "section-audio-timing",
+      label: `${slot?.item.label ?? "selected section"} master-audio timing reference`,
+      url: activeAudioReference.videoUrl,
+      instruction: "@Video_1 controls song audio, rhythm, lyric timing, and lip-sync timing only. Ignore its black picture and do not transfer visual identity, composition, camera, environment, lighting, or action from it.",
+      clipRange: { start: activeAudioReference.clipStart, end: activeAudioReference.clipEnd },
+      sectionRange: { start: songStart, end: songEnd },
+      sectionOffset: { start: activeAudioReference.sectionStartOffset, end: activeAudioReference.sectionEndOffset },
+      handleSeconds: { before: activeAudioReference.handleBefore, after: activeAudioReference.handleAfter },
+      placementKey: activeAudioReference.placementKey,
+    } : undefined,
   });
   const [seedanceCopyStatus, setSeedanceCopyStatus] = useState("Ready to copy the operator packet.");
+  const prepareSeedanceSubmission = async () => {
+    if (!masterAudioRef || !placementKey || songEnd <= songStart) {
+      setSeedanceAudioStatus("The selected cut needs durable master audio and a valid song range first.");
+      return;
+    }
+    setIsPreparingAudioReference(true);
+    setSeedanceAudioStatus(`Rendering black Video_1 for ${fmtCutTime(songStart)}–${fmtCutTime(songEnd)} plus two-second handles...`);
+    try {
+      const requestKey = sanitizeSeedanceRequestKey(`${projectId}-${slot?.item.id ?? selectedSegment?.sectionId ?? "section"}-${songStart.toFixed(3)}-${songEnd.toFixed(3)}`);
+      const response = await fetch("/api/generate/seedance/audio-reference", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requestKey,
+          audio: masterAudioRef,
+          songStart,
+          songEnd,
+          songDuration: masterAudioRef.duration,
+          handleSeconds: SEEDANCE_AUDIO_HANDLE_SECONDS,
+        }),
+      });
+      const queued = await response.json() as { runId?: string; error?: string };
+      if (!response.ok || !queued.runId) throw new Error(queued.error || `Seedance timing render failed (${response.status}).`);
+      const output = await waitForTriggerRunOutput(queued.runId, { timeoutMs: 15 * 60_000 }) as Omit<PreparedSeedanceAudioReference, "placementKey">;
+      if (!output.videoUrl) throw new Error("Trigger completed without a durable Video_1 URL.");
+      setPreparedAudioReference({ ...output, placementKey });
+      setSeedanceAudioStatus(`Video_1 ready · audio ${fmtCutTime(output.clipStart)}–${fmtCutTime(output.clipEnd)} · selected section begins ${output.sectionStartOffset.toFixed(2)}s into the reference.`);
+      setSeedanceCopyStatus("Video_1 is ready. Copy the complete submission packet when the prompt is approved.");
+    } catch (error) {
+      setSeedanceAudioStatus(error instanceof Error ? error.message : "Seedance timing reference failed.");
+    } finally {
+      setIsPreparingAudioReference(false);
+    }
+  };
   const copySeedancePacket = async () => {
     try {
       await navigator.clipboard.writeText(serializeSeedanceContinuationPacket(seedancePacket));
@@ -1234,12 +1322,13 @@ function FrameExtensionPanel({
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
             <div className="text-[8px] uppercase tracking-[0.16em] text-[#6ca6d2]">Seedance continuation handoff</div>
-            <div className="mt-1 text-[9px] leading-4 text-[#7d8fa1]">Uses the selected shot&apos;s real last frame as @Image_1, then the named character/location sheets and latest contact sheet with strict role boundaries. This is the project&apos;s manual Unlimited lane, not the paid Nano Banana API task.</div>
+            <div className="mt-1 text-[9px] leading-4 text-[#7d8fa1]">Uses the selected shot&apos;s real last frame as @Image_1. At submission time, Trigger.dev renders the exact placed song range plus two-second handles over solid black as @Video_1. Moving the cut invalidates that timing reference.</div>
           </div>
           <div className="rounded-[2px] border border-[#24476f] px-2 py-1 font-mono text-[8px] uppercase tracking-[0.12em] text-[#6ca6d2]">Fast · Unlimited · 15s · 16:9 · 720p</div>
         </div>
         <div className="mt-2 rounded-[2px] border border-[#14283d] bg-[#03070c] p-2 font-mono text-[8px] leading-4 text-[#72879a]">
-          <div>{seedancePacket.references.length} ordered references · @Image_1 must be the accepted ending frame · 720p is the lowest verified setting on this existing Unlimited surface.</div>
+          <div>{seedancePacket.references.length} ordered image references · @Image_1 is the accepted ending frame · @Video_1 is audio/rhythm/lip-sync timing only.</div>
+          <div className={`mt-1 ${activeAudioReference ? "text-[#78c878]" : "text-[#d3a236]"}`}>{activeAudioReference ? `@Video_1 · ${activeAudioReference.videoUrl}` : "@Video_1 · not prepared for this placement"}</div>
           {seedancePacket.references.map((reference) => (
             <div key={`${reference.tag}-${reference.url}`} className="mt-1 truncate" title={reference.url}>{reference.tag} · {reference.role} · {reference.label} · {reference.url}</div>
           ))}
@@ -1253,9 +1342,10 @@ function FrameExtensionPanel({
           <span className="mb-1 block text-[8px] uppercase tracking-[0.14em] text-[#6c8294]">Current-clip prompt only</span>
           <textarea readOnly value={seedancePacket.prompt} rows={9} className="w-full resize-y rounded-[2px] border border-[#14283d] bg-[#03070c] px-2 py-1.5 font-mono text-[9px] leading-4 text-[#9fb4c5] outline-none" />
         </label>
-        <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_auto]">
-          <div className="rounded-[2px] border border-[#14283d] bg-[#03070c] p-2 font-mono text-[8px] leading-4 text-[#72879a]">{seedanceCopyStatus}</div>
-          <button type="button" disabled={seedancePacket.errors.length > 0} onClick={copySeedancePacket} className="rounded-[2px] border border-[#24476f] bg-[#07111e] px-3 py-2 text-[8px] uppercase tracking-[0.12em] text-[#6ca6d2] disabled:cursor-not-allowed disabled:opacity-45">Copy Seedance packet</button>
+        <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_auto_auto]">
+          <div className="rounded-[2px] border border-[#14283d] bg-[#03070c] p-2 font-mono text-[8px] leading-4 text-[#72879a]">{activeAudioReference ? seedanceCopyStatus : visibleAudioStatus}</div>
+          <button type="button" disabled={isPreparingAudioReference || seedancePacket.errors.length > 0 || !masterAudioRef || !placementKey} onClick={() => void prepareSeedanceSubmission()} className="rounded-[2px] border border-[#695019] bg-[#120e04] px-3 py-2 text-[8px] uppercase tracking-[0.12em] text-[#d3a236] disabled:cursor-not-allowed disabled:opacity-45">{isPreparingAudioReference ? "Rendering Video_1..." : activeAudioReference ? "Re-render Video_1" : "Prepare Video_1"}</button>
+          <button type="button" disabled={seedancePacket.errors.length > 0 || !activeAudioReference} onClick={copySeedancePacket} className="rounded-[2px] border border-[#24476f] bg-[#07111e] px-3 py-2 text-[8px] uppercase tracking-[0.12em] text-[#6ca6d2] disabled:cursor-not-allowed disabled:opacity-45">Copy submission packet</button>
         </div>
       </div>
 
@@ -1823,6 +1913,10 @@ function fmtCutTime(value: number) {
   const minutes = Math.floor(safe / 60);
   const seconds = (safe - minutes * 60).toFixed(2).padStart(5, "0");
   return `${minutes}:${seconds}`;
+}
+
+function sanitizeSeedanceRequestKey(value: string) {
+  return value.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 160) || "seedance-section";
 }
 
 function clamp01(value: number) {
