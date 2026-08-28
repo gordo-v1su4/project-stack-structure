@@ -106,7 +106,7 @@ and shot order simultaneously.
 - Model: Enhanced Seedance 2.0 Fast with Unlimited available.
 - Duration: `15s`.
 - Aspect ratio: `16:9`.
-- Resolution: `720p`.
+- Resolution: `480p` for testing.
 - Required input: prompt plus image and/or video references.
 - Expected runtime: roughly 20-30 minutes.
 
@@ -130,7 +130,7 @@ Do not substitute a paid model or shorten the requested 15-second output.
    continuity-board reference when the downloaded grid is the first image. The
    text prompt should direct motion, pacing, camera, continuity, and story beats;
    it should not ask Seedance to create more still images.
-7. Verify Enhanced Seedance 2.0 Fast Unlimited, `15s`, `16:9`, and `720p`, then
+7. Verify Enhanced Seedance 2.0 Fast Unlimited, `15s`, `16:9`, and `480p`, then
    submit. Expect roughly 20-30 minutes of processing.
 
 ### Seedance reference-lock prompt pattern

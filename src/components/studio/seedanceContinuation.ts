@@ -39,7 +39,7 @@ export interface SeedanceContinuationPacket {
   continuationType: "seamless-continuation";
   durationSeconds: 15;
   aspectRatio: "16:9";
-  resolution: "720p";
+  resolution: "480p";
   references: SeedanceContinuationReference[];
   audioVideoReference?: SeedanceAudioVideoReference;
   prompt: string;
@@ -147,7 +147,7 @@ Preserve canonical identities from their assigned character references and prese
     continuationType: "seamless-continuation",
     durationSeconds: 15,
     aspectRatio: "16:9",
-    resolution: "720p",
+    resolution: "480p",
     references,
     audioVideoReference: params.audioVideoReference,
     prompt,
@@ -177,7 +177,8 @@ export function serializeSeedanceContinuationPacket(packet: SeedanceContinuation
 
 function buildRoleInstruction(tag: string, role: SeedanceReferenceRole, label: string, kind: string) {
   if (role === "character-identity") {
-    return `${tag} controls canonical identity and wardrobe for ${label} only. Ignore pose, background, camera, lighting, and action from that sheet.`;
+    const characterName = label.replace(/^character\s+/i, "");
+    return `${tag} controls ${characterName}'s identity and wardrobe only.`;
   }
   if (role === "environment") {
     return `${tag} controls the named location ${label} only; preserve its architecture, layout, materials, palette, and lighting direction, and ignore any people or action shown in that reference.`;

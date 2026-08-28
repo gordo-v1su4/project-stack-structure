@@ -34,7 +34,7 @@ import { ProcessActionBar } from "./studio/ProcessActionBar";
 import { buildReadout } from "./studio/readout";
 import { ComposeTab } from "./studio/panels/ComposeTab";
 import { IngestTab } from "./studio/panels/IngestTab";
-import { GenerateTab } from "./studio/panels/GenerateTab";
+import { GenerateTab, type SeedanceMasterAudioRef } from "./studio/panels/GenerateTab";
 import { JoinTab } from "./studio/panels/JoinTab";
 import { RampTab } from "./studio/panels/RampTab";
 import { MatchTab, type MatchMode } from "./studio/panels/MatchTab";
@@ -973,6 +973,76 @@ export default function StudioApp() {
     } finally {
       setIsRunning(false);
     }
+  }
+
+  async function ensureOwnedMasterAudioForGeneration(): Promise<SeedanceMasterAudioRef> {
+    if (!beatJoinAnalysis?.storageBucket || !beatJoinAnalysis.storagePath) {
+      throw new Error("The restored project has no durable master audio to re-register.");
+    }
+
+    let audioFile: File;
+    try {
+      audioFile = await resolveMasterAudioFile(beatJoinAnalysis, audioFileRef.current);
+    } catch {
+      const params = new URLSearchParams({
+        bucket: beatJoinAnalysis.storageBucket,
+        objectKey: beatJoinAnalysis.storagePath,
+      });
+      const resolution = await fetch(`/api/storage/download-url?${params.toString()}`);
+      const payload = (await resolution.json().catch(() => null)) as { fileUrl?: string; error?: string } | null;
+      if (!resolution.ok || !payload?.fileUrl) {
+        throw new Error(payload?.error ?? "Master audio could not be recovered; re-upload the song.");
+      }
+      audioFile = await fetchMediaUrlAsFile(
+        payload.fileUrl,
+        beatJoinAnalysis.sourceLabel || "master-audio.wav",
+        "audio/wav",
+      );
+    }
+
+    const scopedAudio = await reuploadThroughScopedPath(audioFile, "media-uploads/source-audio");
+    const migratedAnalysis = {
+      ...beatJoinAnalysis,
+      storageProvider: "rustfs" as const,
+      storageBucket: scopedAudio.bucket,
+      storagePath: scopedAudio.objectKey,
+      storageStatus: "uploaded" as const,
+      storageError: undefined,
+    };
+    setBeatJoinAnalysis(migratedAnalysis);
+    audioFileRef.current = audioFile;
+    await saveStudioProjectDraft(
+      {
+        analysis: migratedAnalysis,
+        videoSources,
+        storyState,
+        musicVideoProject,
+        referenceAssets,
+        generatedAssets,
+        captionSettings: buildSceneCaptionSettings(captionMode, migratedAnalysis, storyState, referenceAssets),
+        workflowUiSettings: {
+          activeTab: tab,
+          splitMode,
+          matchMode,
+          matchOnsetDensity,
+          matchLyricCueBlend,
+          matchLyricMergeWindow,
+          colorGradient,
+          shaderPresetId,
+          shaderAccentKinds,
+          isPreviewExpanded,
+        },
+      },
+      { audioFile },
+    );
+
+    return {
+      bucket: scopedAudio.bucket,
+      objectKey: scopedAudio.objectKey,
+      fileName: beatJoinAnalysis.sourceLabel || audioFile.name || "master-audio.wav",
+      mimeType: audioFile.type || "audio/wav",
+      duration: beatJoinAnalysis.duration,
+    };
   }
 
   async function runFinalExport() {
@@ -2202,6 +2272,7 @@ export default function StudioApp() {
                       duration: beatJoinAnalysis.duration,
                     }
                   : null}
+                onEnsureOwnedMasterAudio={ensureOwnedMasterAudioForGeneration}
                 onGeneratedAsset={(asset) => setGeneratedAssets((current) => [asset, ...current.filter((candidate) => candidate.id !== asset.id)])}
                 selectedPreviewRange={generatePreviewRange}
                 onSelectedPreviewRange={(range) => {
