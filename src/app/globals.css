@@ -122,8 +122,12 @@ body {
   appearance: none;
   -webkit-appearance: none;
   background: transparent;
-  cursor: ew-resize;
+  cursor: grab;
   touch-action: pan-y;
+}
+
+.studio-window-range:active {
+  cursor: grabbing;
 }
 
 .studio-window-range:focus-visible {
@@ -144,17 +148,18 @@ body {
   appearance: none;
   -webkit-appearance: none;
   width: 8px;
-  height: 24px;
-  margin-top: 1px;
-  border: 1px solid #55c5e5;
-  border-radius: 1px;
-  background: #123a45;
-  box-shadow: 0 0 0 1px #050505;
+  height: 20px;
+  margin-top: 8px;
+  border: 1px solid #606060;
+  border-radius: 2px;
+  background: #2c2c2c;
+  box-shadow: 0 0 0 2px #050505;
 }
 
 .studio-window-range:hover::-webkit-slider-thumb,
 .studio-window-range:focus-visible::-webkit-slider-thumb {
-  background: #1c5b6d;
+  border-color: #55c5e5;
+  background: #3a3a3a;
 }
 
 .studio-window-range::-moz-range-track {
@@ -169,16 +174,17 @@ body {
 
 .studio-window-range::-moz-range-thumb {
   width: 8px;
-  height: 24px;
-  border: 1px solid #55c5e5;
-  border-radius: 1px;
-  background: #123a45;
-  box-shadow: 0 0 0 1px #050505;
+  height: 20px;
+  border: 1px solid #606060;
+  border-radius: 2px;
+  background: #2c2c2c;
+  box-shadow: 0 0 0 2px #050505;
 }
 
 .studio-window-range:hover::-moz-range-thumb,
 .studio-window-range:focus-visible::-moz-range-thumb {
-  background: #1c5b6d;
+  border-color: #55c5e5;
+  background: #3a3a3a;
 }
 
 * {
