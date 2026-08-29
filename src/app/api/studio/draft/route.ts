@@ -1,5 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { cookies } from "next/headers";
+import { NextResponse } from "next/server";
 import {
   buildMediaGatewayFileUrl,
   getMediaGatewayConfig,
@@ -13,6 +15,7 @@ export const runtime = "nodejs";
 
 const DRAFT_FOLDER = "media-uploads/studio-drafts";
 const DRAFT_FILE_NAME = "default.json";
+const DRAFT_POINTER_COOKIE = "stack_structure_studio_draft";
 const LOCAL_DRAFT_PATH = path.join(process.cwd(), ".tmp", "studio-drafts", DRAFT_FILE_NAME);
 
 function draftStoragePath(userId: string) {
@@ -33,30 +36,34 @@ export async function GET() {
     const config = getMediaGatewayConfig();
     if (!config) return missingGatewayResponse();
 
-    const storagePath = draftStoragePath(user.id);
-    const response = await fetch(buildMediaGatewayFileUrl(config, config.bucket, storagePath), {
-      headers: { Authorization: `Bearer ${config.token}` },
-      cache: "no-store",
-    });
+    const legacyStoragePath = draftStoragePath(user.id);
+    const pointer = (await cookies()).get(DRAFT_POINTER_COOKIE)?.value;
+    const candidates = pointer && isOwnedDraftStoragePath(pointer, user.id)
+      ? [pointer, legacyStoragePath]
+      : [legacyStoragePath];
 
-    if (response.status === 404) {
-      return Response.json({ success: true, draft: null, storagePath });
+    for (const storagePath of candidates) {
+      const response = await fetch(buildMediaGatewayFileUrl(config, config.bucket, storagePath), {
+        headers: { Authorization: `Bearer ${config.token}` },
+        cache: "no-store",
+      });
+      if (response.status === 404) continue;
+
+      const text = await response.text();
+      if (!response.ok) {
+        return Response.json(
+          { success: false, error: `Studio draft fetch failed (${response.status}): ${text.slice(0, 300)}` },
+          { status: response.status },
+        );
+      }
+
+      const draft = parseDraft(text);
+      if (!draft) {
+        return Response.json({ success: false, error: "Stored studio draft is invalid." }, { status: 422 });
+      }
+      return Response.json({ success: true, draft, storagePath, source: "remote" });
     }
-
-    const text = await response.text();
-    if (!response.ok) {
-      return Response.json(
-        { success: false, error: `Studio draft fetch failed (${response.status}): ${text.slice(0, 300)}` },
-        { status: response.status },
-      );
-    }
-
-    const draft = parseDraft(text);
-    if (!draft) {
-      return Response.json({ success: false, error: "Stored studio draft is invalid." }, { status: 422 });
-    }
-
-    return Response.json({ success: true, draft, storagePath });
+    return Response.json({ success: true, draft: null, storagePath: legacyStoragePath });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Studio draft fetch failed";
     return Response.json({ success: false, error: message }, { status: 500 });
@@ -96,12 +103,31 @@ async function saveDraft(request: Request) {
       folder: DRAFT_FOLDER,
     });
 
-    return Response.json({ success: true, draft: savedDraft, storage: uploaded });
+    const response = NextResponse.json({ success: true, draft: savedDraft, storage: uploaded });
+    response.cookies.set(DRAFT_POINTER_COOKIE, uploaded.storagePath, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 365,
+    });
+    return response;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Studio draft save failed";
     const status = /Missing RustFS media gateway env/i.test(message) ? 503 : 500;
     return Response.json({ success: false, error: message }, { status });
   }
+}
+
+export function isOwnedDraftStoragePath(storagePath: string, userId: string) {
+  const normalized = normalizeMediaPath(storagePath);
+  const prefix = `${DRAFT_FOLDER}/`;
+  if (!normalized.startsWith(prefix)) return false;
+
+  const fileName = normalized.slice(prefix.length);
+  if (!fileName || fileName.includes("/")) return false;
+  const expectedName = `${encodeURIComponent(userId)}.json`;
+  return fileName === expectedName || /^\d+-/.test(fileName) && fileName.endsWith(`-${expectedName}`);
 }
 
 export function studioDraftLocalCacheEnabled(env: Record<string, string | undefined> = process.env) {
