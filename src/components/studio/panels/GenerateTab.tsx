@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { fmt } from "../math";
 import {
   buildGenerationReferenceInputs,
@@ -19,6 +19,7 @@ import { buildAdaptiveCueMap } from "../adaptiveCueMap";
 import type { EditPlanPreviewSegment, MusicVideoProject, TimelineItem, VideoMoment } from "../musicVideoProject";
 import { selectPreviewCutRange, selectPreviewSectionRange, type PreviewCutRange } from "../resolvedPreviewSelection";
 import { waitForTriggerRunOutput } from "@/lib/clientTriggerRuns";
+import { resolveRangePointerRatio } from "../rangePointer";
 
 type GenerateTabProps = {
   project: MusicVideoProject | null;
@@ -1725,6 +1726,7 @@ function GeneratedShotCard({
   const [playingSelection, setPlayingSelection] = useState(false);
   const [previewTrimFrame, setPreviewTrimFrame] = useState<number | null>(null);
   const previewTrimFrameRef = useRef<number | null>(null);
+  const dragPointerIdRef = useRef<number | null>(null);
   const videoUrl = asset.fullStorage?.mediaUrl ?? asset.fullStorage?.publicUrl ?? asset.resultUrl;
   const reviewStatus = asset.reviewStatus ?? "pending";
   const committedTrimWindow = resolveGeneratedAssetTrimWindow({
@@ -1764,6 +1766,48 @@ function GeneratedShotCard({
       return;
     }
     commitTrimStart(nextFrame / trimFramesPerSecond);
+  };
+
+  const previewPointerFrame = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const ratio = resolveRangePointerRatio({ clientX: event.clientX, left: bounds.left, width: bounds.width });
+    previewFrame(ratio * maxTrimStartFrame);
+  };
+
+  const beginPointerDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (maxTrimStartFrame <= 0) return;
+    event.preventDefault();
+    event.currentTarget.focus();
+    dragPointerIdRef.current = event.pointerId;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    previewPointerFrame(event);
+  };
+
+  const continuePointerDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (dragPointerIdRef.current !== event.pointerId) return;
+    previewPointerFrame(event);
+  };
+
+  const finishPointerDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (dragPointerIdRef.current !== event.pointerId) return;
+    previewPointerFrame(event);
+    dragPointerIdRef.current = null;
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    commitPreviewFrame();
+  };
+
+  const cancelPointerDrag = () => {
+    dragPointerIdRef.current = null;
+    commitPreviewFrame();
+  };
+
+  const handleTrimKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const direction = event.key === "ArrowLeft" || event.key === "ArrowDown" ? -1 : event.key === "ArrowRight" || event.key === "ArrowUp" ? 1 : 0;
+    const nextFrame = event.key === "Home" ? 0 : event.key === "End" ? maxTrimStartFrame : direction ? activeTrimFrame + direction : null;
+    if (nextFrame === null) return;
+    event.preventDefault();
+    previewFrame(nextFrame);
+    commitPreviewFrame();
   };
 
   useEffect(() => {
@@ -1829,23 +1873,26 @@ function GeneratedShotCard({
                   </div>
                   <div className="pointer-events-none absolute top-1/2 h-5 w-px -translate-y-1/2 bg-[#55c5e5]" style={{ left: `${selectedLeftPct}%` }} title={`In ${trimStart.toFixed(2)}s`} />
                   <div className="pointer-events-none absolute top-1/2 h-5 w-px -translate-x-full -translate-y-1/2 bg-[#55c5e5]" style={{ left: `${selectedLeftPct + selectedWidthPct}%` }} title={`Out ${trimEnd.toFixed(2)}s`} />
-                  <input
+                  <div
+                    role="slider"
+                    tabIndex={maxTrimStartFrame <= 0 ? -1 : 0}
                     aria-label={`Move source window for ${asset.title ?? asset.model}`}
+                    aria-valuemin={0}
+                    aria-valuemax={maxTrimStartFrame}
+                    aria-valuenow={activeTrimFrame}
                     aria-valuetext={`${trimStart.toFixed(2)} to ${trimEnd.toFixed(2)} seconds`}
                     title={`Selected source window: ${trimStart.toFixed(2)}s–${trimEnd.toFixed(2)}s`}
-                    type="range"
-                    min={0}
-                    max={maxTrimStartFrame}
-                    step={1}
-                    value={activeTrimFrame}
-                    disabled={maxTrimStartFrame <= 0}
-                    onChange={(event) => previewFrame(Number(event.currentTarget.value))}
-                    onPointerUp={commitPreviewFrame}
-                    onPointerCancel={commitPreviewFrame}
-                    onKeyUp={commitPreviewFrame}
+                    aria-disabled={maxTrimStartFrame <= 0}
+                    onPointerDown={beginPointerDrag}
+                    onPointerMove={continuePointerDrag}
+                    onPointerUp={finishPointerDrag}
+                    onPointerCancel={cancelPointerDrag}
+                    onKeyDown={handleTrimKeyDown}
                     onBlur={commitPreviewFrame}
-                    className="studio-window-range absolute inset-0 z-20 h-full w-full"
-                  />
+                    className="studio-window-control absolute inset-0 z-20 h-full w-full"
+                  >
+                    <span className="studio-window-thumb" style={{ left: `${selectedLeftPct}%` }} aria-hidden="true" />
+                  </div>
                 </div>
                 <button
                   type="button"
