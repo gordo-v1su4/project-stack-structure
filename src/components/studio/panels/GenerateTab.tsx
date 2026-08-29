@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { fmt } from "../math";
 import {
   buildGenerationReferenceInputs,
@@ -1723,23 +1723,54 @@ function GeneratedShotCard({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [note, setNote] = useState(asset.reviewNotes ?? "");
   const [playingSelection, setPlayingSelection] = useState(false);
+  const [previewTrimFrame, setPreviewTrimFrame] = useState<number | null>(null);
+  const previewTrimFrameRef = useRef<number | null>(null);
   const videoUrl = asset.fullStorage?.mediaUrl ?? asset.fullStorage?.publicUrl ?? asset.resultUrl;
   const reviewStatus = asset.reviewStatus ?? "pending";
-  const { requiredDuration, sourceDuration, maxTrimStart, trimStart, trimEnd, selectedWidthPct, selectedLeftPct } = resolveGeneratedAssetTrimWindow({
+  const committedTrimWindow = resolveGeneratedAssetTrimWindow({
     trimStart: asset.trimStart,
     sourceDuration: asset.durationSeconds,
     requiredDuration: (asset.target?.songEnd ?? 0) - (asset.target?.songStart ?? 0),
   });
   const { framesPerSecond: trimFramesPerSecond, maxFrame: maxTrimStartFrame, valueFrame: trimStartFrame } = resolveGeneratedAssetTrimFrameControl({
-    trimStart,
-    maxTrimStart,
+    trimStart: committedTrimWindow.trimStart,
+    maxTrimStart: committedTrimWindow.maxTrimStart,
+  });
+  const activeTrimFrame = Math.max(0, Math.min(previewTrimFrame ?? trimStartFrame, maxTrimStartFrame));
+  const { requiredDuration, sourceDuration, maxTrimStart, trimStart, trimEnd, selectedWidthPct, selectedLeftPct } = resolveGeneratedAssetTrimWindow({
+    trimStart: activeTrimFrame / trimFramesPerSecond,
+    sourceDuration: asset.durationSeconds,
+    requiredDuration: (asset.target?.songEnd ?? 0) - (asset.target?.songStart ?? 0),
   });
   const context = buildGeneratedAssetContextPreview(previewSegments, asset, 2);
 
-  const updateTrimStart = (value: number) => {
+  const commitTrimStart = (value: number) => {
     const next = Math.max(0, Math.min(value, maxTrimStart));
     onUpdate({ ...asset, trimStart: Number(next.toFixed(3)) });
   };
+
+  const previewFrame = (value: number) => {
+    const nextFrame = Math.max(0, Math.min(Math.round(value), maxTrimStartFrame));
+    previewTrimFrameRef.current = nextFrame;
+    setPreviewTrimFrame(nextFrame);
+  };
+
+  const commitPreviewFrame = () => {
+    const nextFrame = previewTrimFrameRef.current;
+    if (nextFrame === null) return;
+    previewTrimFrameRef.current = null;
+    if (nextFrame === trimStartFrame) {
+      setPreviewTrimFrame(null);
+      return;
+    }
+    commitTrimStart(nextFrame / trimFramesPerSecond);
+  };
+
+  useEffect(() => {
+    if (previewTrimFrame === null || previewTrimFrame !== trimStartFrame) return;
+    const clearPreviewTimer = window.setTimeout(() => setPreviewTrimFrame(null), 0);
+    return () => window.clearTimeout(clearPreviewTimer);
+  }, [previewTrimFrame, trimStartFrame]);
 
   const playSelectedWindow = async () => {
     const video = videoRef.current;
@@ -1784,24 +1815,45 @@ function GeneratedShotCard({
                 <span>Source window · fixed to song slot</span>
                 <span>{sourceDuration.toFixed(2)}s source</span>
               </div>
-              <div className="relative mt-2 h-7 overflow-hidden rounded-[1px] border border-[#202020] bg-[#101010]">
-                <div className="absolute inset-y-0 bg-[#1c5b6d99]" style={{ left: `${selectedLeftPct}%`, width: `${selectedWidthPct}%` }} />
-                <div className="absolute inset-y-0 w-1 bg-[#55c5e5]" style={{ left: `${selectedLeftPct}%` }} title={`In ${trimStart.toFixed(2)}s`} />
-                <div className="absolute inset-y-0 w-1 -translate-x-full bg-[#55c5e5]" style={{ left: `${selectedLeftPct + selectedWidthPct}%` }} title={`Out ${trimEnd.toFixed(2)}s`} />
-                <div className="pointer-events-none absolute inset-0 flex items-center justify-center uppercase tracking-[0.12em] text-[#b6e6ef]">drag selected window</div>
-                <input
-                  aria-label={`Move source window for ${asset.title ?? asset.model}`}
-                  aria-valuetext={`${trimStart.toFixed(2)} to ${trimEnd.toFixed(2)} seconds`}
-                  title={`Selected source window: ${trimStart.toFixed(2)}s–${trimEnd.toFixed(2)}s`}
-                  type="range"
-                  min={0}
-                  max={maxTrimStartFrame}
-                  step={1}
-                  value={trimStartFrame}
-                  disabled={maxTrimStartFrame <= 0}
-                  onChange={(event) => updateTrimStart(Number(event.currentTarget.value) / trimFramesPerSecond)}
-                  className="studio-window-range absolute inset-0 z-20 h-full w-full"
-                />
+              <div className="mt-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  aria-label={`Move source window for ${asset.title ?? asset.model} one frame earlier`}
+                  disabled={activeTrimFrame <= 0}
+                  onClick={() => commitTrimStart((activeTrimFrame - 1) / trimFramesPerSecond)}
+                  className="h-7 w-7 shrink-0 rounded-[2px] border border-[#262626] text-[12px] text-[#777] hover:border-[#555] hover:text-[#ddd] disabled:opacity-30"
+                >−</button>
+                <div className="relative h-9 min-w-0 flex-1">
+                  <div className="pointer-events-none absolute inset-x-0 top-1/2 h-[6px] -translate-y-1/2 overflow-hidden rounded-[2px] border border-[#242424] bg-[#171717]">
+                    <div className="absolute inset-y-0 bg-[#1c5b6d]" style={{ left: `${selectedLeftPct}%`, width: `${selectedWidthPct}%` }} />
+                  </div>
+                  <div className="pointer-events-none absolute top-1/2 h-5 w-px -translate-y-1/2 bg-[#55c5e5]" style={{ left: `${selectedLeftPct}%` }} title={`In ${trimStart.toFixed(2)}s`} />
+                  <div className="pointer-events-none absolute top-1/2 h-5 w-px -translate-x-full -translate-y-1/2 bg-[#55c5e5]" style={{ left: `${selectedLeftPct + selectedWidthPct}%` }} title={`Out ${trimEnd.toFixed(2)}s`} />
+                  <input
+                    aria-label={`Move source window for ${asset.title ?? asset.model}`}
+                    aria-valuetext={`${trimStart.toFixed(2)} to ${trimEnd.toFixed(2)} seconds`}
+                    title={`Selected source window: ${trimStart.toFixed(2)}s–${trimEnd.toFixed(2)}s`}
+                    type="range"
+                    min={0}
+                    max={maxTrimStartFrame}
+                    step={1}
+                    value={activeTrimFrame}
+                    disabled={maxTrimStartFrame <= 0}
+                    onChange={(event) => previewFrame(Number(event.currentTarget.value))}
+                    onPointerUp={commitPreviewFrame}
+                    onPointerCancel={commitPreviewFrame}
+                    onKeyUp={commitPreviewFrame}
+                    onBlur={commitPreviewFrame}
+                    className="studio-window-range absolute inset-0 z-20 h-full w-full"
+                  />
+                </div>
+                <button
+                  type="button"
+                  aria-label={`Move source window for ${asset.title ?? asset.model} one frame later`}
+                  disabled={activeTrimFrame >= maxTrimStartFrame}
+                  onClick={() => commitTrimStart((activeTrimFrame + 1) / trimFramesPerSecond)}
+                  className="h-7 w-7 shrink-0 rounded-[2px] border border-[#262626] text-[12px] text-[#777] hover:border-[#555] hover:text-[#ddd] disabled:opacity-30"
+                >+</button>
               </div>
               <div className="mt-1 grid grid-cols-2 gap-2">
                 <div className="rounded-[1px] border border-[#1d343a] bg-[#071014] px-2 py-1"><span className="text-[#52737c]">IN / START FRAME</span><div className="mt-0.5 text-[#b6e6ef]">{trimStart.toFixed(2)}s · f{Math.round(trimStart * 30)}</div></div>
@@ -1809,7 +1861,7 @@ function GeneratedShotCard({
               </div>
               <div className="mt-2 flex flex-wrap gap-1.5">
                 <button type="button" disabled={!videoUrl} onClick={() => void playSelectedWindow()} className="rounded-[2px] border border-[#1d5362] px-2 py-1 uppercase tracking-[0.1em] text-[#6bc8dc] disabled:opacity-35">Play selected</button>
-                <button type="button" disabled={!videoUrl} onClick={() => updateTrimStart(videoRef.current?.currentTime ?? trimStart)} className="rounded-[2px] border border-[#303030] px-2 py-1 uppercase tracking-[0.1em] text-[#888] disabled:opacity-35">Set in at playhead</button>
+                <button type="button" disabled={!videoUrl} onClick={() => commitTrimStart(videoRef.current?.currentTime ?? trimStart)} className="rounded-[2px] border border-[#303030] px-2 py-1 uppercase tracking-[0.1em] text-[#888] disabled:opacity-35">Set in at playhead</button>
                 <button type="button" disabled={!context || !videoUrl} onClick={() => onAudition(asset, 2)} className="rounded-[2px] border border-[#e05c00] bg-[#120b06] px-2 py-1 uppercase tracking-[0.1em] text-[#e05c00] disabled:border-[#303030] disabled:bg-transparent disabled:text-[#555]">Audition ±2 cuts</button>
               </div>
             </div>
