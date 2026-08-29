@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { resolveRangePointerRatio } from "./rangePointer";
 
 type ParamSliderProps = {
   label: string;
@@ -30,6 +31,7 @@ export function ParamSlider({
   const [previewValue, setPreviewValue] = useState<number | null>(null);
   const previewValueRef = useRef<number | null>(null);
   const committedValueRef = useRef<number | null>(null);
+  const dragPointerIdRef = useRef<number | null>(null);
   const normalizedPropValue = normalizeSliderValue(value, min, max, step);
   const normalizedValue = previewValue ?? normalizedPropValue;
   const pct = ((normalizedValue - min) / (max - min)) * 100;
@@ -57,6 +59,41 @@ export function ParamSlider({
     if (!update.retainPreview) setPreviewValue(null);
     if (update.publishValue !== null) onChange(update.publishValue);
   };
+  const previewPointer = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const ratio = resolveRangePointerRatio({ clientX: event.clientX, left: bounds.left, width: bounds.width });
+    previewChange(normalizeSliderValue(min + ratio * (max - min), min, max, step));
+  };
+  const beginPointerDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.currentTarget.focus();
+    dragPointerIdRef.current = event.pointerId;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    previewPointer(event);
+  };
+  const continuePointerDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (dragPointerIdRef.current !== event.pointerId) return;
+    previewPointer(event);
+  };
+  const finishPointerDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (dragPointerIdRef.current !== event.pointerId) return;
+    previewPointer(event);
+    dragPointerIdRef.current = null;
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    commitPreview();
+  };
+  const cancelPointerDrag = () => {
+    dragPointerIdRef.current = null;
+    commitPreview();
+  };
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const direction = event.key === "ArrowLeft" || event.key === "ArrowDown" ? -1 : event.key === "ArrowRight" || event.key === "ArrowUp" ? 1 : 0;
+    const nextValue = event.key === "Home" ? min : event.key === "End" ? max : direction ? normalizedValue + direction * step : null;
+    if (nextValue === null) return;
+    event.preventDefault();
+    previewChange(normalizeSliderValue(nextValue, min, max, step));
+    commitPreview();
+  };
 
   useEffect(() => {
     if (committedValueRef.current !== normalizedPropValue) return;
@@ -65,21 +102,27 @@ export function ParamSlider({
     return () => window.clearTimeout(clearPreviewTimer);
   }, [normalizedPropValue]);
   const input = (
-    <input
-      type="range"
+    <div
+      role="slider"
+      tabIndex={0}
       aria-label={label}
-      min={min}
-      max={max}
-      step={step}
-      value={normalizedValue}
-      onChange={(event) => previewChange(normalizeSliderValue(Number(event.target.value), min, max, step))}
-      onPointerUp={commitPreview}
-      onPointerCancel={commitPreview}
-      onKeyUp={commitPreview}
+      aria-valuemin={min}
+      aria-valuemax={max}
+      aria-valuenow={normalizedValue}
+      onPointerDown={beginPointerDrag}
+      onPointerMove={continuePointerDrag}
+      onPointerUp={finishPointerDrag}
+      onPointerCancel={cancelPointerDrag}
+      onKeyDown={handleKeyDown}
       onBlur={commitPreview}
-      className="studio-range-input h-8 min-w-0 flex-1 cursor-pointer"
+      className="studio-range-control h-8 min-w-0 flex-1 cursor-pointer"
       style={sliderStyle}
-    />
+    >
+      <span className="studio-range-track" aria-hidden="true">
+        <span className="studio-range-fill" />
+        <span className="studio-range-thumb" />
+      </span>
+    </div>
   );
 
   if (layout === "stack") {
