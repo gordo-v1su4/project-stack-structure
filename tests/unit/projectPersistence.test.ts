@@ -250,6 +250,24 @@ describe("projectPersistence", () => {
           lyric: "duotone-pulse",
         },
         isPreviewExpanded: true,
+        committedSplit: {
+          kind: "workflow",
+          segments: [{
+            id: 0,
+            start: 0,
+            end: 2.5,
+            duration: 2.5,
+            sourceClipIds: [7],
+            mergedTail: false,
+            sceneId: 12,
+            sceneLabel: "Scene 12",
+            thumbnailUrl: "blob:runtime-thumbnail",
+            clipUrl: "https://s3.example.test/scene-12.mp4",
+            detector: "pyscenedetect-adaptive",
+          }],
+          signature: "workflow-signature",
+          committedAt: "2026-06-21T00:01:00.000Z",
+        },
       },
       savedAt: "2026-06-21T00:00:00.000Z",
     });
@@ -271,6 +289,23 @@ describe("projectPersistence", () => {
         lyric: "duotone-pulse",
       },
       isPreviewExpanded: true,
+      committedSplit: {
+        kind: "workflow",
+        segments: [{
+          id: 0,
+          start: 0,
+          end: 2.5,
+          duration: 2.5,
+          sourceClipIds: [7],
+          mergedTail: false,
+          sceneId: 12,
+          sceneLabel: "Scene 12",
+          clipUrl: "https://s3.example.test/scene-12.mp4",
+          detector: "pyscenedetect-adaptive",
+        }],
+        signature: "workflow-signature",
+        committedAt: "2026-06-21T00:01:00.000Z",
+      },
     });
   });
 

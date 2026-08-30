@@ -23,6 +23,7 @@ import {
   saveNamedStudioProject,
   saveServerStudioProjectDraft,
   saveStudioProjectDraft,
+  type PersistedCommittedSplit,
   type RuntimeStudioProjectDraft,
 } from "./studio/projectPersistence";
 import type { StudioProjectSummary } from "@/lib/studioProjectStore";
@@ -151,12 +152,7 @@ export default function StudioApp() {
   const [isRunning, setIsRunning] = useState(false);
   const [done, setDone] = useState(false);
   const [previewState, setPreviewState] = useState(createSectionRecomputeState);
-  const [committedBeatSplit, setCommittedBeatSplit] = useState<{
-    kind: "workflow" | "legacy";
-    segments: SourceTimelineSegment[];
-    signature: string;
-    committedAt: string;
-  } | null>(null);
+  const [committedBeatSplit, setCommittedBeatSplit] = useState<PersistedCommittedSplit | null>(null);
   const [storyState, setStoryState] = useState(createDefaultStoryTabState);
   const [musicVideoProject, setMusicVideoProject] = useState<MusicVideoProject | null>(null);
   const [captionMode, setCaptionMode] = useState<SceneCaptionMode>("smart");
@@ -179,6 +175,7 @@ export default function StudioApp() {
   const autosaveInFlightRef = useRef(false);
   const flushPendingAutosaveRef = useRef<(() => Promise<void>) | null>(null);
   const referenceAutosaveRequestedRef = useRef(false);
+  const workflowCheckpointAutosaveRequestedRef = useRef(false);
 
   const audioFileRef = useRef<File | null>(null);
   const videoFilesByMediaKeyRef = useRef(new Map<string, Blob>());
@@ -310,10 +307,11 @@ export default function StudioApp() {
           shaderPresetId,
           shaderAccentKinds,
           isPreviewExpanded,
+          committedSplit: committedBeatSplit ?? undefined,
         },
       },
     };
-  }, [activeProjectId, activeProjectName, beatJoinAnalysis, captionMode, colorGradient, draftRestored, generatedAssets, isPreviewExpanded, matchLyricCueBlend, matchLyricMergeWindow, matchMode, matchOnsetDensity, musicVideoProject, referenceAssets, shaderAccentKinds, shaderPresetId, splitMode, storyState, tab, videoSources]);
+  }, [activeProjectId, activeProjectName, beatJoinAnalysis, captionMode, colorGradient, committedBeatSplit, draftRestored, generatedAssets, isPreviewExpanded, matchLyricCueBlend, matchLyricMergeWindow, matchMode, matchOnsetDensity, musicVideoProject, referenceAssets, shaderAccentKinds, shaderPresetId, splitMode, storyState, tab, videoSources]);
 
   useEffect(() => {
     if (!draftRestored) return;
@@ -379,6 +377,24 @@ export default function StudioApp() {
   }, [draftRestored, referenceAssets]);
 
   useEffect(() => {
+    if (!draftRestored || !workflowCheckpointAutosaveRequestedRef.current) return;
+    workflowCheckpointAutosaveRequestedRef.current = false;
+
+    let saveTimer: number | null = null;
+    const flushWorkflowCheckpoint = () => {
+      if (autosaveInFlightRef.current) {
+        saveTimer = window.setTimeout(flushWorkflowCheckpoint, 250);
+        return;
+      }
+      void flushPendingAutosaveRef.current?.();
+    };
+    saveTimer = window.setTimeout(flushWorkflowCheckpoint, 250);
+    return () => {
+      if (saveTimer !== null) window.clearTimeout(saveTimer);
+    };
+  }, [committedBeatSplit, draftRestored]);
+
+  useEffect(() => {
     referenceAssetsRef.current = referenceAssets;
   }, [referenceAssets]);
 
@@ -421,6 +437,7 @@ export default function StudioApp() {
     }
     setShaderAccentKinds(workflowUi?.shaderAccentKinds ?? {});
     if (workflowUi?.isPreviewExpanded !== undefined) setIsPreviewExpanded(workflowUi.isPreviewExpanded);
+    setCommittedBeatSplit(workflowUi?.committedSplit ?? null);
     setFinalExportUrl(null);
     setFinalExportName(null);
     setDone(false);
@@ -1023,6 +1040,7 @@ export default function StudioApp() {
           shaderPresetId,
           shaderAccentKinds,
           isPreviewExpanded,
+          committedSplit: committedBeatSplit ?? undefined,
         },
       },
       { audioFile },
@@ -1089,6 +1107,7 @@ export default function StudioApp() {
             shaderPresetId,
             shaderAccentKinds,
             isPreviewExpanded,
+            committedSplit: committedBeatSplit ?? undefined,
           },
         },
         {
@@ -1243,6 +1262,7 @@ export default function StudioApp() {
                 shaderPresetId,
                 shaderAccentKinds,
                 isPreviewExpanded,
+                committedSplit: committedBeatSplit ?? undefined,
               },
             },
             {
@@ -1601,6 +1621,7 @@ export default function StudioApp() {
       signature: beatSplitSignature,
       committedAt: new Date().toISOString(),
     });
+    workflowCheckpointAutosaveRequestedRef.current = true;
     setJoinClipStates(Object.fromEntries(beatSplitSegments.map((_, index) => [index, true])) as Record<number, boolean>);
     setActiveClip(0);
     setDone(true);
@@ -1619,6 +1640,7 @@ export default function StudioApp() {
       signature: splitSignature,
       committedAt: new Date().toISOString(),
     });
+    workflowCheckpointAutosaveRequestedRef.current = true;
     setJoinClipStates(Object.fromEntries(splitSegments.map((_, index) => [index, true])) as Record<number, boolean>);
     setActiveClip(0);
     setDone(true);
@@ -1988,8 +2010,9 @@ export default function StudioApp() {
       shaderPresetId,
       shaderAccentKinds,
       isPreviewExpanded,
+      committedSplit: committedBeatSplit ?? undefined,
     },
-  }), [beatJoinAnalysis, captionMode, colorGradient, generatedAssets, isPreviewExpanded, matchLyricCueBlend, matchLyricMergeWindow, matchMode, matchOnsetDensity, musicVideoProject, referenceAssets, shaderAccentKinds, shaderPresetId, splitMode, storyState, tab, videoSources]);
+  }), [beatJoinAnalysis, captionMode, colorGradient, committedBeatSplit, generatedAssets, isPreviewExpanded, matchLyricCueBlend, matchLyricMergeWindow, matchMode, matchOnsetDensity, musicVideoProject, referenceAssets, shaderAccentKinds, shaderPresetId, splitMode, storyState, tab, videoSources]);
 
   useEffect(() => {
     const staleWorkflowSplit = tab === "split" && committedBeatSplit?.kind === "workflow" && !isCommittedSplitCurrent;

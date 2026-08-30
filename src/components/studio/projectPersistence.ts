@@ -4,7 +4,7 @@ import { hydrateGeneratedStudioAssets, sanitizeGeneratedStudioAssetForStorage, t
 import { hydrateReferenceAssets, sanitizeReferenceAssetForStorage, type ReferenceAsset } from "./referenceAssets";
 import { SHADER_CUE_KINDS, type ShaderAccentKinds, type ShaderCueKind } from "./shaderEffectPlan";
 import type { BeatJoinAnalysis, ColorGradient, SceneCaptionSettings, Tab, UploadedVideoSource } from "./types";
-import type { SplitMode } from "./sourceTimeline";
+import type { SourceTimelineSegment, SplitMode } from "./sourceTimeline";
 import type { SavedStudioProject, StudioProjectSummary } from "@/lib/studioProjectStore";
 
 export const STUDIO_PROJECT_STORAGE_KEY = "project-stack-structure:studio-project:v1";
@@ -41,6 +41,14 @@ export type PersistedWorkflowUiSettings = {
   shaderPresetId?: string;
   shaderAccentKinds?: ShaderAccentKinds;
   isPreviewExpanded?: boolean;
+  committedSplit?: PersistedCommittedSplit;
+};
+
+export type PersistedCommittedSplit = {
+  kind: "workflow" | "legacy";
+  segments: SourceTimelineSegment[];
+  signature: string;
+  committedAt: string;
 };
 
 export interface PersistedStudioProjectDraft {
@@ -421,7 +429,48 @@ function sanitizeWorkflowUiSettings(settings: PersistedWorkflowUiSettings | unde
   const shaderAccentKinds = sanitizeShaderAccentKinds(settings?.shaderAccentKinds);
   if (Object.keys(shaderAccentKinds).length > 0) next.shaderAccentKinds = shaderAccentKinds;
   if (typeof settings?.isPreviewExpanded === "boolean") next.isPreviewExpanded = settings.isPreviewExpanded;
+  const committedSplit = sanitizeCommittedSplit(settings?.committedSplit);
+  if (committedSplit) next.committedSplit = committedSplit;
   return next;
+}
+
+function sanitizeCommittedSplit(value: PersistedCommittedSplit | undefined): PersistedCommittedSplit | undefined {
+  if (!value || (value.kind !== "workflow" && value.kind !== "legacy")) return undefined;
+  if (typeof value.signature !== "string" || !value.signature.trim()) return undefined;
+  if (typeof value.committedAt !== "string" || !value.committedAt.trim()) return undefined;
+  if (!Array.isArray(value.segments) || value.segments.length === 0) return undefined;
+
+  const segments = value.segments.flatMap((segment) => {
+    if (!Number.isFinite(segment?.id) || !Number.isFinite(segment?.start) || !Number.isFinite(segment?.end)) return [];
+    if (segment.start < 0 || segment.end <= segment.start) return [];
+    const sourceClipIds = Array.isArray(segment.sourceClipIds)
+      ? segment.sourceClipIds.filter((id) => Number.isFinite(id)).map(Number)
+      : [];
+    if (sourceClipIds.length === 0) return [];
+
+    const sanitized: SourceTimelineSegment = {
+      id: Number(segment.id),
+      start: Number(segment.start),
+      end: Number(segment.end),
+      duration: Number(segment.end) - Number(segment.start),
+      sourceClipIds,
+      mergedTail: Boolean(segment.mergedTail),
+    };
+    if (segment.sceneId === null || Number.isFinite(segment.sceneId)) sanitized.sceneId = segment.sceneId;
+    if (typeof segment.sceneLabel === "string" && segment.sceneLabel.trim()) sanitized.sceneLabel = segment.sceneLabel;
+    if (typeof segment.thumbnailUrl === "string" && segment.thumbnailUrl.trim()) sanitized.thumbnailUrl = stripRuntimeUrl(segment.thumbnailUrl);
+    if (typeof segment.clipUrl === "string" && segment.clipUrl.trim()) sanitized.clipUrl = stripRuntimeUrl(segment.clipUrl);
+    if (segment.detector === "pyscenedetect-adaptive") sanitized.detector = segment.detector;
+    return [sanitized];
+  });
+  if (segments.length === 0) return undefined;
+
+  return {
+    kind: value.kind,
+    segments,
+    signature: value.signature,
+    committedAt: value.committedAt,
+  };
 }
 
 function sanitizeShaderAccentKinds(accentKinds: ShaderAccentKinds | undefined): ShaderAccentKinds {
