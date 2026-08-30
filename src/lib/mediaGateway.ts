@@ -231,6 +231,7 @@ export function resolveMediaGatewayUploadFolder(
 export async function uploadFileToMediaGateway(args: {
   file: File;
   folder?: string;
+  preserveFileName?: boolean;
   env?: Record<string, string | undefined>;
   fetchImpl?: typeof fetch;
 }): Promise<MediaGatewayUploadResult> {
@@ -243,6 +244,7 @@ export async function uploadFileToMediaGateway(args: {
   formData.append("userId", config.userId);
   formData.append("bucket", config.bucket);
   formData.append("folder", resolveMediaGatewayUploadFolder(config, args.folder));
+  if (args.preserveFileName) formData.append("preserveFilename", "true");
   formData.append("file", args.file, args.file.name);
 
   const fetcher = args.fetchImpl ?? fetch;
@@ -268,6 +270,7 @@ export async function uploadJsonToMediaGateway(args: {
   data: unknown;
   fileName: string;
   folder?: string;
+  preserveFileName?: boolean;
   env?: Record<string, string | undefined>;
   fetchImpl?: typeof fetch;
 }): Promise<MediaGatewayUploadResult> {
@@ -280,6 +283,7 @@ export async function uploadJsonToMediaGateway(args: {
   return uploadFileToMediaGateway({
     file,
     folder: args.folder,
+    preserveFileName: args.preserveFileName,
     env: args.env,
     fetchImpl: args.fetchImpl,
   });

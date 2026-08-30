@@ -97,6 +97,7 @@ export async function saveStudioProject(params: {
     data: saved,
     fileName: "project.json",
     folder: projectFolder(ownerId, projectId),
+    preserveFileName: true,
   });
 
   const index = await readProjectIndex(ownerId);
@@ -110,6 +111,7 @@ export async function saveStudioProject(params: {
     data: nextIndex,
     fileName: "index.json",
     folder: ownerFolder(ownerId),
+    preserveFileName: true,
   });
   return saved;
 }

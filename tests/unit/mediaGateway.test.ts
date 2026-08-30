@@ -289,6 +289,7 @@ describe("mediaGateway", () => {
         const form = init?.body as FormData;
         const file = form.get("file") as File;
         expect(form.get("folder")).toBe("media-uploads/analysis/essentia");
+        expect(form.get("preserveFilename")).toBeNull();
         expect(file.name).toBe("song-abc.essentia.json");
         expect(file.type).toContain("application/json");
         expect(await file.text()).toContain('"schema": "stack-structure.analysis.v1"');
@@ -303,5 +304,30 @@ describe("mediaGateway", () => {
 
     expect(result.objectKey).toBe("media-uploads/analysis/essentia/song-abc.essentia.json");
     expect(result.mime).toBe("application/json");
+  });
+
+  test("can preserve a stable JSON filename for mutable Studio state", async () => {
+    await uploadJsonToMediaGateway({
+      data: { version: 1, projects: [] },
+      fileName: "index.json",
+      folder: "media-uploads/projects/github-123",
+      preserveFileName: true,
+      env: {
+        MEDIA_GATEWAY_URL: "https://media.local",
+        MEDIA_GATEWAY_TOKEN: "media-token",
+      },
+      fetchImpl: async (_url, init) => {
+        const form = init?.body as FormData;
+        expect(form.get("folder")).toBe("media-uploads/projects/github-123");
+        expect(form.get("preserveFilename")).toBe("true");
+        expect((form.get("file") as File).name).toBe("index.json");
+        return Response.json({
+          bucket: "stack-structure",
+          objectKey: "media-uploads/projects/github-123/index.json",
+          publicUrl: "https://media.local/files/stack-structure/media-uploads/projects/github-123/index.json",
+          mime: "application/json",
+        });
+      },
+    });
   });
 });

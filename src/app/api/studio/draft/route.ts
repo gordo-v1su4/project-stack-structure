@@ -101,6 +101,7 @@ async function saveDraft(request: Request) {
       data: { ...savedDraft, ownerId: user.id },
       fileName: `${encodeURIComponent(user.id)}.json`,
       folder: DRAFT_FOLDER,
+      preserveFileName: true,
     });
 
     const response = NextResponse.json({ success: true, draft: savedDraft, storage: uploaded });
