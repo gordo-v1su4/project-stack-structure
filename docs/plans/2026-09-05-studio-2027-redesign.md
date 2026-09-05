@@ -101,12 +101,11 @@ acts. Existing panels mount in the work surface untouched. The old
 
 **A′ — Shell correction (after first review).** The first Phase A screenshot read
 as three empty boxes. Fixed: the empty monitor is a contact sheet of scene
-thumbnails (`MonitorEmptyState.frames`) and shrinks to ~26vh when nothing
-plays; a blocked act renders a `GateCard` (reason in display type, the one
-door that opens it, and the full pipeline with status) instead of a centered
-sentence; the rail is 72px with act names, not `#01`; the inspector header is
-the project name as a switcher plus save state and a quiet activity icon —
-GitHub identity and run counts moved into the panels; the text ladder moved up
+thumbnails (`MonitorEmptyState.frames`); a blocked act is a title card on the
+monitor (editorial headline, the pipeline reason, one door) that grows to fill
+the work column — no second checklist, no yellow inspector duplicate. The rail
+is 72px with act names, not `#01`; the inspector header is the project name as
+a switcher plus save state and a quiet activity icon. The text ladder moved up
 (fg-3 ≥ 4.5:1) and hairlines are 9%/14%/22%. `ProjectLibrary` and
 `WorkActivity` panels were re-cut onto the token system without logic changes.
 

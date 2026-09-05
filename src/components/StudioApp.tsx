@@ -4,7 +4,7 @@ import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { extractWaveformData, fetchEssentiaAnalysis, getEssentiaStorageFromPayload, parseEssentiaPayload } from "./studio/audioAnalysis";
 import type { DeepgramTranscriptSummary } from "./studio/deepgramUtils";
-import { NAV, resolveCaptionMode } from "./studio/constants";
+import { GATE_HEADLINE, NAV, resolveCaptionMode } from "./studio/constants";
 import { mergeUploadedVideoSourceUpdate, needsSceneDetectionRetry, prepareVideoSources, reconcileSourceCaptionStatus, rerunSourceSceneAnalysis, revokePreparedVideoSources, selectSceneRetrySources } from "./studio/mediaUpload";
 import { uploadFileInChunks } from "./studio/chunkedUploadClient";
 import type { VideoSceneUpdate } from "./studio/mediaUpload";
@@ -41,7 +41,6 @@ import { SplitTab } from "./studio/panels/SplitTab";
 import { createDefaultStoryTabState, StoryTab } from "./studio/panels/StoryTab";
 import { ActRail } from "./studio/shell/ActRail";
 import { BeatSpine } from "./studio/shell/BeatSpine";
-import { GateCard } from "./studio/shell/GateCard";
 import { SlotInspector } from "./studio/shell/SlotInspector";
 import { buildSpineSlots, describeSlot, neighborSlot, type SpineSlot } from "./studio/shell/spineSlots";
 import { CommandPalette, ShortcutSheet } from "./studio/shell/CommandPalette";
@@ -2194,7 +2193,11 @@ export default function StudioApp() {
       ? videoStatus
       : isFinalExporting || isShaderCaptureExporting
         ? finalExportStatus
-        : pipeline.nextHint;
+        : activeStageBlocked
+          ? (stageHeaderModel?.primary?.kind === "open-prerequisite"
+            ? `Waiting on ${NAV.find((item) => item.key === stageHeaderModel.primary?.targetTab)?.label ?? stageHeaderModel.primary.label}`
+            : activePipelineStage?.blockedReason ?? null)
+          : pipeline.nextHint;
   const activityTone: StatusTone = audioError || videoError || finalExportError
     ? "failed"
     : isPreparingAudio || isPreparingVideos || isRerunningSceneAnalysis || isFinalExporting || isShaderCaptureExporting
@@ -2262,7 +2265,7 @@ export default function StudioApp() {
     ? {
         headline: beatJoinAnalysis.sourceLabel,
         meta: `${displayBpm} BPM · ${fmt(beatJoinAnalysis.duration)} · ${beatJoinAnalysis.sections.length} sections${videoSources.length ? ` · ${videoSources.length} clips` : ""}`,
-        next: monitorNext,
+        next: null,
         frames: monitorFrames,
       }
     : {
@@ -2274,6 +2277,23 @@ export default function StudioApp() {
   const gatePrerequisite = stageHeaderModel?.primary?.kind === "open-prerequisite" && stageHeaderModel.primary.targetTab
     ? { tab: stageHeaderModel.primary.targetTab, label: NAV.find((item) => item.key === stageHeaderModel.primary?.targetTab)?.label ?? stageHeaderModel.primary.label }
     : null;
+  const monitorGate = activeStageBlocked && gatePrerequisite
+    ? {
+        kicker: `Waiting on ${gatePrerequisite.label}`,
+        headline: GATE_HEADLINE[gatePrerequisite.tab],
+        detail: activePipelineStage?.blockedReason ?? null,
+        actionLabel: `Open ${gatePrerequisite.label}`,
+        onAction: () => handleSelectTab(gatePrerequisite.tab),
+      }
+    : activeStageBlocked
+      ? {
+          kicker: "Not ready yet",
+          headline: "Finish the acts before this.",
+          detail: activePipelineStage?.blockedReason ?? null,
+          actionLabel: "Go back",
+          onAction: () => handleSelectTab("review"),
+        }
+      : null;
 
   const openCommandPalette = () => setIsCommandPaletteOpen(true);
   const openShortcuts = () => setIsShortcutSheetOpen(true);
@@ -2349,6 +2369,7 @@ export default function StudioApp() {
               empty={monitorEmpty}
               focused={monitorFocused}
               onToggleFocused={() => setIsPreviewExpanded((current) => !current)}
+              gate={monitorGate}
             />
 
             {beatJoinAnalysis && tab !== "review" && !monitorFocused ? (
@@ -2368,10 +2389,8 @@ export default function StudioApp() {
               />
             ) : null}
 
-            <main className={`studio-fade-in min-h-0 flex-1 space-y-3 overflow-y-auto ${monitorFocused ? "hidden" : ""}`}>
-            {activeStageBlocked ? (
-              <GateCard tab={tab} stages={pipeline.stages} reason={activePipelineStage?.blockedReason ?? null} prerequisite={gatePrerequisite} onSelectTab={handleSelectTab} />
-            ) : <>
+            <main className={`studio-fade-in min-h-0 flex-1 space-y-3 overflow-y-auto ${monitorFocused || activeStageBlocked ? "hidden" : ""}`}>
+            {activeStageBlocked ? null : <>
             {tab === "review" && (
               <IngestTab
                 analysis={beatJoinAnalysis}
@@ -2567,6 +2586,7 @@ export default function StudioApp() {
             onNewProject={handleNewProject}
             onProjectSelected={handleProjectSelected}
             onProjectSaved={handleProjectSaved}
+            hideGateChrome={Boolean(monitorGate)}
           >
             {slotEvidence && tab !== "review" ? (
               <SlotInspector

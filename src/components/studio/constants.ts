@@ -12,6 +12,18 @@ export function resolveCaptionMode(saved: SceneCaptionMode | undefined): SceneCa
   return saved ?? "smart";
 }
 
+/** Editorial title-card line for a blocked act, keyed by the prerequisite act. */
+export const GATE_HEADLINE: Record<Tab, string> = {
+  review: "Start with the song.",
+  story: "Confirm the story.",
+  split: "Cut the footage.",
+  shuffle: "Match the shots.",
+  generate: "Close the gaps.",
+  join: "Build the join.",
+  ramp: "Grade the cut.",
+  compose: "Export the cut.",
+};
+
 export const NAV: { key: Tab; label: string; sub: string }[] = [
   { key: "review", label: "Ingest", sub: "media ready" },
   { key: "story", label: "Story", sub: "SRT · sections" },

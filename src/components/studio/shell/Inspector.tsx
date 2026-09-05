@@ -31,6 +31,8 @@ type InspectorProps = {
   onNewProject: () => Promise<boolean>;
   onProjectSelected: (project: StudioProjectSummary, draft: RuntimeStudioProjectDraft) => void;
   onProjectSaved: (project: StudioProjectSummary) => void;
+  /** Hide the blocked callout and prerequisite button when the monitor already shows the gate. */
+  hideGateChrome?: boolean;
   /** Act-specific evidence and controls (Phase C modules). */
   children?: ReactNode;
 };
@@ -54,6 +56,7 @@ export function Inspector({
   onNewProject,
   onProjectSelected,
   onProjectSaved,
+  hideGateChrome = false,
   children,
 }: InspectorProps) {
   const [now, setNow] = useState(() => Date.now());
@@ -95,7 +98,7 @@ export function Inspector({
             <p className="mt-2 font-mono text-[11.5px] text-fg-2" title={model.status}>{model.status}</p>
             <p className="mt-3 text-[13px] leading-[1.5] text-fg-2">{model.description}</p>
 
-            {blocked ? (
+            {blocked && !hideGateChrome ? (
               <p className="mt-3 rounded-md border border-warn-lo bg-warn-tint px-3 py-2 text-[12px] leading-5 text-warn">{blocked.reason}</p>
             ) : null}
             {notice ? (
@@ -110,7 +113,7 @@ export function Inspector({
             ) : null}
 
             <div className="mt-5 flex flex-col gap-2">
-              {primary ? (
+              {primary && !(hideGateChrome && primary.kind === "open-prerequisite") ? (
                 <Button
                   variant={primary.kind === "open-prerequisite" ? "secondary" : "primary"}
                   size="lg"
