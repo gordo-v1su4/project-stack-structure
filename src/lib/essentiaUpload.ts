@@ -92,6 +92,7 @@ export function mediaUploadBelongsToOwner(objectKey: string, ownerId: string) {
   const ownerSegment = essentiaUploadOwnerSegment(ownerId);
   const parts = normalized.split("/");
   return parts[1] === ownerSegment
+    || (parts[1] === "projects" && parts[2] === ownerSegment)
     || (parts[1] === "source-audio" && parts[2] === "chunks" && parts[3] === ownerSegment);
 }
 

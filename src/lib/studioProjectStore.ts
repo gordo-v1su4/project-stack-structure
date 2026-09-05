@@ -7,11 +7,21 @@ import {
   normalizeMediaPath,
   uploadJsonToMediaGateway,
 } from "@/lib/mediaGateway";
+import {
+  buildProjectStorageFolder,
+  normalizeStudioOwnerSegment,
+  normalizeStudioProjectId,
+  ownerProjectsIndexPath,
+  ownerProjectsRoot,
+  resolveLegacyProjectObjectPath,
+  resolveProjectObjectPath,
+} from "@/lib/studioStoragePaths";
 
 export type StudioProjectSummary = {
   id: string;
   name: string;
   ownerId: string;
+  storageFolder: string;
   createdAt: string;
   updatedAt: string;
   audioLabel: string | null;
@@ -32,7 +42,6 @@ type StudioProjectIndex = {
   projects: StudioProjectSummary[];
 };
 
-const PROJECTS_FOLDER = "media-uploads/projects";
 const LOCAL_PROJECTS_FOLDER = path.join(process.cwd(), ".tmp", "studio-projects");
 
 export function studioProjectReadSources(env: Record<string, string | undefined> = process.env) {
@@ -54,7 +63,7 @@ export async function readStudioProject(ownerId: string, projectId: string): Pro
   for (const source of readSources) {
     const project = source === "local"
       ? await readLocalJson<SavedStudioProject>(localProjectPath(safeOwnerId, safeProjectId))
-      : await readRemoteJson<SavedStudioProject>(projectObjectPath(safeOwnerId, safeProjectId));
+      : await readRemoteProject(safeOwnerId, safeProjectId);
     if (!isSavedStudioProject(project, safeOwnerId, safeProjectId)) continue;
     if (source === "remote" && readSources[0] === "local") {
       await writeLocalJson(localProjectPath(safeOwnerId, safeProjectId), project);
@@ -76,10 +85,13 @@ export async function saveStudioProject(params: {
   const now = new Date().toISOString();
   const draft = { ...params.draft, savedAt: now };
   const scenes = draft.videoSources.flatMap((source) => source.scenes ?? []);
+  const storageFolder = existing?.project.storageFolder
+    ?? buildProjectStorageFolder(ownerId, projectId, params.name);
   const project: StudioProjectSummary = {
     id: projectId,
     name: normalizeProjectName(params.name),
     ownerId,
+    storageFolder,
     createdAt: existing?.project.createdAt ?? now,
     updatedAt: now,
     audioLabel: draft.analysis?.sourceLabel ?? null,
@@ -96,7 +108,7 @@ export async function saveStudioProject(params: {
   await uploadJsonToMediaGateway({
     data: saved,
     fileName: "project.json",
-    folder: projectFolder(ownerId, projectId),
+    folder: storageFolder,
     preserveFileName: true,
   });
 
@@ -110,7 +122,7 @@ export async function saveStudioProject(params: {
   await uploadJsonToMediaGateway({
     data: nextIndex,
     fileName: "index.json",
-    folder: ownerFolder(ownerId),
+    folder: ownerProjectsRoot(ownerId),
     preserveFileName: true,
   });
   return saved;
@@ -120,20 +132,19 @@ export function createStudioProjectId() {
   return crypto.randomUUID();
 }
 
-function ownerFolder(ownerId: string) {
-  return normalizeMediaPath(`${PROJECTS_FOLDER}/${normalizeIdentity(ownerId)}`);
-}
+async function readRemoteProject(ownerId: string, projectId: string): Promise<SavedStudioProject | null> {
+  const index = await readProjectIndex(ownerId);
+  const entry = index.projects.find((project) => project.id === projectId);
+  const objectPaths = [
+    entry?.storageFolder ? resolveProjectObjectPath(entry.storageFolder) : null,
+    resolveLegacyProjectObjectPath(ownerId, projectId),
+  ].filter((value): value is string => Boolean(value));
 
-function projectFolder(ownerId: string, projectId: string) {
-  return normalizeMediaPath(`${ownerFolder(ownerId)}/${normalizeProjectId(projectId)}`);
-}
-
-function projectObjectPath(ownerId: string, projectId: string) {
-  return `${projectFolder(ownerId, projectId)}/project.json`;
-}
-
-function indexObjectPath(ownerId: string) {
-  return `${ownerFolder(ownerId)}/index.json`;
+  for (const objectPath of objectPaths) {
+    const project = await readRemoteJson<SavedStudioProject>(objectPath);
+    if (isSavedStudioProject(project, ownerId, projectId)) return project;
+  }
+  return null;
 }
 
 function localProjectPath(ownerId: string, projectId: string) {
@@ -150,7 +161,7 @@ async function readProjectIndex(ownerId: string): Promise<StudioProjectIndex> {
   for (const source of readSources) {
     const index = source === "local"
       ? await readLocalJson<StudioProjectIndex>(localIndexPath(safeOwnerId))
-      : await readRemoteJson<StudioProjectIndex>(indexObjectPath(safeOwnerId));
+      : await readRemoteJson<StudioProjectIndex>(ownerProjectsIndexPath(safeOwnerId));
     if (!isProjectIndex(index, safeOwnerId)) continue;
     if (source === "remote" && readSources[0] === "local") {
       await writeLocalJson(localIndexPath(safeOwnerId), index);
@@ -191,15 +202,11 @@ async function writeLocalJson(filePath: string, data: unknown) {
 }
 
 function normalizeIdentity(value: string) {
-  const normalized = value.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");
-  if (!normalized) throw new Error("A valid project owner is required.");
-  return normalized.slice(0, 96);
+  return normalizeStudioOwnerSegment(value);
 }
 
 function normalizeProjectId(value: string) {
-  const normalized = value.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");
-  if (!normalized) throw new Error("A valid project id is required.");
-  return normalized.slice(0, 96);
+  return normalizeStudioProjectId(value);
 }
 
 function normalizeProjectName(value: string) {
@@ -210,7 +217,8 @@ function isProjectIndex(value: unknown, ownerId: string): value is StudioProject
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const index = value as Partial<StudioProjectIndex>;
   return index.version === 1 && Array.isArray(index.projects)
-    && index.projects.every((project) => project?.ownerId === ownerId && typeof project.id === "string");
+    && index.projects.every((project) => project?.ownerId === ownerId && typeof project.id === "string"
+      && (typeof project.storageFolder === "string" || project.storageFolder === undefined));
 }
 
 function isSavedStudioProject(value: unknown, ownerId: string, projectId: string): value is SavedStudioProject {
