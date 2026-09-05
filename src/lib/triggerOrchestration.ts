@@ -12,6 +12,7 @@ import type { EssentiaStoredAudioPayload, essentiaStoredAudioTask } from "@/trig
 import type { MediaSceneDetectionPayload, mediaVideoPipelineTask } from "@/trigger/media";
 import type { FfglitchPayload, ffglitchTask } from "@/trigger/ffglitch";
 import type { ImageSplitterPayload, imageSplitterTask } from "@/trigger/imageSplitter";
+import type { StoryTreatmentPayload, storyTreatmentTask } from "@/trigger/storyTreatment";
 import { createTriggerIdempotencyKey } from "@/lib/triggerIdempotency";
 
 export const STACK_STRUCTURE_TRIGGER_TASKS = {
@@ -21,6 +22,7 @@ export const STACK_STRUCTURE_TRIGGER_TASKS = {
   mediaFinalization: "media-video-finalize",
   essentiaAnalysis: "essentia-analyze-stored-audio",
   smartSceneCaption: "qwen-smart-scene-caption",
+  storyTreatment: "qwen-story-treatment",
   localGeneration: "local-ai-generation",
   higgsfieldGeneration: "higgsfield-nano-banana-pro-grid",
   deepgramTranscription: "deepgram-transcribe-stored-audio",
@@ -106,6 +108,63 @@ export async function triggerSmartSceneCaption(payload: SmartSceneCaptionPayload
     tags: dispatch.tags,
     metadata: dispatch.metadata,
   });
+}
+
+export type StoryTreatmentTriggerResult = {
+  ok: boolean;
+  model: string;
+  output: Record<string, unknown>;
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+  };
+};
+
+export async function triggerStoryTreatment(payload: StoryTreatmentPayload) {
+  assertTriggerConfigured();
+  const dispatch = await buildDispatchContext(["stack-structure", "story", "qwen", "vm100-heavy"], {
+    stageLabel: "Waiting for VM100 story treatment capacity",
+    progressMode: "indeterminate",
+  });
+  return tasks.trigger<typeof storyTreatmentTask>(STACK_STRUCTURE_TRIGGER_TASKS.storyTreatment, payload, {
+    idempotencyKey: createTriggerIdempotencyKey("story-treatment", [
+      payload.model,
+      payload.instructions,
+      payload.input,
+      String(payload.maxTokens ?? ""),
+      "story-treatment-v1",
+    ]),
+    idempotencyKeyTTL: "24h",
+    maxAttempts: 2,
+    tags: dispatch.tags,
+    metadata: dispatch.metadata,
+  });
+}
+
+export async function waitForTriggerRunResult<T>(
+  runId: string,
+  options: { timeoutMs: number; pollIntervalMs?: number },
+): Promise<T> {
+  const startedAt = Date.now();
+  let currentIntervalMs = options.pollIntervalMs ?? 2_000;
+
+  while (Date.now() - startedAt <= options.timeoutMs) {
+    const run = await retrieveTriggerRun(runId);
+    if (run.isFailed || run.isCancelled) {
+      throw new Error(run.error?.message || `Trigger run ${runId} ended with ${run.status}.`);
+    }
+    if (run.isCompleted) {
+      if (run.isSuccess) return run.output as T;
+      throw new Error(run.error?.message || `Trigger run ${runId} ended with ${run.status}.`);
+    }
+
+    const elapsedMs = Date.now() - startedAt;
+    await sleep(Math.max(0, Math.min(currentIntervalMs, options.timeoutMs - elapsedMs)));
+    currentIntervalMs = Math.min(Math.ceil(currentIntervalMs * 1.5), 15_000);
+  }
+
+  throw new Error(`Trigger run ${runId} timed out after ${Math.round(options.timeoutMs / 1_000)}s.`);
 }
 
 export async function triggerLocalGeneration(payload: LocalGenerationPayload) {
@@ -358,4 +417,8 @@ async function currentApplicationUserId() {
     throw new Error("Sign in with GitHub before dispatching Trigger tasks.");
   }
   return userId;
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

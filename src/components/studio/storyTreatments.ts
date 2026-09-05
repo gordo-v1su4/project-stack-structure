@@ -1,6 +1,6 @@
 import type { MusicVideoProject, SemanticClipMatch, StoryPlanDraft, VideoMoment } from "./musicVideoProject";
 
-export const STORY_TREATMENT_MODEL = "gpt-5.4-mini";
+export const STORY_TREATMENT_MODEL = "Qwen/Qwen3-VL-4B-Instruct-GGUF:Q4_K_M";
 export const STORY_TREATMENT_KINDS = ["faithful", "bold", "wildcard"] as const;
 export const COVERAGE_STRONG_THRESHOLD = 0.45;
 export const COVERAGE_WEAK_THRESHOLD = 0.2;

@@ -7,14 +7,17 @@ import time
 from typing import Any
 
 import requests
-from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi import Body, FastAPI, File, Form, Header, HTTPException, UploadFile
 
 QWEN_MODEL = os.getenv("QWEN_GGUF_MODEL", "Qwen/Qwen3-VL-4B-Instruct-GGUF:Q4_K_M")
 QWEN_URL = os.getenv("QWEN_LLAMA_URL", "http://qwen-llama:18092/v1/chat/completions").rstrip("/")
 QWEN_HEALTH_URL = os.getenv("QWEN_LLAMA_HEALTH_URL", "http://qwen-llama:18092/health")
 MAX_TOKENS = int(os.getenv("QWEN_MAX_TOKENS", "180"))
+STORY_MAX_TOKENS = int(os.getenv("QWEN_STORY_MAX_TOKENS", "4096"))
 TEMPERATURE = float(os.getenv("QWEN_TEMPERATURE", "0.5"))
+STORY_TEMPERATURE = float(os.getenv("QWEN_STORY_TEMPERATURE", "0.6"))
 TIMEOUT = int(os.getenv("QWEN_TIMEOUT_SECONDS", "300"))
+STORY_TIMEOUT = int(os.getenv("QWEN_STORY_TIMEOUT_SECONDS", "600"))
 API_TOKEN = os.getenv("CAPTION_API_TOKEN", "")
 LOCK_PATH = os.getenv("GPU_LOCK_PATH", "/gpu-lock/stack-structure-gpu.lock")
 LOCK_TIMEOUT = float(os.getenv("GPU_LOCK_TIMEOUT_SECONDS", "900"))
@@ -81,6 +84,19 @@ def parse_caption(value: str) -> dict[str, Any]:
         except json.JSONDecodeError:
             pass
     return {"caption": re.sub(r"\s+", " ", cleaned).strip()}
+
+
+def parse_json_object(value: str) -> dict[str, Any]:
+    cleaned = value.strip().strip("`")
+    if cleaned.lower().startswith("json"):
+        cleaned = cleaned.split("\n", 1)[-1].strip()
+    match = re.search(r"\{.*\}", cleaned, flags=re.DOTALL)
+    if not match:
+        raise ValueError("Qwen returned no JSON object")
+    parsed = json.loads(match.group(0))
+    if not isinstance(parsed, dict):
+        raise ValueError("Qwen story response must be a JSON object")
+    return parsed
 
 
 @app.get("/health")
@@ -160,3 +176,50 @@ def caption_scene(
             raise
         except Exception as exc:
             raise HTTPException(status_code=502, detail=f"Qwen3-VL GGUF captioning failed: {str(exc)[:500]}") from exc
+
+
+@app.post("/story/treatments")
+def story_treatments(
+    body: dict[str, Any] = Body(...),
+    authorization: str | None = Header(default=None),
+):
+    require_auth(authorization)
+    instructions = str(body.get("instructions") or "").strip()
+    user_input = str(body.get("input") or "").strip()
+    if not instructions or not user_input:
+        raise HTTPException(status_code=400, detail="instructions and input are required")
+    model = str(body.get("model") or QWEN_MODEL).strip() or QWEN_MODEL
+    max_tokens = int(body.get("max_tokens") or STORY_MAX_TOKENS)
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": instructions},
+            {
+                "role": "user",
+                "content": f"{user_input}\n\nReturn only valid JSON with a top-level treatments array. No markdown fences.",
+            },
+        ],
+        "max_tokens": max_tokens,
+        "temperature": STORY_TEMPERATURE,
+    }
+    with GpuLock():
+        try:
+            response = requests.post(QWEN_URL, json=payload, timeout=STORY_TIMEOUT)
+            response.raise_for_status()
+            data = response.json()
+            text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+            if not str(text).strip():
+                raise RuntimeError("Qwen returned no story treatment text")
+            parsed = parse_json_object(str(text))
+            usage = data.get("usage") if isinstance(data.get("usage"), dict) else None
+            return {
+                "ok": True,
+                "source": "qwen3-vl-server",
+                "model": model,
+                "output": parsed,
+                "usage": usage,
+            }
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"Qwen story treatment failed: {str(exc)[:500]}") from exc

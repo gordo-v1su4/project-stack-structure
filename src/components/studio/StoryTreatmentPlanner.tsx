@@ -157,7 +157,7 @@ export function StoryTreatmentPlanner({ analysis, transcriptSummary, project, st
           <div className="min-w-44 border-l border-[#49301f] pl-4 font-mono text-[9px] uppercase tracking-[0.14em] text-[#817970]">
             <div>{project.videoMoments.length} captioned moments</div>
             <div className="mt-1">3 treatments · 1 decision</div>
-            <div className="mt-1 text-[#c9a27e]">No media sent to the LLM</div>
+            <div className="mt-1 text-[#c9a27e]">Caption evidence only · local Qwen</div>
           </div>
         </div>
       </div>

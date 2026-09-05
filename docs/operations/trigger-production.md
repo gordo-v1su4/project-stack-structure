@@ -23,6 +23,7 @@ environment, or deployment history here.
 | `media-video-finalize` | `media-finalization` (2) | final analysis manifest in RustFS |
 | `essentia-analyze-stored-audio` | `vm100-heavy` (1) | analysis JSON in RustFS |
 | `qwen-smart-scene-caption` | `vm100-heavy` (1) | caption JSON in RustFS |
+| `qwen-story-treatment` | `vm100-heavy` (1) | story treatments JSON |
 | `local-ai-generation` | `vm100-heavy` (1) | generated objects in RustFS |
 | `ffmpeg-preview-or-concat` | `vm100-heavy` (1) | preview MP4 in RustFS |
 | `ffmpeg-final-music-video-export` | `vm100-heavy` (1) | final MP4 in RustFS |
@@ -105,7 +106,7 @@ gitignored bootstrap/recovery fallback. Never print either file.
 3. Run `bun run trigger:deploy -- --dry-run`.
 4. Run `bun run trigger:deploy`.
 5. Confirm the emitted image was pushed to `localhost:5000`.
-6. Query the current production worker and compare all 15 task IDs with the
+6. Query the current production worker and compare all 16 task IDs with the
    table above before triggering acceptance runs.
 
 The deploy script refuses non-Linux hosts, verifies that SDK, build, and React
@@ -142,7 +143,7 @@ or deploy must not modify `/opt/pindeck`.
 Static checks are prerequisites, not completion. Record separately:
 
 - focused and full tests, lint, typecheck, and production build;
-- current worker version, deployment code, and exact 15-task inventory;
+- current worker version, deployment code, and exact 16-task inventory;
 - one authenticated browser input and its application user/project ID;
 - parent and child run IDs with queue/start/end timing;
 - VM100 service responses for the exercised path;

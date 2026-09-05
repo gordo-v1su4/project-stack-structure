@@ -44,6 +44,7 @@ describe("Trigger orchestration", () => {
       mediaFinalization: "media-video-finalize",
       essentiaAnalysis: "essentia-analyze-stored-audio",
       smartSceneCaption: "qwen-smart-scene-caption",
+      storyTreatment: "qwen-story-treatment",
       localGeneration: "local-ai-generation",
       higgsfieldGeneration: "higgsfield-nano-banana-pro-grid",
       deepgramTranscription: "deepgram-transcribe-stored-audio",

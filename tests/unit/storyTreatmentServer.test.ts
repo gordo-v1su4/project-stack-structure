@@ -9,29 +9,32 @@ const request: StoryTreatmentRequest = {
   footage: { captionClusters: ["crowd dancing on cracked floor"], sourceCount: 21, momentCount: 42 },
 };
 
-describe("story treatment OpenAI service", () => {
-  test("uses GPT-5.4 mini, structured output, store false, and retries malformed output once", async () => {
-    const calls: Array<Record<string, unknown>> = [];
+describe("story treatment Qwen service", () => {
+  test("dispatches Trigger, waits for the run, and retries malformed output once", async () => {
+    const calls: Array<{ instructions: string; input: string }> = [];
     const valid = buildValidPayload();
-    const client = {
-      responses: {
-        create: async (input: Record<string, unknown>) => {
-          calls.push(input);
-          return calls.length === 1
-            ? { output_text: "{not-json", model: STORY_TREATMENT_MODEL, usage: null }
-            : { output_text: JSON.stringify(valid), model: STORY_TREATMENT_MODEL, usage: { input_tokens: 100, output_tokens: 200 } };
-        },
-      },
-    };
+    let attempt = 0;
     const result = await generateStoryTreatments(request, {
-      client: client as never,
       now: () => new Date("2026-09-02T12:00:00.000Z"),
+      gatewayModel: STORY_TREATMENT_MODEL,
+      trigger: async (payload) => {
+        calls.push({ instructions: payload.instructions, input: payload.input });
+        attempt += 1;
+        return { id: `run-story-${attempt}` };
+      },
+      waitForRun: async <T,>(_runId: string) => {
+        if (attempt === 1) throw new Error("Story response must contain exactly three treatments.");
+        return {
+          ok: true,
+          model: STORY_TREATMENT_MODEL,
+          output: valid,
+          usage: { prompt_tokens: 100, completion_tokens: 200 },
+        } as T;
+      },
     });
 
     expect(calls).toHaveLength(2);
-    expect(calls[0]?.model).toBe(STORY_TREATMENT_MODEL);
-    expect(calls[0]?.store).toBe(false);
-    expect((calls[0]?.text as { format?: { type?: string } }).format?.type).toBe("json_schema");
+    expect(calls[0]?.instructions).toContain("captionClusters");
     expect(result.treatments).toHaveLength(3);
     expect(result.meta).toEqual({
       model: STORY_TREATMENT_MODEL,
@@ -42,8 +45,14 @@ describe("story treatment OpenAI service", () => {
   });
 
   test("fails after one validation retry", async () => {
-    const client = { responses: { create: async () => ({ output_text: "{}", model: STORY_TREATMENT_MODEL, usage: null }) } };
-    await expect(generateStoryTreatments(request, { client: client as never })).rejects.toThrow(/after validation retry/i);
+    await expect(generateStoryTreatments(request, {
+      trigger: async () => ({ id: "run-story-fail" }),
+      waitForRun: async <T,>() => ({
+        ok: true,
+        model: STORY_TREATMENT_MODEL,
+        output: { treatments: [] },
+      } as T),
+    })).rejects.toThrow(/after validation retry/i);
   });
 });
 
