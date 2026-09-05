@@ -607,6 +607,13 @@ export default function StudioApp() {
 
     return buildBeatSegments(sourceClips, bpm, barsPerSeg);
   }, [sourceClips, beatJoinAnalysis, beatSplitMode, barsPerSeg, sensitivity, bpm]);
+  // Scene detection rewrites `videoSources[].scenes` without changing source
+  // count or duration, so the boundaries must be part of the signature or the
+  // committed split silently drifts from what Split renders.
+  const sceneSignature = useMemo(
+    () => videoSources.map((source) => [source.id, (source.scenes ?? []).map((scene) => [scene.id, scene.start, scene.end])]),
+    [videoSources],
+  );
   const splitSignature = useMemo(
     () =>
       JSON.stringify({
@@ -615,12 +622,13 @@ export default function StudioApp() {
         density: Math.round(sensitivity),
         sourceCount: sourceClips.length,
         sourceDuration: sourceClips[sourceClips.length - 1]?.end ?? 0,
+        scenes: sceneSignature,
         audioSource: beatJoinAnalysis?.sourceLabel ?? null,
         storyContentSignature: storyState.storyContentSignature,
         story: storyState.storyBeats.map((beat) => [beat.id, beat.label, beat.start, beat.end, beat.prompt]),
         storyPace: normalizeStoryEditSettings(storyState.editSettings).cutDensity,
       }),
-    [beatJoinAnalysis?.sourceLabel, clipDur, sensitivity, sourceClips, splitMode, storyState.editSettings, storyState.storyBeats, storyState.storyContentSignature],
+    [beatJoinAnalysis?.sourceLabel, clipDur, sceneSignature, sensitivity, sourceClips, splitMode, storyState.editSettings, storyState.storyBeats, storyState.storyContentSignature],
   );
   const beatSplitSignature = useMemo(
     () =>
