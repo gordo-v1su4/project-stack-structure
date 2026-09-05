@@ -60,6 +60,20 @@ Scale local checks to the change: diff/links/commands for docs, affected tests a
 - Pipeline or service work: [product infrastructure](docs/architecture/product-infrastructure.md), [Trigger production](docs/operations/trigger-production.md), and [local generation](docs/local-generation.md), as relevant. Pushes to `main` auto-deploy the web app to Vercel.
 - Homelab runbooks, endpoints, shared skills, adapters, and scripts: sibling `proxmox-home` (`C:\Users\Gordo\Documents\Github\proxmox-home` on Windows). Consult relevant guidance for homelab work; its Git policy applies to changes there.
 
+## Agent skills
+
+### Issue tracker
+
+Issues and specs live as GitHub issues in this repo (`gh` CLI). See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Five canonical triage roles with matching label strings: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context layout: root `CONTEXT.md` plus `docs/adr/`. See `docs/agents/domain.md`.
+
 ## Cursor Cloud
 
 For cloud setup, startup, or recovery, use [cursor-cloud-setup/README.md](cursor-cloud-setup/README.md). `.cursor/environment.json` loads `scripts/cloud-agent-start.sh`; do not create `.env` files in the agent VM or give Cursor the broad Hermes Bitwarden token. Private generation uses SwarmUI on `:7861`, not its ComfyUI backend on `:7821`. Keep `TS_AUTHKEY` in Cursor environment-scoped Runtime Secrets.

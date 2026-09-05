@@ -1,16 +1,17 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import type { PersistedStudioProjectDraft, RuntimeStudioProjectDraft } from "./projectPersistence";
 import type { StudioProjectSummary } from "@/lib/studioProjectStore";
 import { ProjectLibrary } from "./ProjectLibrary";
+import { describeSaveState, type SaveState } from "./saveState";
+import { StatusDot } from "./ui";
 import { WorkActivity } from "./WorkActivity";
 
 type StudioHeaderProps = {
-  tabLabel: string;
-  tabSub: string;
-  stepLabel: string | null;
   songLabel: string | null;
   songDuration: number | null;
+  saveState: SaveState;
   projectDraft: PersistedStudioProjectDraft;
   activeProjectId: string | null;
   activeProjectName: string;
@@ -19,16 +20,32 @@ type StudioHeaderProps = {
   onProjectSaved: (project: StudioProjectSummary) => void;
 };
 
-export function StudioHeader({ tabLabel, tabSub, stepLabel, songLabel, songDuration, projectDraft, activeProjectId, activeProjectName, onNewProject, onProjectSelected, onProjectSaved }: StudioHeaderProps) {
+/** Project identity + persistence state. Stage identity lives in StageHeader. */
+export function StudioHeader({ songLabel, songDuration, saveState, projectDraft, activeProjectId, activeProjectName, onNewProject, onProjectSelected, onProjectSaved }: StudioHeaderProps) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 15_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const save = describeSaveState(saveState, now);
+
   return (
-    <header className="flex items-center justify-between border-b border-[#181818] bg-[#0c0c0c] px-5 py-[8px] shrink-0">
-      <div className="flex items-center gap-3">
-        <span className="text-[10px] uppercase tracking-[0.22em] text-[#363636]">SVS</span>
-        <span className="text-[#222]">/</span>
-        <span className="text-[12px] font-semibold uppercase tracking-[0.18em] text-[#d0d0d0]">{tabLabel}</span>
-        <span className="text-[10px] text-[#3a3a3a] border-l border-[#222] pl-3 ml-1">{tabSub}</span>
+    <header className="flex h-12 shrink-0 items-center justify-between gap-4 border-b border-line bg-ink-1 px-5">
+      <div className="flex min-w-0 items-center gap-3">
+        <span className="truncate text-[13px] font-medium text-fg-0" title={activeProjectName}>{activeProjectName}</span>
+        <span className="flex items-center gap-1.5 rounded-md border border-line px-2 py-[3px] text-[11px] text-fg-2" title={save.detail}>
+          <StatusDot tone={save.tone} pulse />
+          {save.label}
+        </span>
+        {songLabel ? (
+          <span className="hidden min-w-0 items-center gap-2 text-[11px] text-fg-3 md:flex" title={songLabel}>
+            <span className="text-fg-4">·</span>
+            <span className="truncate font-mono">{songLabel}</span>
+            {songDuration ? <span className="font-mono text-fg-4">{formatDuration(songDuration)}</span> : null}
+          </span>
+        ) : null}
       </div>
-      <div className="flex items-center gap-4">
+      <div className="flex shrink-0 items-center gap-3">
         <WorkActivity />
         <ProjectLibrary
           draft={projectDraft}
@@ -38,17 +55,6 @@ export function StudioHeader({ tabLabel, tabSub, stepLabel, songLabel, songDurat
           onProjectSelected={onProjectSelected}
           onProjectSaved={onProjectSaved}
         />
-        {songLabel ? (
-          <span className="max-w-[280px] truncate font-mono text-[10px] text-[#5a5a5a]" title={songLabel}>
-            {songLabel}
-            {songDuration ? ` · ${formatDuration(songDuration)}` : ""}
-          </span>
-        ) : (
-          <span className="text-[10px] uppercase tracking-[0.18em] text-[#3a3a3a]">No master audio</span>
-        )}
-        {stepLabel ? (
-          <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[#e05c00]">{stepLabel}</span>
-        ) : null}
       </div>
     </header>
   );

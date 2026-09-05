@@ -1,22 +1,27 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { fmt } from "../math";
+import { deriveIngestLanes, hasRequiredIngestReferences, isCaptionContextReady, type IngestLane, type IngestLaneKey } from "../ingestLanes";
 import { needsSceneDetectionRetry } from "../mediaUpload";
 import { isSourceCaptionFailed } from "../sceneCaptioning";
 import { sceneCaptionMatchesMode } from "../sceneCaptioning";
 import { SourceVideoLibrary } from "../SourceVideoLibrary";
 import { IngestVocalStemLane } from "../IngestVocalStemLane";
 import { UploadControl } from "../UploadControl";
+import { Button, Kicker, StatusDot, TONE_TEXT, type StatusTone } from "../ui";
 import type { DeepgramTranscriptSummary } from "../deepgramUtils";
 import { REFERENCE_ASSET_SLOT_DETAILS, REFERENCE_ASSET_SLOT_LABELS, type ReferenceAsset, type ReferenceAssetKind, type ReferenceAssetLibraryRole, type ReferenceAssetRole } from "../referenceAssets";
 import type { BeatJoinAnalysis, DetectedSceneSegment, SceneCaptionMode, UploadedVideoSource } from "../types";
+import { FAST_CAPTIONS_ENABLED } from "../constants";
 
 type IngestTabProps = {
   analysis: BeatJoinAnalysis | null;
   audioStatus: string;
   audioError: string | null;
+  audioProgress: number;
   isPreparingAudio: boolean;
+  onAudioUpload: (files: File[]) => void | Promise<void>;
   vocalStemName: string;
   transcriptSummary: DeepgramTranscriptSummary | null;
   videoSources: UploadedVideoSource[];
@@ -40,13 +45,32 @@ type IngestTabProps = {
   onVocalStemTranscriptFailed: (message: string) => void;
 };
 
-type ReadinessTone = "ready" | "processing" | "failed" | "waiting";
+type ReadinessTone = StatusTone;
 
+type IngestStepKey = "song" | "stem" | "references" | "footage" | "captions";
+
+const STEP_ORDER: IngestStepKey[] = ["song", "stem", "references", "footage", "captions"];
+
+const STEP_TITLES: Record<IngestStepKey, string> = {
+  song: "Master song",
+  stem: "Vocal stem",
+  references: "References",
+  footage: "Footage",
+  captions: "Scenes & captions",
+};
+
+/**
+ * Ingest is a checklist. Every step shows one status line derived from the
+ * same lane model the pipeline uses, and the work for that step lives right
+ * under its heading — no separate readiness grid.
+ */
 export function IngestTab({
   analysis,
   audioStatus,
   audioError,
+  audioProgress,
   isPreparingAudio,
+  onAudioUpload,
   vocalStemName,
   transcriptSummary,
   videoSources,
@@ -71,12 +95,71 @@ export function IngestTab({
 }: IngestTabProps) {
   const [captionSearch, setCaptionSearch] = useState("");
   const stats = buildVideoStats(videoSources, captionMode);
-  const audioTone: ReadinessTone = audioError ? "failed" : isPreparingAudio ? "processing" : analysis ? "ready" : "waiting";
-  const stemTone: ReadinessTone = transcriptSummary ? "ready" : vocalStemName ? "processing" : "waiting";
-  const videoTone: ReadinessTone = videoError ? "failed" : isPreparingVideos || stats.detecting > 0 || stats.captioning > 0 ? "processing" : videoSources.length ? "ready" : "waiting";
-  const sceneTone: ReadinessTone = stats.sceneFailed > 0 ? "failed" : stats.sceneCount > 0 && stats.detecting === 0 ? "ready" : stats.detecting > 0 ? "processing" : "waiting";
-  const captionTone: ReadinessTone = stats.captionFailed > 0 ? "failed" : stats.captionTotal > 0 && stats.captionReady === stats.captionTotal ? "ready" : stats.captioning > 0 ? "processing" : "waiting";
-  const storageTone: ReadinessTone = stats.storageFailed > 0 ? "failed" : stats.storageUploaded === videoSources.length && videoSources.length > 0 ? "ready" : videoSources.length > 0 ? "processing" : "waiting";
+  const lanes = useMemo(() => deriveIngestLanes({
+    hasAudioAnalysis: analysis !== null,
+    hasLyricTranscript: Boolean(transcriptSummary?.chunks.length),
+    referenceAssets,
+    videoCount: videoSources.length,
+    sceneCount: stats.sceneCount,
+    captionReadyCount: stats.captionReady,
+    captionTotalCount: stats.captionTotal,
+    captionJobsRunning: stats.captioning > 0,
+  }), [analysis, referenceAssets, stats.captionReady, stats.captionTotal, stats.captioning, stats.sceneCount, transcriptSummary, videoSources.length]);
+  const laneByKey = useMemo(() => new Map(lanes.map((lane) => [lane.key, lane])), [lanes]);
+  const captionContextReady = isCaptionContextReady({ hasLyricTranscript: Boolean(transcriptSummary?.chunks.length), referenceAssets });
+  const referencesReady = hasRequiredIngestReferences(referenceAssets);
+
+  const steps = useMemo<Record<IngestStepKey, { tone: ReadinessTone; status: string }>>(() => {
+    const song = laneByKey.get("song");
+    const stem = laneByKey.get("stem");
+    const clips = laneByKey.get("clips");
+    const scenes = laneByKey.get("scenes");
+    const captions = laneByKey.get("captions");
+    const footageTone: ReadinessTone = videoError || stats.storageFailed > 0 || stats.sceneFailed > 0
+      ? "failed"
+      : isPreparingVideos || stats.detecting > 0
+        ? "processing"
+        : clips?.ready
+          ? "ready"
+          : "waiting";
+    const captionTone: ReadinessTone = stats.captionFailed > 0
+      ? "failed"
+      : captions?.ready
+        ? "ready"
+        : stats.captioning > 0 || stats.detecting > 0
+          ? "processing"
+          : "waiting";
+    return {
+      song: {
+        tone: audioError ? "failed" : isPreparingAudio ? "processing" : song?.ready ? "ready" : "waiting",
+        status: audioError ?? (isPreparingAudio ? `Analyzing · ${Math.floor(audioProgress)}%` : analysis ? `${analysis.sourceLabel} · ${fmt(analysis.duration)}` : "Upload the master song"),
+      },
+      stem: {
+        tone: transcriptSummary ? "ready" : vocalStemName ? "processing" : "waiting",
+        status: transcriptSummary ? `${transcriptSummary.chunks.length} timed lyric lines` : vocalStemName ? `Transcribing ${vocalStemName}…` : stem?.detail ?? "Upload the isolated vocal",
+      },
+      references: {
+        tone: referenceAssets.some((asset) => asset.storageStatus === "failed") ? "failed" : referencesReady ? "ready" : referenceAssets.some((asset) => asset.storageStatus === "uploading") ? "processing" : "waiting",
+        status: referencesReady
+          ? `${referenceAssets.filter((asset) => asset.storageStatus === "uploaded").length} sheets ready`
+          : "Character 1 + Environment required",
+      },
+      footage: {
+        tone: footageTone,
+        status: videoError
+          ?? (videoSources.length === 0
+            ? "Upload source clips"
+            : `${videoSources.length} clip${videoSources.length === 1 ? "" : "s"} · ${scenes?.ready ? `${stats.sceneCount} scenes` : stats.detecting > 0 ? `detecting ${stats.detecting}…` : "scenes pending"} · ${stats.storageUploaded}/${videoSources.length} stored`),
+      },
+      captions: {
+        tone: captionTone,
+        status: stats.captionFailed > 0
+          ? `${stats.captionFailed} clip${stats.captionFailed === 1 ? "" : "s"} failed captioning`
+          : captions?.detail ?? "Waiting",
+      },
+    };
+  }, [analysis, audioError, audioProgress, isPreparingAudio, isPreparingVideos, laneByKey, referenceAssets, referencesReady, stats, transcriptSummary, videoError, videoSources.length, vocalStemName]);
+
   const rerunFailedCount = useMemo(
     () => videoSources.filter(needsSceneDetectionRetry).length,
     [videoSources],
@@ -102,112 +185,59 @@ export function IngestTab({
   );
   const filteredCutCount = cutGroups.reduce((total, group) => total + group.cuts.length, 0);
 
+  function scrollToStep(key: IngestStepKey) {
+    document.getElementById(`ingest-step-${key}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
   return (
-    <div className="space-y-3">
-      <section className="rounded-[2px] border border-[#1a1a1a] bg-[#0b0b0b] p-3">
-        <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Ingest readiness</div>
-            <div className="mt-1 max-w-3xl text-[11px] leading-5 text-[#6d6d6d]">
-              This is the ordered intake gate for the music-video workflow. Green items are ready to use downstream; orange items are still processing; red items need attention before Match, Join, or Export can run.
-            </div>
+    <div className="space-y-4">
+      <IngestChecklist steps={steps} onSelect={scrollToStep} />
+
+      <IngestStep step={1} id="song" title={STEP_TITLES.song} tone={steps.song.tone} status={steps.song.status} hint="Essentia maps beats, onsets, and sections. Everything downstream is timed to this file.">
+        {analysis ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 text-[12px] text-fg-2">
+            <span className="truncate">{audioStatus}</span>
+            <UploadControl accept="audio/*" variant="button" title="" detail="" actionLabel={isPreparingAudio ? "Analyzing…" : "Replace song"} disabled={isPreparingAudio} processingProgress={audioProgress} onFiles={onAudioUpload} />
           </div>
-        </div>
+        ) : (
+          <UploadControl
+            accept="audio/*"
+            title={isPreparingAudio ? "Analyzing the master song…" : "Drop the master song here"}
+            detail="WAV, MP3, or M4A. Analysis usually takes under a minute."
+            actionLabel={isPreparingAudio ? "Analyzing…" : "Choose song"}
+            disabled={isPreparingAudio}
+            isProcessing={isPreparingAudio}
+            processingProgress={audioProgress}
+            status={audioStatus}
+            error={audioError}
+            onFiles={onAudioUpload}
+          />
+        )}
+      </IngestStep>
 
-        <div className="grid gap-2 md:grid-cols-3 xl:grid-cols-6">
-          <ReadinessCard label="Master song" value={analysis ? `Beat map · ${fmt(analysis.duration)}` : audioStatus} tone={audioTone} detail={audioError ?? "Essentia beat/onset/section analysis"} />
-          <ReadinessCard label="Vocal stem / SRT" value={transcriptSummary ? `${transcriptSummary.chunks.length} chunks` : vocalStemName || "Waiting"} tone={stemTone} detail="Deepgram lyrics and timed SRT chunks" />
-          <ReadinessCard label="Videos" value={`${videoSources.length} uploaded`} tone={videoTone} detail={videoError ?? videoStatus} />
-          <ReadinessCard label="Scenes" value={`${stats.sceneCount} detected`} tone={sceneTone} detail={stats.detecting ? `${stats.detecting} clips still detecting` : "PySceneDetect cuts"} />
-          <ReadinessCard label="Captions" value={`${stats.captionReady}/${stats.captionTotal}`} tone={captionTone} detail={stats.captioning ? "captioning scene frames" : "video captions ready for matching"} />
-          <ReadinessCard label="RustFS" value={`${stats.storageUploaded}/${videoSources.length}`} tone={storageTone} detail="media + caption manifests" />
-        </div>
+      <IngestStep step={2} id="stem" title={STEP_TITLES.stem} tone={steps.stem.tone} status={steps.stem.status} hint="Deepgram needs the isolated lead vocal for timed lyrics. Story cannot start without it.">
+        <IngestVocalStemLane
+          analysis={analysis}
+          vocalStemName={vocalStemName}
+          transcriptSummary={transcriptSummary}
+          disabled={isPreparingAudio}
+          onTranscriptStart={onVocalStemTranscriptStart}
+          onTranscriptComplete={onVocalStemTranscriptComplete}
+          onTranscriptFailed={onVocalStemTranscriptFailed}
+        />
+      </IngestStep>
 
-        {rerunFailedCount > 0 || mismatchedCaptionCount > 0 ? (
-          <div className="mt-3 flex flex-wrap items-center gap-2 rounded-[2px] border border-[#6f4a12] bg-[#120d05] px-3 py-2">
-            <div className="mr-auto text-[10px] leading-4 text-[#c07a3f]">
-              {rerunFailedCount > 0 ? `${rerunFailedCount} clip${rerunFailedCount === 1 ? "" : "s"} failed scene detection. ` : ""}
-              {mismatchedCaptionCount > 0
-                ? `${mismatchedCaptionCount} caption${mismatchedCaptionCount === 1 ? "" : "s"} came from a different lane than the selected ${captionMode === "smart" ? "Smart · Qwen3-VL" : "Fast · LFM"} mode.`
-                : ""}
-            </div>
-            {rerunFailedCount > 0 ? (
-              <button
-                type="button"
-                onClick={() => onRerunSceneAnalysis("failed")}
-                disabled={isRerunningSceneAnalysis || isPreparingVideos}
-                className="rounded-[2px] border border-[#e05c00] px-3 py-2 text-[9px] uppercase tracking-[0.14em] text-[#e05c00] hover:bg-[#1c0f04] disabled:cursor-not-allowed disabled:border-[#3a3a3a] disabled:text-[#555]"
-              >
-                {isRerunningSceneAnalysis ? "Re-running…" : `Rerun failed scene detect (${rerunFailedCount})`}
-              </button>
-            ) : null}
-          </div>
-        ) : null}
-      </section>
+      <IngestStep step={3} id="references" title={STEP_TITLES.references} tone={steps.references.tone} status={steps.references.status} hint="Character 1 and Environment are required; their names appear in captions and the story. Character 2, crowd, and custom sheets are optional.">
+        <ReferenceLibrary
+          assets={referenceAssets}
+          onUpload={onReferenceAssetUpload}
+          onUpdate={onReferenceAssetUpdate}
+          onRemove={onReferenceAssetRemove}
+        />
+      </IngestStep>
 
-      <IngestVocalStemLane
-        analysis={analysis}
-        vocalStemName={vocalStemName}
-        transcriptSummary={transcriptSummary}
-        disabled={isPreparingAudio}
-        onTranscriptStart={onVocalStemTranscriptStart}
-        onTranscriptComplete={onVocalStemTranscriptComplete}
-        onTranscriptFailed={onVocalStemTranscriptFailed}
-      />
-
-      <ReferenceLibrary
-        assets={referenceAssets}
-        onUpload={onReferenceAssetUpload}
-        onUpdate={onReferenceAssetUpdate}
-        onRemove={onReferenceAssetRemove}
-      />
-
-      <section className="rounded-[2px] border border-[#1a1a1a] bg-[#0b0b0b] p-3">
-        <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Caption mode</div>
-            <div className="mt-1 max-w-3xl text-[11px] leading-5 text-[#6d6d6d]">
-              Fast uses the lightweight LFM lane. Smart sends the scene plus uploaded character and named-location references, with project/lyric/story context, to Qwen3-VL for detailed cinematic captions.
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <div className="flex rounded-[2px] border border-[#242424] bg-[#070707] p-1">
-              {(["fast", "smart"] as const).map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  onClick={() => onCaptionModeChange(mode)}
-                  className={`px-3 py-2 text-[9px] uppercase tracking-[0.16em] transition-colors ${
-                    captionMode === mode
-                      ? "bg-[#e05c00] text-white"
-                      : "text-[#777] hover:bg-[#141414] hover:text-[#d0d0d0]"
-                  }`}
-                >
-                  {mode === "fast" ? "Fast" : "Smart · Qwen3-VL"}
-                </button>
-              ))}
-            </div>
-            <button
-              type="button"
-              onClick={() => onRerunSceneAnalysis("all")}
-              disabled={isRerunningSceneAnalysis || isPreparingVideos || stats.captionTotal === 0}
-              className="rounded-[2px] border border-[#e05c00] px-3 py-2 text-[9px] uppercase tracking-[0.14em] text-[#e05c00] hover:bg-[#1c0f04] disabled:cursor-not-allowed disabled:border-[#3a3a3a] disabled:text-[#555]"
-            >
-              {isRerunningSceneAnalysis ? "Recaptioning…" : `Recaption all · ${captionMode === "smart" ? "Qwen3-VL" : "LFM"}`}
-            </button>
-          </div>
-        </div>
-        <div className="mb-3 text-[10px] leading-4 text-[#555]">
-          Recaption refreshes every detected scene with the current lane, project context, character identities, and named-location continuity reference.
-        </div>
-        <div className="grid gap-2 md:grid-cols-2">
-          <ReadinessCard label="Active caption lane" value={captionMode === "fast" ? "Fast · LFM" : "Smart · Qwen3-VL"} tone="ready" detail={captionMode === "fast" ? "Lower latency draft captions" : "Detailed cinematic captions with named-character matching"} />
-          <ReadinessCard label="Caption context" value={transcriptSummary ? `${transcriptSummary.chunks.length} lyric chunks` : "Video-only"} tone={transcriptSummary ? "ready" : "waiting"} detail={transcriptSummary ? "lyrics/story context included for new captions" : "upload the vocal stem above for lyric-aware captions"} />
-        </div>
-      </section>
-
-      {videoSources.length ? (
-        <section className="space-y-3">
+      <IngestStep step={4} id="footage" title={STEP_TITLES.footage} tone={steps.footage.tone} status={steps.footage.status} hint="Clips upload to RustFS and scene detection starts automatically.">
+        {videoSources.length ? (
           <SourceVideoLibrary
             sources={videoSources}
             isPreparingVideos={isPreparingVideos}
@@ -215,58 +245,99 @@ export function IngestTab({
             onReplaceVideos={onVideoUpload}
             onRemoveVideo={onRemoveVideo}
           />
-        </section>
-      ) : (
-        <section className="rounded-[2px] border border-[#1e1e1e] bg-[#070707] p-4">
-          <div className="mb-3 text-[10px] uppercase tracking-[0.18em] text-[#3a3a3a]">Source videos</div>
+        ) : (
           <UploadControl
             accept="video/*"
             multiple
-            title="Upload source videos"
-            detail="Videos upload to RustFS, then scene detection and scene captioning run before Match can use them."
-            actionLabel={isPreparingVideos ? "Processing Videos…" : "Upload Video Clips"}
+            title="Drop source footage here"
+            detail="One or more clips. Scenes are detected and captioned once the song, stem, and references are in."
+            actionLabel={isPreparingVideos ? "Processing…" : "Choose clips"}
             disabled={isPreparingVideos}
             isProcessing={isPreparingVideos}
             status={videoStatus}
             error={videoError}
             onFiles={onVideoUpload}
           />
-        </section>
-      )}
-
-      <section className="rounded-[2px] border border-[#1a1a1a] bg-[#0b0b0b] p-3">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <div>
-            <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Scene cuts by clip</div>
-            <div className="mt-1 text-[11px] text-[#6d6d6d]">Every detected cut, grouped under its source clip. Each cut carries the caption text that Match will search against lyrics and story prompts.</div>
+        )}
+        {rerunFailedCount > 0 ? (
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-md border border-danger-lo bg-danger-tint px-3 py-2 text-[12px] text-danger">
+            <span>{rerunFailedCount} clip{rerunFailedCount === 1 ? "" : "s"} failed scene detection.</span>
+            <Button size="sm" variant="danger" onClick={() => onRerunSceneAnalysis("failed")} disabled={isRerunningSceneAnalysis || isPreparingVideos}>
+              {isRerunningSceneAnalysis ? "Re-running…" : "Rerun scene detection"}
+            </Button>
           </div>
+        ) : null}
+      </IngestStep>
+
+      <IngestStep
+        step={5}
+        id="captions"
+        title={STEP_TITLES.captions}
+        tone={steps.captions.tone}
+        status={steps.captions.status}
+        hint={captionContextReady
+          ? "Qwen3-VL captions every detected scene with the named characters and location so Match can search them."
+          : "Captions wait for the vocal stem and the Character 1 + Environment sheets so scenes are described with the right names."}
+        actions={
           <div className="flex flex-wrap items-center gap-2">
+            {FAST_CAPTIONS_ENABLED ? (
+              <div className="flex rounded-md border border-line-2 bg-ink-0 p-[2px]">
+                {(["fast", "smart"] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => onCaptionModeChange(mode)}
+                    className={`rounded-[4px] px-2.5 py-1 text-[11px] transition-colors ${captionMode === mode ? "bg-accent text-white" : "text-fg-2 hover:text-fg-0"}`}
+                  >
+                    {mode === "fast" ? "Fast · LFM" : "Smart · Qwen3-VL"}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => onRerunSceneAnalysis("all")}
+              disabled={isRerunningSceneAnalysis || isPreparingVideos || stats.captionTotal === 0}
+              reason={stats.captionTotal === 0 ? "No scenes to caption yet" : null}
+            >
+              {isRerunningSceneAnalysis ? "Recaptioning…" : "Recaption all"}
+            </Button>
+          </div>
+        }
+      >
+        {mismatchedCaptionCount > 0 ? (
+          <div className="mb-3 rounded-md border border-warn-lo bg-warn-tint px-3 py-2 text-[12px] text-warn">
+            {mismatchedCaptionCount} caption{mismatchedCaptionCount === 1 ? "" : "s"} came from a different lane than the selected {captionMode === "smart" ? "Smart" : "Fast"} mode. Recaption to refresh them.
+          </div>
+        ) : null}
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <span className="text-[12px] text-fg-2">Every detected cut, grouped by clip, with the caption Match will search.</span>
+          <div className="flex items-center gap-2">
             <input
               value={captionSearch}
               onChange={(event) => setCaptionSearch(event.target.value)}
-              placeholder="Search captions, tags, actions…"
-              className="w-64 rounded-[2px] border border-[#242424] bg-[#060606] px-3 py-2 font-mono text-[10px] text-[#d0d0d0] outline-none placeholder:text-[#444] focus:border-[#e05c00]"
+              placeholder="Search captions…"
+              className="h-8 w-64 rounded-md border border-line-2 bg-ink-0 px-3 text-[12px] text-fg-0 outline-none placeholder:text-fg-4 focus:border-accent"
             />
-            <div className="font-mono text-[10px] text-[#777]">
+            <span className="font-mono text-[11px] text-fg-3">
               {captionSearch.trim() ? `${filteredCutCount}/${stats.sceneCount} cuts` : `${stats.sceneCount} cuts`}
-            </div>
+            </span>
           </div>
         </div>
         {cutGroups.length ? (
           <div className="space-y-3">
             {cutGroups.map(({ source, allCuts, cuts }) => (
-              <div key={source.id} className="rounded-[2px] border border-[#161616] bg-[#080808] p-2">
-                <div className="mb-2 flex flex-wrap items-center gap-2">
-                  <span className="rounded-[2px] bg-[#141414] px-1.5 py-[2px] font-mono text-[9px] text-[#e05c00]">S{source.id + 1}</span>
-                  <span className="max-w-[360px] truncate font-mono text-[10px] text-[#9a9a9a]" title={source.name}>{source.name}</span>
-                  <span className="font-mono text-[9px] text-[#555]">
+              <div key={source.id} className="rounded-md border border-line bg-ink-1 p-2.5">
+                <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px]">
+                  <span className="rounded-sm bg-ink-3 px-1.5 py-[2px] font-mono text-accent">S{source.id + 1}</span>
+                  <span className="max-w-[360px] truncate font-mono text-fg-1" title={source.name}>{source.name}</span>
+                  <span className="font-mono text-fg-3">
                     {allCuts.length} cut{allCuts.length === 1 ? "" : "s"} · {allCuts.filter((scene) => Boolean(scene.caption)).length}/{allCuts.length} captioned
                   </span>
-                  {source.sceneStatus === "detecting" ? (
-                    <span className="text-[9px] uppercase tracking-[0.12em] text-[#e05c00]">detecting…</span>
-                  ) : null}
+                  {source.sceneStatus === "detecting" ? <span className="text-warn">detecting…</span> : null}
                   {source.sceneStatus === "failed" ? (
-                    <span className="max-w-[420px] truncate text-[9px] text-[#d24b3f]" title={source.sceneError ?? undefined}>
+                    <span className="max-w-[420px] truncate text-danger" title={source.sceneError ?? undefined}>
                       scene detection failed{source.sceneError ? ` · ${source.sceneError}` : ""}
                     </span>
                   ) : null}
@@ -284,28 +355,92 @@ export function IngestTab({
                     ))}
                   </div>
                 ) : allCuts.length ? (
-                  <div className="rounded-[2px] border border-dashed border-[#202020] bg-[#060606] px-3 py-3 text-[10px] text-[#4f4f4f]">
-                    No cuts in this clip match the search.
-                  </div>
+                  <div className="rounded-md border border-dashed border-line-2 bg-ink-0 px-3 py-3 text-[12px] text-fg-3">No cuts in this clip match the search.</div>
                 ) : (
-                  <div className="rounded-[2px] border border-dashed border-[#202020] bg-[#060606] px-3 py-3 text-[10px] text-[#4f4f4f]">
-                    {source.sceneStatus === "failed"
-                      ? "No cuts yet — use “Rerun failed scene detect” above."
-                      : "Waiting for scene detection to finish."}
+                  <div className="rounded-md border border-dashed border-line-2 bg-ink-0 px-3 py-3 text-[12px] text-fg-3">
+                    {source.sceneStatus === "failed" ? "No cuts yet — rerun scene detection above." : "Waiting for scene detection to finish."}
                   </div>
                 )}
               </div>
             ))}
           </div>
         ) : (
-          <div className="rounded-[2px] border border-dashed border-[#202020] bg-[#070707] px-3 py-8 text-center text-[10px] uppercase tracking-[0.14em] text-[#4f4f4f]">
-            Scene cut thumbnails appear here after videos finish detection.
+          <div className="rounded-md border border-dashed border-line-2 bg-ink-0 px-3 py-8 text-center text-[12px] text-fg-3">
+            Scene cuts and captions appear here once footage finishes detection.
           </div>
         )}
-      </section>
+      </IngestStep>
     </div>
   );
 }
+
+function IngestChecklist({ steps, onSelect }: { steps: Record<IngestStepKey, { tone: ReadinessTone; status: string }>; onSelect: (key: IngestStepKey) => void }) {
+  const readyCount = STEP_ORDER.filter((key) => steps[key].tone === "ready").length;
+  return (
+    <nav aria-label="Ingest checklist" className="rounded-md border border-line bg-ink-2 px-4 py-3">
+      <div className="mb-2 flex items-center justify-between">
+        <Kicker>Checklist</Kicker>
+        <span className="font-mono text-[11px] text-fg-3">{readyCount}/{STEP_ORDER.length} ready</span>
+      </div>
+      <ol className="grid gap-2 md:grid-cols-5">
+        {STEP_ORDER.map((key, index) => {
+          const step = steps[key];
+          return (
+            <li key={key}>
+              <button
+                type="button"
+                onClick={() => onSelect(key)}
+                className="flex w-full items-start gap-2 rounded-md border border-transparent px-2 py-1.5 text-left hover:border-line-2 hover:bg-ink-3"
+              >
+                <StatusDot tone={step.tone} pulse className="mt-[5px]" />
+                <span className="min-w-0">
+                  <span className="block text-[12px] font-medium text-fg-0">{index + 1}. {STEP_TITLES[key]}</span>
+                  <span className={`block truncate text-[11px] ${TONE_TEXT[step.tone]}`} title={step.status}>{step.status}</span>
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ol>
+    </nav>
+  );
+}
+
+function IngestStep({ step, id, title, tone, status, hint, actions, children }: {
+  step: number;
+  id: IngestStepKey;
+  title: string;
+  tone: ReadinessTone;
+  status: string;
+  hint: string;
+  actions?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <section id={`ingest-step-${id}`} className="scroll-mt-4 rounded-md border border-line bg-ink-2 p-4">
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2.5">
+            <span className={`flex h-6 w-6 items-center justify-center rounded-full border font-mono text-[11px] ${tone === "ready" ? "border-ok-lo bg-ok-tint text-ok" : "border-line-2 text-fg-2"}`}>
+              {tone === "ready" ? "✓" : step}
+            </span>
+            <h2 className="text-[14px] font-semibold text-fg-0">{title}</h2>
+            <span className={`flex items-center gap-1.5 text-[11.5px] ${TONE_TEXT[tone]}`}>
+              <StatusDot tone={tone} pulse />
+              <span className="max-w-[440px] truncate" title={status}>{status}</span>
+            </span>
+          </div>
+          <p className="mt-1.5 max-w-3xl text-[12px] leading-5 text-fg-3">{hint}</p>
+        </div>
+        {actions ? <div className="shrink-0">{actions}</div> : null}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+// Keep the lane type exported for consumers that read the checklist model.
+export type { IngestLane, IngestLaneKey };
 
 function ReferenceLibrary({
   assets,
@@ -517,20 +652,6 @@ function ReferenceSlotCard({
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function ReadinessCard({ label, value, detail, tone }: { label: string; value: string; detail: string; tone: ReadinessTone }) {
-  const colors = toneColors(tone);
-  return (
-    <div className={`rounded-[2px] border p-2 ${colors.border} ${colors.bg}`}>
-      <div className="mb-1 flex items-center justify-between gap-2">
-        <div className="text-[8px] uppercase tracking-[0.16em] text-[#5c5c5c]">{label}</div>
-        <span className={`h-2 w-2 rounded-full ${colors.dot}`} />
-      </div>
-      <div className={`truncate font-mono text-[11px] ${colors.text}`}>{value}</div>
-      <div className="mt-1 truncate text-[8px] leading-4 text-[#606060]" title={detail}>{detail}</div>
     </div>
   );
 }

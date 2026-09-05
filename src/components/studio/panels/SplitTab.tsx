@@ -125,12 +125,6 @@ export function SplitTab({
           })}
         </div>
 
-        <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 border-t border-[#171717] pt-2">
-          <StatusChip label="Videos" tone={hasSources ? "ready" : isPreparingVideos ? "processing" : "waiting"} value={hasSources ? `${videoSources.length} uploaded` : "waiting"} />
-          <StatusChip label="Scenes" tone={stats.sceneFailed ? "failed" : stats.sceneCount ? "ready" : stats.detecting ? "processing" : "waiting"} value={`${stats.sceneCount} detected`} />
-          <StatusChip label="Audio" tone={analysis ? "ready" : "waiting"} value={analysis ? "analyzed" : "waiting"} />
-          <StatusChip label="Captions" tone={stats.captionFailed ? "failed" : stats.captionReady && stats.captionReady === stats.captionTotal ? "ready" : stats.captioning ? "processing" : "waiting"} value={`${stats.captionReady}/${stats.captionTotal}`} />
-        </div>
       </section>
 
       {hasSources ? (
@@ -281,16 +275,6 @@ export function SplitTab({
 
 export function getCutMapRailWidth(totalDuration: number) {
   return Math.max(960, Math.ceil(Math.max(0, totalDuration) * 8));
-}
-
-function StatusChip({ label, value, tone }: { label: string; value: string; tone: ReadinessTone }) {
-  return (
-    <div className="flex items-center gap-2">
-      <span className={`h-1.5 w-1.5 ${getToneColor(tone, "dot")}`} />
-      <span className="text-[8px] uppercase tracking-[0.14em] text-[#555]">{label}</span>
-      <span className={`font-mono text-[9px] ${getToneColor(tone, "text")}`}>{value}</span>
-    </div>
-  );
 }
 
 type SegmentCut = ReturnType<typeof describeSegment>;
