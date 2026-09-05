@@ -11,6 +11,19 @@ export function lerp(a: number, b: number, t: number) {
   return a + (b - a) * t;
 }
 
+/** Median beat interval → BPM; falls back when the grid is too sparse. */
+export function deriveDisplayBpm(beats: number[], fallback: number) {
+  if (beats.length < 2) return fallback;
+
+  const intervals = beats
+    .slice(1)
+    .map((time, index) => time - beats[index])
+    .filter((interval) => interval > 0.02)
+    .sort((left, right) => left - right);
+  const interval = intervals[Math.floor(intervals.length / 2)];
+  return interval ? 60 / interval : fallback;
+}
+
 export function makeWavePoints(n: number, seed: number): number[] {
   return Array.from({ length: n }, (_, i) => {
     const t = i / n;

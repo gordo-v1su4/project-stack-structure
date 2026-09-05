@@ -29,6 +29,12 @@ type PreviewPlayerProps = {
   audioTimeline?: PreviewAudioTimeline | null;
   isExpanded?: boolean;
   masterAudioUrl?: string | null;
+  /**
+   * "console" is the original compact/expanded operator layout with its own
+   * transport. "monitor" renders only the media stack, filling its container,
+   * for the program monitor; the transport bar drives the player.
+   */
+  variant?: "console" | "monitor";
 };
 
 export function PreviewPlayer({
@@ -40,6 +46,7 @@ export function PreviewPlayer({
   audioTimeline = null,
   isExpanded = false,
   masterAudioUrl = null,
+  variant = "console",
 }: PreviewPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const standbyVideoRef = useRef<HTMLVideoElement>(null);
@@ -161,6 +168,70 @@ export function PreviewPlayer({
     monitor.addEventListener("loadedmetadata", seek, { once: true });
     return () => monitor.removeEventListener("loadedmetadata", seek);
   }, [currentSegment, isExpanded]);
+
+  if (variant === "monitor") {
+    return (
+      <div className="absolute inset-0 bg-black" data-preview-variant="monitor">
+        <video
+          ref={videoRef}
+          crossOrigin="anonymous"
+          preload="auto"
+          muted
+          playsInline
+          data-preview-engine={state.engineMode}
+          data-shader-preview={hasShaderCues ? shaderMode : "disabled"}
+          className="absolute inset-0 h-full w-full object-contain"
+        />
+        <video
+          ref={standbyVideoRef}
+          crossOrigin="anonymous"
+          preload="auto"
+          muted
+          playsInline
+          aria-hidden="true"
+          data-preview-standby="true"
+          className="pointer-events-none absolute inset-0 h-full w-full object-contain opacity-0"
+        />
+        <audio ref={masterAudioRef} src={masterAudioUrl ?? undefined} preload="auto" data-master-audio="true" className="hidden" />
+        {hasShaderCues ? (
+          <>
+            <canvas
+              ref={shaderCanvasRef}
+              data-stutter-shader-preview={shaderMode === "webgpu" ? "webgpu" : undefined}
+              className={`${shaderMode === "canvas2d" ? "hidden" : "block"} pointer-events-none absolute inset-0 h-full w-full`}
+              aria-hidden="true"
+            />
+            <canvas
+              ref={shaderFallbackCanvasRef}
+              data-stutter-shader-preview={shaderMode === "canvas2d" ? "canvas2d" : undefined}
+              className={`${shaderMode === "canvas2d" ? "block" : "hidden"} pointer-events-none absolute inset-0 h-full w-full`}
+              aria-hidden="true"
+            />
+            <div className="studio-hud pointer-events-none absolute bottom-3 left-3 rounded-md px-2 py-1 font-mono text-[10.5px] text-accent">
+              Live {shaderMode === "webgpu" ? "WebGPU" : shaderMode === "canvas2d" ? "Canvas FX" : "Shader"}
+              {activeShaderLabel ? ` · ${activeShaderLabel}` : ""}
+            </div>
+          </>
+        ) : null}
+        {hasShaderCues && shaderError ? (
+          <div className="studio-hud pointer-events-none absolute bottom-3 right-3 max-w-[55%] rounded-md px-2 py-1 font-mono text-[10.5px] text-danger">{shaderError}</div>
+        ) : null}
+        {state.status === "loading" ? (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+            <span className="font-display text-[22px] italic text-fg-1 animate-pulse">loading cut…</span>
+          </div>
+        ) : null}
+        {state.status === "ended" ? (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+            <span className="font-display text-[22px] italic text-fg-1">end of preview</span>
+          </div>
+        ) : null}
+        {state.errorMessage ? (
+          <div className="studio-hud absolute bottom-3 left-3 right-3 rounded-md px-3 py-2 text-[12px] text-danger">{state.errorMessage}</div>
+        ) : null}
+      </div>
+    );
+  }
 
   return (
     <div className={isExpanded ? "space-y-2" : "space-y-1.5"}>

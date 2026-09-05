@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { fmt } from "./math";
+import { deriveDisplayBpm, fmt } from "./math";
 import { SolidWaveform } from "./SolidWaveform";
 import type { BeatJoinAnalysis } from "./types";
 
@@ -181,18 +181,6 @@ export function AudioPreview({
       />
     </div>
   );
-}
-
-function deriveDisplayBpm(beats: number[], fallback: number) {
-  if (beats.length < 2) return fallback;
-
-  const intervals = beats
-    .slice(1)
-    .map((time, index) => time - beats[index])
-    .filter((interval) => interval > 0.02)
-    .sort((left, right) => left - right);
-  const interval = intervals[Math.floor(intervals.length / 2)];
-  return interval ? 60 / interval : fallback;
 }
 
 function clamp(value: number, min: number, max: number) {

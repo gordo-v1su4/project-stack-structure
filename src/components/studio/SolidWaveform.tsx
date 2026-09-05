@@ -94,9 +94,9 @@ export function SolidWaveform({
     ctx.clearRect(0, 0, canvasWidth, waveH);
 
     const bg = ctx.createLinearGradient(0, 0, 0, waveH);
-    bg.addColorStop(0, "rgba(18, 18, 18, 0.98)");
-    bg.addColorStop(0.5, "rgba(10, 10, 10, 0.94)");
-    bg.addColorStop(1, "rgba(16, 16, 16, 0.98)");
+    bg.addColorStop(0, "rgba(14, 14, 13, 0.98)");
+    bg.addColorStop(0.5, "rgba(9, 9, 9, 0.94)");
+    bg.addColorStop(1, "rgba(14, 14, 13, 0.98)");
     ctx.fillStyle = bg;
     ctx.fillRect(0, 0, canvasWidth, waveH);
 
@@ -135,17 +135,18 @@ export function SolidWaveform({
     }
     waveformPath.closePath();
 
-    const inactiveGradient = ctx.createLinearGradient(0, 0, canvasWidth, 0);
-    inactiveGradient.addColorStop(0, "rgba(176, 120, 38, 0.32)");
-    inactiveGradient.addColorStop(0.5, "rgba(226, 156, 72, 0.46)");
-    inactiveGradient.addColorStop(1, "rgba(243, 198, 92, 0.34)");
+    // Unplayed: quiet monochrome so the footage stays the color. Played: the accent.
+    const inactiveGradient = ctx.createLinearGradient(0, 0, 0, waveH);
+    inactiveGradient.addColorStop(0, "rgba(235, 232, 228, 0.30)");
+    inactiveGradient.addColorStop(0.5, "rgba(235, 232, 228, 0.20)");
+    inactiveGradient.addColorStop(1, "rgba(235, 232, 228, 0.30)");
     ctx.fillStyle = inactiveGradient;
     ctx.fill(waveformPath);
 
-    const playedGradient = ctx.createLinearGradient(0, 0, canvasWidth, 0);
-    playedGradient.addColorStop(0, "rgba(206, 118, 24, 0.84)");
-    playedGradient.addColorStop(0.5, "rgba(231, 154, 46, 0.92)");
-    playedGradient.addColorStop(1, "rgba(247, 204, 84, 0.88)");
+    const playedGradient = ctx.createLinearGradient(0, 0, 0, waveH);
+    playedGradient.addColorStop(0, "rgba(255, 122, 31, 0.95)");
+    playedGradient.addColorStop(0.5, "rgba(224, 92, 0, 0.85)");
+    playedGradient.addColorStop(1, "rgba(255, 122, 31, 0.95)");
     ctx.save();
     ctx.beginPath();
     ctx.rect(0, 0, Math.max(ph, 0), waveH);
@@ -154,7 +155,7 @@ export function SolidWaveform({
     ctx.fill(waveformPath);
     ctx.restore();
 
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.12)";
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.08)";
     ctx.lineWidth = 1;
     ctx.stroke(waveformPath);
   }, [waveH, ph, accent, points, canvasWidth, resolvedDuration, visibleDuration, windowStart]);
@@ -170,12 +171,12 @@ export function SolidWaveform({
   return (
     <div
       ref={wrapperRef}
-      className={`relative border border-[#1e1e1e] rounded-[2px] bg-[#070707] overflow-hidden ${onSeek ? "cursor-pointer" : ""}`}
+      className={`relative overflow-hidden rounded-[6px] border border-line bg-ink-0 ${onSeek ? "cursor-pointer" : ""}`}
       style={{ height }}
       onPointerDown={(event) => handleSeek(event.clientX)}
     >
       {label ? (
-        <div className="absolute top-[3px] left-[8px] text-[9px] uppercase tracking-[0.18em] text-[#3a3a3a] z-10 pointer-events-none">
+        <div className="pointer-events-none absolute left-[8px] top-[3px] z-10 font-mono text-[9px] uppercase tracking-[0.18em] text-fg-4">
           {label}
         </div>
       ) : null}
@@ -213,7 +214,7 @@ export function SolidWaveform({
       </svg>
 
       <div
-        className="absolute top-0 left-0 right-0 border-b border-[#1a1a1a] bg-[#0a0a0a]"
+        className="absolute top-0 left-0 right-0 border-b border-line bg-ink-1"
         style={{ height: rulerH }}
       >
         <svg className="w-full h-full" viewBox={`0 0 ${canvasWidth} ${rulerH * 2}`} preserveAspectRatio="none">
@@ -260,14 +261,14 @@ export function SolidWaveform({
         </svg>
       </div>
 
-      <div className="absolute bottom-[3px] right-[8px] flex gap-4 text-[9px] font-mono text-[#333] z-10 pointer-events-none">
+      <div className="pointer-events-none absolute bottom-[4px] right-[8px] z-10 flex gap-4 font-mono text-[10px] text-fg-4">
         <span>
-          BPM <span className="text-[#4a4a4a]">{bpm}</span>
+          BPM <span className="text-fg-3">{bpm}</span>
         </span>
         <span>
-          BARS <span className="text-[#4a4a4a]">{resolvedBarCount}</span>
+          BARS <span className="text-fg-3">{resolvedBarCount}</span>
         </span>
-        <span className="text-[#4a4a4a]">
+        <span className="text-fg-3">
           {fmt(playhead * resolvedDuration)} / {fmt(resolvedDuration)}
         </span>
       </div>

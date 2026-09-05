@@ -87,12 +87,17 @@ Ingest is the exception: no spine yet, the monitor is the drop zone
 
 ## Phases
 
-**A — Foundation + shell (this branch, first PR).** OKLCH tokens, fonts, motion
-tokens, `ActRail`, `ProgramMonitor` (wraps the existing player with the empty
-state), `BeatSpine` (wraps `AudioPreview` for now), `Inspector` (hosts
-`StageHeader` content + act controls), `TransportBar`, `CommandPalette`,
-keyboard map, view transitions between acts. Existing panels mount in the work
-surface untouched. `bun run check` green; browser walkthrough with screenshots.
+**A — Foundation + shell (this branch, first PR). Landed.** OKLCH tokens, fonts,
+motion tokens, `ActRail`, `ProgramMonitor` (wraps the existing player with the
+empty state), `BeatSpine` (wraps `SolidWaveform`; the transport drives its
+playhead), `Inspector` (project row + act title/status/actions; act modules mount
+as children), `TransportBar` (Space drives the prepared cut when one is loaded,
+otherwise the master song via `useSongTransport`), `CommandPalette` +
+`ShortcutSheet` on native `<dialog>`, keyboard map, view transitions between
+acts. Existing panels mount in the work surface untouched. The old
+`StudioSidebar`, `StudioHeader`, `StageHeader`, `StudioAudioLane`,
+`PreviewDock`, and `StudioStatusBar` are removed. Files live under
+`src/components/studio/shell/`.
 
 **B — Slots on the spine.** Committed Split segments render as slots; selecting a
 slot drives the inspector (candidates, caption evidence, score). Match

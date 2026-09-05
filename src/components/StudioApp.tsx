@@ -1,6 +1,7 @@
 "use client";
 
 import { startTransition, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { extractWaveformData, fetchEssentiaAnalysis, getEssentiaStorageFromPayload, parseEssentiaPayload } from "./studio/audioAnalysis";
 import type { DeepgramTranscriptSummary } from "./studio/deepgramUtils";
 import { NAV, resolveCaptionMode } from "./studio/constants";
@@ -38,12 +39,16 @@ import { RampTab } from "./studio/panels/RampTab";
 import { MatchTab, type MatchMode } from "./studio/panels/MatchTab";
 import { SplitTab } from "./studio/panels/SplitTab";
 import { createDefaultStoryTabState, StoryTab } from "./studio/panels/StoryTab";
-import { StudioHeader } from "./studio/StudioHeader";
-import { StudioAudioLane } from "./studio/StudioAudioLane";
-import { PreviewDock } from "./studio/PreviewDock";
-import { StageHeader } from "./studio/StageHeader";
-import { StudioSidebar } from "./studio/StudioSidebar";
-import { StudioStatusBar } from "./studio/StudioStatusBar";
+import { ActRail } from "./studio/shell/ActRail";
+import { BeatSpine } from "./studio/shell/BeatSpine";
+import { CommandPalette, ShortcutSheet } from "./studio/shell/CommandPalette";
+import { buildStudioCommands } from "./studio/shell/commands";
+import { Inspector } from "./studio/shell/Inspector";
+import { ProgramMonitor } from "./studio/shell/ProgramMonitor";
+import { TransportBar, type TransportModel } from "./studio/shell/TransportBar";
+import { useSongTransport } from "./studio/shell/useSongTransport";
+import { useStudioKeyboard } from "./studio/shell/useStudioKeyboard";
+import { deriveDisplayBpm, fmt } from "./studio/math";
 import { buildStageHeaderModel } from "./studio/stageActions";
 import { createSaveState, type SaveState } from "./studio/saveState";
 import type { StatusTone } from "./studio/ui";
@@ -98,10 +103,9 @@ export default function StudioApp() {
   const videoSourcesRef = useRef<UploadedVideoSource[]>([]);
   const referenceAssetsRef = useRef<ReferenceAsset[]>([]);
   const [tab, setTab] = useState<Tab>("review");
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [isDockCollapsed, setIsDockCollapsed] = useState(false);
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [isShortcutSheetOpen, setIsShortcutSheetOpen] = useState(false);
   const [playhead] = useState(0.08);
-  const [, setAudioPreviewPlayhead] = useState(0);
   const [activeClip, setActiveClip] = useState(2);
 
   const [clipDur, setClipDur] = useState(5);
@@ -203,26 +207,6 @@ export default function StudioApp() {
     if (typeof window === "undefined") return;
     window.localStorage.setItem("svs.studio.activeTab", tab);
   }, [tab]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    setIsSidebarCollapsed(window.localStorage.getItem("svs.studio.sidebarCollapsed") === "1");
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem("svs.studio.sidebarCollapsed", isSidebarCollapsed ? "1" : "0");
-  }, [isSidebarCollapsed]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem("svs.studio.dockCollapsed", isDockCollapsed ? "1" : "0");
-  }, [isDockCollapsed]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    setIsDockCollapsed(window.localStorage.getItem("svs.studio.dockCollapsed") === "1");
-  }, []);
 
   useEffect(() => {
     const player = previewPlayerRef.current;
@@ -1947,7 +1931,6 @@ export default function StudioApp() {
     if (tab !== "generate" || previewAuditionRequest === 0 || !browserPreviewSegments.length) return;
     if (handledPreviewAuditionRequestRef.current === previewAuditionRequest) return;
     handledPreviewAuditionRequestRef.current = previewAuditionRequest;
-    setIsDockCollapsed(false);
     setIsPreviewExpanded(true);
     const player = previewPlayerRef.current;
     player.load(browserPreviewSegments);
@@ -2096,8 +2079,17 @@ export default function StudioApp() {
     // Switching stage is not an edit, and it is a natural checkpoint: skip the
     // dirty mark for this change and persist once the new tab is in the draft.
     skipNextDirtyMarkRef.current = true;
-    setTab(t);
-    resetPreparedPreview({ preserveBrowserPreview: true });
+    const apply = () => {
+      setTab(t);
+      resetPreparedPreview({ preserveBrowserPreview: true });
+    };
+    // Acts cross-fade via the View Transitions API where available; the named
+    // regions (monitor, spine, inspector) hold still while the act title moves.
+    if (typeof document !== "undefined" && typeof document.startViewTransition === "function") {
+      document.startViewTransition(() => flushSync(apply));
+    } else {
+      apply();
+    }
     window.setTimeout(() => {
       void flushPendingAutosaveRef.current?.();
     }, 0);
@@ -2205,64 +2197,130 @@ export default function StudioApp() {
       ? "processing"
       : "waiting";
 
+  // Transport: Space drives the prepared cut when one is loaded, otherwise the master song.
+  const masterAudioUrl = beatJoinAnalysis?.audioUrl ?? null;
+  const songTransport = useSongTransport(masterAudioUrl, beatJoinAnalysis?.duration ?? 0);
+  const displayBpm = beatJoinAnalysis ? Math.round(deriveDisplayBpm(beatJoinAnalysis.beats, bpm)) : null;
+  const hasBrowserPreview = displayedBrowserPreviewSegments.length > 0;
+  const transportModel: TransportModel = hasBrowserPreview
+    ? {
+        source: "preview",
+        isPlaying: browserPreviewState.status === "playing" || browserPreviewState.status === "loading",
+        currentTime: browserPreviewState.currentTime,
+        duration: browserPreviewState.totalDuration,
+        label: `Instant preview · ${displayedBrowserPreviewSegments.length} cuts`,
+        bpm: displayBpm,
+      }
+    : masterAudioUrl && beatJoinAnalysis
+      ? {
+          source: "song",
+          isPlaying: songTransport.isPlaying,
+          currentTime: songTransport.currentTime,
+          duration: songTransport.duration,
+          label: beatJoinAnalysis.sourceLabel,
+          bpm: displayBpm,
+        }
+      : { source: "none", isPlaying: false, currentTime: 0, duration: 0, label: "No song loaded", bpm: null };
+
+  function handleTransportToggle() {
+    if (transportModel.source === "preview") {
+      const status = browserPreviewState.status;
+      if (status === "playing" || status === "loading") previewPlayer.pause();
+      else if (status === "paused") previewPlayer.resume();
+      else void previewPlayer.play();
+      return;
+    }
+    if (transportModel.source === "song") songTransport.toggle();
+  }
+  function handleTransportStop() {
+    if (transportModel.source === "preview") previewPlayer.stop();
+    else if (transportModel.source === "song") songTransport.stop();
+  }
+  function handleTransportRewind() {
+    if (transportModel.source === "preview") previewPlayer.seekToSegment(0);
+    else if (transportModel.source === "song") songTransport.seek(0);
+  }
+
+  const spinePlayhead = transportModel.source === "preview" && beatJoinAnalysis
+    ? Math.max(0, Math.min(1, browserPreviewState.currentTime / Math.max(beatJoinAnalysis.duration, 0.001)))
+    : songTransport.playhead;
+  const monitorFocused = isPreviewExpanded && hasBrowserPreview;
+
+  const monitorNext = pipeline.nextHint?.replace(/^Next:\s*/i, "") ?? null;
+  const monitorEmpty = beatJoinAnalysis
+    ? {
+        headline: beatJoinAnalysis.sourceLabel,
+        meta: `${displayBpm} BPM · ${fmt(beatJoinAnalysis.duration)} · ${beatJoinAnalysis.sections.length} sections`,
+        next: monitorNext,
+      }
+    : {
+        headline: "Start with the song.",
+        meta: isPreparingAudio ? audioStatus : "Drop a master track to unlock the beat grid.",
+        next: monitorNext,
+      };
+
+  const openCommandPalette = () => setIsCommandPaletteOpen(true);
+  const openShortcuts = () => setIsShortcutSheetOpen(true);
+  const studioCommands = buildStudioCommands({
+    activeTab: tab,
+    stages: pipeline.stages,
+    model: stageHeaderModel,
+    transport: transportModel.source === "none" ? null : { available: true, isPlaying: transportModel.isPlaying, label: transportModel.label },
+    onSelectTab: handleSelectTab,
+    onPrimary: handleStagePrimary,
+    onSecondary: handleStageSecondary,
+    onTogglePlayback: handleTransportToggle,
+    onStopPlayback: handleTransportStop,
+    onOpenShortcuts: openShortcuts,
+  });
+  useStudioKeyboard({
+    onCommandPalette: openCommandPalette,
+    onSelectTab: handleSelectTab,
+    onTogglePlayback: handleTransportToggle,
+    onStopPlayback: handleTransportStop,
+    onSecondary: handleStageSecondary,
+    onShortcuts: openShortcuts,
+    suspended: isCommandPaletteOpen || isShortcutSheetOpen,
+  });
+
+  const spineCaption = tab === "review" ? null : audioPreviewSubtitle.replace(/^Master Audio Track · /, "");
+
   return (
-    <div className="flex h-screen overflow-hidden bg-ink-1 font-sans text-fg-1 antialiased select-none">
-      <StudioSidebar
-        tab={tab}
-        stages={pipeline.stages}
-        collapsed={isSidebarCollapsed}
-        onToggleCollapsed={() => setIsSidebarCollapsed((current) => !current)}
-        onSelectTab={handleSelectTab}
-      />
+    <div className="flex h-screen overflow-hidden bg-ink-0 font-sans text-fg-1 antialiased select-none">
+      <ActRail tab={tab} stages={pipeline.stages} onSelectTab={handleSelectTab} />
 
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <StudioHeader
-          songLabel={beatJoinAnalysis?.sourceLabel ?? null}
-          songDuration={beatJoinAnalysis?.duration ?? null}
-          saveState={saveState}
-          projectDraft={persistableProjectDraft}
-          activeProjectId={activeProjectId}
-          activeProjectName={activeProjectName}
-          onNewProject={handleNewProject}
-          onProjectSelected={handleProjectSelected}
-          onProjectSaved={handleProjectSaved}
-        />
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <div className="flex min-h-0 flex-1 overflow-hidden">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 bg-ink-1 p-3">
+            <ProgramMonitor
+              previewPlayer={previewPlayer}
+              browserPreviewSegments={displayedBrowserPreviewSegments}
+              browserPreviewState={browserPreviewState}
+              isBrowserPreviewActive={isBrowserPreviewActive}
+              previewEffectCues={displayedPreviewEffectCues}
+              audioTimeline={beatJoinAnalysis}
+              masterAudioUrl={masterAudioUrl}
+              previewAssetKey={previewState.currentAssetKey}
+              previewAssetUrl={previewAssetUrl}
+              empty={monitorEmpty}
+              focused={monitorFocused}
+              onToggleFocused={() => setIsPreviewExpanded((current) => !current)}
+            />
 
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          <main className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
-            {stageHeaderModel ? (
-              <StageHeader
-                model={stageHeaderModel}
-                preview={stagePreviewRun}
-                notice={splitNotice}
-                onPrimary={handleStagePrimary}
-                onSecondary={handleStageSecondary}
-                onResetPreview={resetPreparedPreview}
-              />
-            ) : null}
-
-            {tab !== "review" && (beatJoinAnalysis || !activeStageBlocked) ? (
-              <StudioAudioLane
+            {beatJoinAnalysis && tab !== "review" && !monitorFocused ? (
+              <BeatSpine
                 analysis={beatJoinAnalysis}
-                isPreparingAudio={isPreparingAudio}
-                audioProgress={audioProgress}
-                audioError={audioError}
-                bpmFallback={bpm}
-                subtitle={audioPreviewSubtitle}
-                onOpenIngest={() => handleSelectTab("review")}
-                onPlayheadChange={setAudioPreviewPlayhead}
+                bpm={displayBpm ?? bpm}
+                playhead={spinePlayhead}
+                onSeek={(next) => {
+                  if (transportModel.source === "song") songTransport.seek(next);
+                }}
+                caption={spineCaption}
               />
             ) : null}
 
-            {tab !== "review" && tab !== "story" && storyState.confirmedTreatmentSnapshot ? (
-              <StoryPlanSummaryBar
-                treatment={storyState.confirmedTreatmentSnapshot}
-                confirmed={storyState.storyGenerated}
-                onOpenStory={() => handleSelectTab("story")}
-              />
-            ) : null}
-
-            {activeStageBlocked ? null : <>
+            <main className={`studio-fade-in min-h-0 flex-1 space-y-3 overflow-y-auto ${monitorFocused ? "hidden" : ""}`}>
+            {activeStageBlocked ? <BlockedAct reason={activePipelineStage?.blockedReason ?? null} /> : <>
             {tab === "review" && (
               <IngestTab
                 analysis={beatJoinAnalysis}
@@ -2441,32 +2499,62 @@ export default function StudioApp() {
               />
             )}
             </>}
-          </main>
+            </main>
+          </div>
 
-          <PreviewDock
-            collapsed={isDockCollapsed}
-            onToggleCollapsed={() => setIsDockCollapsed((current) => !current)}
-            expanded={isPreviewExpanded}
-            onToggleExpanded={() => setIsPreviewExpanded((current) => !current)}
-            previewPlayer={previewPlayer}
-            browserPreviewSegments={displayedBrowserPreviewSegments}
-            browserPreviewState={browserPreviewState}
-            isBrowserPreviewActive={isBrowserPreviewActive}
-            previewEffectCues={displayedPreviewEffectCues}
-            audioTimeline={beatJoinAnalysis}
-            masterAudioUrl={beatJoinAnalysis?.audioUrl ?? null}
-            previewAssetKey={previewState.currentAssetKey}
-            previewAssetUrl={previewAssetUrl}
-          />
+          <Inspector
+            model={stageHeaderModel}
+            preview={stagePreviewRun}
+            notice={splitNotice}
+            onPrimary={handleStagePrimary}
+            onSecondary={handleStageSecondary}
+            onResetPreview={resetPreparedPreview}
+            saveState={saveState}
+            projectDraft={persistableProjectDraft}
+            activeProjectId={activeProjectId}
+            activeProjectName={activeProjectName}
+            onNewProject={handleNewProject}
+            onProjectSelected={handleProjectSelected}
+            onProjectSaved={handleProjectSaved}
+          >
+            {tab !== "review" && tab !== "story" && storyState.confirmedTreatmentSnapshot ? (
+              <StoryPlanSummaryBar
+                treatment={storyState.confirmedTreatmentSnapshot}
+                confirmed={storyState.storyGenerated}
+                onOpenStory={() => handleSelectTab("story")}
+              />
+            ) : null}
+          </Inspector>
         </div>
 
-        <StudioStatusBar
+        <TransportBar
+          transport={transportModel}
+          onToggle={handleTransportToggle}
+          onStop={handleTransportStop}
+          onRewind={handleTransportRewind}
           statusLabel={previewStatusLabel}
           statusTone={statusTone}
           activity={activityLine}
           activityTone={activityTone}
+          onOpenCommands={openCommandPalette}
         />
       </div>
+
+      {/* Master song for the beat spine when no cut is loaded. */}
+      <audio ref={songTransport.audioRef} src={masterAudioUrl ?? undefined} preload="metadata" className="hidden" />
+
+      <CommandPalette open={isCommandPaletteOpen} onClose={() => setIsCommandPaletteOpen(false)} commands={studioCommands} />
+      <ShortcutSheet open={isShortcutSheetOpen} onClose={() => setIsShortcutSheetOpen(false)} commands={studioCommands} />
+    </div>
+  );
+}
+
+function BlockedAct({ reason }: { reason: string | null }) {
+  return (
+    <div className="flex h-full min-h-[160px] items-center justify-center rounded-[10px] border border-line bg-ink-1 px-8 text-center">
+      <p className="max-w-[44ch] font-display text-[22px] leading-tight text-fg-3">
+        {reason ?? "This act opens once the acts before it are complete."}
+      </p>
     </div>
   );
 }
@@ -2529,11 +2617,12 @@ function StoryPlanSummaryBar({ treatment, confirmed, onOpenStory }: { treatment:
     <button
       type="button"
       onClick={onOpenStory}
-      className={`grid w-full gap-2 rounded-[2px] border px-3 py-2 text-left lg:grid-cols-[auto_minmax(0,1fr)_auto] lg:items-center ${confirmed ? "border-[#24492f] bg-[#071008]" : "border-[#5a3219] bg-[#120a05]"}`}
+      className={`flex w-full flex-col gap-1.5 rounded-md border px-3 py-2.5 text-left transition-colors hover:bg-ink-2 ${confirmed ? "border-ok-lo bg-ok-tint" : "border-warn-lo bg-warn-tint"}`}
     >
-      <span className={`text-[8px] uppercase tracking-[0.18em] ${confirmed ? "text-[#68b979]" : "text-[#d18a55]"}`}>{confirmed ? "Story locked" : "Story changed"}</span>
-      <span className="truncate text-[10px] text-[#aaa39c]"><strong className="mr-2 text-[#d7d0c8]">{treatment.title}</strong>{treatment.logline}</span>
-      <span className="font-mono text-[8px] uppercase text-[#6c665f]">{treatment.anchors.length} anchors · {generationGaps} generation gap{generationGaps === 1 ? "" : "s"} · edit story</span>
+      <span className={`text-[10px] font-medium uppercase tracking-[0.14em] ${confirmed ? "text-ok" : "text-warn"}`}>{confirmed ? "Story locked" : "Story changed"}</span>
+      <span className="font-display text-[17px] leading-tight text-fg-0">{treatment.title}</span>
+      <span className="line-clamp-2 text-[12px] leading-4 text-fg-2">{treatment.logline}</span>
+      <span className="font-mono text-[10px] text-fg-3">{treatment.anchors.length} anchors · {generationGaps} generation gap{generationGaps === 1 ? "" : "s"} · edit story</span>
     </button>
   );
 }

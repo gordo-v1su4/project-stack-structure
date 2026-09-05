@@ -85,6 +85,8 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   /** Shown as a tooltip and used as the visible label when disabled with `showReason`. */
   reason?: string | null;
   showReason?: boolean;
+  /** Full-width inspector buttons spread label and glyph apart. */
+  align?: "center" | "between";
 };
 
 const VARIANT: Record<ButtonVariant, string> = {
@@ -101,14 +103,14 @@ const SIZE: Record<ButtonSize, string> = {
   lg: "h-10 px-5 text-[13px] gap-2 font-semibold",
 };
 
-export function Button({ variant = "secondary", size = "md", reason, showReason = false, className = "", disabled, title, children, ...rest }: ButtonProps) {
+export function Button({ variant = "secondary", size = "md", reason, showReason = false, align = "center", className = "", disabled, title, children, ...rest }: ButtonProps) {
   const isDisabled = Boolean(disabled);
   return (
     <button
       type="button"
       disabled={isDisabled}
       title={title ?? (isDisabled && reason ? reason : undefined)}
-      className={`inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-md border font-medium leading-none transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent/70 ${SIZE[size]} ${
+      className={`inline-flex shrink-0 items-center ${align === "between" ? "justify-between" : "justify-center"} whitespace-nowrap rounded-md border font-medium leading-none transition-[background-color,border-color,color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out-soft)] active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent/70 ${SIZE[size]} ${
         isDisabled ? "cursor-not-allowed border-line bg-ink-3 text-fg-4" : VARIANT[variant]
       } ${className}`}
       {...rest}

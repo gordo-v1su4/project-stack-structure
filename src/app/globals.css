@@ -10,28 +10,34 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans), system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  /* Editorial display face: act titles, monitor empty state, section names. */
+  --font-display: var(--font-instrument-serif), "Iowan Old Style", Georgia, serif;
 
-  /* Studio surfaces — darkest to lightest. */
-  --color-ink-0: #060606;
-  --color-ink-1: #0a0a0a;
-  --color-ink-2: #0e0e0e;
-  --color-ink-3: #131313;
-  --color-ink-4: #1a1a1a;
-  /* Hairlines. */
-  --color-line: #1c1c1c;
-  --color-line-2: #282828;
-  --color-line-3: #383838;
-  /* Text ladder — brightest to faintest. */
-  --color-fg-0: #ececec;
-  --color-fg-1: #c8c8c8;
-  --color-fg-2: #9a9a9a;
-  --color-fg-3: #858585; /* ≥4.5:1 on every ink-* surface; labels and status text. */
-  --color-fg-4: #4a4a4a;
-  /* Semantic. */
-  --color-accent: #e05c00;
-  --color-accent-hi: #ff7a1f;
-  --color-accent-lo: #7a3a10;
-  --color-accent-tint: #140b05;
+  /*
+   * Studio surfaces — darkest to lightest. Near-achromatic OKLCH with a faint
+   * warm cast (hue 60) so footage in the monitor reads cooler and brighter than
+   * the chrome around it. Tuned like a grading suite, not a dashboard.
+   */
+  --color-ink-0: oklch(0.11 0.004 60);
+  --color-ink-1: oklch(0.135 0.004 60);
+  --color-ink-2: oklch(0.16 0.004 60);
+  --color-ink-3: oklch(0.19 0.004 60);
+  --color-ink-4: oklch(0.23 0.004 60);
+  /* Hairlines are translucent so they sit on any surface. */
+  --color-line: oklch(1 0 0 / 0.07);
+  --color-line-2: oklch(1 0 0 / 0.12);
+  --color-line-3: oklch(1 0 0 / 0.2);
+  /* Text ladder — brightest to faintest. fg-3 stays ≥4.5:1 on every ink surface. */
+  --color-fg-0: oklch(0.95 0.004 60);
+  --color-fg-1: oklch(0.84 0.004 60);
+  --color-fg-2: oklch(0.7 0.004 60);
+  --color-fg-3: oklch(0.6 0.004 60);
+  --color-fg-4: oklch(0.42 0.004 60);
+  /* One accent: the studio orange, relit in LCH. */
+  --color-accent: oklch(0.7 0.19 45);
+  --color-accent-hi: oklch(0.78 0.18 50);
+  --color-accent-lo: oklch(0.45 0.12 45);
+  --color-accent-tint: oklch(0.7 0.19 45 / 0.08);
   --color-ok: #4caf50;
   --color-ok-lo: #245a2a;
   --color-ok-tint: #08130a;
@@ -44,6 +50,17 @@
   --color-review: #a26bd1;
   --color-review-lo: #4d2f6b;
   --color-review-tint: #100816;
+
+  /*
+   * Motion tokens. Springs are expressed as linear() so they run on the
+   * compositor and can be interrupted; nothing in the shell uses a guessed
+   * cubic-bezier.
+   */
+  --ease-spring: linear(0, 0.006, 0.025 2.8%, 0.101 6.1%, 0.539 18.9%, 0.721 25.3%, 0.849 31.5%, 0.937 38.1%, 0.968 41.8%, 0.991 45.7%, 1.006 50.1%, 1.015 55%, 1.017 63.9%, 1.001);
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --duration-slow: 320ms;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -84,10 +101,20 @@ body {
   font-family: var(--font-geist-sans), system-ui, sans-serif;
 }
 
-/* Stage rail current-step pulse (only on the active stage's glyph). */
+/* ---------- Studio 2027 shell ---------- */
+
+/* Editorial display type. */
+.font-display {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+
+/* Stage rail current-step pulse (only on the active act's glyph). */
 @keyframes studio-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(224, 92, 0, 0.45); }
-  70% { box-shadow: 0 0 0 5px rgba(224, 92, 0, 0); }
+  0%, 100% { box-shadow: 0 0 0 0 oklch(0.7 0.19 45 / 0.45); }
+  70% { box-shadow: 0 0 0 5px oklch(0.7 0.19 45 / 0); }
 }
 
 .studio-pulse {
@@ -95,12 +122,127 @@ body {
 }
 
 .studio-fade-in {
-  animation: studio-fade-in 180ms ease-out both;
+  animation: studio-fade-in var(--duration-base) var(--ease-out-soft) both;
 }
 
 @keyframes studio-fade-in {
   from { opacity: 0; transform: translateY(2px); }
   to { opacity: 1; transform: none; }
+}
+
+/* Spring entrance for act content and inspector modules. */
+.studio-spring-in {
+  animation: studio-spring-in var(--duration-slow) var(--ease-spring) both;
+}
+
+@keyframes studio-spring-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.995); }
+  to { opacity: 1; transform: none; }
+}
+
+/*
+ * Same-document view transitions between acts. The monitor, spine, inspector,
+ * and act title keep their identity while the work surface cross-fades.
+ */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: var(--duration-base);
+  animation-timing-function: var(--ease-out-soft);
+}
+
+.vt-monitor { view-transition-name: studio-monitor; }
+.vt-spine { view-transition-name: studio-spine; }
+.vt-inspector { view-transition-name: studio-inspector; }
+.vt-act-title { view-transition-name: studio-act-title; }
+
+::view-transition-group(studio-act-title) {
+  animation-duration: var(--duration-slow);
+  animation-timing-function: var(--ease-spring);
+}
+
+/* Glass HUD: only over video (transport, slot labels). Never a page surface. */
+.studio-hud {
+  background:
+    linear-gradient(180deg, oklch(1 0 0 / 0.06), transparent 1px),
+    oklch(0.13 0.004 60 / 0.72);
+  backdrop-filter: blur(14px) saturate(120%);
+  -webkit-backdrop-filter: blur(14px) saturate(120%);
+  border: 1px solid oklch(1 0 0 / 0.1);
+  box-shadow: 0 8px 30px oklch(0 0 0 / 0.45);
+}
+
+/* Native popovers/dialogs animate in with @starting-style — zero JS. */
+.studio-pop {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  transition:
+    opacity var(--duration-base) var(--ease-out-soft),
+    transform var(--duration-slow) var(--ease-spring),
+    overlay var(--duration-base) allow-discrete,
+    display var(--duration-base) allow-discrete;
+}
+
+dialog.studio-pop:not([open]),
+[popover].studio-pop:not(:popover-open) {
+  opacity: 0;
+  transform: translateY(6px) scale(0.985);
+}
+
+@starting-style {
+  dialog.studio-pop[open],
+  [popover].studio-pop:popover-open {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+}
+
+dialog.studio-pop::backdrop {
+  background: oklch(0 0 0 / 0.55);
+  backdrop-filter: blur(6px);
+  transition: opacity var(--duration-base) var(--ease-out-soft), overlay var(--duration-base) allow-discrete, display var(--duration-base) allow-discrete;
+}
+
+dialog.studio-pop:not([open])::backdrop { opacity: 0; }
+@starting-style { dialog.studio-pop[open]::backdrop { opacity: 0; } }
+
+/* Program monitor letterbox grain: 2% noise so black isn't flat. */
+.studio-grain::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  mix-blend-mode: screen;
+}
+
+.studio-kbd {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 10px;
+  line-height: 1;
+  padding: 3px 5px;
+  border-radius: 4px;
+  border: 1px solid oklch(1 0 0 / 0.14);
+  border-bottom-width: 2px;
+  color: oklch(0.7 0.004 60);
+  background: oklch(1 0 0 / 0.04);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .studio-pulse,
+  .studio-fade-in,
+  .studio-spring-in {
+    animation: none;
+  }
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+  .studio-pop,
+  dialog.studio-pop::backdrop {
+    transition: none;
+  }
 }
 
 .studio-range-control,
