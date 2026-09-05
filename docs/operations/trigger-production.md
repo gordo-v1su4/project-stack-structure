@@ -110,9 +110,9 @@ gitignored bootstrap/recovery fallback. Never print either file.
    table above before triggering acceptance runs.
 
 The deploy script refuses non-Linux hosts, verifies that SDK, build, and React
-hooks use one exact version, derives the CLI version from that shared pin, uses
-`--local-build`, identifies the deployed version/code, and pushes that exact
-image to VM100's Trigger registry.
+hooks use one exact version, derives the CLI version from that shared pin, runs
+the Trigger CLI through `bunx`, uses `--local-build`, identifies the deployed
+version/code, and pushes that exact image to VM100's Trigger registry.
 
 ### VM100 access and failure triage
 

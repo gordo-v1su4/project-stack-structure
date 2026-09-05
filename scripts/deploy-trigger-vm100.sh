@@ -49,27 +49,27 @@ if [ -d node_modules/@higgsfield/cli ]; then
 fi
 
 trigger_version="$(
-  node <<'NODE'
-const packageJson = require("./package.json");
+  bun -e "
+const packageJson = require('./package.json');
 const versions = {
-  sdk: packageJson.dependencies?.["@trigger.dev/sdk"],
-  reactHooks: packageJson.dependencies?.["@trigger.dev/react-hooks"],
-  build: packageJson.devDependencies?.["@trigger.dev/build"],
+  sdk: packageJson.dependencies?.['@trigger.dev/sdk'],
+  reactHooks: packageJson.dependencies?.['@trigger.dev/react-hooks'],
+  build: packageJson.devDependencies?.['@trigger.dev/build'],
 };
 const unique = new Set(Object.values(versions));
-if ([...unique].some((version) => typeof version !== "string") || unique.size !== 1) {
-  console.error(`ERROR: Trigger package versions are not aligned: ${JSON.stringify(versions)}`);
+if ([...unique].some((version) => typeof version !== 'string') || unique.size !== 1) {
+  console.error('ERROR: Trigger package versions are not aligned:', JSON.stringify(versions));
   process.exit(1);
 }
 process.stdout.write([...unique][0]);
-NODE
+"
 )"
 
 deploy_log="$(mktemp)"
 trap 'rm -f "$deploy_log"' EXIT
 set +e
 CI=1 TRIGGER_API_URL=https://trigger.v1su4.dev \
-  npx "trigger.dev@$trigger_version" deploy \
+  bunx "trigger.dev@$trigger_version" deploy \
     --api-url https://trigger.v1su4.dev \
     --skip-update-check \
     --local-build \

@@ -45,8 +45,17 @@ $lines = foreach ($mapping in $manifest.triggerDeployment) {
 $remoteTemporaryPath = "$RemotePath.tmp"
 $remoteDirectory = $RemotePath.Substring(0, $RemotePath.LastIndexOf('/'))
 $payload = ([string[]]$lines) -join "`n"
-$payload | & ssh $SshTarget "umask 077 && mkdir -p '$remoteDirectory' && cat > '$remoteTemporaryPath' && chmod 600 '$remoteTemporaryPath' && mv '$remoteTemporaryPath' '$RemotePath'"
-if ($LASTEXITCODE -ne 0) { throw "Unable to stream the VM100 deployment environment." }
+$localTemporaryPath = [System.IO.Path]::GetTempFileName()
+try {
+  $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+  [System.IO.File]::WriteAllText($localTemporaryPath, $payload, $utf8NoBom)
+  & scp $localTemporaryPath "${SshTarget}:$remoteTemporaryPath"
+  if ($LASTEXITCODE -ne 0) { throw "Unable to copy the VM100 deployment environment." }
+  & ssh $SshTarget "umask 077 && mkdir -p '$remoteDirectory' && chmod 600 '$remoteTemporaryPath' && mv '$remoteTemporaryPath' '$RemotePath'"
+  if ($LASTEXITCODE -ne 0) { throw "Unable to finalize the VM100 deployment environment." }
+} finally {
+  Remove-Item -LiteralPath $localTemporaryPath -ErrorAction SilentlyContinue
+}
 
 Write-Host "Synced the BWS-backed Trigger deployment pointers to VM100 with mode 600."
 Write-Host "Secret values were not printed."
