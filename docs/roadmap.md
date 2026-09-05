@@ -186,6 +186,8 @@ Decide whether web-first remains viable using evidence.
 
 ## Later Capabilities
 
+- **Reference name extraction (vision):** on reference-sheet upload, read printed character/location names via Qwen3-VL instead of filename/manual entry.
+- **Project database (maybe):** evaluate Convex (or similar) for project metadata, media catalog, and ingest/pipeline state — pattern from Pindac and review-room; not committed while RustFS + `project.json` remains the source of truth.
 - Optional fine-cut / micro-shot backend pass after the current full-workflow review:
   keep PySceneDetect as the major scene detector, then split long/one-shot scenes
   into candidate `micro-shot` segments using frame-difference, FFmpeg scene score,
