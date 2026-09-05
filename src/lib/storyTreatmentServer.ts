@@ -41,7 +41,7 @@ export async function queueStoryTreatmentGeneration(
     instructions: STORY_DIRECTOR_INSTRUCTIONS,
     input: buildStoryInput(request, attempt),
     model,
-    maxTokens: 4_096,
+    maxTokens: 1_536,
   });
   return { runId: handle.id, model };
 }

@@ -8,6 +8,8 @@ import {
   isStoryPlanConfirmable,
   parseGeneratedTreatments,
   parseStoryTreatmentRequest,
+  sampleCaptionClustersForStory,
+  STORY_CAPTION_CLUSTER_LIMIT,
 } from "@/components/studio/storyTreatments";
 
 const generated = {
@@ -80,6 +82,14 @@ describe("story treatment contract", () => {
     });
     expect(parsed.song.title).toBe("Love Me Tonight");
     expect(parsed.footage.sourceCount).toBe(21);
+  });
+
+  test("samples large caption cluster lists for model context limits", () => {
+    const clusters = Array.from({ length: 120 }, (_, index) => `caption cluster ${index}`);
+    const sampled = sampleCaptionClustersForStory(clusters);
+    expect(sampled.length).toBe(STORY_CAPTION_CLUSTER_LIMIT);
+    expect(sampled[0]).toBe("caption cluster 0");
+    expect(sampled[sampled.length - 1]).toBe("caption cluster 119");
   });
 
   test("classifies honest coverage and requires a resolution for missing anchors", () => {

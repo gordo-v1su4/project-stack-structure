@@ -14,6 +14,8 @@ QWEN_URL = os.getenv("QWEN_LLAMA_URL", "http://qwen-llama:18092/v1/chat/completi
 QWEN_HEALTH_URL = os.getenv("QWEN_LLAMA_HEALTH_URL", "http://qwen-llama:18092/health")
 MAX_TOKENS = int(os.getenv("QWEN_MAX_TOKENS", "180"))
 STORY_MAX_TOKENS = int(os.getenv("QWEN_STORY_MAX_TOKENS", "4096"))
+STORY_RESPONSE_TOKEN_CAP = int(os.getenv("QWEN_STORY_RESPONSE_TOKEN_CAP", "2048"))
+STORY_INPUT_MAX_CHARS = int(os.getenv("QWEN_STORY_INPUT_MAX_CHARS", "24000"))
 TEMPERATURE = float(os.getenv("QWEN_TEMPERATURE", "0.5"))
 STORY_TEMPERATURE = float(os.getenv("QWEN_STORY_TEMPERATURE", "0.6"))
 TIMEOUT = int(os.getenv("QWEN_TIMEOUT_SECONDS", "300"))
@@ -188,8 +190,10 @@ def story_treatments(
     user_input = str(body.get("input") or "").strip()
     if not instructions or not user_input:
         raise HTTPException(status_code=400, detail="instructions and input are required")
+    if len(user_input) > STORY_INPUT_MAX_CHARS:
+        user_input = f"{user_input[:STORY_INPUT_MAX_CHARS]}\n\n[story input truncated for model context]"
     model = str(body.get("model") or QWEN_MODEL).strip() or QWEN_MODEL
-    max_tokens = int(body.get("max_tokens") or STORY_MAX_TOKENS)
+    max_tokens = min(int(body.get("max_tokens") or STORY_MAX_TOKENS), STORY_MAX_TOKENS, STORY_RESPONSE_TOKEN_CAP)
     payload = {
         "model": model,
         "messages": [

@@ -149,6 +149,21 @@ export const STORY_TREATMENTS_JSON_SCHEMA = {
   },
 } as const;
 
+export const STORY_CAPTION_CLUSTER_LIMIT = 36;
+export const STORY_CAPTION_CLUSTER_MAX_CHARS = 220;
+export const STORY_LYRIC_EXCERPT_MAX_CHARS = 1_200;
+
+export function sampleCaptionClustersForStory(clusters: string[]): string[] {
+  const trimmed = clusters
+    .map((item) => limitedString(item, STORY_CAPTION_CLUSTER_MAX_CHARS, ""))
+    .filter(Boolean);
+  if (trimmed.length <= STORY_CAPTION_CLUSTER_LIMIT) return trimmed;
+  const step = (trimmed.length - 1) / (STORY_CAPTION_CLUSTER_LIMIT - 1);
+  return Array.from({ length: STORY_CAPTION_CLUSTER_LIMIT }, (_, index) => (
+    trimmed[Math.min(trimmed.length - 1, Math.round(index * step))]
+  ));
+}
+
 export function parseStoryTreatmentRequest(value: unknown): StoryTreatmentRequest {
   const record = asRecord(value, "Story treatment request must be a JSON object.");
   const song = asRecord(record.song, "Song context is required.");
@@ -167,7 +182,7 @@ export function parseStoryTreatmentRequest(value: unknown): StoryTreatmentReques
     };
   });
   const captionClusters = Array.isArray(footage.captionClusters)
-    ? footage.captionClusters.map((item) => limitedString(item, 500, "")).filter(Boolean).slice(0, 80)
+    ? sampleCaptionClustersForStory(footage.captionClusters.map((item) => String(item)))
     : [];
   return {
     brief: limitedString(record.brief, 4_000, ""),
@@ -176,7 +191,7 @@ export function parseStoryTreatmentRequest(value: unknown): StoryTreatmentReques
       duration: Number.isFinite(song.duration) ? clamp(Number(song.duration), 0, 60 * 60) : undefined,
       sections,
       lyricSummary: optionalString(song.lyricSummary, 2_000),
-      lyricExcerpt: optionalString(song.lyricExcerpt, 4_000),
+      lyricExcerpt: optionalString(song.lyricExcerpt, STORY_LYRIC_EXCERPT_MAX_CHARS),
     },
     footage: {
       captionClusters,

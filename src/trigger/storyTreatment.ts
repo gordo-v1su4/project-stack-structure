@@ -57,7 +57,7 @@ async function runStoryTreatmentGateway(payload: StoryTreatmentPayload, triggerR
       model: payload.model,
       instructions: payload.instructions,
       input: payload.input,
-      max_tokens: payload.maxTokens ?? 4_096,
+      max_tokens: payload.maxTokens ?? 1_536,
     }),
     signal: AbortSignal.timeout(540_000),
   });

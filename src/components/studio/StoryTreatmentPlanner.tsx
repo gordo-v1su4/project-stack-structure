@@ -78,7 +78,7 @@ export function StoryTreatmentPlanner({ analysis, transcriptSummary, project, st
         duration: analysis?.duration,
         sections: analysis?.sections ?? [],
         lyricSummary: transcriptSummary?.summary || undefined,
-        lyricExcerpt: transcriptSummary?.transcript?.slice(0, 4_000) || undefined,
+        lyricExcerpt: transcriptSummary?.transcript?.slice(0, 1_200) || undefined,
       },
       footage: {
         captionClusters,
