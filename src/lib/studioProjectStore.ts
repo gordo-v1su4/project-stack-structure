@@ -4,7 +4,6 @@ import type { PersistedStudioProjectDraft } from "@/components/studio/projectPer
 import {
   buildMediaGatewayFileUrl,
   getMediaGatewayConfig,
-  normalizeMediaPath,
   uploadJsonToMediaGateway,
 } from "@/lib/mediaGateway";
 import {

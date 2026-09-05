@@ -27,10 +27,6 @@ type StoredDraftLike = {
   } | null>;
 } | null;
 
-function ownerSegmentOf(ownerId: string) {
-  return ownerId.trim().replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 128);
-}
-
 async function collectOwnedKeysFromObject(config: NonNullable<ReturnType<typeof getMediaGatewayConfig>>, objectKey: string, owned: Set<string>) {
   try {
     const draft = await downloadJsonFromMediaGateway<StoredDraftLike>({ bucket: config.bucket, objectKey });
@@ -52,7 +48,6 @@ export async function loadUserOwnedMediaKeys(userId: string): Promise<Set<string
   const owned = new Set<string>();
   if (!config) return owned;
 
-  const segment = ownerSegmentOf(userId);
   await collectOwnedKeysFromObject(config, `media-uploads/studio-drafts/${encodeURIComponent(userId)}.json`, owned);
 
   try {
