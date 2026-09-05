@@ -130,7 +130,7 @@ export function StoryTreatmentPlanner({ analysis, transcriptSummary, project, st
           }));
           onChange({
             treatments: hydrateTreatmentCoverage(namespaced, project.videoMoments),
-            selectedTreatmentId: null,
+            selectedTreatmentId: namespaced[0]?.id ?? null,
             generationMeta: result.meta,
           });
           return;

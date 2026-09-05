@@ -92,6 +92,13 @@ describe("story treatment contract", () => {
     expect(sampled[sampled.length - 1]).toBe("caption cluster 119");
   });
 
+  test("ignores malformed trailing anchors from Qwen output", () => {
+    const noisy = structuredClone(generated);
+    noisy.treatments[0].anchors.push(null as never);
+    const parsed = parseGeneratedTreatments(noisy);
+    expect(parsed[0].anchors).toHaveLength(4);
+  });
+
   test("classifies honest coverage and requires a resolution for missing anchors", () => {
     const treatment = hydrateTreatmentCoverage(parseGeneratedTreatments(generated), moments)[0];
     expect(treatment.anchors.some((anchor) => anchor.coverage === "covered")).toBe(true);

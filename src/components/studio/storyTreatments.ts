@@ -352,22 +352,18 @@ export function selectedTreatment(
 
 function parseGeneratedTreatment(value: unknown, index: number): GeneratedTreatment {
   const record = asRecord(value, `Treatment ${index + 1} is invalid.`);
-  const kind = record.kind;
-  if (!STORY_TREATMENT_KINDS.includes(kind as StoryTreatmentKind)) {
+  const kind = normalizeTreatmentKind(record.kind);
+  if (!kind) {
     throw new Error(`Treatment ${index + 1} has an invalid kind.`);
   }
   if (!Array.isArray(record.anchors) || record.anchors.length < 4) {
     throw new Error(`Treatment ${index + 1} must contain at least four anchors.`);
   }
-  const anchorsToParse = record.anchors.slice(0, 4);
-  const expectedReusePercent = clamp(finiteNumber(record.expectedReusePercent, 0), 0, 100);
-  const expectedGenerationPercent = clamp(finiteNumber(record.expectedGenerationPercent, 0), 0, 100);
-  if (Math.abs((expectedReusePercent + expectedGenerationPercent) - 100) > 1) {
-    throw new Error(`Treatment ${index + 1} coverage estimates must add to 100 percent.`);
-  }
+  const expectedReusePercent = normalizeCoveragePercent(record.expectedReusePercent, 80);
+  const expectedGenerationPercent = 100 - expectedReusePercent;
   return {
     id: limitedString(record.id, 80, `${kind}-${index + 1}`),
-    kind: kind as StoryTreatmentKind,
+    kind,
     title: requiredString(record.title, 100, `Treatment ${index + 1} title`),
     logline: requiredString(record.logline, 320, `Treatment ${index + 1} logline`),
     synopsis: requiredString(record.synopsis, 900, `Treatment ${index + 1} synopsis`),
@@ -375,17 +371,45 @@ function parseGeneratedTreatment(value: unknown, index: number): GeneratedTreatm
     endingHook: requiredString(record.endingHook, 320, `Treatment ${index + 1} ending hook`),
     expectedReusePercent,
     expectedGenerationPercent,
-    anchors: record.anchors.map((value, anchorIndex) => {
-      const anchor = asRecord(value, `Treatment ${index + 1} anchor ${anchorIndex + 1} is invalid.`);
-      return {
-        id: limitedString(anchor.id, 80, `${kind}-anchor-${anchorIndex + 1}`),
-        title: requiredString(anchor.title, 100, `Anchor ${anchorIndex + 1} title`),
-        description: requiredString(anchor.description, 500, `Anchor ${anchorIndex + 1} description`),
-        purpose: requiredString(anchor.purpose, 240, `Anchor ${anchorIndex + 1} purpose`),
-        generationPrompt: requiredString(anchor.generationPrompt, 600, `Anchor ${anchorIndex + 1} generation prompt`),
-      };
-    }),
+    anchors: parseGeneratedAnchors(record.anchors, index, kind),
   };
+}
+
+function parseGeneratedAnchors(rawAnchors: unknown[], treatmentIndex: number, kind: StoryTreatmentKind): GeneratedAnchor[] {
+  const parsed: GeneratedAnchor[] = [];
+  for (let anchorIndex = 0; anchorIndex < rawAnchors.length && parsed.length < 4; anchorIndex += 1) {
+    try {
+      const anchor = asRecord(rawAnchors[anchorIndex], `Treatment ${treatmentIndex + 1} anchor ${anchorIndex + 1} is invalid.`);
+      parsed.push({
+        id: limitedString(anchor.id, 80, `${kind}-anchor-${parsed.length + 1}`),
+        title: requiredString(anchor.title, 100, `Anchor ${parsed.length + 1} title`),
+        description: requiredString(anchor.description, 500, `Anchor ${parsed.length + 1} description`),
+        purpose: requiredString(anchor.purpose, 240, `Anchor ${parsed.length + 1} purpose`),
+        generationPrompt: requiredString(anchor.generationPrompt, 600, `Anchor ${parsed.length + 1} generation prompt`),
+      });
+    } catch {
+      // Qwen occasionally emits a trailing malformed anchor; keep the first four valid ones.
+    }
+  }
+  if (parsed.length < 4) {
+    throw new Error(`Treatment ${treatmentIndex + 1} must contain at least four valid anchors.`);
+  }
+  return parsed;
+}
+
+function normalizeTreatmentKind(value: unknown): StoryTreatmentKind | null {
+  const text = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (STORY_TREATMENT_KINDS.includes(text as StoryTreatmentKind)) return text as StoryTreatmentKind;
+  if (text.includes("faith")) return "faithful";
+  if (text.includes("bold") || text.includes("antagonist")) return "bold";
+  if (text.includes("wild") || text.includes("reversal")) return "wildcard";
+  return null;
+}
+
+function normalizeCoveragePercent(value: unknown, fallback: number) {
+  const parsed = clamp(finiteNumber(value, fallback), 0, 100);
+  if (!Number.isFinite(Number(value))) return fallback;
+  return parsed;
 }
 
 function rankAnchorCoverage(anchor: GeneratedAnchor | StoryAnchor, moments: VideoMoment[]): StoryAnchor {
