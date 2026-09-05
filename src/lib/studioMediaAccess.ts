@@ -5,6 +5,11 @@ import {
   normalizeMediaPath,
 } from "@/lib/mediaGateway";
 import { mediaUploadBelongsToOwner } from "@/lib/essentiaUpload";
+import {
+  ownerProjectsIndexPath,
+  resolveLegacyProjectObjectPath,
+  resolveProjectObjectPath,
+} from "@/lib/studioStoragePaths";
 
 /**
  * Media access resolution for durable references. Ownership is proven two ways:
@@ -21,10 +26,6 @@ type StoredDraftLike = {
     uploadChunks?: { chunks?: Array<{ objectKey?: string }> } | null;
   } | null>;
 } | null;
-
-function ownerSegmentOf(ownerId: string) {
-  return ownerId.trim().replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 128);
-}
 
 async function collectOwnedKeysFromObject(config: NonNullable<ReturnType<typeof getMediaGatewayConfig>>, objectKey: string, owned: Set<string>) {
   try {
@@ -47,17 +48,22 @@ export async function loadUserOwnedMediaKeys(userId: string): Promise<Set<string
   const owned = new Set<string>();
   if (!config) return owned;
 
-  const segment = ownerSegmentOf(userId);
   await collectOwnedKeysFromObject(config, `media-uploads/studio-drafts/${encodeURIComponent(userId)}.json`, owned);
 
   try {
-    const index = await downloadJsonFromMediaGateway<{ projects?: Array<{ id?: string }> }>({
+    const index = await downloadJsonFromMediaGateway<{ projects?: Array<{ id?: string; storageFolder?: string }> }>({
       bucket: config.bucket,
-      objectKey: `media-uploads/projects/${segment}/index.json`,
+      objectKey: ownerProjectsIndexPath(userId),
     });
     for (const entry of (index?.projects ?? []).slice(0, 5)) {
       if (!entry?.id) continue;
-      await collectOwnedKeysFromObject(config, `media-uploads/projects/${segment}/${entry.id}/project.json`, owned);
+      const objectKeys = [
+        entry.storageFolder ? resolveProjectObjectPath(entry.storageFolder) : null,
+        resolveLegacyProjectObjectPath(userId, entry.id),
+      ].filter((value): value is string => Boolean(value));
+      for (const objectKey of objectKeys) {
+        await collectOwnedKeysFromObject(config, objectKey, owned);
+      }
     }
   } catch {
     // No readable project index; the default draft above is the only record.

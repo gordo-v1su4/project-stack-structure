@@ -1,4 +1,5 @@
 import { analyzeEditPlanCoverage } from "./editPlanCoverage";
+import type { GeneratedStudioAsset } from "./generatedAssets";
 import { hasRequiredIngestReferences } from "./ingestLanes";
 import type { MusicVideoProject } from "./musicVideoProject";
 import type { ReferenceAsset } from "./referenceAssets";
@@ -18,12 +19,13 @@ export function buildStudioPipelineInput(params: {
   storyAnchorsResolved: boolean;
   storyPlanConfirmed: boolean;
   musicVideoProject: MusicVideoProject | null;
+  generatedAssets: GeneratedStudioAsset[];
   storySegmentCount: number;
   hasCommittedSplit: boolean;
   shaderPresetLabel: string;
   finalExportReady: boolean;
 }): PipelineStageInput {
-  const coverage = analyzeEditPlanCoverage(params.musicVideoProject, []);
+  const coverage = analyzeEditPlanCoverage(params.musicVideoProject, [], params.generatedAssets);
 
   return {
     activeTab: params.activeTab,

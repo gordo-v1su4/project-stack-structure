@@ -1,6 +1,6 @@
 import type { ImageSplitManifest } from "@/lib/imageSplitterGateway";
 import type { MediaGatewayUploadResult } from "@/lib/mediaGateway";
-import type { EditPlanPreviewSegment } from "./musicVideoProject";
+import type { EditPlanPreviewSegment, TimelineItem } from "./musicVideoProject";
 import type { StoryboardJob, VideoFrameRole } from "./storyboardGeneration";
 
 export type GeneratedStudioAssetProvider = "higgsfield" | "swarmui";
@@ -257,4 +257,31 @@ export function buildGeneratedAssetPlaybackUrl(asset: GeneratedStudioAsset): str
 
 function rangesMatch(leftStart: number, leftEnd: number, rightStart: number, rightEnd: number) {
   return Math.abs(leftStart - rightStart) < 0.08 && Math.abs(leftEnd - rightEnd) < 0.08;
+}
+
+export function listApprovedGeneratedVideoAssets(assets: GeneratedStudioAsset[]) {
+  return assets.filter((asset) => asset.mediaKind === "video" && asset.reviewStatus === "approved" && asset.target);
+}
+
+export function generatedAssetMatchesTimelineItem(
+  asset: GeneratedStudioAsset,
+  item: Pick<TimelineItem, "id" | "sectionId" | "start" | "end">,
+) {
+  const target = asset.target;
+  if (!target) return false;
+  if (target.timelineItemId === item.id) return true;
+  if (target.sectionId !== item.sectionId) return false;
+  return rangesMatch(item.start, item.end, target.songStart, target.songEnd);
+}
+
+export function generatedAssetMatchesPreviewSegment(
+  asset: GeneratedStudioAsset,
+  segment: EditPlanPreviewSegment,
+  timelineItemId?: string,
+) {
+  const target = asset.target;
+  if (!target) return false;
+  if (timelineItemId && target.timelineItemId === timelineItemId) return true;
+  if (target.sectionId !== segment.sectionId) return false;
+  return rangesMatch(segment.musicStart, segment.musicEnd, target.songStart, target.songEnd);
 }

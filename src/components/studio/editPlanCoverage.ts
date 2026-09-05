@@ -1,4 +1,6 @@
 import { resolveFitPolicy } from "./fitPolicy";
+import type { GeneratedStudioAsset } from "./generatedAssets";
+import { generatedAssetMatchesTimelineItem, listApprovedGeneratedVideoAssets } from "./generatedAssets";
 import type { MusicVideoProject, TimelineItem, VideoMoment } from "./musicVideoProject";
 
 export const COVERAGE_WEAK_SCORE_THRESHOLD = 0.45;
@@ -113,8 +115,14 @@ function deriveGenerationNeeds(status: SlotStatus, requiredDuration: number, ava
   return [];
 }
 
-export function buildCoverageSlots(project: MusicVideoProject | null, chunks: CoverageChunk[]): CoverageSlot[] {
+export function buildCoverageSlots(
+  project: MusicVideoProject | null,
+  chunks: CoverageChunk[],
+  approvedReplacements: GeneratedStudioAsset[] = [],
+): CoverageSlot[] {
   if (!project) return [];
+
+  const approvedVideos = listApprovedGeneratedVideoAssets(approvedReplacements);
 
   const momentsById = new Map(project.videoMoments.map((moment) => [moment.id, moment]));
   const itemsBySection = new Map(project.editPlan.timelineItems.map((item) => [item.sectionId, item]));
@@ -146,6 +154,21 @@ export function buildCoverageSlots(project: MusicVideoProject | null, chunks: Co
   return sourceItems.map((item) => {
     const moment = item.videoMomentId ? momentsById.get(item.videoMomentId) : undefined;
     const requiredDuration = Math.max(0, item.end - item.start);
+    const approvedReplacement = approvedVideos.find((asset) => generatedAssetMatchesTimelineItem(asset, item));
+
+    if (!moment && approvedReplacement) {
+      return {
+        item,
+        moment: undefined,
+        requiredDuration,
+        assignedDuration: requiredDuration,
+        missingDuration: 0,
+        score: 1,
+        status: "filled" as const,
+        needs: [] as GenerationNeed[],
+      };
+    }
+
     const score = item.semanticMatch?.score ?? 0;
     const availableDuration = moment?.duration ?? 0;
     const assignedDuration = moment ? Math.min(requiredDuration, availableDuration) : 0;
@@ -244,10 +267,15 @@ export function describeCoverageIssue(issue: CoverageIssueGroup) {
   return `This Story section's selected match scores ${Math.round(issue.score * 100)}%, below the 45% review threshold. All ${issue.slots.length} chunks contain real footage, so generation is optional.`;
 }
 
-export function analyzeEditPlanCoverage(project: MusicVideoProject | null, chunks: CoverageChunk[] = []): EditPlanCoverageAnalysis {
-  const slots = buildCoverageSlots(project, chunks);
+export function analyzeEditPlanCoverage(
+  project: MusicVideoProject | null,
+  chunks: CoverageChunk[] = [],
+  approvedReplacements: GeneratedStudioAsset[] = [],
+): EditPlanCoverageAnalysis {
+  const slots = buildCoverageSlots(project, chunks, approvedReplacements);
   const summary = summarizeCoverage(slots, chunks[chunks.length - 1]?.end ?? 0);
   const timelineItems = project?.editPlan.timelineItems ?? [];
+  const approvedVideos = listApprovedGeneratedVideoAssets(approvedReplacements);
 
   return {
     slots,
@@ -255,7 +283,9 @@ export function analyzeEditPlanCoverage(project: MusicVideoProject | null, chunk
     trueGapCount: summary.blockingGapCount,
     shortReviewCount: summary.shortReviewCount,
     weakReviewCount: summary.reviewCount,
-    matchedSlotCount: timelineItems.filter((item) => item.videoMomentId).length,
+    matchedSlotCount: timelineItems.filter((item) =>
+      Boolean(item.videoMomentId) || approvedVideos.some((asset) => generatedAssetMatchesTimelineItem(asset, item)),
+    ).length,
     editSlotCount: timelineItems.length,
   };
 }
