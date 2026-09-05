@@ -13,6 +13,7 @@ import {
   type ActivityRunInput,
   type WorkActivityItem,
 } from "@/lib/workActivity";
+import { useDismiss } from "./shell/useDismiss";
 
 type ActivityCredentials = {
   accessToken: string;
@@ -27,6 +28,9 @@ type ActiveActivityCredentials = ActivityCredentials & {
 
 export function WorkActivity() {
   const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const close = useCallback(() => setOpen(false), []);
+  useDismiss(rootRef, open, close);
   const [credentials, setCredentials] = useState<ActiveActivityCredentials>();
   const credentialVersion = useRef(0);
   const [refreshNonce, setRefreshNonce] = useState(0);
@@ -107,7 +111,7 @@ export function WorkActivity() {
   }, [summary.active, summary.queued]);
 
   return (
-    <div className="relative">
+    <div ref={rootRef} className="relative">
       {credentials ? (
         <WorkActivitySubscription
           key={credentials.version}
@@ -116,47 +120,54 @@ export function WorkActivity() {
           onSnapshot={onSnapshot}
         />
       ) : null}
+      {/* Quiet by default: an icon with a count. It only speaks when work is running or failed. */}
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
         aria-controls="stack-structure-work-activity"
         aria-label={`Work activity: ${summaryLabel}`}
-        className={`min-w-[76px] max-w-[240px] rounded-[2px] border px-2.5 py-1 text-left ${
-          summary.active ? "border-[#6c3210] bg-[#1a100b]" : summary.failed ? "border-[#552020] bg-[#170b0b]" : "border-[#292929] bg-[#111]"
+        title={summaryLabel}
+        className={`relative flex h-7 items-center gap-1.5 rounded-md border px-2 font-mono text-[11px] transition-colors ${
+          summary.active
+            ? "border-accent-lo bg-accent-tint text-accent"
+            : summary.failed
+              ? "border-danger-lo bg-danger-tint text-danger"
+              : "border-transparent text-fg-3 hover:border-line-2 hover:text-fg-1"
         }`}
       >
-        <span className="block text-[8px] uppercase tracking-[0.16em] text-[#555]">Work</span>
-        <span className="block truncate whitespace-nowrap font-mono text-[9px] text-[#c4c4c4]" title={summaryLabel}>
-          {summaryLabel}
-        </span>
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden className={summary.active ? "studio-spin" : undefined}>
+          <circle cx="8" cy="8" r="5.5" />
+          <path d="M8 4.5V8l2.5 1.5" />
+        </svg>
+        {summary.active ? <span>{summary.active} running</span> : summary.failed ? <span>{summary.failed} failed</span> : summary.total ? <span>{summary.completed}</span> : null}
       </button>
 
       {open ? (
         <section
           id="stack-structure-work-activity"
           aria-label="Work activity"
-          className="absolute right-0 top-[calc(100%+8px)] z-50 w-[430px] rounded-[3px] border border-[#292929] bg-[#0d0d0d] p-3 shadow-2xl shadow-black/70"
+          className="absolute right-0 top-[calc(100%+8px)] z-50 w-[420px] rounded-[10px] border border-line-2 bg-ink-1 p-4 shadow-2xl shadow-black/70"
         >
-          <div className="mb-2 flex items-center justify-between border-b border-[#202020] pb-2">
+          <div className="mb-3 flex items-start justify-between gap-3 border-b border-line pb-3">
             <div>
-              <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#d0d0d0]">Work activity</div>
-              <div className="mt-1 text-[8px] text-[#555]">Trigger.dev production runs from the last 24 hours</div>
+              <div className="text-[13px] font-medium text-fg-0">Work</div>
+              <div className="mt-0.5 font-mono text-[11px] text-fg-3">{summary.total ? summaryLabel : "Production runs from the last 24 hours"}</div>
             </div>
-            <button type="button" onClick={() => setOpen(false)} className="text-[9px] text-[#666] hover:text-[#aaa]">Close</button>
+            <button type="button" onClick={() => setOpen(false)} className="text-[11px] text-fg-3 hover:text-fg-1">Close</button>
           </div>
           {requiresSignIn ? (
-            <div className="rounded-[2px] border border-[#252525] bg-[#101010] p-3 text-[10px] text-[#777]">
-              Sign in with GitHub from the Project menu to view your scoped production work.
+            <div className="rounded-md border border-line bg-ink-0 p-3 text-[12px] leading-5 text-fg-2">
+              Sign in with GitHub from the project menu to view your scoped production work.
             </div>
           ) : connectionError ? (
-            <div className="rounded-[2px] border border-[#4a2020] bg-[#180b0b] p-3 text-[9px] text-[#c77777]">{connectionError}</div>
+            <div className="rounded-md border border-danger-lo bg-danger-tint p-3 text-[12px] leading-5 text-danger">{connectionError}</div>
           ) : !credentials ? (
-            <div className="py-5 text-center text-[9px] text-[#555]">Connecting...</div>
+            <div className="py-6 text-center text-[12px] text-fg-3">Connecting...</div>
           ) : activity.length === 0 ? (
-            <div className="py-5 text-center text-[9px] text-[#555]">No work in the last 24 hours.</div>
+            <div className="py-6 text-center text-[12px] text-fg-3">No work in the last 24 hours.</div>
           ) : (
-            <div className="max-h-[420px] space-y-1 overflow-y-auto">
+            <div className="max-h-[420px] overflow-y-auto">
               {activity.map((item) => <ActivityRow key={item.id} item={item} />)}
             </div>
           )}
@@ -211,31 +222,31 @@ function WorkActivitySubscription({
 }
 
 function ActivityRow({ item, child = false }: { item: WorkActivityItem; child?: boolean }) {
-  const tone = item.failed ? "#d05b5b" : item.active ? "#e05c00" : "#5f8f68";
+  const tone = item.failed ? "bg-danger" : item.active ? "bg-accent studio-pulse" : "bg-ok";
   return (
-    <article className={`rounded-[2px] border border-[#202020] bg-[#0a0a0a] p-2 ${child ? "ml-5" : ""}`}>
-      <div className="flex items-start gap-2">
-        <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: tone }} />
+    <article className={`border-b border-line py-2 last:border-b-0 ${child ? "ml-5" : ""}`}>
+      <div className="flex items-start gap-2.5">
+        <span className={`mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full ${tone}`} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
-            <strong className="truncate text-[10px] font-medium text-[#c4c4c4]">{item.taskLabel}</strong>
-            <span className="font-mono text-[8px] text-[#555]">{formatActivityDuration(item.totalMs)}</span>
+            <strong className="truncate text-[12.5px] font-medium text-fg-0">{item.taskLabel}</strong>
+            <span className="font-mono text-[10.5px] text-fg-3">{formatActivityDuration(item.totalMs)}</span>
           </div>
-          <div className="mt-0.5 truncate text-[9px] text-[#666]">{item.stageLabel}</div>
-          <div className="mt-1 flex flex-wrap gap-x-3 font-mono text-[8px] text-[#494949]">
+          <div className="mt-0.5 truncate text-[11.5px] text-fg-2">{item.stageLabel}</div>
+          <div className="mt-1 flex flex-wrap gap-x-3 font-mono text-[10.5px] text-fg-3">
             {item.totalItems !== undefined ? <span>{item.completedItems ?? 0}/{item.totalItems} items</span> : null}
             {item.queuedMs !== undefined ? <span>queue {formatActivityDuration(item.queuedMs)}</span> : null}
             {item.runtimeMs !== undefined ? <span>run {formatActivityDuration(item.runtimeMs)}</span> : null}
             {item.providerStatus ? <span>{item.providerStatus}</span> : null}
           </div>
           {item.progressPercent !== undefined ? (
-            <div className="mt-1.5 h-0.5 overflow-hidden bg-[#1c1c1c]"><span className="block h-full bg-[#e05c00]" style={{ width: `${item.progressPercent}%` }} /></div>
+            <div className="mt-1.5 h-[3px] overflow-hidden rounded-full bg-ink-3"><span className="block h-full rounded-full bg-accent" style={{ width: `${item.progressPercent}%` }} /></div>
           ) : null}
-          {item.providerMessage ? <p className="mt-1 text-[8px] text-[#666]">{item.providerMessage}</p> : null}
-          {item.error ? <p className="mt-1 text-[8px] text-[#c77777]">{item.error}</p> : null}
+          {item.providerMessage ? <p className="mt-1 text-[11px] text-fg-3">{item.providerMessage}</p> : null}
+          {item.error ? <p className="mt-1 text-[11px] text-danger">{item.error}</p> : null}
         </div>
       </div>
-      {item.children.length ? <div className="mt-1 space-y-1">{item.children.map((entry) => <ActivityRow key={entry.id} item={entry} child />)}</div> : null}
+      {item.children.length ? <div className="mt-1">{item.children.map((entry) => <ActivityRow key={entry.id} item={entry} child />)}</div> : null}
     </article>
   );
 }

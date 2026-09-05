@@ -148,5 +148,10 @@ export function shortcutSheet(commands: StudioCommand[]): { keys: string; label:
   const rows = commands
     .filter((command) => command.shortcut)
     .map((command) => ({ keys: command.shortcut as string, label: command.label }));
-  return [{ keys: "⌘K", label: "Command palette" }, ...rows];
+  return [
+    { keys: "⌘K", label: "Command palette" },
+    ...rows,
+    { keys: "[ ]", label: "Previous / next cut on the spine" },
+    { keys: "Esc", label: "Deselect cut" },
+  ];
 }

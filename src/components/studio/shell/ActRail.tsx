@@ -23,7 +23,7 @@ function stateFor(stage: PipelineStage | undefined, active: boolean): ActState {
 }
 
 /**
- * 56px act rail: the single stage-status surface. Icon + number per act, a
+ * 72px act rail: the single stage-status surface. Icon + act name per act, a
  * progress ring at the foot. Locked acts stay clickable (soft gate) — the
  * inspector explains what is missing.
  */
@@ -33,9 +33,9 @@ export function ActRail({ tab, stages, onSelectTab }: ActRailProps) {
   const ratio = stages.length ? completeCount / stages.length : 0;
 
   return (
-    <nav aria-label="Acts" className="flex w-14 shrink-0 flex-col items-center border-r border-line bg-ink-0 py-3">
+    <nav aria-label="Acts" className="flex w-[72px] shrink-0 flex-col items-center border-r border-line bg-ink-0 py-3">
       <Brand />
-      <ol className="mt-4 flex flex-1 flex-col items-center gap-1">
+      <ol className="mt-4 flex flex-1 flex-col items-center gap-[2px]">
         {NAV.map((item, index) => {
           const stage = stagesByKey.get(item.key);
           const state = stateFor(stage, tab === item.key);
@@ -49,7 +49,7 @@ export function ActRail({ tab, stages, onSelectTab }: ActRailProps) {
                 aria-current={state === "current" ? "step" : undefined}
                 aria-label={`${index + 1}. ${item.label} — ${status}`}
                 title={`${item.label} · ${status}  (${index + 1})`}
-                className={`group relative flex h-11 w-11 flex-col items-center justify-center rounded-lg transition-[background-color,color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out-soft)] active:scale-95 ${
+                className={`group relative flex h-[54px] w-16 flex-col items-center justify-center gap-[5px] rounded-lg transition-[background-color,color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out-soft)] active:scale-95 ${
                   state === "current"
                     ? "bg-ink-3 text-fg-0"
                     : state === "locked"
@@ -58,11 +58,11 @@ export function ActRail({ tab, stages, onSelectTab }: ActRailProps) {
                 }`}
               >
                 {state === "current" ? (
-                  <span aria-hidden className="absolute -left-[7px] top-2 bottom-2 w-[2px] rounded-full bg-accent" />
+                  <span aria-hidden className="absolute -left-1 top-3 bottom-3 w-[2px] rounded-full bg-accent" />
                 ) : null}
-                <Icon size={17} className={state === "current" ? "text-accent" : undefined} />
-                <span className={`mt-[3px] font-mono text-[9px] leading-none ${state === "current" ? "text-fg-1" : "text-fg-4"}`}>
-                  {String(index + 1).padStart(2, "0")}
+                <Icon size={18} className={state === "current" ? "text-accent" : undefined} />
+                <span className={`text-[10px] leading-none tracking-[0.01em] ${state === "current" ? "text-fg-0" : state === "locked" ? "text-fg-4" : "text-fg-2"}`}>
+                  {item.label}
                 </span>
                 <StateBadge state={state} />
               </button>
@@ -78,17 +78,17 @@ export function ActRail({ tab, stages, onSelectTab }: ActRailProps) {
 function StateBadge({ state }: { state: ActState }) {
   if (state === "done") {
     return (
-      <span aria-hidden className="absolute right-[5px] top-[5px] flex h-3 w-3 items-center justify-center rounded-full bg-ok text-ink-0">
+      <span aria-hidden className="absolute right-[7px] top-[6px] flex h-3 w-3 items-center justify-center rounded-full bg-ok text-ink-0">
         <CheckIcon size={9} strokeWidth={2.2} />
       </span>
     );
   }
   if (state === "next") {
-    return <span aria-hidden className="studio-pulse absolute right-[6px] top-[6px] h-[6px] w-[6px] rounded-full bg-accent" />;
+    return <span aria-hidden className="studio-pulse absolute right-2 top-2 h-[6px] w-[6px] rounded-full bg-accent" />;
   }
   if (state === "locked") {
     return (
-      <span aria-hidden className="absolute right-[5px] top-[5px] text-fg-4">
+      <span aria-hidden className="absolute right-[7px] top-[6px] text-fg-4">
         <LockIcon size={9} />
       </span>
     );
@@ -97,15 +97,15 @@ function StateBadge({ state }: { state: ActState }) {
 }
 
 function ProgressRing({ ratio, label }: { ratio: number; label: string }) {
-  const r = 12;
+  const r = 13;
   const c = 2 * Math.PI * r;
   return (
-    <div className="relative mt-2 flex h-9 w-9 items-center justify-center" title={`${label} acts complete`} aria-label={`${label} acts complete`}>
-      <svg width="36" height="36" viewBox="0 0 36 36" className="absolute inset-0 -rotate-90" aria-hidden>
-        <circle cx="18" cy="18" r={r} fill="none" stroke="oklch(1 0 0 / 0.08)" strokeWidth="2" />
+    <div className="relative mt-2 flex h-10 w-10 items-center justify-center" title={`${label} acts complete`} aria-label={`${label} acts complete`}>
+      <svg width="40" height="40" viewBox="0 0 40 40" className="absolute inset-0 -rotate-90" aria-hidden>
+        <circle cx="20" cy="20" r={r} fill="none" stroke="oklch(1 0 0 / 0.1)" strokeWidth="2" />
         <circle
-          cx="18"
-          cy="18"
+          cx="20"
+          cy="20"
           r={r}
           fill="none"
           stroke="var(--color-accent)"
@@ -116,7 +116,7 @@ function ProgressRing({ ratio, label }: { ratio: number; label: string }) {
           style={{ transition: "stroke-dashoffset var(--duration-slow) var(--ease-spring)" }}
         />
       </svg>
-      <span className="relative font-mono text-[9px] text-fg-2">{label}</span>
+      <span className="relative font-mono text-[10px] text-fg-2">{label}</span>
     </div>
   );
 }
@@ -124,10 +124,10 @@ function ProgressRing({ ratio, label }: { ratio: number; label: string }) {
 function Brand() {
   return (
     <div className="grid shrink-0 grid-cols-2 gap-[3px]" aria-label="Stack Structure" title="Stack Structure">
-      <div className="h-[6px] w-[6px] rounded-[1px] bg-accent" />
-      <div className="h-[6px] w-[6px] rounded-[1px] bg-ink-4" />
-      <div className="h-[6px] w-[6px] rounded-[1px] bg-ink-4" />
-      <div className="h-[6px] w-[6px] rounded-[1px] bg-accent" />
+      <div className="h-[7px] w-[7px] rounded-[1px] bg-accent" />
+      <div className="h-[7px] w-[7px] rounded-[1px] bg-ink-4" />
+      <div className="h-[7px] w-[7px] rounded-[1px] bg-ink-4" />
+      <div className="h-[7px] w-[7px] rounded-[1px] bg-accent" />
     </div>
   );
 }

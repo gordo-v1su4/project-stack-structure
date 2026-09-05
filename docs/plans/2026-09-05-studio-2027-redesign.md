@@ -99,10 +99,29 @@ acts. Existing panels mount in the work surface untouched. The old
 `PreviewDock`, and `StudioStatusBar` are removed. Files live under
 `src/components/studio/shell/`.
 
-**B — Slots on the spine.** Committed Split segments render as slots; selecting a
-slot drives the inspector (candidates, caption evidence, score). Match
-candidates as take lanes; Join clip toggles on the slot; generated slots
-labeled with approve/revert.
+**A′ — Shell correction (after first review).** The first Phase A screenshot read
+as three empty boxes. Fixed: the empty monitor is a contact sheet of scene
+thumbnails (`MonitorEmptyState.frames`) and shrinks to ~26vh when nothing
+plays; a blocked act renders a `GateCard` (reason in display type, the one
+door that opens it, and the full pipeline with status) instead of a centered
+sentence; the rail is 72px with act names, not `#01`; the inspector header is
+the project name as a switcher plus save state and a quiet activity icon —
+GitHub identity and run counts moved into the panels; the text ladder moved up
+(fg-3 ≥ 4.5:1) and hairlines are 9%/14%/22%. `ProjectLibrary` and
+`WorkActivity` panels were re-cut onto the token system without logic changes.
+
+**B — Slots on the spine. Landed (first cut).** The spine renders the resolved
+cut — `buildEditPlanPreviewSegments` with approved generated shots applied — as
+thumbnail slots in song time (`shell/spineSlots.ts`: `buildSpineSlots`,
+`describeSlot`, `neighborSlot`). Generated slots carry an `AI` tag. Selecting a
+slot seeks the song transport and mounts `SlotInspector` in the inspector:
+lyric under the cut, caption, score breakdown and reasons, other takes ("Use"
+calls the same `selectStorySectionCandidate` Match uses), Play-from-here,
+Generate, and Revert for a generated shot (sets `reviewStatus` back to
+`pending`). Alternate takes also hang under the selected slot as a take lane on
+the spine. `[` / `]` step cuts, `Esc` deselects. Not yet: Join on/off toggles on
+slots (Join still works on the footage-time split, a different model), drag
+trimming, and the WebGPU grid.
 
 **C — Act modules.** Re-cut each panel into inspector modules: Story (treatment
 picker → plan), Split (mode + cut density), Match (cue + candidate rail), Generate

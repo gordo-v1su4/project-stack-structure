@@ -24,15 +24,15 @@
   --color-ink-3: oklch(0.19 0.004 60);
   --color-ink-4: oklch(0.23 0.004 60);
   /* Hairlines are translucent so they sit on any surface. */
-  --color-line: oklch(1 0 0 / 0.07);
-  --color-line-2: oklch(1 0 0 / 0.12);
-  --color-line-3: oklch(1 0 0 / 0.2);
+  --color-line: oklch(1 0 0 / 0.09);
+  --color-line-2: oklch(1 0 0 / 0.14);
+  --color-line-3: oklch(1 0 0 / 0.22);
   /* Text ladder — brightest to faintest. fg-3 stays ≥4.5:1 on every ink surface. */
-  --color-fg-0: oklch(0.95 0.004 60);
-  --color-fg-1: oklch(0.84 0.004 60);
-  --color-fg-2: oklch(0.7 0.004 60);
-  --color-fg-3: oklch(0.6 0.004 60);
-  --color-fg-4: oklch(0.42 0.004 60);
+  --color-fg-0: oklch(0.96 0.004 60);
+  --color-fg-1: oklch(0.86 0.004 60);
+  --color-fg-2: oklch(0.74 0.004 60);
+  --color-fg-3: oklch(0.64 0.004 60);
+  --color-fg-4: oklch(0.5 0.004 60);
   /* One accent: the studio orange, relit in LCH. */
   --color-accent: oklch(0.7 0.19 45);
   --color-accent-hi: oklch(0.78 0.18 50);
@@ -119,6 +119,18 @@ body {
 
 .studio-pulse {
   animation: studio-pulse 2.2s ease-out infinite;
+}
+
+@keyframes studio-spin {
+  to { transform: rotate(360deg); }
+}
+
+.studio-spin {
+  animation: studio-spin 1.6s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .studio-spin, .studio-pulse { animation: none; }
 }
 
 .studio-fade-in {

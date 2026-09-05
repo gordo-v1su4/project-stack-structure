@@ -69,25 +69,20 @@ export function Inspector({
   return (
     <aside aria-label="Inspector" className="vt-inspector flex w-[360px] shrink-0 flex-col border-l border-line bg-ink-1">
       {/* Project — outside the scroll area so its popovers can escape. */}
-      <div className="flex flex-col gap-2.5 border-b border-line px-4 py-3">
-        <div className="flex items-baseline justify-between gap-3">
-          <div className="min-w-0 truncate text-[13px] font-medium text-fg-0" title={activeProjectName}>{activeProjectName}</div>
-          <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-[11px] text-fg-3" title={save.detail}>
-            <StatusDot tone={save.tone} pulse />
-            {save.label}
-          </div>
+      <div className="flex items-center gap-2 border-b border-line px-3 py-2.5">
+        <ProjectLibrary
+          draft={projectDraft}
+          activeProjectId={activeProjectId}
+          activeProjectName={activeProjectName}
+          onNewProject={onNewProject}
+          onProjectSelected={onProjectSelected}
+          onProjectSaved={onProjectSaved}
+        />
+        <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap font-mono text-[11px] text-fg-3" title={save.detail}>
+          <StatusDot tone={save.tone} pulse />
+          {save.label}
         </div>
-        <div className="flex flex-wrap items-center gap-2 [&>*]:min-w-0 [&>*]:max-w-full">
-          <WorkActivity />
-          <ProjectLibrary
-            draft={projectDraft}
-            activeProjectId={activeProjectId}
-            activeProjectName={activeProjectName}
-            onNewProject={onNewProject}
-            onProjectSelected={onProjectSelected}
-            onProjectSaved={onProjectSaved}
-          />
-        </div>
+        <WorkActivity />
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -96,9 +91,9 @@ export function Inspector({
             <div className="flex items-center gap-3">
               <Kicker tone={blocked ? "waiting" : "accent"}>Act {model.step} of {model.total}</Kicker>
             </div>
-            <h1 className="vt-act-title font-display mt-2 text-[34px] leading-[1] text-fg-0">{model.title}</h1>
-            <p className="mt-1.5 font-mono text-[11px] text-fg-3" title={model.status}>{model.status}</p>
-            <p className="mt-3 text-[12.5px] leading-5 text-fg-2">{model.description}</p>
+            <h1 className="vt-act-title font-display mt-2 text-[36px] leading-[1] text-fg-0">{model.title}</h1>
+            <p className="mt-2 font-mono text-[11.5px] text-fg-2" title={model.status}>{model.status}</p>
+            <p className="mt-3 text-[13px] leading-[1.5] text-fg-2">{model.description}</p>
 
             {blocked ? (
               <p className="mt-3 rounded-md border border-warn-lo bg-warn-tint px-3 py-2 text-[12px] leading-5 text-warn">{blocked.reason}</p>

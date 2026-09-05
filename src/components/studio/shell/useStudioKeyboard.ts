@@ -11,6 +11,9 @@ type KeyboardHandlers = {
   onStopPlayback: () => void;
   onSecondary: () => void;
   onShortcuts: () => void;
+  /** `[` / `]` step the selected cut on the spine; Escape clears it. */
+  onStepSlot: (direction: -1 | 1) => void;
+  onClearSlot: () => void;
   /** When true, single-key shortcuts are suspended (palette or dialog open). */
   suspended: boolean;
 };
@@ -53,6 +56,15 @@ export function useStudioKeyboard(handlers: KeyboardHandlers) {
           return;
         case "?":
           handlers.onShortcuts();
+          return;
+        case "[":
+          handlers.onStepSlot(-1);
+          return;
+        case "]":
+          handlers.onStepSlot(1);
+          return;
+        case "Escape":
+          handlers.onClearSlot();
           return;
         default:
           break;

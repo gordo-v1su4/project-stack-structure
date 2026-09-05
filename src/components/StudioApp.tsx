@@ -41,6 +41,9 @@ import { SplitTab } from "./studio/panels/SplitTab";
 import { createDefaultStoryTabState, StoryTab } from "./studio/panels/StoryTab";
 import { ActRail } from "./studio/shell/ActRail";
 import { BeatSpine } from "./studio/shell/BeatSpine";
+import { GateCard } from "./studio/shell/GateCard";
+import { SlotInspector } from "./studio/shell/SlotInspector";
+import { buildSpineSlots, describeSlot, neighborSlot, type SpineSlot } from "./studio/shell/spineSlots";
 import { CommandPalette, ShortcutSheet } from "./studio/shell/CommandPalette";
 import { buildStudioCommands } from "./studio/shell/commands";
 import { Inspector } from "./studio/shell/Inspector";
@@ -105,6 +108,7 @@ export default function StudioApp() {
   const [tab, setTab] = useState<Tab>("review");
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isShortcutSheetOpen, setIsShortcutSheetOpen] = useState(false);
+  const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
   const [playhead] = useState(0.08);
   const [activeClip, setActiveClip] = useState(2);
 
@@ -2247,17 +2251,29 @@ export default function StudioApp() {
   const monitorFocused = isPreviewExpanded && hasBrowserPreview;
 
   const monitorNext = pipeline.nextHint?.replace(/^Next:\s*/i, "") ?? null;
+  // Scene thumbnails sampled evenly across the footage back the empty monitor.
+  const monitorFrames = useMemo(() => {
+    const all = videoSources.flatMap((source) => (source.scenes?.length ? source.scenes.map((scene) => scene.thumbnailUrl ?? scene.middleFrameUrl ?? "") : [source.thumbnailUrl])).filter(Boolean);
+    if (all.length <= 16) return all;
+    const step = all.length / 16;
+    return Array.from({ length: 16 }, (_, index) => all[Math.floor(index * step)] ?? "").filter(Boolean);
+  }, [videoSources]);
   const monitorEmpty = beatJoinAnalysis
     ? {
         headline: beatJoinAnalysis.sourceLabel,
-        meta: `${displayBpm} BPM · ${fmt(beatJoinAnalysis.duration)} · ${beatJoinAnalysis.sections.length} sections`,
+        meta: `${displayBpm} BPM · ${fmt(beatJoinAnalysis.duration)} · ${beatJoinAnalysis.sections.length} sections${videoSources.length ? ` · ${videoSources.length} clips` : ""}`,
         next: monitorNext,
+        frames: monitorFrames,
       }
     : {
         headline: "Start with the song.",
         meta: isPreparingAudio ? audioStatus : "Drop a master track to unlock the beat grid.",
         next: monitorNext,
+        frames: monitorFrames,
       };
+  const gatePrerequisite = stageHeaderModel?.primary?.kind === "open-prerequisite" && stageHeaderModel.primary.targetTab
+    ? { tab: stageHeaderModel.primary.targetTab, label: NAV.find((item) => item.key === stageHeaderModel.primary?.targetTab)?.label ?? stageHeaderModel.primary.label }
+    : null;
 
   const openCommandPalette = () => setIsCommandPaletteOpen(true);
   const openShortcuts = () => setIsShortcutSheetOpen(true);
@@ -2273,6 +2289,32 @@ export default function StudioApp() {
     onStopPlayback: handleTransportStop,
     onOpenShortcuts: openShortcuts,
   });
+  // Slots on the spine: the resolved cut (with approved generated shots) in song time.
+  const spineSlots = useMemo(
+    () => buildSpineSlots({ segments: storyPreviewSegments, project: musicVideoProject, generatedAssets }),
+    [generatedAssets, musicVideoProject, storyPreviewSegments],
+  );
+  const selectedSlot = useMemo(() => spineSlots.find((slot) => slot.id === selectedSlotId) ?? null, [selectedSlotId, spineSlots]);
+  const slotEvidence = useMemo(
+    () => (selectedSlot ? describeSlot(selectedSlot, { project: musicVideoProject, generatedAssets }) : null),
+    [generatedAssets, musicVideoProject, selectedSlot],
+  );
+  const seekSong = (seconds: number) => {
+    if (!beatJoinAnalysis) return;
+    songTransport.seek(Math.max(0, Math.min(1, seconds / Math.max(beatJoinAnalysis.duration, 0.001))));
+  };
+  const handleSelectSlot = (slot: SpineSlot | null) => {
+    setSelectedSlotId(slot?.id ?? null);
+    if (slot && transportModel.source === "song") seekSong(slot.start);
+  };
+  const handleStepSlot = (direction: -1 | 1) => {
+    const next = neighborSlot(spineSlots, selectedSlotId, direction);
+    if (next) handleSelectSlot(next);
+  };
+  const handleReopenGenerated = (assetId: string) => {
+    setGeneratedAssets((current) => current.map((asset) => (asset.id === assetId ? { ...asset, reviewStatus: "pending" } : asset)));
+  };
+
   useStudioKeyboard({
     onCommandPalette: openCommandPalette,
     onSelectTab: handleSelectTab,
@@ -2280,6 +2322,8 @@ export default function StudioApp() {
     onStopPlayback: handleTransportStop,
     onSecondary: handleStageSecondary,
     onShortcuts: openShortcuts,
+    onStepSlot: handleStepSlot,
+    onClearSlot: () => setSelectedSlotId(null),
     suspended: isCommandPaletteOpen || isShortcutSheetOpen,
   });
 
@@ -2316,11 +2360,18 @@ export default function StudioApp() {
                   if (transportModel.source === "song") songTransport.seek(next);
                 }}
                 caption={spineCaption}
+                slots={spineSlots}
+                selectedSlotId={selectedSlotId}
+                onSelectSlot={handleSelectSlot}
+                takes={slotEvidence?.takes ?? []}
+                onSelectTake={handleSelectSemanticCandidate}
               />
             ) : null}
 
             <main className={`studio-fade-in min-h-0 flex-1 space-y-3 overflow-y-auto ${monitorFocused ? "hidden" : ""}`}>
-            {activeStageBlocked ? <BlockedAct reason={activePipelineStage?.blockedReason ?? null} /> : <>
+            {activeStageBlocked ? (
+              <GateCard tab={tab} stages={pipeline.stages} reason={activePipelineStage?.blockedReason ?? null} prerequisite={gatePrerequisite} onSelectTab={handleSelectTab} />
+            ) : <>
             {tab === "review" && (
               <IngestTab
                 analysis={beatJoinAnalysis}
@@ -2517,6 +2568,19 @@ export default function StudioApp() {
             onProjectSelected={handleProjectSelected}
             onProjectSaved={handleProjectSaved}
           >
+            {slotEvidence && tab !== "review" ? (
+              <SlotInspector
+                evidence={slotEvidence}
+                onClose={() => setSelectedSlotId(null)}
+                onPlayFrom={(seconds) => {
+                  seekSong(seconds);
+                  if (transportModel.source === "song" && !songTransport.isPlaying) songTransport.toggle();
+                }}
+                onSelectTake={handleSelectSemanticCandidate}
+                onReopenGenerated={handleReopenGenerated}
+                onOpenGenerate={() => handleSelectTab("generate")}
+              />
+            ) : null}
             {tab !== "review" && tab !== "story" && storyState.confirmedTreatmentSnapshot ? (
               <StoryPlanSummaryBar
                 treatment={storyState.confirmedTreatmentSnapshot}
@@ -2545,16 +2609,6 @@ export default function StudioApp() {
 
       <CommandPalette open={isCommandPaletteOpen} onClose={() => setIsCommandPaletteOpen(false)} commands={studioCommands} />
       <ShortcutSheet open={isShortcutSheetOpen} onClose={() => setIsShortcutSheetOpen(false)} commands={studioCommands} />
-    </div>
-  );
-}
-
-function BlockedAct({ reason }: { reason: string | null }) {
-  return (
-    <div className="flex h-full min-h-[160px] items-center justify-center rounded-[10px] border border-line bg-ink-1 px-8 text-center">
-      <p className="max-w-[44ch] font-display text-[22px] leading-tight text-fg-3">
-        {reason ?? "This act opens once the acts before it are complete."}
-      </p>
     </div>
   );
 }

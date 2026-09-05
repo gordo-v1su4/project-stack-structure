@@ -13,6 +13,8 @@ export type MonitorEmptyState = {
   meta: string | null;
   /** The pipeline's next-step line for the current act. */
   next: string | null;
+  /** Footage frames (scene thumbnails) that back the empty state as a contact sheet. */
+  frames: string[];
 };
 
 type ProgramMonitorProps = {
@@ -67,7 +69,9 @@ export function ProgramMonitor({
   return (
     <section
       aria-label="Program monitor"
-      className={`vt-monitor studio-grain relative w-full shrink-0 overflow-hidden rounded-[10px] bg-black ${focused ? "flex-1 min-h-0" : "aspect-video max-h-[42vh]"}`}
+      className={`vt-monitor studio-grain relative w-full shrink-0 overflow-hidden rounded-[10px] bg-black ${
+        focused ? "flex-1 min-h-0" : showBrowserPreview || showFfmpegPreview ? "aspect-video max-h-[42vh]" : "h-[clamp(180px,26vh,300px)]"
+      }`}
     >
       {showBrowserPreview ? (
         <PreviewPlayer
@@ -111,21 +115,39 @@ export function ProgramMonitor({
 }
 
 function EmptyState({ empty, children }: { empty: MonitorEmptyState; children?: React.ReactNode }) {
+  const frames = empty.frames.slice(0, 16);
+  const rows = frames.length > 4 ? 2 : 1;
+  const cols = Math.max(1, Math.ceil(frames.length / rows));
   return (
-    <div className="absolute inset-0 flex flex-col justify-end bg-[radial-gradient(120%_90%_at_50%_110%,oklch(0.22_0.02_45/0.55),transparent_60%),linear-gradient(180deg,oklch(0.12_0.004_60),oklch(0.09_0.004_60))] p-7">
-      <div className="flex items-end justify-between gap-8">
+    <div className="absolute inset-0 flex flex-col justify-end bg-[linear-gradient(180deg,oklch(0.12_0.004_60),oklch(0.09_0.004_60))]">
+      {frames.length ? (
+        // Contact sheet of the footage: the room is never empty once media exists.
+        <div
+          aria-hidden
+          style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))` }}
+          className="absolute inset-0 grid gap-px opacity-[0.55] [mask-image:linear-gradient(180deg,oklch(0_0_0/0.9),oklch(0_0_0/0.25)_70%,transparent)]"
+        >
+          {frames.map((src, index) => (
+            // eslint-disable-next-line @next/next/no-img-element -- object URLs and gateway thumbnails
+            <img key={`${src}-${index}`} src={src} alt="" className="h-full w-full object-cover saturate-[0.85]" />
+          ))}
+        </div>
+      ) : (
+        <div aria-hidden className="absolute inset-0 bg-[radial-gradient(120%_90%_at_50%_110%,oklch(0.22_0.02_45/0.55),transparent_60%)]" />
+      )}
+      <div className="relative flex items-end justify-between gap-8 p-6">
         <div className="min-w-0">
-          <h1 className="font-display text-[clamp(28px,3.6vw,52px)] leading-[0.98] text-fg-0">{empty.headline}</h1>
-          {empty.meta ? <p className="mt-2 font-mono text-[11.5px] tracking-[0.02em] text-fg-2">{empty.meta}</p> : null}
+          <h1 className="font-display text-[clamp(26px,3vw,44px)] leading-[0.98] text-fg-0 [text-shadow:0_1px_18px_oklch(0_0_0/0.6)]">{empty.headline}</h1>
+          {empty.meta ? <p className="mt-2 font-mono text-[12px] tracking-[0.02em] text-fg-1">{empty.meta}</p> : null}
         </div>
         {empty.next ? (
-          <p className="max-w-[36ch] shrink-0 text-right text-[12.5px] leading-5 text-fg-2">
-            <span className="font-display italic text-[15px] text-accent">Next · </span>
+          <p className="max-w-[36ch] shrink-0 text-right text-[13px] leading-5 text-fg-1">
+            <span className="font-display italic text-[16px] text-accent">Next · </span>
             {empty.next}
           </p>
         ) : null}
       </div>
-      {children ? <div className="mt-5">{children}</div> : null}
+      {children ? <div className="relative px-6 pb-6">{children}</div> : null}
     </div>
   );
 }
