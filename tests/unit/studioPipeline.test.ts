@@ -7,6 +7,7 @@ function makeInput(overrides: Partial<PipelineStageInput> = {}): PipelineStageIn
     activeTab: "review",
     hasAudioAnalysis: false,
     hasLyricTranscript: false,
+    hasRequiredReferences: true,
     videoCount: 0,
     sceneCount: 0,
     captionReadyCount: 0,
@@ -18,6 +19,7 @@ function makeInput(overrides: Partial<PipelineStageInput> = {}): PipelineStageIn
     matchedSlotCount: 0,
     gapSlotCount: 0,
     weakMatchSlotCount: 0,
+    shortReviewSlotCount: 0,
     storySegmentCount: 0,
     hasCommittedSplit: false,
     shaderPresetLabel: "Beat Pulse",
@@ -31,15 +33,15 @@ describe("studio pipeline state", () => {
     const state = buildPipelineState(makeInput());
 
     expect(state.stages).toHaveLength(8);
-    expect(state.stages[0]).toMatchObject({ key: "review", step: 1, ready: false, status: "Upload song + clips", isNext: true });
+    expect(state.stages[0]).toMatchObject({ key: "review", step: 1, ready: false, status: "Upload song + stem + clips", isNext: true });
     expect(state.nextStage?.key).toBe("review");
-    expect(state.nextHint).toContain("Upload song + clips");
+    expect(state.nextHint).toContain("Upload song + stem + clips");
   });
 
   test("ingest remains active while uploaded clips are still waiting for scenes", () => {
     const state = buildPipelineState(makeInput({ hasAudioAnalysis: true, videoCount: 3 }));
 
-    expect(state.stages[0]?.status).toBe("Detecting scenes");
+    expect(state.stages[0]?.status).toBe("Upload stem");
     expect(state.stages[0]?.ready).toBe(false);
   });
 
@@ -76,7 +78,7 @@ describe("studio pipeline state", () => {
     );
 
     expect(state.stages[0]?.ready).toBe(false);
-    expect(state.stages[0]?.status).toBe("Upload vocal stem");
+    expect(state.stages[0]?.status).toBe("Upload stem");
     expect(state.stages.find((stage) => stage.key === "story")).toMatchObject({
       available: false,
       prerequisiteKey: "review",
@@ -189,6 +191,59 @@ describe("studio pipeline state", () => {
     expect(state.stages.every((stage) => stage.complete)).toBe(true);
     expect(state.nextStage).toBeNull();
     expect(state.nextHint).toContain("export");
+  });
+
+  test("ingest stays locked until required reference sheets are uploaded", () => {
+    const state = buildPipelineState(
+      makeInput({
+        hasAudioAnalysis: true,
+        hasLyricTranscript: true,
+        hasRequiredReferences: false,
+        videoCount: 2,
+        sceneCount: 12,
+        captionReadyCount: 12,
+        captionTotalCount: 12,
+      }),
+    );
+
+    expect(state.stages[0]?.ready).toBe(false);
+    expect(state.stages[0]?.status).toContain("refs");
+    expect(state.stages.find((stage) => stage.key === "story")).toMatchObject({
+      available: false,
+      prerequisiteKey: "review",
+    });
+  });
+
+  test("short source slots do not block Join when no true gaps remain", () => {
+    const state = buildPipelineState(
+      makeInput({
+        hasAudioAnalysis: true,
+        hasLyricTranscript: true,
+        videoCount: 2,
+        sceneCount: 10,
+        captionReadyCount: 10,
+        captionTotalCount: 10,
+        storyTreatmentSelected: true,
+        storyAnchorsResolved: true,
+        storyPlanConfirmed: true,
+        editSlotCount: 9,
+        matchedSlotCount: 9,
+        gapSlotCount: 0,
+        shortReviewSlotCount: 3,
+        weakMatchSlotCount: 0,
+        storySegmentCount: 40,
+        hasCommittedSplit: true,
+      }),
+    );
+
+    expect(state.stages.find((stage) => stage.key === "generate")).toMatchObject({
+      ready: true,
+      status: "3 short sources · optional",
+    });
+    expect(state.stages.find((stage) => stage.key === "join")).toMatchObject({
+      available: true,
+      ready: true,
+    });
   });
 
   test("marks the active tab", () => {

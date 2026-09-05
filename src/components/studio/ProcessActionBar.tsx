@@ -21,8 +21,6 @@ function actionLabel(tab: Tab): string {
       return "Ingest Media";
     case "split":
       return "Build Split";
-    case "beatsplit":
-      return "Commit Beat Split";
     case "story":
       return "Preview Story Edit";
     case "shuffle":
@@ -31,8 +29,6 @@ function actionLabel(tab: Tab): string {
       return "Plan Generated Shots";
     case "join":
       return "Build Join Timeline";
-    case "beatjoin":
-      return "Render Beat Join";
     case "compose":
       return "Prepare Preview";
     default:

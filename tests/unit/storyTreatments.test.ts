@@ -106,7 +106,7 @@ describe("story treatment contract", () => {
       "They dance in the main chamber under amber cage lamps while the crowd presses in.",
       "They move together on a wet floor as red smoke and industrial light wrap the room.",
       "The floor splits beneath them while dancers keep moving through the wreckage.",
-    ];
+    ] as unknown as typeof stringAnchors.treatments[0]["anchors"];
     const parsed = parseGeneratedTreatments(stringAnchors);
     expect(parsed[0].anchors).toHaveLength(4);
     expect(parsed[0].anchors[0].description).toContain("dim corridor");

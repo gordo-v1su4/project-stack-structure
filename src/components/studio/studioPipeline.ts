@@ -1,9 +1,11 @@
 import type { Tab } from "./types";
+import { isIngestReady } from "./ingestLanes";
 
 export interface PipelineStageInput {
   activeTab: Tab;
   hasAudioAnalysis: boolean;
   hasLyricTranscript: boolean;
+  hasRequiredReferences: boolean;
   videoCount: number;
   sceneCount: number;
   captionReadyCount: number;
@@ -15,11 +17,15 @@ export interface PipelineStageInput {
   matchedSlotCount: number;
   gapSlotCount: number;
   weakMatchSlotCount: number;
+  shortReviewSlotCount: number;
   storySegmentCount: number;
   hasCommittedSplit: boolean;
   shaderPresetLabel: string;
   finalExportReady: boolean;
 }
+
+export type { IngestLane, IngestLaneInput } from "./ingestLanes";
+export { deriveIngestLanes, hasRequiredIngestReferences, isCaptionContextReady, isIngestReady } from "./ingestLanes";
 
 export interface PipelineStage {
   key: Tab;
@@ -47,12 +53,16 @@ export interface PipelineState {
  * Drives the sidebar readiness dots, the stage strip, and the header hint.
  */
 export function buildPipelineState(input: PipelineStageInput): PipelineState {
-  const captionsReady = input.captionTotalCount > 0 && input.captionReadyCount === input.captionTotalCount;
-  const ingestReady = input.hasAudioAnalysis
-    && input.hasLyricTranscript
-    && input.videoCount > 0
-    && input.sceneCount > 0
-    && captionsReady;
+  const ingestReady = isIngestReady({
+    hasAudioAnalysis: input.hasAudioAnalysis,
+    hasLyricTranscript: input.hasLyricTranscript,
+    referenceAssets: [],
+    referencesReady: input.hasRequiredReferences,
+    videoCount: input.videoCount,
+    sceneCount: input.sceneCount,
+    captionReadyCount: input.captionReadyCount,
+    captionTotalCount: input.captionTotalCount,
+  });
   const storyReady = ingestReady
     && input.storyTreatmentSelected
     && input.storyAnchorsResolved
@@ -84,7 +94,7 @@ export function buildPipelineState(input: PipelineStageInput): PipelineState {
       available: ingestReady,
       blockedReason: ingestReady
         ? null
-        : "Finish Ingest first: master song, vocal stem lyrics/SRT, scene detection, and scene captions.",
+        : "Finish Ingest: master song, vocal stem, Char 1 + environment refs, clips, scenes, and smart captions.",
       prerequisiteKey: ingestReady ? null : "review",
       status: storyReady
         ? `${input.editSlotCount} edit slots`
@@ -136,9 +146,11 @@ export function buildPipelineState(input: PipelineStageInput): PipelineState {
         ? "Waiting for match"
         : input.gapSlotCount > 0
           ? `${input.gapSlotCount} true gap${input.gapSlotCount === 1 ? "" : "s"} to fill`
-          : input.weakMatchSlotCount > 0
-            ? `${input.weakMatchSlotCount} weak section${input.weakMatchSlotCount === 1 ? "" : "s"} · optional`
-            : "No gaps · optional",
+          : input.shortReviewSlotCount > 0
+            ? `${input.shortReviewSlotCount} short source${input.shortReviewSlotCount === 1 ? "" : "s"} · optional`
+            : input.weakMatchSlotCount > 0
+              ? `${input.weakMatchSlotCount} weak section${input.weakMatchSlotCount === 1 ? "" : "s"} · optional`
+              : "No gaps · optional",
     },
     {
       key: "join",
@@ -191,13 +203,14 @@ export function buildPipelineState(input: PipelineStageInput): PipelineState {
 function describeIngest(input: PipelineStageInput) {
   const missing: string[] = [];
   if (!input.hasAudioAnalysis) missing.push("song");
+  if (!input.hasLyricTranscript) missing.push("stem");
+  if (!input.hasRequiredReferences) missing.push("refs");
   if (input.videoCount === 0) missing.push("clips");
   if (missing.length) return `Upload ${missing.join(" + ")}`;
   if (input.sceneCount === 0) return "Detecting scenes";
   if (input.captionTotalCount === 0 || input.captionReadyCount < input.captionTotalCount) {
     return `Captioning ${input.captionReadyCount}/${input.captionTotalCount || input.sceneCount}`;
   }
-  if (!input.hasLyricTranscript) return "Upload vocal stem";
   const captionLabel = input.captionTotalCount > 0 ? ` · ${input.captionReadyCount}/${input.captionTotalCount} captions` : "";
   return `${input.videoCount} clip${input.videoCount === 1 ? "" : "s"}${captionLabel}`;
 }

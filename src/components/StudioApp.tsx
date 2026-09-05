@@ -3,8 +3,6 @@
 import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import { extractWaveformData, fetchEssentiaAnalysis, getEssentiaStorageFromPayload, parseEssentiaPayload } from "./studio/audioAnalysis";
 import type { DeepgramTranscriptSummary } from "./studio/deepgramUtils";
-import { buildArrangementSegments } from "./studio/arrangementBuilder";
-import type { ArrangementSegment } from "./studio/arrangementBuilder";
 import { NAV } from "./studio/constants";
 import { mergeUploadedVideoSourceUpdate, needsSceneDetectionRetry, prepareVideoSources, reconcileSourceCaptionStatus, rerunSourceSceneAnalysis, revokePreparedVideoSources, selectSceneRetrySources } from "./studio/mediaUpload";
 import { uploadFileInChunks } from "./studio/chunkedUploadClient";
@@ -47,6 +45,7 @@ import { StudioAudioLane } from "./studio/StudioAudioLane";
 import { StudioRightPanel } from "./studio/StudioRightPanel";
 import { StudioSidebar } from "./studio/StudioSidebar";
 import { StudioStatusBar } from "./studio/StudioStatusBar";
+import { buildStudioPipelineInput } from "./studio/buildStudioPipelineInput";
 import { buildPipelineState } from "./studio/studioPipeline";
 import { isStoryPlanConfirmable, type StoryTreatment } from "./studio/storyTreatments";
 import { WorkflowPrerequisitePanel } from "./studio/WorkflowPrerequisitePanel";
@@ -134,10 +133,8 @@ export default function StudioApp() {
 
   const [minDur] = useState(0.12);
   const [maxDur] = useState(0.8);
-  const [energyResp] = useState(1.5);
   const [chaos] = useState(0.35);
   const [onsetBoost] = useState(0.6);
-  const [energyReactive] = useState(true);
   const [lowEnergyRange] = useState(0.36);
   const [highEnergyRange] = useState(0.68);
   const [beatJoinAnalysis, setBeatJoinAnalysis] = useState<BeatJoinAnalysis | null>(null);
@@ -1032,7 +1029,7 @@ export default function StudioApp() {
   async function runProcess() {
     if (isRunning || previewState.activeRequestKey) return;
 
-    if ((tab === "story" || tab === "compose" || tab === "shuffle" || tab === "generate" || tab === "join" || tab === "beatjoin") && browserPreviewSegments.length > 0) {
+    if ((tab === "story" || tab === "compose" || tab === "shuffle" || tab === "generate" || tab === "join") && browserPreviewSegments.length > 0) {
       runBrowserPreview();
       return;
     }
@@ -1737,25 +1734,6 @@ export default function StudioApp() {
     return { bucket, objectKey };
   }
 
-  function handleCommitBeatSplit() {
-    if (!beatSplitSegments.length) return;
-
-    setCommittedBeatSplit({
-      kind: "legacy",
-      segments: beatSplitSegments.map((segment) => ({
-        ...segment,
-        sourceClipIds: [...segment.sourceClipIds],
-      })),
-      signature: beatSplitSignature,
-      committedAt: new Date().toISOString(),
-    });
-    workflowCheckpointAutosaveRequestedRef.current = true;
-    setJoinClipStates(Object.fromEntries(beatSplitSegments.map((_, index) => [index, true])) as Record<number, boolean>);
-    setActiveClip(0);
-    setDone(true);
-    setProgress(100);
-  }
-
   function handleCommitSplit() {
     if (!splitSegments.length) return;
 
@@ -1842,14 +1820,10 @@ export default function StudioApp() {
   const tabSub = NAV.find((n) => n.key === tab)?.sub ?? "";
   const audioPreviewSubtitle = useMemo(() => {
     switch (tab) {
-      case "beatsplit":
-        return `Master Audio Track · ${beatSplitMode === "beats" ? "Legacy Beat Mode" : "Legacy Onset Mode"}`;
       case "story":
         return "Master Audio Track · Story/Edit Plan";
       case "compose":
         return "Master Audio Track · Preview / Export";
-      case "beatjoin":
-        return "Master Audio Track · Legacy Reactive Join";
       case "shuffle":
         return `Master Audio Track · Match ${shuffleMode}`;
       case "generate":
@@ -1863,7 +1837,7 @@ export default function StudioApp() {
       default:
         return "Master Audio Track · Studio Timeline";
     }
-  }, [beatSplitMode, shuffleMode, splitMode, tab]);
+  }, [shuffleMode, splitMode, tab]);
   const shuffleQueue = useMemo(
     () =>
       buildShuffleQueue({
@@ -1929,22 +1903,6 @@ export default function StudioApp() {
   });
   const previewAssetUrl = buildPreviewAssetUrl(previewState.currentAssetKey);
 
-  const arrangementSegments = useMemo<ArrangementSegment[]>(() => {
-    if (tab !== "beatjoin" || !beatJoinAnalysis) return [];
-    return buildArrangementSegments({
-      analysis: beatJoinAnalysis,
-      clipOrder: effectiveClipOrder,
-      minDur,
-      maxDur,
-      energyResp,
-      energyReactive,
-      lowEnergyRange,
-      highEnergyRange,
-      onsetBoost,
-      chaos,
-    });
-  }, [tab, beatJoinAnalysis, effectiveClipOrder, minDur, maxDur, energyResp, energyReactive, lowEnergyRange, highEnergyRange, onsetBoost, chaos]);
-
   useEffect(() => {
     setGeneratePreviewRange((current) => {
       if (!current) return current;
@@ -1960,6 +1918,7 @@ export default function StudioApp() {
     const density = normalizeStoryEditSettings(storyState.editSettings).cutDensity;
     setClipDur(density >= 0.7 ? 2 : density <= 0.4 ? 10 : 6);
   }, [storyState.editSettings]);
+
   const shaderPresetSummary = useMemo(() => describeMusicVideoShaderPreset(shaderPresetId), [shaderPresetId]);
 
   const browserPreviewSegments = useMemo<PreviewSegment[]>(() => {
@@ -1996,27 +1955,8 @@ export default function StudioApp() {
         .filter((s): s is PreviewSegment => s !== null && s.videoUrl !== undefined && s.endTime > s.startTime);
     }
 
-    if (tab === "beatjoin" && arrangementSegments.length > 0) {
-      return arrangementSegments
-        .map((segment): PreviewSegment | null => {
-          const sourceClipId = workingBeatSplitSegments[segment.clipId]?.sourceClipIds[0] ?? -1;
-          const source = videoSources.find((candidate) => candidate.id === sourceClipId);
-          if (!source) return null;
-          const offset = getSourceClipTimeOffset(sourceClips, sourceClipId);
-          return {
-            videoUrl: source.videoUrl,
-            startTime: Math.max(0, segment.start - offset),
-            endTime: Math.max(0, segment.end - offset),
-            musicStart: segment.start,
-            musicEnd: segment.end,
-            label: segment.detailLabel,
-          };
-        })
-        .filter((s): s is PreviewSegment => s !== null && s.videoUrl !== undefined && s.endTime > s.startTime);
-    }
-
     return [];
-  }, [tab, storyPreviewSegments, generatePreviewRange, generatedAuditionSegments, effectiveClipOrder, workingBeatSplitSegments, videoSources, sourceClips, arrangementSegments]);
+  }, [tab, storyPreviewSegments, generatePreviewRange, generatedAuditionSegments, effectiveClipOrder, workingBeatSplitSegments, videoSources, sourceClips]);
 
   useEffect(() => {
     if (tab !== "generate" || previewAuditionRequest === 0 || !browserPreviewSegments.length) return;
@@ -2083,31 +2023,26 @@ export default function StudioApp() {
     return { sceneCount, captionReady, captionTotal };
   }, [videoSources]);
 
-  const pipeline = useMemo(() => {
-    const timelineItems = musicVideoProject?.editPlan.timelineItems ?? [];
-    return buildPipelineState({
-      activeTab: tab,
-      hasAudioAnalysis: beatJoinAnalysis !== null,
-      hasLyricTranscript: Boolean(storyState.transcriptSummary?.chunks.length),
-      videoCount: videoSources.length,
-      sceneCount: ingestStats.sceneCount,
-      captionReadyCount: ingestStats.captionReady,
-      captionTotalCount: ingestStats.captionTotal,
-      storyTreatmentSelected: Boolean(storyState.selectedTreatmentId || storyState.confirmedTreatmentId),
-      storyAnchorsResolved: isStoryPlanConfirmable(storyState.confirmedTreatmentSnapshot),
-      storyPlanConfirmed: storyState.storyGenerated
-        && Boolean(storyState.confirmedTreatmentId)
-        && Boolean(storyState.storyContentSignature),
-      editSlotCount: timelineItems.length,
-      matchedSlotCount: timelineItems.filter((item) => item.videoMomentId).length,
-      gapSlotCount: timelineItems.filter((item) => !item.videoMomentId).length,
-      weakMatchSlotCount: timelineItems.filter((item) => item.videoMomentId && (item.semanticMatch?.score ?? 0) < 0.45).length,
-      storySegmentCount: storyPreviewSegments.length,
-      hasCommittedSplit: isCommittedSplitCurrent,
-      shaderPresetLabel: shaderPresetSummary.preset.label,
-      finalExportReady: Boolean(finalExportUrl) && storyState.storyGenerated && isCommittedSplitCurrent,
-    });
-  }, [
+  const pipeline = useMemo(() => buildPipelineState(buildStudioPipelineInput({
+    activeTab: tab,
+    hasAudioAnalysis: beatJoinAnalysis !== null,
+    hasLyricTranscript: Boolean(storyState.transcriptSummary?.chunks.length),
+    referenceAssets,
+    videoCount: videoSources.length,
+    sceneCount: ingestStats.sceneCount,
+    captionReadyCount: ingestStats.captionReady,
+    captionTotalCount: ingestStats.captionTotal,
+    storyTreatmentSelected: Boolean(storyState.selectedTreatmentId || storyState.confirmedTreatmentId),
+    storyAnchorsResolved: isStoryPlanConfirmable(storyState.confirmedTreatmentSnapshot),
+    storyPlanConfirmed: storyState.storyGenerated
+      && Boolean(storyState.confirmedTreatmentId)
+      && Boolean(storyState.storyContentSignature),
+    musicVideoProject,
+    storySegmentCount: storyPreviewSegments.length,
+    hasCommittedSplit: isCommittedSplitCurrent,
+    shaderPresetLabel: shaderPresetSummary.preset.label,
+    finalExportReady: Boolean(finalExportUrl) && storyState.storyGenerated && isCommittedSplitCurrent,
+  })), [
     tab,
     beatJoinAnalysis,
     storyState.storyGenerated,
@@ -2116,6 +2051,7 @@ export default function StudioApp() {
     storyState.confirmedTreatmentSnapshot,
     storyState.storyContentSignature,
     storyState.transcriptSummary,
+    referenceAssets,
     videoSources.length,
     ingestStats,
     musicVideoProject,
@@ -2152,7 +2088,7 @@ export default function StudioApp() {
 
   useEffect(() => {
     const staleWorkflowSplit = tab === "split" && committedBeatSplit?.kind === "workflow" && !isCommittedSplitCurrent;
-    const staleLegacySplit = tab === "beatsplit" && committedBeatSplit?.kind === "legacy" && !isCommittedBeatSplitCurrent;
+    const staleLegacySplit = tab === "split" && committedBeatSplit?.kind === "legacy" && !isCommittedBeatSplitCurrent;
     if (staleWorkflowSplit || staleLegacySplit) {
       setDone(false);
     }
@@ -2173,11 +2109,11 @@ export default function StudioApp() {
     resetPreparedPreview({ preserveBrowserPreview: true });
   }
 
-  const needsVideoSource = tab !== "beatjoin" && tab !== "story" && tab !== "compose";
+  const needsVideoSource = tab !== "story" && tab !== "compose";
   const actionState = deriveActionDisabledState({
     needsVideoSource,
     videoSourceCount: videoSources.length,
-    requiresAudioSource: tab === "beatjoin",
+    requiresAudioSource: false,
     hasAudioSource: beatJoinAnalysis !== null,
     activeRequestKey: previewState.activeRequestKey,
   });
@@ -2512,11 +2448,9 @@ export default function StudioApp() {
                 completedLabel={
                   tab === "split"
                     ? `Split Committed — ${committedBeatSplit?.segments.length ?? splitSegments.length} cuts`
-                    : tab === "beatsplit"
-                    ? `Legacy Split Committed — ${committedBeatSplit?.segments.length ?? beatSplitSegments.length} segments`
                     : completedLabel
                 }
-                onRun={tab === "split" ? handleCommitSplit : tab === "beatsplit" ? handleCommitBeatSplit : () => void runProcess()}
+                onRun={tab === "split" ? handleCommitSplit : () => void runProcess()}
                 onResetDone={resetPreparedPreview}
               />
             ) : null}

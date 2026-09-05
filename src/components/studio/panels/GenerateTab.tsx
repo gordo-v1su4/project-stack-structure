@@ -16,11 +16,25 @@ import { uploadGeneratedClipToRustFs } from "../generatedClipUpload";
 import { buildSeedanceContinuationPacket, serializeSeedanceContinuationPacket, type SeedanceVideoModel } from "../seedanceContinuation";
 import { buildSeedanceAudioPlacementKey } from "../seedanceAudioReference";
 import { buildAdaptiveCueMap } from "../adaptiveCueMap";
-import type { EditPlanPreviewSegment, MusicVideoProject, TimelineItem, VideoMoment } from "../musicVideoProject";
+import type { EditPlanPreviewSegment, MusicVideoProject, VideoMoment } from "../musicVideoProject";
 import { selectPreviewCutRange, selectPreviewSectionRange, type PreviewCutRange } from "../resolvedPreviewSelection";
 import { waitForTriggerRunOutput } from "@/lib/clientTriggerRuns";
 import { resolveRangePointerRatio } from "../rangePointer";
 import { StoryboardPlanner } from "./StoryboardPlanner";
+import {
+  buildCoverageIssueGroups,
+  buildCoverageSlots,
+  describeCoverageIssue,
+  summarizeCoverage,
+  type CoverageIssueGroup,
+  type CoverageSlot,
+  type GenerationNeed,
+  type SlotStatus,
+} from "../editPlanCoverage";
+import { countStoryboardFramesForSegment, getReplacementWorkflowState } from "../wholeShotReplacement";
+
+export type { CoverageIssueGroup, CoverageSlot, GenerationNeed, SlotStatus } from "../editPlanCoverage";
+export { buildCoverageIssueGroups, buildCoverageSlots, describeCoverageIssue, summarizeCoverage } from "../editPlanCoverage";
 
 type GenerateTabProps = {
   project: MusicVideoProject | null;
@@ -63,10 +77,8 @@ type PreparedSeedanceAudioReference = {
   sectionEndOffset: number;
 };
 
-export type SlotStatus = "filled" | "weak" | "short" | "missing";
-type GenerationNeed = "b-roll" | "alt-angle" | "extend-start" | "extend-end" | "bridge" | "reroll-match";
-type TimelineZoomMode = "fit" | "section" | "selected";
 
+type TimelineZoomMode = "fit" | "section" | "selected";
 type GeneratedLocalAsset = { provider: "swarmui" | "comfyui"; kind: "image" | "video"; url: string; filename?: string; path?: string };
 
 
@@ -127,33 +139,6 @@ const LOCAL_SWARM_PRESETS: LocalSwarmPreset[] = [
   },
 ];
 
-export type CoverageSlot = {
-  item: TimelineItem;
-  moment?: VideoMoment;
-  requiredDuration: number;
-  assignedDuration: number;
-  missingDuration: number;
-  score: number;
-  status: SlotStatus;
-  needs: GenerationNeed[];
-};
-
-export type CoverageIssueGroup = {
-  id: string;
-  status: Exclude<SlotStatus, "filled">;
-  sectionId: string;
-  sectionLabel: string;
-  slots: CoverageSlot[];
-  start: number;
-  end: number;
-  requiredDuration: number;
-  assignedDuration: number;
-  missingDuration: number;
-  score: number;
-  moment?: VideoMoment;
-  needs: GenerationNeed[];
-};
-
 const STATUS_LABELS: Record<SlotStatus, string> = {
   filled: "filled",
   weak: "weak match",
@@ -197,7 +182,8 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
   const slots = useMemo(() => buildCoverageSlots(project, cueMap.chunks), [cueMap.chunks, project]);
   const coverage = useMemo(() => summarizeCoverage(slots, cueMap.duration), [cueMap.duration, slots]);
   const issueGroups = useMemo(() => buildCoverageIssueGroups(slots), [slots]);
-  const requiredIssues = issueGroups.filter((issue) => issue.status === "missing" || issue.status === "short");
+  const requiredIssues = issueGroups.filter((issue) => issue.status === "missing");
+  const shortIssues = issueGroups.filter((issue) => issue.status === "short");
   const reviewIssues = issueGroups.filter((issue) => issue.status === "weak");
   const focusSlot = slots.find((slot) => slot.item.id === selectedSlotId) ?? slots.find((slot) => slot.status !== "filled") ?? slots[0];
   const selectedReturnSegment = selectedPreviewRange && selectedPreviewRange.startIndex === selectedPreviewRange.endIndex
@@ -212,6 +198,26 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
   });
   const effectiveReferenceSelection = useMemo(() => fillDefaultReferenceSelection(referenceSelection, referenceAssets), [referenceAssets, referenceSelection]);
   const hasRequiredInputs = storyGenerated && Boolean(project?.editPlan.timelineItems.length);
+  const storyboardFrameCount = useMemo(
+    () => countStoryboardFramesForSegment(persistedGeneratedAssets, selectedReturnSegment),
+    [persistedGeneratedAssets, selectedReturnSegment],
+  );
+  const importedForSegmentCount = useMemo(
+    () => persistedGeneratedAssets.filter((asset) =>
+      asset.mediaKind === "video"
+      && asset.target?.sectionId === selectedReturnSegment?.sectionId
+      && asset.reviewStatus !== "rejected",
+    ).length,
+    [persistedGeneratedAssets, selectedReturnSegment],
+  );
+  const approvedForJoin = useMemo(
+    () => persistedGeneratedAssets.some((asset) =>
+      asset.mediaKind === "video"
+      && asset.reviewStatus === "approved"
+      && asset.target?.sectionId === selectedReturnSegment?.sectionId,
+    ),
+    [persistedGeneratedAssets, selectedReturnSegment],
+  );
   const checkLocalGenerator = async () => {
     setGenerationStatus("Checking SwarmUI gateway...");
     try {
@@ -360,8 +366,9 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
           <MetricCard label="Real assigned" value={fmt(coverage.assignedDuration)} ready={coverage.coveragePct >= 99} />
           <MetricCard label="Primary-match shortage (estimate)" value={fmt(coverage.trueGapDuration)} ready={coverage.trueGapDuration === 0 && coverage.requiredDuration > 0} alert={coverage.trueGapDuration > 0} />
           <MetricCard label="Strong match" value={`${coverage.strongMatchPct}%`} ready={coverage.strongMatchPct >= 70} />
-          <MetricCard label="Chunks to inspect · not jobs" value={`${coverage.requiredNeedCount} chunks`} ready={coverage.requiredNeedCount === 0 && slots.length > 0} alert={coverage.requiredNeedCount > 0} />
-          <MetricCard label="Optional rerolls" value={`${coverage.reviewCount} chunks · ${coverage.reviewSectionCount} sections`} ready={coverage.reviewCount === 0 && slots.length > 0} />
+          <MetricCard label="True gaps (blocks Join)" value={`${coverage.blockingGapCount} chunk${coverage.blockingGapCount === 1 ? "" : "s"}`} ready={coverage.blockingGapCount === 0 && slots.length > 0} alert={coverage.blockingGapCount > 0} />
+          <MetricCard label="Short source review" value={`${coverage.shortReviewCount} optional`} ready={coverage.shortReviewCount === 0 && slots.length > 0} />
+          <MetricCard label="Weak match review" value={`${coverage.reviewCount} chunks · ${coverage.reviewSectionCount} sections`} ready={coverage.reviewCount === 0 && slots.length > 0} />
         </div>
       </section>
 
@@ -433,22 +440,31 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
               <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Coverage issues by song range</div>
               <div className="mt-1 text-[11px] text-[#6d6d6d]">Adjacent chunks with the same issue are grouped so you can see exactly where the problem starts, ends, and why it was flagged.</div>
             </div>
-            <div className="font-mono text-[10px] text-[#777]">{requiredIssues.length} primary-match ranges to inspect · {reviewIssues.length} optional ranges</div>
+            <div className="font-mono text-[10px] text-[#777]">{requiredIssues.length} true gaps · {shortIssues.length} short · {reviewIssues.length} weak</div>
           </div>
           {slots.length ? (
             <div className="space-y-4">
               <IssueGroupSection
-                title="Primary-match ranges to inspect"
-                detail="Red means no primary source is assigned. Purple means the primary source is short. Verify the resolved cuts; these estimates are not required generation jobs."
+                title="Required gaps (blocks Join)"
+                detail="Red means no primary source is assigned. Fill these in Match or approve a generated import before Join."
                 emptyLabel="No true gaps"
-                emptyDetail={`Every one of the ${slots.length} adaptive chunks has enough real footage assigned. Nothing must be generated before Join.`}
+                emptyDetail={`Every one of the ${slots.length} adaptive chunks has a primary match assigned. Join is not blocked by missing footage.`}
                 issues={requiredIssues}
                 selectedSlotId={focusSlot?.item.id ?? null}
                 onSelectSlot={setSelectedSlotId}
               />
               <IssueGroupSection
-                title="Optional match review"
-                detail="Yellow ranges already contain real footage. They are listed because the section match score is below 45%, not because video is missing."
+                title="Short source — optional whole-shot replacement"
+                detail="Purple means the primary source is shorter than the slot. Review the resolved cut; you may continue to Join without generating."
+                emptyLabel="No short-source ranges"
+                emptyDetail="No purple short-source diagnostics for this timeline."
+                issues={shortIssues}
+                selectedSlotId={focusSlot?.item.id ?? null}
+                onSelectSlot={setSelectedSlotId}
+              />
+              <IssueGroupSection
+                title="Optional weak-match review"
+                detail="Yellow ranges already contain real footage. Listed because the match score is below 45%, not because video is missing."
                 emptyLabel="No weak matches"
                 emptyDetail="Every assigned section is at or above the 45% review threshold."
                 issues={reviewIssues}
@@ -462,7 +478,14 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
         </section>
 
         <section className="rounded-[2px] border border-[#1a1a1a] bg-[#0b0b0b] p-3 xl:sticky xl:top-3 xl:max-h-[calc(100vh-190px)] xl:self-start xl:overflow-y-auto">
-          <div className="mb-3">
+          <ReplacementWorkflowChecklist
+            selectedSegment={selectedReturnSegment}
+            slot={focusSlot}
+            storyboardFrameCount={storyboardFrameCount}
+            importedAssetCount={importedForSegmentCount}
+            approvedForJoin={approvedForJoin}
+          />
+          <div className="mb-3 mt-4">
             <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Whole-shot replacement lab</div>
             <div className="mt-1 text-[11px] text-[#6d6d6d]">Generate the complete action plus edit handles. Source frames guide composition; canonical character sheets control identity. No stitched continuation of the same movement.</div>
           </div>
@@ -531,119 +554,58 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
   );
 }
 
-export function buildCoverageSlots(project: MusicVideoProject | null, chunks: Array<{ id: string; sectionId: string; sectionLabel: string; start: number; end: number; strength: number; cueCount: number }>): CoverageSlot[] {
-  if (!project) return [];
-  const momentsById = new Map(project.videoMoments.map((moment) => [moment.id, moment]));
-  const itemsBySection = new Map(project.editPlan.timelineItems.map((item) => [item.sectionId, item]));
-  const sourceItems = chunks.length
-    ? chunks.map((chunk, index) => {
-        const base = itemsBySection.get(chunk.sectionId) ?? project.editPlan.timelineItems.find((item) => item.start <= chunk.start && item.end >= chunk.end) ?? project.editPlan.timelineItems[0];
-        return {
-          ...(base ?? { id: `chunk-${chunk.id}`, sectionId: chunk.sectionId, lyricChunkIds: [], videoMomentId: null, start: chunk.start, end: chunk.end, label: chunk.sectionLabel, prompt: "No story prompt is attached to this adaptive chunk." }),
-          id: `chunk-${chunk.id}`,
-          sectionId: chunk.sectionId,
-          start: chunk.start,
-          end: chunk.end,
-          label: `${chunk.sectionLabel} · C${String(index + 1).padStart(2, "0")}`,
-        } satisfies TimelineItem;
-      })
-    : project.editPlan.timelineItems;
-
-  return sourceItems.map((item) => {
-    const moment = item.videoMomentId ? momentsById.get(item.videoMomentId) : undefined;
-    const requiredDuration = Math.max(0, item.end - item.start);
-    const score = item.semanticMatch?.score ?? 0;
-    const availableDuration = moment?.duration ?? 0;
-    const assignedDuration = moment ? Math.min(requiredDuration, availableDuration) : 0;
-    const missingDuration = Math.max(0, requiredDuration - assignedDuration);
-    const status: SlotStatus = !moment ? "missing" : missingDuration > 0.5 ? "short" : score < 0.45 ? "weak" : "filled";
-    const needs = deriveGenerationNeeds(status, requiredDuration, availableDuration);
-
-    return { item, moment, requiredDuration, assignedDuration, missingDuration, score, status, needs };
+function ReplacementWorkflowChecklist({
+  selectedSegment,
+  slot,
+  storyboardFrameCount,
+  importedAssetCount,
+  approvedForJoin,
+  audioReferenceReady = false,
+  packetErrorCount = 0,
+}: {
+  selectedSegment?: EditPlanPreviewSegment;
+  slot?: CoverageSlot;
+  storyboardFrameCount: number;
+  importedAssetCount: number;
+  approvedForJoin: boolean;
+  audioReferenceReady?: boolean;
+  packetErrorCount?: number;
+}) {
+  const workflow = getReplacementWorkflowState({
+    selectedSegment,
+    slot,
+    storyboardFrameCount,
+    audioReferenceReady,
+    packetErrorCount,
+    importedAssetCount,
+    approvedForJoin,
   });
-}
 
-function deriveGenerationNeeds(status: SlotStatus, requiredDuration: number, availableDuration: number): GenerationNeed[] {
-  if (status === "missing") return ["b-roll", "alt-angle"];
-  if (status === "weak") return ["reroll-match", "alt-angle"];
-  if (status === "short") {
-    const needs: GenerationNeed[] = ["extend-end"];
-    if (requiredDuration - availableDuration > 4) needs.push("extend-start", "bridge");
-    return needs;
-  }
-  if (requiredDuration > 8) return ["alt-angle"];
-  return [];
-}
-
-export function summarizeCoverage(slots: CoverageSlot[], cueDuration = 0) {
-  const requiredDuration = slots.reduce((total, slot) => total + slot.requiredDuration, 0);
-  const assignedDuration = slots.reduce((total, slot) => total + slot.assignedDuration, 0);
-  const trueGapDuration = slots.reduce((total, slot) => total + slot.missingDuration, 0);
-  const strongMatchDuration = slots.reduce((total, slot) => total + (slot.status === "filled" ? slot.assignedDuration : 0), 0);
-  const weakMatchDuration = slots.reduce((total, slot) => total + (slot.status === "weak" ? slot.assignedDuration : 0), 0);
-  const coveragePct = requiredDuration > 0 ? Math.round((assignedDuration / requiredDuration) * 100) : 0;
-  const strongMatchPct = requiredDuration > 0 ? Math.round((strongMatchDuration / requiredDuration) * 100) : 0;
-  const duration = Math.max(cueDuration, slots[slots.length - 1]?.item.end ?? 0, requiredDuration, 1);
-  const requiredNeedCount = slots.filter((slot) => slot.status === "missing" || slot.status === "short").length;
-  const reviewCount = slots.filter((slot) => slot.status === "weak").length;
-  const reviewSectionCount = new Set(slots.filter((slot) => slot.status === "weak").map((slot) => slot.item.sectionId)).size;
-  return { requiredDuration, assignedDuration, trueGapDuration, strongMatchDuration, weakMatchDuration, coveragePct, strongMatchPct, duration, requiredNeedCount, reviewCount, reviewSectionCount };
-}
-
-export function buildCoverageIssueGroups(slots: CoverageSlot[]): CoverageIssueGroup[] {
-  const issueSlots = slots
-    .filter((slot): slot is CoverageSlot & { status: Exclude<SlotStatus, "filled"> } => slot.status !== "filled")
-    .sort((left, right) => left.item.start - right.item.start || left.item.end - right.item.end);
-  const groups: CoverageIssueGroup[] = [];
-
-  for (const slot of issueSlots) {
-    const previous = groups[groups.length - 1];
-    const canMerge = Boolean(
-      previous
-      && previous.status === slot.status
-      && previous.sectionId === slot.item.sectionId
-      && previous.moment?.id === slot.moment?.id
-      && Math.abs(previous.end - slot.item.start) <= 0.05,
-    );
-
-    if (previous && canMerge) {
-      previous.slots.push(slot);
-      previous.end = slot.item.end;
-      previous.requiredDuration += slot.requiredDuration;
-      previous.assignedDuration += slot.assignedDuration;
-      previous.missingDuration += slot.missingDuration;
-      previous.needs = [...new Set([...previous.needs, ...slot.needs])];
-      continue;
-    }
-
-    groups.push({
-      id: `coverage-issue-${slot.item.id}`,
-      status: slot.status,
-      sectionId: slot.item.sectionId,
-      sectionLabel: slot.item.label.replace(/\s*·\s*C\d+$/i, ""),
-      slots: [slot],
-      start: slot.item.start,
-      end: slot.item.end,
-      requiredDuration: slot.requiredDuration,
-      assignedDuration: slot.assignedDuration,
-      missingDuration: slot.missingDuration,
-      score: slot.score,
-      moment: slot.moment,
-      needs: [...slot.needs],
-    });
-  }
-
-  return groups;
-}
-
-export function describeCoverageIssue(issue: CoverageIssueGroup) {
-  if (issue.status === "missing") {
-    return `No source scene is assigned from ${fmt(issue.start)} to ${fmt(issue.end)}. This is a true gap and must be filled before Join.`;
-  }
-  if (issue.status === "short") {
-    return `The assigned source covers ${fmt(issue.assignedDuration)} of ${fmt(issue.requiredDuration)}, leaving ${fmt(issue.missingDuration)} uncovered. Inspect the resolved edit and, if needed, regenerate the whole shot with handles.`;
-  }
-  return `This Story section's selected match scores ${Math.round(issue.score * 100)}%, below the 45% review threshold. All ${issue.slots.length} chunks contain real footage, so generation is optional.`;
+  return (
+    <div className="rounded-[2px] border border-[#1a2a3d] bg-[#05080f] p-3">
+      <div className="text-[10px] uppercase tracking-[0.18em] text-[#6ca6d2]">Seedance operator checklist</div>
+      <ol className="mt-3 space-y-2">
+        {workflow.steps.map((step) => (
+          <li
+            key={step.id}
+            className={`rounded-[2px] border px-2 py-1.5 text-[10px] ${
+              step.complete
+                ? "border-[#245c2c] bg-[#081108] text-[#79c779]"
+                : step.active
+                  ? "border-[#24476f] bg-[#07111e] text-[#9fb4c5]"
+                  : "border-[#252525] bg-[#080808] text-[#666]"
+            }`}
+          >
+            <div className="font-mono uppercase tracking-[0.12em]">{step.label}</div>
+            <div className="mt-1 text-[9px] leading-4">{step.detail}</div>
+          </li>
+        ))}
+      </ol>
+      {workflow.blockers.length ? (
+        <div className="mt-3 text-[9px] leading-4 text-[#d3a236]">{workflow.blockers.join(" ")}</div>
+      ) : null}
+    </div>
+  );
 }
 
 function MetricCard({ label, value, ready, alert = false }: { label: string; value: string; ready: boolean; alert?: boolean }) {

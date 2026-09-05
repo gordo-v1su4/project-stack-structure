@@ -31,23 +31,14 @@ export function buildReadout(params: {
     tab,
     clipDur,
     splitSegmentCount,
-    bpm,
-    barsPerSeg,
-    beatSplitSegmentCount,
     shuffleMode,
     minScore,
     lookahead,
     joinClips,
     resolvedJoinClipCount,
     resolvedJoinDuration,
-    minDur,
-    maxDur,
-    lowEnergyRange,
-    highEnergyRange,
     beatJoinReady,
     hasVideoSource = true,
-    chaos,
-    onsetBoost,
     rampPreset,
     minSpeed,
     maxSpeed,
@@ -68,22 +59,6 @@ export function buildReadout(params: {
       ["Est Clips", splitSegmentCount],
       ["Audio", beatJoinReady ? "Analyzed" : "None"],
       ["Codec", "H.264"],
-    ];
-  }
-  if (tab === "beatsplit") {
-    if (!hasVideoSource) {
-      return [
-        ["Source", "Awaiting video"],
-        ["State", "Locked"],
-        ["BPM", bpm],
-        ["Bars/Seg", barsPerSeg],
-      ];
-    }
-    return [
-      ["BPM", bpm],
-      ["Bars/Seg", barsPerSeg],
-      ["Segments", beatSplitSegmentCount],
-      ["Audio", beatJoinReady ? "Analyzed" : "Fallback grid"],
     ];
   }
   if (tab === "shuffle") {
@@ -130,25 +105,6 @@ export function buildReadout(params: {
       ["Duration", fmt(resolvedJoinDuration ?? joinClips.filter((clip) => clip.on).reduce((total, clip) => total + sv(clip.id + 1) * 8 + 1, 0))],
       ["Format", "MP4"],
       ["Source", "Resolved edit"],
-    ];
-  }
-  if (tab === "beatjoin") {
-    if (!beatJoinReady) {
-      return [
-        ["Source", "Awaiting upload"],
-        ["State", "Locked"],
-        ["Low Eng", lowEnergyRange.toFixed(2)],
-        ["High Eng", highEnergyRange.toFixed(2)],
-      ];
-    }
-
-    return [
-      ["Min Dur", `${minDur.toFixed(2)}s`],
-      ["Max Dur", `${maxDur.toFixed(2)}s`],
-      ["Low Eng", lowEnergyRange.toFixed(2)],
-      ["High Eng", highEnergyRange.toFixed(2)],
-      ["Onset", onsetBoost.toFixed(2)],
-      ["Chaos", chaos.toFixed(2)],
     ];
   }
   if (tab === "story" || tab === "compose") {
