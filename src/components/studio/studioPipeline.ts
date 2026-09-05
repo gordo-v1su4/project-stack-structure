@@ -126,13 +126,13 @@ export function buildPipelineState(input: PipelineStageInput): PipelineState {
       ready: matchReady,
       complete: matchReady && input.matchedSlotCount === input.editSlotCount,
       available: splitReady,
-      blockedReason: splitReady ? null : "Build and commit Split before reviewing matches.",
+      blockedReason: splitReady ? null : "Open Split once so cut windows are built before reviewing matches.",
       prerequisiteKey: splitReady ? null : "split",
       status: matchReady
         ? `${input.matchedSlotCount}/${input.editSlotCount} slots matched`
         : splitReady
           ? "Review match candidates"
-          : "Needs committed split",
+          : "Needs Split cut windows",
     },
     {
       key: "generate",
@@ -196,7 +196,7 @@ export function buildPipelineState(input: PipelineStageInput): PipelineState {
   return {
     stages: fullStages,
     nextStage,
-    nextHint: nextStage ? buildNextHint(nextStage) : "All stages ready · export from Preview / Export.",
+    nextHint: nextStage ? buildNextHint(nextStage) : "All stages ready · export from Export.",
   };
 }
 
@@ -222,7 +222,7 @@ function buildNextHint(stage: PipelineStage) {
     case "story":
       return "Next: choose a treatment, resolve its anchors, and confirm the Story plan.";
     case "split":
-      return "Next: choose a source-window strategy and commit Split.";
+      return "Next: open Split and pick a cut strategy; it commits automatically.";
     case "shuffle":
       return "Next: review semantic matches for each section in Match.";
     case "generate":
@@ -232,7 +232,7 @@ function buildNextHint(stage: PipelineStage) {
     case "ramp":
       return "Next: pick a shader preset in Effects.";
     case "compose":
-      return "Next: export the final MP4 from Preview / Export.";
+      return "Next: export the final MP4 from Export.";
     default:
       return `Next: open ${stage.label}.`;
   }

@@ -1,67 +1,32 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { getPreviewAssetFileName } from "./studioUiState";
+import { StatusDot, type StatusTone } from "./ui";
 
 type StudioStatusBarProps = {
-  previewStage?: string;
-  activeRequestKey?: string | null;
-  assetKey?: string | null;
-  statusLabel?: string;
-  draftStatus?: string;
+  /** Short preview/pipeline state label, e.g. "Ready" or "Preparing preview". */
+  statusLabel: string;
+  statusTone: StatusTone;
+  /** Latest human-readable activity line (upload/analysis/export progress). */
+  activity: string | null;
+  activityTone: StatusTone;
 };
 
-export function StudioStatusBar({
-  previewStage = "idle",
-  activeRequestKey = null,
-  assetKey = null,
-  statusLabel = "Ready",
-  draftStatus = "",
-}: StudioStatusBarProps) {
-  const assetFileName = getPreviewAssetFileName(assetKey);
-  const [clockLabel, setClockLabel] = useState("--:--");
-
-  useEffect(() => {
-    if (assetFileName) return;
-
-    const updateClock = () => {
-      setClockLabel(formatStatusClock(new Date()));
-    };
-
-    updateClock();
-    const intervalId = window.setInterval(updateClock, 30_000);
-
-    return () => {
-      window.clearInterval(intervalId);
-    };
-  }, [assetFileName]);
-
+/** One-line footer: what the studio is doing right now. */
+export function StudioStatusBar({ statusLabel, statusTone, activity, activityTone }: StudioStatusBarProps) {
   return (
-    <footer className="flex items-center justify-between border-t border-[#181818] bg-[#0b0b0b] px-4 py-[5px] shrink-0">
-      <div className="flex min-w-0 items-center gap-3">
-        <span className="h-[5px] w-[5px] shrink-0 rounded-full bg-[#3a8a3a]" />
-        <span className="shrink-0 text-[10px] uppercase tracking-[0.18em] text-[#3a8a3a]">{statusLabel}</span>
-        <span className="text-[#1e1e1e]">·</span>
-        <span className="shrink-0 font-mono text-[10px] text-[#343434]">
-          {previewStage.toUpperCase()}
-          {activeRequestKey ? ` · ${activeRequestKey}` : ""}
-        </span>
-        {draftStatus ? (
-          <>
-            <span className="text-[#1e1e1e]">·</span>
-            <span className="truncate font-mono text-[10px] text-[#343434]" title={draftStatus}>
-              {draftStatus}
-            </span>
-          </>
-        ) : null}
-      </div>
-      <div className="flex shrink-0 items-center gap-4 font-mono text-[10px] text-[#343434]">
-        <span>{assetFileName ? `ASSET ${assetFileName}` : clockLabel}</span>
-      </div>
+    <footer className="flex h-7 shrink-0 items-center gap-3 border-t border-line bg-ink-1 px-4 text-[11px]">
+      <span className="flex shrink-0 items-center gap-2 text-fg-2">
+        <StatusDot tone={statusTone} pulse />
+        {statusLabel}
+      </span>
+      {activity ? (
+        <>
+          <span className="text-fg-4">·</span>
+          <span className={`min-w-0 truncate ${activityTone === "failed" ? "text-danger" : "text-fg-3"}`} title={activity}>
+            {activity}
+          </span>
+        </>
+      ) : null}
     </footer>
   );
-}
-
-function formatStatusClock(date: Date) {
-  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }

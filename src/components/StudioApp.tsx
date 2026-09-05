@@ -30,8 +30,6 @@ import { applyApprovedGeneratedAssets, buildGeneratedAssetContextPreview, buildG
 import { createLocalReferenceAsset, uploadReferenceAssetToRustFs, type ReferenceAsset, type ReferenceAssetLibraryRole } from "./studio/referenceAssets";
 import { BrowserPreviewPlayer, createPreviewPlayerState, type PreviewPlayerState, type PreviewSegment } from "./studio/previewPlayer";
 import { slicePreviewCutRange, type PreviewCutRange } from "./studio/resolvedPreviewSelection";
-import { ProcessActionBar } from "./studio/ProcessActionBar";
-import { buildReadout } from "./studio/readout";
 import { ComposeTab } from "./studio/panels/ComposeTab";
 import { IngestTab } from "./studio/panels/IngestTab";
 import { GenerateTab, type SeedanceMasterAudioRef } from "./studio/panels/GenerateTab";
@@ -42,13 +40,16 @@ import { SplitTab } from "./studio/panels/SplitTab";
 import { createDefaultStoryTabState, StoryTab } from "./studio/panels/StoryTab";
 import { StudioHeader } from "./studio/StudioHeader";
 import { StudioAudioLane } from "./studio/StudioAudioLane";
-import { StudioRightPanel } from "./studio/StudioRightPanel";
+import { PreviewDock } from "./studio/PreviewDock";
+import { StageHeader } from "./studio/StageHeader";
 import { StudioSidebar } from "./studio/StudioSidebar";
 import { StudioStatusBar } from "./studio/StudioStatusBar";
+import { buildStageHeaderModel } from "./studio/stageActions";
+import { createSaveState, type SaveState } from "./studio/saveState";
+import type { StatusTone } from "./studio/ui";
 import { buildStudioPipelineInput } from "./studio/buildStudioPipelineInput";
 import { buildPipelineState } from "./studio/studioPipeline";
 import { isStoryPlanConfirmable, type StoryTreatment } from "./studio/storyTreatments";
-import { WorkflowPrerequisitePanel } from "./studio/WorkflowPrerequisitePanel";
 import { buildShuffleQueue } from "./studio/shuffleQueue";
 import { waitForTriggerRunOutput } from "@/lib/clientTriggerRuns";
 import { rankManifestCandidates } from "./studio/manifestRanking";
@@ -131,12 +132,6 @@ export default function StudioApp() {
 
   const [joinClipStates, setJoinClipStates] = useState<Record<number, boolean>>({});
 
-  const [minDur] = useState(0.12);
-  const [maxDur] = useState(0.8);
-  const [chaos] = useState(0.35);
-  const [onsetBoost] = useState(0.6);
-  const [lowEnergyRange] = useState(0.36);
-  const [highEnergyRange] = useState(0.68);
   const [beatJoinAnalysis, setBeatJoinAnalysis] = useState<BeatJoinAnalysis | null>(null);
 
   const [rampPreset, setRampPreset] = useState<RampPreset>("dynamic");
@@ -166,8 +161,9 @@ export default function StudioApp() {
   const [finalExportCueCount, setFinalExportCueCount] = useState(0);
   const [isFinalExporting, setIsFinalExporting] = useState(false);
   const [isShaderCaptureExporting, setIsShaderCaptureExporting] = useState(false);
-  const [draftStatus, setDraftStatus] = useState("Named projects autosave ingest progress to RustFS; refresh reloads your saved project.");
+  const [saveState, setSaveState] = useState<SaveState>(() => createSaveState("local"));
   const [draftRestored, setDraftRestored] = useState(false);
+  const skipNextDirtyMarkRef = useRef(true);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [activeProjectName, setActiveProjectName] = useState("Untitled project");
   const pendingAutosaveRef = useRef<PendingStudioAutosave | null>(null);
@@ -268,13 +264,19 @@ export default function StudioApp() {
         }
 
         applyRestoredProjectDraft(draft);
-        setDraftStatus(activeId ? "Restored saved project from RustFS." : "Restored local draft saved from this browser.");
+        skipNextDirtyMarkRef.current = true;
+        setSaveState({
+          kind: "restored",
+          at: Date.now(),
+          scope: activeId ? "project" : "local",
+          detail: activeId ? "Restored saved project from RustFS." : "Restored the draft saved in this browser.",
+        });
         setDraftRestored(true);
       })
       .catch((error) => {
         console.warn("[Studio] Could not restore local project draft", error);
         if (!cancelled) {
-          setDraftStatus("Could not restore the local project draft; starting fresh.");
+          setSaveState({ kind: "error", at: null, scope: "local", detail: "Could not restore the local draft; starting fresh." });
           setDraftRestored(true);
         }
       });
@@ -319,6 +321,12 @@ export default function StudioApp() {
         },
       },
     };
+    // The first run after a restore only mirrors what was just loaded; it is not a user edit.
+    if (skipNextDirtyMarkRef.current) {
+      skipNextDirtyMarkRef.current = false;
+      return;
+    }
+    setSaveState((current) => (current.kind === "dirty" || current.kind === "saving" ? current : { ...current, kind: "dirty" }));
   }, [activeProjectId, activeProjectName, beatJoinAnalysis, captionMode, colorGradient, committedBeatSplit, draftRestored, finalExportCueCount, finalExportName, finalExportStatus, finalExportUrl, generatedAssets, isPreviewExpanded, matchLyricCueBlend, matchLyricMergeWindow, matchMode, matchOnsetDensity, musicVideoProject, referenceAssets, shaderAccentKinds, shaderPresetId, splitMode, storyState, tab, videoSources]);
 
   useEffect(() => {
@@ -331,6 +339,7 @@ export default function StudioApp() {
 
       pendingAutosaveRef.current = null;
       autosaveInFlightRef.current = true;
+      setSaveState((current) => ({ ...current, kind: "saving", scope: pending.projectId ? "project" : "local" }));
       try {
         const draft = pending.projectId
           ? await saveNamedStudioProject({
@@ -342,13 +351,20 @@ export default function StudioApp() {
               audioFile: audioFileRef.current,
               videoFilesByMediaKey: videoFilesByMediaKeyRef.current,
             });
-        if (draft) {
-          setDraftStatus(`Autosaved ${pending.projectId ? "saved project" : "local draft"} · ${new Date(draft.savedAt).toLocaleTimeString()}`);
-        }
+        const savedAt = draft ? new Date(draft.savedAt).getTime() : Date.now();
+        // Edits that landed while the save was in flight keep the state dirty.
+        setSaveState((current) => (pendingAutosaveRef.current
+          ? { ...current, kind: "dirty" }
+          : { kind: "saved", at: savedAt, scope: pending.projectId ? "project" : "local", detail: null }));
       } catch (error) {
         if (!pendingAutosaveRef.current) pendingAutosaveRef.current = pending;
         console.warn("[Studio] Could not autosave local project draft", error instanceof Error ? error : String(error));
-        setDraftStatus("Autosave unavailable for this browser session; it will retry in 5 minutes.");
+        setSaveState({
+          kind: "error",
+          at: null,
+          scope: pending.projectId ? "project" : "local",
+          detail: "Autosave failed; it retries automatically and on the next stage change.",
+        });
       } finally {
         autosaveInFlightRef.current = false;
       }
@@ -527,13 +543,15 @@ export default function StudioApp() {
     applyRestoredProjectDraft(draft);
     setActiveProjectId(project.id);
     setActiveProjectName(project.name);
-    setDraftStatus(`Loaded ${project.name} from RustFS.`);
+    skipNextDirtyMarkRef.current = true;
+    setSaveState({ kind: "restored", at: Date.now(), scope: "project", detail: `Loaded ${project.name} from RustFS.` });
   }
 
   function handleProjectSaved(project: StudioProjectSummary) {
     setActiveProjectId(project.id);
     setActiveProjectName(project.name);
-    setDraftStatus(`Saved ${project.name} to RustFS.`);
+    skipNextDirtyMarkRef.current = true;
+    setSaveState({ kind: "saved", at: Date.now(), scope: "project", detail: `Saved ${project.name} to RustFS.` });
   }
 
   async function handleNewProject() {
@@ -1761,69 +1779,22 @@ export default function StudioApp() {
     setDone(false);
   }
 
-  const readout = useMemo(
-    () =>
-      buildReadout({
-        tab,
-        clipDur,
-        splitSegmentCount: splitSegments.length,
-        bpm,
-        barsPerSeg,
-        beatSplitSegmentCount: beatSplitSegments.length,
-        shuffleMode,
-        minScore,
-        lookahead,
-        joinClips,
-        resolvedJoinClipCount: storyPreviewSegments.length,
-        resolvedJoinDuration: storyPreviewSegments.at(-1)?.musicEnd ?? 0,
-        minDur,
-        maxDur,
-        lowEnergyRange,
-        highEnergyRange,
-        beatJoinReady: beatJoinAnalysis !== null,
-        hasVideoSource: videoSources.length > 0,
-        chaos,
-        onsetBoost,
-        rampPreset,
-        minSpeed,
-        maxSpeed,
-        rampDur,
-      }),
-    [
-      tab,
-      clipDur,
-      splitSegments.length,
-      bpm,
-      barsPerSeg,
-      beatSplitSegments.length,
-      shuffleMode,
-      minScore,
-      lookahead,
-      joinClips,
-      storyPreviewSegments,
-      minDur,
-      maxDur,
-      lowEnergyRange,
-      highEnergyRange,
-      beatJoinAnalysis,
-      videoSources.length,
-      chaos,
-      onsetBoost,
-      rampPreset,
-      minSpeed,
-      maxSpeed,
-      rampDur,
-    ]
-  );
-
-  const tabLabel = NAV.find((n) => n.key === tab)?.label ?? "";
-  const tabSub = NAV.find((n) => n.key === tab)?.sub ?? "";
+  // Split commits itself: while the Split stage is open, the current cut set
+  // is the committed one. Re-running when the signature changes keeps Match
+  // and Join in step without a separate "Commit" click.
+  const shouldAutoCommitSplit = tab === "split" && splitSegments.length > 0 && !isCommittedSplitCurrent;
+  useEffect(() => {
+    if (!shouldAutoCommitSplit) return;
+    handleCommitSplit();
+    // handleCommitSplit closes over the latest split state; the signature guard prevents re-runs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shouldAutoCommitSplit, splitSignature]);
   const audioPreviewSubtitle = useMemo(() => {
     switch (tab) {
       case "story":
         return "Master Audio Track · Story/Edit Plan";
       case "compose":
-        return "Master Audio Track · Preview / Export";
+        return "Master Audio Track · Export";
       case "shuffle":
         return `Master Audio Track · Match ${shuffleMode}`;
       case "generate":
@@ -1833,7 +1804,7 @@ export default function StudioApp() {
       case "join":
         return "Master Audio Track · Join Timeline";
       case "ramp":
-        return "Master Audio Track · Transitions / Effects";
+        return "Master Audio Track · Effects";
       default:
         return "Master Audio Track · Studio Timeline";
     }
@@ -2107,8 +2078,15 @@ export default function StudioApp() {
   }
 
   function handleSelectTab(t: Tab) {
+    if (t === tab) return;
+    // Switching stage is not an edit, and it is a natural checkpoint: skip the
+    // dirty mark for this change and persist once the new tab is in the draft.
+    skipNextDirtyMarkRef.current = true;
     setTab(t);
     resetPreparedPreview({ preserveBrowserPreview: true });
+    window.setTimeout(() => {
+      void flushPendingAutosaveRef.current?.();
+    }, 0);
   }
 
   const needsVideoSource = tab !== "story" && tab !== "compose";
@@ -2159,33 +2137,75 @@ export default function StudioApp() {
     ? `${tab === "compose" ? "Compose Preview Ready" : "Story Preview Ready"}${previewState.currentAssetKey ? ` — ${previewState.currentAssetKey.split(/[\\/]/).pop()}` : ""}`
     : deriveCompletedLabel(previewState.currentAssetKey);
 
+  const isAnyRunRunning = isRunning || isFinalExporting || isShaderCaptureExporting;
+  const stageHeaderModel = useMemo(() => buildStageHeaderModel({
+    stages: pipeline.stages,
+    activeTab: tab,
+    canPreview: !actionDisabled,
+    previewDisabledReason: actionDisabled ? actionDisabledReason : null,
+    isBusy: isAnyRunRunning,
+  }), [actionDisabled, actionDisabledReason, isAnyRunRunning, pipeline.stages, tab]);
+
+  const stagePreviewRun = {
+    isRunning: isAnyRunRunning,
+    progress,
+    // Split's completion is implicit (auto-commit); its header shows the cut count instead.
+    done: done && tab !== "review" && tab !== "split",
+    processingLabel: isFinalExporting ? "Rendering final MP4" : `Preparing preview · ${previewState.stage}`,
+    completedLabel,
+  };
+
+  const splitNotice = tab === "split" && committedBeatSplit && isCommittedSplitCurrent
+    ? { text: `Split committed automatically · ${committedBeatSplit.segments.length} cuts`, tone: "ok" as const }
+    : null;
+
+  function handleStagePrimary() {
+    const action = stageHeaderModel?.primary;
+    if (!action || action.disabledReason) return;
+    if (action.targetTab) handleSelectTab(action.targetTab);
+  }
+
+  function handleStageSecondary() {
+    const action = stageHeaderModel?.secondary;
+    if (!action || action.disabledReason) return;
+    if (action.kind === "preview") void runProcess();
+  }
+
+  const statusTone: StatusTone = previewState.activeRequestKey
+    ? "processing"
+    : previewState.error
+      ? "failed"
+      : done
+        ? "ready"
+        : "waiting";
+  const activityLine = isPreparingAudio
+    ? audioStatus
+    : isPreparingVideos || isRerunningSceneAnalysis
+      ? videoStatus
+      : isFinalExporting || isShaderCaptureExporting
+        ? finalExportStatus
+        : pipeline.nextHint;
+  const activityTone: StatusTone = audioError || videoError || finalExportError
+    ? "failed"
+    : isPreparingAudio || isPreparingVideos || isRerunningSceneAnalysis || isFinalExporting || isShaderCaptureExporting
+      ? "processing"
+      : "waiting";
+
   return (
-    <div
-      className="flex h-screen overflow-hidden bg-[#0a0a0a] text-[#c0c0c0] antialiased select-none"
-      style={{ fontFamily: "'Inter','SF Pro Display',system-ui,sans-serif" }}
-    >
+    <div className="flex h-screen overflow-hidden bg-ink-1 font-sans text-fg-1 antialiased select-none">
       <StudioSidebar
         tab={tab}
         stages={pipeline.stages}
         collapsed={isSidebarCollapsed}
         onToggleCollapsed={() => setIsSidebarCollapsed((current) => !current)}
-        sessionStats={{
-          audioLabel: beatJoinAnalysis?.sourceLabel ?? null,
-          videoCount: videoSources.length,
-          sceneCount: ingestStats.sceneCount,
-          captionReadyCount: ingestStats.captionReady,
-          captionTotalCount: ingestStats.captionTotal,
-        }}
         onSelectTab={handleSelectTab}
       />
 
       <div className="flex flex-1 flex-col overflow-hidden">
         <StudioHeader
-          tabLabel={tabLabel}
-          tabSub={tabSub}
-          stepLabel={pipeline.stages.find((stage) => stage.active) ? `Step ${pipeline.stages.find((stage) => stage.active)!.step} of ${pipeline.stages.length}` : null}
           songLabel={beatJoinAnalysis?.sourceLabel ?? null}
           songDuration={beatJoinAnalysis?.duration ?? null}
+          saveState={saveState}
           projectDraft={persistableProjectDraft}
           activeProjectId={activeProjectId}
           activeProjectName={activeProjectName}
@@ -2194,54 +2214,34 @@ export default function StudioApp() {
           onProjectSaved={handleProjectSaved}
         />
 
-        <div className="flex flex-1 flex-col overflow-hidden">
-          <>
-          <main className="flex-1 overflow-y-auto p-4 space-y-3">
-            <StudioAudioLane
-              analysis={beatJoinAnalysis}
-              isPreparingAudio={isPreparingAudio}
-              audioProgress={audioProgress}
-              audioStatus={audioStatus}
-              audioError={audioError}
-              bpmFallback={bpm}
-              subtitle={audioPreviewSubtitle}
-              onAudioUpload={handleAudioUpload}
-              onPlayheadChange={setAudioPreviewPlayhead}
-            />
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <main className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
+            {stageHeaderModel ? (
+              <StageHeader
+                model={stageHeaderModel}
+                preview={stagePreviewRun}
+                notice={splitNotice}
+                onPrimary={handleStagePrimary}
+                onSecondary={handleStageSecondary}
+                onResetPreview={resetPreparedPreview}
+              />
+            ) : null}
 
-            <div className="rounded-[2px] border border-[#171717] bg-[#080808] px-2 py-2">
-              <div className="flex flex-wrap items-center gap-1.5">
-                {pipeline.stages.map((stage) => (
-                  <button
-                    key={stage.key}
-                    type="button"
-                    onClick={() => handleSelectTab(stage.key)}
-                    className={`min-w-[92px] flex-1 rounded-[2px] border px-2 py-1.5 text-left transition-colors ${
-                      stage.active
-                        ? "border-[#e05c00] bg-[#120b06]"
-                        : stage.isNext
-                          ? "border-[#7a3a10] bg-[#0d0803] hover:border-[#e05c00]"
-                          : stage.complete
-                            ? "border-[#202020] bg-[#0a0a0a] hover:border-[#333]"
-                            : stage.ready || stage.available
-                              ? "border-[#32200f] bg-[#0d0905] hover:border-[#7a3a10]"
-                              : "border-[#151515] bg-[#070707] hover:border-[#242424]"
-                    }`}
-                    title={`${stage.label}: ${stage.status}`}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className={`text-[8px] uppercase tracking-[0.16em] ${stage.active ? "text-[#e05c00]" : "text-[#555]"}`}>
-                        <span className="mr-1 font-mono text-[#3a3a3a]">{stage.step}</span>
-                        {stage.label}
-                        {stage.isNext && !stage.active ? <span className="ml-1 text-[#c07a3f]">· next</span> : null}
-                      </span>
-                      <span className={`h-1.5 w-1.5 rounded-full ${stage.complete ? "bg-[#3a8a3a]" : stage.ready || stage.available ? "bg-[#b46721]" : "bg-[#3d3d3d]"}`} />
-                    </div>
-                    <div className="mt-[2px] truncate font-mono text-[9px] text-[#777]">{stage.status}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
+            {tab !== "review" && (beatJoinAnalysis || !activeStageBlocked) ? (
+              <StudioAudioLane
+                analysis={beatJoinAnalysis}
+                isPreparingAudio={isPreparingAudio}
+                audioProgress={audioProgress}
+                audioStatus={audioStatus}
+                audioError={audioError}
+                bpmFallback={bpm}
+                subtitle={audioPreviewSubtitle}
+                onIngest={false}
+                onAudioUpload={handleAudioUpload}
+                onOpenIngest={() => handleSelectTab("review")}
+                onPlayheadChange={setAudioPreviewPlayhead}
+              />
+            ) : null}
 
             {tab !== "review" && tab !== "story" && storyState.confirmedTreatmentSnapshot ? (
               <StoryPlanSummaryBar
@@ -2251,20 +2251,15 @@ export default function StudioApp() {
               />
             ) : null}
 
-            {activeStageBlocked && activePipelineStage ? (
-              <WorkflowPrerequisitePanel
-                stage={activePipelineStage}
-                onOpenPrerequisite={() => {
-                  if (activePipelineStage.prerequisiteKey) handleSelectTab(activePipelineStage.prerequisiteKey);
-                }}
-              />
-            ) : <>
+            {activeStageBlocked ? null : <>
             {tab === "review" && (
               <IngestTab
                 analysis={beatJoinAnalysis}
                 audioStatus={audioStatus}
                 audioError={audioError}
+                audioProgress={audioProgress}
                 isPreparingAudio={isPreparingAudio}
+                onAudioUpload={handleAudioUpload}
                 vocalStemName={storyState.vocalStemName}
                 transcriptSummary={storyState.transcriptSummary}
                 videoSources={videoSources}
@@ -2288,7 +2283,6 @@ export default function StudioApp() {
                 onVocalStemTranscriptFailed={handleVocalStemTranscriptFailed}
               />
             )}
-
             {tab === "split" && (
               <SplitTab
                 playhead={playhead}
@@ -2435,78 +2429,36 @@ export default function StudioApp() {
                 onDropSlowdown={setDropSlowdown}
               />
             )}
-
             </>}
-
-            {tab !== "review" && tab !== "story" && !activeStageBlocked ? (
-              <ProcessActionBar
-                tab={tab}
-                done={done}
-                isRunning={isRunning || isFinalExporting || isShaderCaptureExporting}
-                progress={progress}
-                disabled={actionDisabled}
-                disabledReason={actionDisabledReason}
-                processingLabel={isFinalExporting ? "Rendering Final MP4" : `Preparing Preview · ${previewState.stage}`}
-                completedLabel={
-                  tab === "split"
-                    ? `Split Committed — ${committedBeatSplit?.segments.length ?? splitSegments.length} cuts`
-                    : completedLabel
-                }
-                onRun={tab === "split" ? handleCommitSplit : () => void runProcess()}
-                onResetDone={resetPreparedPreview}
-              />
-            ) : null}
-
           </main>
 
-          <StudioRightPanel
-            isDockCollapsed={isDockCollapsed}
-            onToggleDockCollapsed={() => setIsDockCollapsed((current) => !current)}
-            readout={readout}
-            tab={tab}
-            shuffleMode={shuffleMode}
-            manifestSegmentCount={manifestSegments.length}
-            rankedSegmentIds={manifestRankingPreview.ids}
-            previewAssetKey={previewState.currentAssetKey}
-            previewAssetUrl={previewAssetUrl}
+          <PreviewDock
+            collapsed={isDockCollapsed}
+            onToggleCollapsed={() => setIsDockCollapsed((current) => !current)}
+            expanded={isPreviewExpanded}
+            onToggleExpanded={() => setIsPreviewExpanded((current) => !current)}
             previewPlayer={previewPlayerRef.current}
             browserPreviewSegments={displayedBrowserPreviewSegments}
             browserPreviewState={browserPreviewState}
             isBrowserPreviewActive={isBrowserPreviewActive}
             previewEffectCues={displayedPreviewEffectCues}
             audioTimeline={beatJoinAnalysis}
-            isPreviewExpanded={isPreviewExpanded}
-            onTogglePreviewExpanded={() => setIsPreviewExpanded((current) => !current)}
             masterAudioUrl={beatJoinAnalysis?.audioUrl ?? null}
-            finalExportStatus={finalExportStatus}
-            finalExportUrl={finalExportUrl}
-            finalExportName={finalExportName}
-            finalExportCueCount={finalExportCueCount}
-            finalExportDisabledReason={finalExportDisabledReason}
-            isFinalExporting={isFinalExporting}
-            isShaderCaptureExporting={isShaderCaptureExporting}
-            onFinalExport={() => void runFinalExport()}
-            onWebGpuExport={() => void runWebGpuShaderCaptureExport()}
-            audioStatus={audioStatus}
-            videoStatus={videoStatus}
-            draftStatus={draftStatus}
-            nextHint={pipeline.nextHint}
+            previewAssetKey={previewState.currentAssetKey}
+            previewAssetUrl={previewAssetUrl}
           />
-          </>
         </div>
 
         <StudioStatusBar
-          previewStage={previewState.stage}
-          activeRequestKey={previewState.activeRequestKey}
-          assetKey={previewState.currentAssetKey}
           statusLabel={previewStatusLabel}
-          draftStatus={draftStatus}
+          statusTone={statusTone}
+          activity={activityLine}
+          activityTone={activityTone}
         />
       </div>
     </div>
   );
 }
-
 
 function getBestMediaRecorderMimeType() {
   if (typeof MediaRecorder === "undefined") return "";

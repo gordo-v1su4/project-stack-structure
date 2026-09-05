@@ -3,6 +3,7 @@
 import { AudioPreview } from "./AudioPreview";
 import { UploadControl } from "./UploadControl";
 import type { BeatJoinAnalysis } from "./types";
+import { Button, ProgressBar } from "./ui";
 
 type StudioAudioLaneProps = {
   analysis: BeatJoinAnalysis | null;
@@ -12,10 +13,18 @@ type StudioAudioLaneProps = {
   audioError: string | null;
   bpmFallback: number;
   subtitle: string;
+  /** On Ingest the song upload lives in the checklist, so the empty lane hides itself. */
+  onIngest: boolean;
   onAudioUpload: (files: File[]) => void | Promise<void>;
+  onOpenIngest: () => void;
   onPlayheadChange: (nextPlayhead: number) => void;
 };
 
+/**
+ * Persistent master-song lane. Once analysis exists it is the waveform that
+ * follows the user through every stage; before that it only appears outside
+ * Ingest as a one-line pointer back to the song upload.
+ */
 export function StudioAudioLane({
   analysis,
   isPreparingAudio,
@@ -24,57 +33,33 @@ export function StudioAudioLane({
   audioError,
   bpmFallback,
   subtitle,
+  onIngest,
   onAudioUpload,
+  onOpenIngest,
   onPlayheadChange,
 }: StudioAudioLaneProps) {
   if (!analysis) {
-    return (
-      <div className="space-y-2 border border-[#181818] rounded-[3px] bg-[linear-gradient(180deg,#0e0e0e_0%,#090909_100%)] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
-        <div className="flex items-end justify-between gap-4">
-          <div className="min-w-0">
-            <div className="truncate text-[11px] uppercase tracking-[0.24em] text-[#d7d7d7]">Master Song Lane</div>
-            <div className="mt-1 text-[9px] uppercase tracking-[0.22em] text-[#626262]">
-              Upload the song once and keep it available across every studio mode.
-            </div>
+    if (onIngest) {
+      return isPreparingAudio ? (
+        <div className="rounded-md border border-line bg-ink-2 px-4 py-3">
+          <div className="flex items-center justify-between gap-3 text-[12px]">
+            <span className="text-fg-1">Analyzing the master song…</span>
+            <span className="font-mono text-[11px] text-accent">{Math.floor(audioProgress)}%</span>
           </div>
+          <ProgressBar value={audioProgress} className="mt-2" />
         </div>
-
-        <UploadControl
-          accept="audio/*"
-          title={isPreparingAudio ? "Analyzing the master song…" : "Upload the master song"}
-          detail="We keep the progress bar visible while Essentia runs, then reveal the waveform and beat-driven visuals when analysis is ready."
-          actionLabel={isPreparingAudio ? "Analyzing Audio…" : "Upload Audio"}
-          disabled={isPreparingAudio}
-          isProcessing={isPreparingAudio}
-          processingProgress={audioProgress}
-          status={audioStatus}
-          error={audioError}
-          onFiles={onAudioUpload}
-        />
+      ) : null;
+    }
+    return (
+      <div className="flex items-center justify-between gap-3 rounded-md border border-line bg-ink-2 px-4 py-2.5">
+        <span className="text-[12px] text-fg-2">{isPreparingAudio ? "Analyzing the master song…" : "No master song yet. Upload it in Ingest to unlock beat sync."}</span>
+        <Button size="sm" variant="secondary" onClick={onOpenIngest}>Open Ingest</Button>
       </div>
     );
   }
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center justify-between gap-3 rounded-[3px] border border-[#181818] bg-[#0b0b0b] px-3 py-2">
-        <div>
-          <div className="text-[10px] uppercase tracking-[0.2em] text-[#d7d7d7]">Master Song Lane</div>
-          <div className="mt-1 text-[9px] uppercase tracking-[0.16em] text-[#5f5f5f]">{audioStatus}</div>
-          {audioError ? <div className="mt-1 text-[9px] font-mono text-[#d24b3f]">{audioError}</div> : null}
-        </div>
-        <UploadControl
-          accept="audio/*"
-          variant="button"
-          title=""
-          detail=""
-          actionLabel={isPreparingAudio ? "Analyzing…" : "Replace Audio"}
-          disabled={isPreparingAudio}
-          processingProgress={audioProgress}
-          onFiles={onAudioUpload}
-        />
-      </div>
-
       <AudioPreview
         analysis={analysis}
         bpmFallback={bpmFallback}
@@ -82,6 +67,21 @@ export function StudioAudioLane({
         subtitle={subtitle}
         onPlayheadChange={(nextPlayhead) => onPlayheadChange(nextPlayhead)}
       />
+      {onIngest ? (
+        <div className="flex items-center justify-between gap-3 px-1 text-[11px] text-fg-3">
+          <span className="truncate">{audioError ?? audioStatus}</span>
+          <UploadControl
+            accept="audio/*"
+            variant="button"
+            title=""
+            detail=""
+            actionLabel={isPreparingAudio ? "Analyzing…" : "Replace song"}
+            disabled={isPreparingAudio}
+            processingProgress={audioProgress}
+            onFiles={onAudioUpload}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -40,12 +40,12 @@ Eight guided stages. **Tab key** is the internal `Tab` enum value in code; **UI 
 | --- | --- | --- | --- | --- |
 | 1 | Ingest | `review` | `IngestTab` | **All lanes complete:** song analyzed, vocal stem/SRT transcribed, character + location reference sheets uploaded to RustFS, clips uploaded, scenes detected, smart captions ready (with named characters/locations in context), storage synced |
 | 2 | Story | `story` | `StoryTab` | Treatment chosen + all anchors resolved + story plan confirmed + section map ready |
-| 3 | Split | `split` | `SplitTab` | Source-window strategy committed |
+| 3 | Split | `split` | `SplitTab` | Source-window strategy chosen (commits automatically while the stage is open) |
 | 4 | Match | `shuffle` | `MatchTab` | Every edit slot has a reviewed semantic match |
-| 5 | Generate | `generate` | `GenerateTab` | No required coverage gaps (optional weak-match work may remain) |
+| 5 | Generate | `generate` | `GenerateTab` | No required coverage gaps (purple short-source and yellow weak-match review are optional) |
 | 6 | Join | `join` | `JoinTab` | Approved match timeline assembled in song order |
-| 7 | Transitions / Effects | `ramp` | `RampTab` | Join timeline exists; effects reviewed |
-| 8 | Preview / Export | `compose` | `ComposeTab` | Final preview/export assets usable |
+| 7 | Effects | `ramp` | `RampTab` | Join timeline exists; effects reviewed |
+| 8 | Export | `compose` | `ComposeTab` | Final preview/export assets usable |
 
 Pipeline gating: `src/components/studio/studioPipeline.ts` (`buildPipelineState`). **Story hard gate:** lyrics/transcript required — the API cannot reliably extract vocals from the master mix; Deepgram needs the vocal stem for phrasing and SRT chunks that drive story sections.
 
@@ -156,7 +156,7 @@ Continuity scoring payload: dominant angle/magnitude, coherence, camera motion t
 
 ### Fit policy
 
-When a segment does not fit a slot: trim, speed ramp, reject, or overlap.
+When a segment does not fit a slot: **per-slot policy** — prefer trim to required duration; allow gluing adjacent scenes from the same source when the gap is small; flag manual review when impossible. Speed ramp and reject remain options where the pipeline supports them. Never silently invent footage.
 
 ### Section preview
 
@@ -180,9 +180,11 @@ Durable object storage for uploads, scene manifests, and caption artifacts (`src
 
 ### Scene caption mode
 
-**Smart** (Qwen3-VL Instruct) is the target default — cinematic, detailed captions for matching. **Fast** (LFM) is legacy; hide behind dev flag; remove once detail presets ship. Planned: **caption detail settings** (concise / detailed / cinematic length), similar to ComfyUI prompt presets — same instruct model, different system prompt.
+**Smart** (Qwen3-VL Instruct) is the user-facing default — cinematic, detailed captions for matching. **Fast** (LFM) stays in code but is **hidden behind a dev flag** in the UI; smart is pre-selected for normal users. Remove fast entirely once smart **detail presets** ship.
 
-Captions should run **after** reference assets and vocal stem are present so Qwen receives named characters, locations, and lyric context.
+**Detail presets (v1):** length only — `concise` | `standard` | `cinematic` — same instruct model, different system prompt (ComfyUI-style detail level first; style tags deferred).
+
+**Caption timing:** block smart caption jobs until **Char 1 + Environment + vocal stem/SRT** are uploaded; run captions once with full character, location, and lyric context. Do not auto-caption immediately after scene detect when refs or stem are missing.
 
 **Story treatments** reuse the same Qwen3-VL stack (multimodal, not a second cloud LLM). See **Story treatment** under workflow stages.
 
@@ -194,12 +196,12 @@ Required before **Story** unlocks (product intent: complete during Ingest). Deep
 
 Required **before smart captions and Story**. Uploaded in Ingest (`ReferenceLibrary` in `IngestTab`). Slots:
 
-- **Character 1** (`character-1`) — primary named character; `displayName` feeds captions and story
-- **Character 2** (`character-2`) — secondary character when applicable
-- **Environment / location** (`environment`) — recurring set/world
-- **Custom** / **Crowd** — optional enrichers
+- **Character 1** (`character-1`) — primary named character; `displayName` feeds captions and story (**required**)
+- **Character 2** (`character-2`) — secondary character when applicable (optional unless duet / two-character video)
+- **Environment / location** (`environment`) — recurring set/world (**required**)
+- **Supplementary slots** — additional uploads use a **category dropdown** (crowd, environment, style/look, custom, etc.) so the user labels what each sheet is for
 
-Smart captions receive character names, location continuity, and reference images via `buildSceneCaptionSettings()` in `StudioApp.tsx`. Names in captions must match names used in the story map. **Crowd** sheets are optional; **Char 1 + environment** are minimum required when the video has named characters or a recurring location (product default: treat as required for this app).
+Smart captions receive character names, location continuity, and reference images via `buildSceneCaptionSettings()` in `StudioApp.tsx`. Names in captions must match names used in the story map. Minimum hard gate before captions/Story: **Char 1 + Environment**; Char 2 and supplementary sheets depend on the video.
 
 ### Story treatment (director pass)
 
@@ -216,6 +218,16 @@ Smart captions receive character names, location continuity, and reference image
 **Current code gap:** Story treatments now dispatch through Trigger + local Qwen (`qwen-story-treatment` → gateway `/story/treatments`). Deploy the updated caption gateway to homelab before production use.
 
 **Storyboard replacement** (Generate stage): `StoryboardPlanner` plans 2K Nano Banana boards and whole-shot replacement from the resolved edit. See `docs/plans/2026-08-30-storyboard-replacement-workflow.md` and `docs/protocols/higgsfield-nano-banana-reference-continuity.md` for creative protocol (canonical over older plans).
+
+### Generate → Join gating (product)
+
+| Signal | Color | Blocks Join? | Meaning |
+| --- | --- | --- | --- |
+| **Missing** (no primary match) | Red | **Yes** | True coverage hole — return to Match or approve a generated import |
+| **Short source** (primary assigned but shorter than slot) | Purple | **No** | Optional whole-shot replacement review; user may continue; UI should surface the issue clearly |
+| **Weak match** (score &lt; 45%) | Yellow | **No** | Optional quality reroll in Generate; not a workflow blocker |
+
+**Seedance external handoff order** (whole-shot replacement): select resolved cut → **2×2 storyboard frame grid** for that section (Nano Banana) → prepare Video_1 timing reference → copy operator packet → generate externally → import completed clip → approve exactly one candidate for Join. Storyboard is the first creative step; the current Generate UI buries this flow and needs clearer step-by-step guidance (see GitHub issue #61).
 
 ---
 

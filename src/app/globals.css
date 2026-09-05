@@ -8,8 +8,42 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-geist-sans), system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+
+  /* Studio surfaces — darkest to lightest. */
+  --color-ink-0: #060606;
+  --color-ink-1: #0a0a0a;
+  --color-ink-2: #0e0e0e;
+  --color-ink-3: #131313;
+  --color-ink-4: #1a1a1a;
+  /* Hairlines. */
+  --color-line: #1c1c1c;
+  --color-line-2: #282828;
+  --color-line-3: #383838;
+  /* Text ladder — brightest to faintest. */
+  --color-fg-0: #ececec;
+  --color-fg-1: #c8c8c8;
+  --color-fg-2: #9a9a9a;
+  --color-fg-3: #6f6f6f;
+  --color-fg-4: #4a4a4a;
+  /* Semantic. */
+  --color-accent: #e05c00;
+  --color-accent-hi: #ff7a1f;
+  --color-accent-lo: #7a3a10;
+  --color-accent-tint: #140b05;
+  --color-ok: #4caf50;
+  --color-ok-lo: #245a2a;
+  --color-ok-tint: #08130a;
+  --color-warn: #d9922e;
+  --color-warn-lo: #6f4a12;
+  --color-warn-tint: #120d05;
+  --color-danger: #e0574a;
+  --color-danger-lo: #6a2a24;
+  --color-danger-tint: #150807;
+  --color-review: #a26bd1;
+  --color-review-lo: #4d2f6b;
+  --color-review-tint: #100816;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -47,7 +81,26 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+/* Stage rail current-step pulse (only on the active stage's glyph). */
+@keyframes studio-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(224, 92, 0, 0.45); }
+  70% { box-shadow: 0 0 0 5px rgba(224, 92, 0, 0); }
+}
+
+.studio-pulse {
+  animation: studio-pulse 2.2s ease-out infinite;
+}
+
+.studio-fade-in {
+  animation: studio-fade-in 180ms ease-out both;
+}
+
+@keyframes studio-fade-in {
+  from { opacity: 0; transform: translateY(2px); }
+  to { opacity: 1; transform: none; }
 }
 
 .studio-range-control,

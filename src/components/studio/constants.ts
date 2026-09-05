@@ -7,6 +7,6 @@ export const NAV: { key: Tab; label: string; sub: string }[] = [
   { key: "shuffle", label: "Match", sub: "lyrics · clips" },
   { key: "generate", label: "Generate", sub: "fill gaps" },
   { key: "join", label: "Join", sub: "assemble" },
-  { key: "ramp", label: "Transitions / Effects", sub: "GLSL · ramps" },
-  { key: "compose", label: "Preview / Export", sub: "MP4 · WebGPU" },
+  { key: "ramp", label: "Effects", sub: "GLSL · ramps" },
+  { key: "compose", label: "Export", sub: "MP4 · WebGPU" },
 ];
