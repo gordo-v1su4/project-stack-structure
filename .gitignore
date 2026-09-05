@@ -14,10 +14,9 @@
 /coverage
 /.local-fixtures/
 
-# local research (not committed — includes external repo comparisons)
+# local research scratch (not committed)
 .research/
 _repo-research/
-documents/comparative-research/
 
 # next.js
 /.next/
