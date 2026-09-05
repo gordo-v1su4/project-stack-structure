@@ -99,6 +99,21 @@ describe("story treatment contract", () => {
     expect(parsed[0].anchors).toHaveLength(4);
   });
 
+  test("coerces string anchors from Qwen into full anchor objects", () => {
+    const stringAnchors = structuredClone(generated);
+    stringAnchors.treatments[0].anchors = [
+      "Diego and Valentina pass in a dim corridor with red haze and wet concrete walls.",
+      "They dance in the main chamber under amber cage lamps while the crowd presses in.",
+      "They move together on a wet floor as red smoke and industrial light wrap the room.",
+      "The floor splits beneath them while dancers keep moving through the wreckage.",
+    ];
+    const parsed = parseGeneratedTreatments(stringAnchors);
+    expect(parsed[0].anchors).toHaveLength(4);
+    expect(parsed[0].anchors[0].description).toContain("dim corridor");
+    expect(parsed[0].anchors[0].generationPrompt).toContain("Cinematic shot");
+    expect(parsed[0].anchors[0].purpose.length).toBeGreaterThan(10);
+  });
+
   test("classifies honest coverage and requires a resolution for missing anchors", () => {
     const treatment = hydrateTreatmentCoverage(parseGeneratedTreatments(generated), moments)[0];
     expect(treatment.anchors.some((anchor) => anchor.coverage === "covered")).toBe(true);

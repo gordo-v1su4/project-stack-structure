@@ -371,17 +371,37 @@ function parseGeneratedTreatment(value: unknown, index: number): GeneratedTreatm
     endingHook: requiredString(record.endingHook, 320, `Treatment ${index + 1} ending hook`),
     expectedReusePercent,
     expectedGenerationPercent,
-    anchors: parseGeneratedAnchors(record.anchors, index, kind),
+    anchors: parseGeneratedAnchors(record.anchors, index, {
+      kind,
+      title: requiredString(record.title, 100, `Treatment ${index + 1} title`),
+      synopsis: requiredString(record.synopsis, 900, `Treatment ${index + 1} synopsis`),
+      visualThesis: requiredString(record.visualThesis, 400, `Treatment ${index + 1} visual thesis`),
+    }),
   };
 }
 
-function parseGeneratedAnchors(rawAnchors: unknown[], treatmentIndex: number, kind: StoryTreatmentKind): GeneratedAnchor[] {
+type AnchorParseContext = {
+  kind: StoryTreatmentKind;
+  title: string;
+  synopsis: string;
+  visualThesis: string;
+};
+
+const DEFAULT_ANCHOR_TITLES = [
+  "Tunnel arrival",
+  "Crowded dance room",
+  "Search through the maze",
+  "Collapsing arena",
+] as const;
+
+function parseGeneratedAnchors(rawAnchors: unknown[], treatmentIndex: number, context: AnchorParseContext): GeneratedAnchor[] {
   const parsed: GeneratedAnchor[] = [];
   for (let anchorIndex = 0; anchorIndex < rawAnchors.length && parsed.length < 4; anchorIndex += 1) {
     try {
-      const anchor = asRecord(rawAnchors[anchorIndex], `Treatment ${treatmentIndex + 1} anchor ${anchorIndex + 1} is invalid.`);
+      const anchor = coerceAnchorRecord(rawAnchors[anchorIndex], parsed.length, context);
+      if (!anchor) continue;
       parsed.push({
-        id: limitedString(anchor.id, 80, `${kind}-anchor-${parsed.length + 1}`),
+        id: limitedString(anchor.id, 80, `${context.kind}-anchor-${parsed.length + 1}`),
         title: requiredString(anchor.title, 100, `Anchor ${parsed.length + 1} title`),
         description: requiredString(anchor.description, 500, `Anchor ${parsed.length + 1} description`),
         purpose: requiredString(anchor.purpose, 240, `Anchor ${parsed.length + 1} purpose`),
@@ -395,6 +415,28 @@ function parseGeneratedAnchors(rawAnchors: unknown[], treatmentIndex: number, ki
     throw new Error(`Treatment ${treatmentIndex + 1} must contain at least four valid anchors.`);
   }
   return parsed;
+}
+
+function coerceAnchorRecord(value: unknown, anchorIndex: number, context: AnchorParseContext): Record<string, unknown> | null {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  if (typeof value !== "string" || !value.trim()) return null;
+  const description = value.trim();
+  const title = inferAnchorTitle(description, anchorIndex);
+  return {
+    id: `${context.kind}-anchor-${anchorIndex + 1}`,
+    title,
+    description,
+    purpose: `Advance the ${title.toLowerCase()} beat in the ${context.title} treatment.`,
+    generationPrompt: `Cinematic shot: ${description} ${context.visualThesis}`.trim(),
+  };
+}
+
+function inferAnchorTitle(description: string, anchorIndex: number) {
+  const clause = description.split(/[,.]/)[0]?.trim() ?? "";
+  if (clause.length >= 8 && clause.length <= 100) return clause;
+  return DEFAULT_ANCHOR_TITLES[anchorIndex] ?? `Anchor ${anchorIndex + 1}`;
 }
 
 function normalizeTreatmentKind(value: unknown): StoryTreatmentKind | null {
