@@ -25,7 +25,7 @@
   --color-fg-0: #ececec;
   --color-fg-1: #c8c8c8;
   --color-fg-2: #9a9a9a;
-  --color-fg-3: #6f6f6f;
+  --color-fg-3: #858585; /* ≥4.5:1 on every ink-* surface; labels and status text. */
   --color-fg-4: #4a4a4a;
   /* Semantic. */
   --color-accent: #e05c00;

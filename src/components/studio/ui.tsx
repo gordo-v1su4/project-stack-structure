@@ -132,7 +132,13 @@ export function Meta({ label, value, className = "" }: { label: string; value: R
 export function ProgressBar({ value, tone = "processing", className = "" }: { value: number; tone?: StatusTone; className?: string }) {
   const clamped = Math.max(0, Math.min(100, value));
   return (
-    <div className={`h-[3px] w-full overflow-hidden rounded-full bg-ink-4 ${className}`}>
+    <div
+      role="progressbar"
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={Math.round(clamped)}
+      className={`h-[3px] w-full overflow-hidden rounded-full bg-ink-4 ${className}`}
+    >
       <div className={`h-full ${tone === "ready" ? "bg-ok" : "bg-accent"} transition-[width] duration-300`} style={{ width: `${clamped}%` }} />
     </div>
   );

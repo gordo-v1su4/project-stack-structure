@@ -31,7 +31,7 @@ Tokens live in `src/app/globals.css` under `@theme` and are the only source of c
 
 ## Interaction rules
 
-- One primary action per stage, built by `buildStageHeaderModel` (`stageActions.ts`). Its label says what it does (“Continue to Match”, “Open Ingest”); disabled buttons carry the reason as a title and, for Continue, under the button.
+- At most one primary action per stage, built by `buildStageHeaderModel` (`stageActions.ts`): “Open <prerequisite>” when blocked, otherwise “Continue to <next>”. Its label says what it does; disabled buttons carry the reason as a title and, for Continue, under the button. The terminal Export stage has no header primary — its export controls live in the panel.
 - Preview is the secondary action on stages that can render one. It never advances the stage.
 - Blocked stages render the header with the reason and “Open <prerequisite>” and nothing else.
 - Guided workflow stages may be soft-gated, but actions that would produce invalid edits must be hard-gated.

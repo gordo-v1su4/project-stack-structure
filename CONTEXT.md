@@ -201,7 +201,7 @@ Required **before smart captions and Story**. Uploaded in Ingest (`ReferenceLibr
 - **Environment / location** (`environment`) — recurring set/world (**required**)
 - **Supplementary slots** — additional uploads use a **category dropdown** (crowd, environment, style/look, custom, etc.) so the user labels what each sheet is for
 
-Smart captions receive character names, location continuity, and reference images via `buildSceneCaptionSettings()` in `StudioApp.tsx`. Names in captions must match names used in the story map. Minimum hard gate before captions/Story: **Char 1 + Environment**; Char 2 and supplementary sheets depend on the video.
+Smart captions receive character names, location continuity, and reference images via `buildSceneCaptionSettings()` in `StudioApp.tsx`. Names in captions must match names used in the story map. Minimum reference-asset gate: **Char 1 + Environment**; Char 2 and supplementary sheets depend on the video. Smart captions additionally wait for the **vocal stem/SRT** (see *Caption timing* above); Story requires the same reference gate plus the stem.
 
 ### Story treatment (director pass)
 

@@ -3,7 +3,7 @@
 import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import { extractWaveformData, fetchEssentiaAnalysis, getEssentiaStorageFromPayload, parseEssentiaPayload } from "./studio/audioAnalysis";
 import type { DeepgramTranscriptSummary } from "./studio/deepgramUtils";
-import { NAV } from "./studio/constants";
+import { NAV, resolveCaptionMode } from "./studio/constants";
 import { mergeUploadedVideoSourceUpdate, needsSceneDetectionRetry, prepareVideoSources, reconcileSourceCaptionStatus, rerunSourceSceneAnalysis, revokePreparedVideoSources, selectSceneRetrySources } from "./studio/mediaUpload";
 import { uploadFileInChunks } from "./studio/chunkedUploadClient";
 import type { VideoSceneUpdate } from "./studio/mediaUpload";
@@ -177,7 +177,9 @@ export default function StudioApp() {
 
   const audioFileRef = useRef<File | null>(null);
   const videoFilesByMediaKeyRef = useRef(new Map<string, Blob>());
-  const previewPlayerRef = useRef(new BrowserPreviewPlayer({ warmSourceLimit: 4, warmAheadSegments: 8 }));
+  // Stable singleton held in state so render can read it without touching a ref.
+  const [previewPlayer] = useState(() => new BrowserPreviewPlayer({ warmSourceLimit: 4, warmAheadSegments: 8 }));
+  const previewPlayerRef = useRef(previewPlayer);
   const [browserPreviewState, setBrowserPreviewState] = useState<PreviewPlayerState>(createPreviewPlayerState);
   const [isBrowserPreviewActive, setIsBrowserPreviewActive] = useState(false);
   const [isPreviewExpanded, setIsPreviewExpanded] = useState(false);
@@ -505,7 +507,8 @@ export default function StudioApp() {
     videoFilesByMediaKeyRef.current.clear();
     setBeatJoinAnalysis(draft.analysis);
     setAudioStatus(draft.analysis ? `Restored · ${draft.analysis.sourceLabel}` : "Upload a song to unlock beat sync.");
-    setVideoSources(draft.videoSources.map((source) => reconcileSourceCaptionStatus(source, draft.captionSettings?.mode ?? "smart")));
+    const restoredCaptionMode = resolveCaptionMode(draft.captionSettings?.mode);
+    setVideoSources(draft.videoSources.map((source) => reconcileSourceCaptionStatus(source, restoredCaptionMode)));
     setVideoStatus(draft.videoSources.length
       ? `Restored ${draft.videoSources.length} clip${draft.videoSources.length === 1 ? "" : "s"} from durable storage.`
       : "Upload one or more video clips to begin.");
@@ -514,7 +517,7 @@ export default function StudioApp() {
       ...draft.storyState,
       editSettings: normalizeStoryEditSettings(draft.storyState.editSettings),
     });
-    setCaptionMode(draft.captionSettings?.mode ?? "smart");
+    setCaptionMode(restoredCaptionMode);
     setMusicVideoProject(draft.musicVideoProject);
     setReferenceAssets(draft.referenceAssets ?? []);
     setGeneratedAssets(draft.generatedAssets ?? []);
@@ -1785,6 +1788,9 @@ export default function StudioApp() {
   const shouldAutoCommitSplit = tab === "split" && splitSegments.length > 0 && !isCommittedSplitCurrent;
   useEffect(() => {
     if (!shouldAutoCommitSplit) return;
+    // The committed split is derived state that several stages read; syncing it
+    // here (guarded by the signature) is the one place the derivation happens.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     handleCommitSplit();
     // handleCommitSplit closes over the latest split state; the signature guard prevents re-runs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1974,7 +1980,7 @@ export default function StudioApp() {
       ? retainedBrowserPreviewSegments
       : browserPreviewSegments.length > 0
         ? browserPreviewSegments
-        : previewPlayerRef.current.getSegments();
+        : previewPlayer.getSegments();
   const displayedPreviewEffectCues = tab === "join"
     ? []
     : tab === "generate" && generatePreviewRange
@@ -2232,12 +2238,9 @@ export default function StudioApp() {
                 analysis={beatJoinAnalysis}
                 isPreparingAudio={isPreparingAudio}
                 audioProgress={audioProgress}
-                audioStatus={audioStatus}
                 audioError={audioError}
                 bpmFallback={bpm}
                 subtitle={audioPreviewSubtitle}
-                onIngest={false}
-                onAudioUpload={handleAudioUpload}
                 onOpenIngest={() => handleSelectTab("review")}
                 onPlayheadChange={setAudioPreviewPlayhead}
               />
@@ -2437,7 +2440,7 @@ export default function StudioApp() {
             onToggleCollapsed={() => setIsDockCollapsed((current) => !current)}
             expanded={isPreviewExpanded}
             onToggleExpanded={() => setIsPreviewExpanded((current) => !current)}
-            previewPlayer={previewPlayerRef.current}
+            previewPlayer={previewPlayer}
             browserPreviewSegments={displayedBrowserPreviewSegments}
             browserPreviewState={browserPreviewState}
             isBrowserPreviewActive={isBrowserPreviewActive}

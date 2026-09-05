@@ -13,9 +13,7 @@ import { Button, Kicker, StatusDot, TONE_TEXT, type StatusTone } from "../ui";
 import type { DeepgramTranscriptSummary } from "../deepgramUtils";
 import { REFERENCE_ASSET_SLOT_DETAILS, REFERENCE_ASSET_SLOT_LABELS, type ReferenceAsset, type ReferenceAssetKind, type ReferenceAssetLibraryRole, type ReferenceAssetRole } from "../referenceAssets";
 import type { BeatJoinAnalysis, DetectedSceneSegment, SceneCaptionMode, UploadedVideoSource } from "../types";
-
-/** Fast (LFM) captions stay in code for dev comparison; Smart is the product default. */
-const FAST_CAPTIONS_ENABLED = process.env.NEXT_PUBLIC_ENABLE_FAST_CAPTIONS === "1";
+import { FAST_CAPTIONS_ENABLED } from "../constants";
 
 type IngestTabProps = {
   analysis: BeatJoinAnalysis | null;
