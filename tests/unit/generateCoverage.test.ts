@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
-import { buildCoverageIssueGroups, buildCoverageSlots, describeCoverageIssue, summarizeCoverage } from "@/components/studio/editPlanCoverage";
+import { buildCoverageIssueGroups, buildCoverageSlots, describeCoverageIssue, summarizeCoverage, analyzeEditPlanCoverage } from "@/components/studio/editPlanCoverage";
+import type { GeneratedStudioAsset } from "@/components/studio/generatedAssets";
 import type { MusicVideoProject, SemanticClipMatch, TimelineItem, VideoMoment } from "@/components/studio/musicVideoProject";
 
 function match(momentId: string, score: number): SemanticClipMatch {
@@ -120,5 +121,43 @@ describe("Generate coverage truth", () => {
     });
     const shortIssues = buildCoverageIssueGroups(shortSlots);
     expect(describeCoverageIssue(shortIssues[0]!)).toBe("The assigned source covers 0:03 of 0:05, leaving 0:02 uncovered. Inspect the resolved edit and, if needed, regenerate the whole shot with handles.");
+  });
+
+  test("approved generated replacement clears a true gap for Join gating", () => {
+    const missingItem: TimelineItem = {
+      id: "item-missing",
+      sectionId: "intro",
+      lyricChunkIds: [],
+      videoMomentId: null,
+      start: 0,
+      end: 10,
+      label: "Intro",
+      prompt: "Opening",
+    };
+    const baseProject = project(missingItem);
+    const approvedAsset: GeneratedStudioAsset = {
+      id: "gen-1",
+      provider: "higgsfield",
+      model: "Seedance 2.0",
+      prompt: "Approved replacement",
+      createdAt: "2026-09-05T00:00:00.000Z",
+      status: "completed",
+      mediaKind: "video",
+      reviewStatus: "approved",
+      target: {
+        timelineItemId: missingItem.id,
+        sectionId: missingItem.sectionId,
+        sectionLabel: missingItem.label,
+        songStart: missingItem.start,
+        songEnd: missingItem.end,
+      },
+    };
+
+    expect(analyzeEditPlanCoverage(baseProject, [], []).trueGapCount).toBe(1);
+    expect(analyzeEditPlanCoverage(baseProject, [], [approvedAsset]).trueGapCount).toBe(0);
+    expect(summarizeCoverage(buildCoverageSlots(baseProject, [], [approvedAsset]), 10)).toMatchObject({
+      blockingGapCount: 0,
+      requiredNeedCount: 0,
+    });
   });
 });

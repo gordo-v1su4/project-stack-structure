@@ -2038,6 +2038,7 @@ export default function StudioApp() {
       && Boolean(storyState.confirmedTreatmentId)
       && Boolean(storyState.storyContentSignature),
     musicVideoProject,
+    generatedAssets,
     storySegmentCount: storyPreviewSegments.length,
     hasCommittedSplit: isCommittedSplitCurrent,
     shaderPresetLabel: shaderPresetSummary.preset.label,
@@ -2059,6 +2060,7 @@ export default function StudioApp() {
     isCommittedSplitCurrent,
     shaderPresetSummary.preset.label,
     finalExportUrl,
+    generatedAssets,
   ]);
   const activePipelineStage = pipeline.stages.find((stage) => stage.active) ?? null;
   const activeStageBlocked = Boolean(activePipelineStage && !activePipelineStage.available);

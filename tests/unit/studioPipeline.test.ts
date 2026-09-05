@@ -1,6 +1,35 @@
 import { describe, expect, test } from "bun:test";
 
 import { buildPipelineState, type PipelineStageInput } from "@/components/studio/studioPipeline";
+import { buildStudioPipelineInput } from "@/components/studio/buildStudioPipelineInput";
+import type { GeneratedStudioAsset } from "@/components/studio/generatedAssets";
+import type { MusicVideoProject, TimelineItem } from "@/components/studio/musicVideoProject";
+import type { ReferenceAsset } from "@/components/studio/referenceAssets";
+
+const readyReferenceAssets: ReferenceAsset[] = [
+  {
+    id: "char-1",
+    role: "character-1",
+    kind: "character",
+    displayName: "Char 1",
+    fileName: "char1.png",
+    previewUrl: "https://example.com/char1.png",
+    promptHint: "",
+    storageStatus: "uploaded",
+    createdAt: "2026-09-05T00:00:00.000Z",
+  },
+  {
+    id: "env-1",
+    role: "environment",
+    kind: "environment",
+    displayName: "Environment",
+    fileName: "env.png",
+    previewUrl: "https://example.com/env.png",
+    promptHint: "",
+    storageStatus: "uploaded",
+    createdAt: "2026-09-05T00:00:00.000Z",
+  },
+];
 
 function makeInput(overrides: Partial<PipelineStageInput> = {}): PipelineStageInput {
   return {
@@ -244,6 +273,89 @@ describe("studio pipeline state", () => {
       available: true,
       ready: true,
     });
+  });
+
+  test("approved generated replacements unblock Join when edit plan still has missing primaries", () => {
+    const missingItem: TimelineItem = {
+      id: "item-gap",
+      sectionId: "intro",
+      lyricChunkIds: [],
+      videoMomentId: null,
+      start: 0,
+      end: 8,
+      label: "Intro",
+      prompt: "Opening",
+    };
+    const musicVideoProject: MusicVideoProject = {
+      id: "project-1",
+      song: null,
+      duration: 8,
+      lyricChunks: [],
+      storySections: [],
+      videoMoments: [],
+      editPlan: { id: "edit-1", timelineItems: [missingItem], createdAt: "2026-09-05T00:00:00.000Z" },
+      reviewFindings: [],
+    };
+    const approvedAsset: GeneratedStudioAsset = {
+      id: "gen-approved",
+      provider: "higgsfield",
+      model: "Seedance 2.0",
+      prompt: "Approved replacement",
+      createdAt: "2026-09-05T00:00:00.000Z",
+      status: "completed",
+      mediaKind: "video",
+      reviewStatus: "approved",
+      target: {
+        timelineItemId: missingItem.id,
+        sectionId: missingItem.sectionId,
+        sectionLabel: missingItem.label,
+        songStart: missingItem.start,
+        songEnd: missingItem.end,
+      },
+    };
+
+    const blocked = buildPipelineState(buildStudioPipelineInput({
+      activeTab: "generate",
+      hasAudioAnalysis: true,
+      hasLyricTranscript: true,
+      referenceAssets: readyReferenceAssets,
+      videoCount: 2,
+      sceneCount: 10,
+      captionReadyCount: 10,
+      captionTotalCount: 10,
+      storyTreatmentSelected: true,
+      storyAnchorsResolved: true,
+      storyPlanConfirmed: true,
+      musicVideoProject,
+      generatedAssets: [],
+      storySegmentCount: 12,
+      hasCommittedSplit: true,
+      shaderPresetLabel: "Beat Pulse",
+      finalExportReady: false,
+    }));
+    const unblocked = buildPipelineState(buildStudioPipelineInput({
+      activeTab: "generate",
+      hasAudioAnalysis: true,
+      hasLyricTranscript: true,
+      referenceAssets: readyReferenceAssets,
+      videoCount: 2,
+      sceneCount: 10,
+      captionReadyCount: 10,
+      captionTotalCount: 10,
+      storyTreatmentSelected: true,
+      storyAnchorsResolved: true,
+      storyPlanConfirmed: true,
+      musicVideoProject,
+      generatedAssets: [approvedAsset],
+      storySegmentCount: 12,
+      hasCommittedSplit: true,
+      shaderPresetLabel: "Beat Pulse",
+      finalExportReady: false,
+    }));
+
+    expect(blocked.stages.find((stage) => stage.key === "generate")).toMatchObject({ ready: false });
+    expect(unblocked.stages.find((stage) => stage.key === "generate")).toMatchObject({ ready: true });
+    expect(unblocked.stages.find((stage) => stage.key === "join")).toMatchObject({ available: true, ready: true });
   });
 
   test("marks the active tab", () => {

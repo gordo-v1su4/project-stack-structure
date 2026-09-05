@@ -11,7 +11,13 @@ import {
   type ReferenceAsset,
 } from "../referenceAssets";
 import type { BeatJoinAnalysis, ColorPaletteSwatch, MotionDescriptor } from "../types";
-import { buildGeneratedAssetContextPreview, resolveGeneratedAssetTrimFrameControl, resolveGeneratedAssetTrimWindow, type GeneratedStudioAsset } from "../generatedAssets";
+import {
+  buildGeneratedAssetContextPreview,
+  generatedAssetMatchesPreviewSegment,
+  resolveGeneratedAssetTrimFrameControl,
+  resolveGeneratedAssetTrimWindow,
+  type GeneratedStudioAsset,
+} from "../generatedAssets";
 import { uploadGeneratedClipToRustFs } from "../generatedClipUpload";
 import { buildSeedanceContinuationPacket, serializeSeedanceContinuationPacket, type SeedanceVideoModel } from "../seedanceContinuation";
 import { buildSeedanceAudioPlacementKey } from "../seedanceAudioReference";
@@ -179,7 +185,10 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
     lyricBlend: lyricCueBlend / 100,
     lyricMergeWindowSeconds: lyricMergeWindow,
   }), [analysis, lyricCueBlend, lyricMergeWindow, onsetDensity, project]);
-  const slots = useMemo(() => buildCoverageSlots(project, cueMap.chunks), [cueMap.chunks, project]);
+  const slots = useMemo(
+    () => buildCoverageSlots(project, cueMap.chunks, persistedGeneratedAssets),
+    [cueMap.chunks, persistedGeneratedAssets, project],
+  );
   const coverage = useMemo(() => summarizeCoverage(slots, cueMap.duration), [cueMap.duration, slots]);
   const issueGroups = useMemo(() => buildCoverageIssueGroups(slots), [slots]);
   const requiredIssues = issueGroups.filter((issue) => issue.status === "missing");
@@ -198,26 +207,6 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
   });
   const effectiveReferenceSelection = useMemo(() => fillDefaultReferenceSelection(referenceSelection, referenceAssets), [referenceAssets, referenceSelection]);
   const hasRequiredInputs = storyGenerated && Boolean(project?.editPlan.timelineItems.length);
-  const storyboardFrameCount = useMemo(
-    () => countStoryboardFramesForSegment(persistedGeneratedAssets, selectedReturnSegment),
-    [persistedGeneratedAssets, selectedReturnSegment],
-  );
-  const importedForSegmentCount = useMemo(
-    () => persistedGeneratedAssets.filter((asset) =>
-      asset.mediaKind === "video"
-      && asset.target?.sectionId === selectedReturnSegment?.sectionId
-      && asset.reviewStatus !== "rejected",
-    ).length,
-    [persistedGeneratedAssets, selectedReturnSegment],
-  );
-  const approvedForJoin = useMemo(
-    () => persistedGeneratedAssets.some((asset) =>
-      asset.mediaKind === "video"
-      && asset.reviewStatus === "approved"
-      && asset.target?.sectionId === selectedReturnSegment?.sectionId,
-    ),
-    [persistedGeneratedAssets, selectedReturnSegment],
-  );
   const checkLocalGenerator = async () => {
     setGenerationStatus("Checking SwarmUI gateway...");
     try {
@@ -478,14 +467,7 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
         </section>
 
         <section className="rounded-[2px] border border-[#1a1a1a] bg-[#0b0b0b] p-3 xl:sticky xl:top-3 xl:max-h-[calc(100vh-190px)] xl:self-start xl:overflow-y-auto">
-          <ReplacementWorkflowChecklist
-            selectedSegment={selectedReturnSegment}
-            slot={focusSlot}
-            storyboardFrameCount={storyboardFrameCount}
-            importedAssetCount={importedForSegmentCount}
-            approvedForJoin={approvedForJoin}
-          />
-          <div className="mb-3 mt-4">
+          <div className="mb-3">
             <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Whole-shot replacement lab</div>
             <div className="mt-1 text-[11px] text-[#6d6d6d]">Generate the complete action plus edit handles. Source frames guide composition; canonical character sheets control identity. No stitched continuation of the same movement.</div>
           </div>
@@ -1119,6 +1101,29 @@ function FrameExtensionPanel({
       placementKey: activeAudioReference.placementKey,
     } : undefined,
   });
+  const storyboardFrameCount = useMemo(
+    () => countStoryboardFramesForSegment(persistedGeneratedAssets, selectedSegment),
+    [persistedGeneratedAssets, selectedSegment],
+  );
+  const selectedTimelineItemId = slot?.item.id;
+  const importedForSegmentCount = useMemo(
+    () => persistedGeneratedAssets.filter((asset) =>
+      asset.mediaKind === "video"
+      && asset.reviewStatus !== "rejected"
+      && selectedSegment
+      && generatedAssetMatchesPreviewSegment(asset, selectedSegment, selectedTimelineItemId),
+    ).length,
+    [persistedGeneratedAssets, selectedSegment, selectedTimelineItemId],
+  );
+  const approvedForJoin = useMemo(
+    () => persistedGeneratedAssets.some((asset) =>
+      asset.mediaKind === "video"
+      && asset.reviewStatus === "approved"
+      && selectedSegment
+      && generatedAssetMatchesPreviewSegment(asset, selectedSegment, selectedTimelineItemId),
+    ),
+    [persistedGeneratedAssets, selectedSegment, selectedTimelineItemId],
+  );
   const [seedanceCopyStatus, setSeedanceCopyStatus] = useState("Ready to copy the operator packet.");
   const prepareSeedanceSubmission = async () => {
     if (!masterAudioRef || !placementKey || songEnd <= songStart) {
@@ -1183,6 +1188,15 @@ function FrameExtensionPanel({
 
   return (
     <div className="space-y-3">
+      <ReplacementWorkflowChecklist
+        selectedSegment={selectedSegment}
+        slot={slot}
+        storyboardFrameCount={storyboardFrameCount}
+        importedAssetCount={importedForSegmentCount}
+        approvedForJoin={approvedForJoin}
+        audioReferenceReady={Boolean(activeAudioReference)}
+        packetErrorCount={seedancePacket.errors.length}
+      />
       {selectedSegment ? (
         <div className="rounded-[2px] border border-[#2b2119] bg-[#100a06] px-2 py-1.5 font-mono text-[8px] text-[#b27a56]">
           Selected cut anchor · {selectedSegment.sourceRefLabel ?? moment?.sourceRefLabel ?? "source"} · song {fmtCutTime(selectedSegment.musicStart)}–{fmtCutTime(selectedSegment.musicEnd)} · source {fmtCutTime(selectedSegment.startTime)}–{fmtCutTime(selectedSegment.endTime)}
