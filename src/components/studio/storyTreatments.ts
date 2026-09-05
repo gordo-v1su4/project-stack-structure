@@ -149,7 +149,7 @@ export const STORY_TREATMENTS_JSON_SCHEMA = {
   },
 } as const;
 
-export const STORY_CAPTION_CLUSTER_LIMIT = 36;
+export const STORY_CAPTION_CLUSTER_LIMIT = 28;
 export const STORY_CAPTION_CLUSTER_MAX_CHARS = 220;
 export const STORY_LYRIC_EXCERPT_MAX_CHARS = 1_200;
 

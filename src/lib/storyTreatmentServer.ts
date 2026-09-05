@@ -41,7 +41,7 @@ export async function queueStoryTreatmentGeneration(
     instructions: STORY_DIRECTOR_INSTRUCTIONS,
     input: buildStoryInput(request, attempt),
     model,
-    maxTokens: 1_536,
+    maxTokens: 2_800,
   });
   return { runId: handle.id, model };
 }
@@ -103,7 +103,7 @@ If the captions describe a river, drowning, or water peril, do not rewrite the s
 If an essential beat is not supported by any caption cluster, describe it as a generation-ready anchor instead of pretending footage exists.
 Keep any simulation, competition, or last-one-standing reveal late unless the brief explicitly requests an early reveal.
 Write in concrete, filmable images with clear geography, movement, escalation, and an ending hook. Avoid generic romance language and abstract mood-board filler.
-Each treatment needs four to six chronological anchors. Each anchor's generationPrompt must be a standalone, filmable shot description without provider syntax.
+Each treatment needs exactly four chronological anchors. Keep every text field concise so the full JSON fits in one response.
 Each treatment must include: id, kind, title, logline, synopsis, visualThesis, endingHook, expectedReusePercent, expectedGenerationPercent, and anchors.`;
 
 export function buildStoryInput(request: StoryTreatmentRequest, attempt: number) {
