@@ -10,7 +10,7 @@ describe("resolveSceneCaptionGatewayAuth", () => {
       SCENE_CAPTION_SMART_GATEWAY_TOKEN: "token",
     });
     expect(auth.gatewayUrl).toBe("http://127.0.0.1:18091");
-    expect(auth.token).toBe("");
+    expect(auth.token).toBe("token");
   });
 
   test("keeps bearer auth for public gateway callers", () => {

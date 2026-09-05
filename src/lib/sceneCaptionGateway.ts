@@ -18,11 +18,9 @@ export function resolveSceneCaptionGatewayAuth(
     || "http://127.0.0.1:18091"
   ).replace(/\/+$/, "");
   const isLoopbackGateway = /^https?:\/\/(?:127\.0\.0\.1|localhost|192\.168\.8\.222)(?::\d+)?$/i.test(gatewayUrl);
-  const token = (env.STACK_STRUCTURE_LOCAL_TRIGGER === "1" || isLoopbackGateway)
-    ? ""
-    : env.SCENE_CAPTION_SMART_GATEWAY_TOKEN
-      || env.QWEN_CAPTION_GATEWAY_TOKEN
-      || "";
+  const token = env.SCENE_CAPTION_SMART_GATEWAY_TOKEN
+    || env.QWEN_CAPTION_GATEWAY_TOKEN
+    || "";
   return { gatewayUrl, token, isLoopbackGateway };
 }
 
