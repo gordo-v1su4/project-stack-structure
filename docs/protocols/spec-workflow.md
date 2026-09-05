@@ -1,131 +1,48 @@
 # Spec Workflow Protocol
 
-## Purpose
-This protocol defines how ideas become implementation-ready work without reopening ambiguity.
+## When this applies
 
-## Core Rule
-No implementation should start until the work has:
-- explicit intent,
-- explicit non-goals,
-- explicit acceptance criteria,
-- explicit verification steps,
-- an explicit performance/correctness constraint when media behavior is involved.
+Use this protocol for substantial product changes, architecture decisions, or requests with unresolved requirements. Small fixes, documentation edits, and implementation already covered by a spec can proceed from the user's request and relevant code. They do not require an interview, new planning documents, or an approval checkpoint.
 
-## Canonical Flow
+Historical plans describe the decisions for their own work. They do not automatically expand a new task or require its author to repeat that process.
 
-### 1. Deep interview
-Use deep interview when the request is broad, cross-cutting, or easy to misinterpret.
+## Establish the outcome
 
-Expected output:
-- context snapshot in `docs/plans/`
-- interview summary in `docs/plans/`
-- execution-ready spec in `docs/plans/`
+For substantial work, capture intent, scope, non-goals, observable acceptance criteria, and verification in an existing relevant document under `docs/plans/`. Create a new spec when the work needs its own durable record. Include performance and correctness constraints when media behavior changes.
 
-For this project, deep interview clarified:
-- musical alignment is the top priority,
-- motion continuity is the default visual mode,
-- post-cut segment analysis is the correct unit,
-- accuracy matters more than a quick scan,
-- web-first is acceptable but reversible.
+Ask focused questions only when unresolved choices materially change the outcome. Make reasonable implementation decisions from existing requirements and continue independent work while a necessary answer is pending. Use a deeper interview when the request actually needs one.
 
-### 2. Ralplan / consensus planning
-Use `$ralplan` once ambiguity is low enough that architectural and test planning can proceed.
+Planning-only requests finish with an actionable plan. Implementation requests continue through implementation and verification unless the user explicitly requested an intermediate review or an action exceeds the authorized scope.
 
-Expected output:
-- PRD in `docs/plans/prd-*.md`
-- test spec in `docs/plans/test-spec-*.md`
+## Plan to fit the change
 
-A valid PRD/test-spec pair must include:
-- requirements summary,
-- acceptance criteria,
-- roadmap or implementation phases,
-- risks and mitigations,
-- verification plan,
-- architectural decision record (ADR) for consensus planning.
+Use these sections where relevant; omit sections that add no useful information:
 
-### 3. Execution gate
-Execution modes such as `$ralph` or `$team` should start only after the PRD and test spec exist.
+- Problem, user outcome, scope, and non-goals
+- Touchpoints and data contracts
+- UI states and performance/correctness constraints
+- Acceptance criteria and verification plan
+- For architecture decisions: alternatives, tradeoffs, risks, and the chosen approach
 
-Execution must preserve:
-- ranking precedence,
-- segmentation rules,
-- fit fallback behavior,
-- platform decision constraints,
-- verification expectations.
+A separate PRD, test spec, and ADR are useful for complex work; they are not prerequisites for every change. Older project artifacts refer to `$ralplan`, `$ralph`, and `$team`. These are historical tool-specific workflows, not required dependencies. Use available tools to achieve the outcome without blocking on an unavailable skill.
 
-### 4. Verification gate
-Media-affecting execution must prove:
-- no silent drift between preview and musical accents,
-- no overlap between stale work and current playback,
-- no regression in ranking precedence,
-- no unsupported media path being silently treated as valid.
+## Execute and verify
 
-## Required Sections for Future Feature Specs
-Every future feature spec for this app should include:
-1. **Problem / intent**
-2. **User outcome**
-3. **In scope**
-4. **Non-goals**
-5. **Touchpoints**
-6. **Data contracts**
-7. **UI states**
-8. **Performance / correctness constraints**
-9. **Acceptance criteria**
-10. **Verification plan**
+Preserve the applicable product contracts: musical fit takes priority over motion continuity, post-cut segments remain the analysis unit, segmentation and fit fallbacks remain explicit, and playback uses prepared previews. Retain existing platform decision constraints. For affected media paths, verify that:
 
-## Artifact Map
-```text
-docs/plans/        # canonical, tracked: context snapshots, interview
-                   # summaries, specs, PRDs, test specs
-docs/              # durable docs (roadmap, architecture, protocols)
-```
+- previews stay aligned with musical accents;
+- stale work cannot replace or overlap current playback;
+- ranking precedence remains correct;
+- unsupported media paths fail explicitly.
 
-No tool-local directory is canonical; anything not in `docs/plans/` or
-`docs/` is disposable cache.
+Choose checks based on changed behavior using [tests/README.md](../../tests/README.md). A UI change may need browser interaction; a pipeline change may need real media output. Local tests alone do not establish production sign-in or service health. Keep the pre-PR check required by [AGENTS.md](../../AGENTS.md).
 
-Recommended durable docs:
-```text
-docs/roadmap.md
-docs/architecture/media-pipeline.md
-docs/protocols/spec-workflow.md
-docs/protocols/latency-budget.md
-```
+Complete authorized implementation, inspect relevant results, and fix regressions caused by the change. Once the acceptance criteria and required checks are satisfied, report the outcome and any remaining limitations. If blocked, identify the missing input or failed dependency and what remains unverified.
 
-## Roles and Responsibilities
-### Deep interview
-- clarifies intent
-- makes non-goals explicit
-- closes requirement ambiguity
+## Durable records and changes of scope
 
-### Ralplan
-- chooses and stress-tests architecture
-- writes PRD and test spec
-- makes the plan execution-safe
+Keep canonical plans in `docs/plans/` and durable architecture, protocols, and runbooks in `docs/`. Tool-local planning caches are not the source of truth.
 
-### Ralph / Team
-- execute against approved artifacts
-- gather fresh verification evidence
-- do not reopen settled planning decisions unless new evidence forces it
+Update the affected artifact when a later idea changes one part of the work; do not restart settled planning without new evidence. A change to musicality precedence is a major product decision: reconcile the affected spec, tests, and downstream contracts before calling that change complete.
 
-## Change Management Rule
-If a later idea changes only one branch of work, update the relevant artifact rather than restarting the whole process.
-
-Examples:
-- a new continuity mode updates the PRD/test spec and relevant docs,
-- a new hardware test lane updates the latency budget doc,
-- a change to musicality precedence is treated as a major product decision and must update every downstream artifact.
-
-## Anti-Slop Rule
-Do not let new work enter the repo as loose notes or one-off plans.
-
-Every substantial change should map back to:
-- a source spec,
-- a PRD,
-- a test spec,
-- and explicit verification evidence.
-
-## Completion Rule
-A planning-to-execution handoff is complete only when:
-- the planning artifacts exist,
-- acceptance criteria are testable,
-- downstream implementation knows what proof is required.
+A planning handoff is complete when the intended outcome and boundaries are clear, acceptance criteria are testable, and the implementation has a usable verification plan.

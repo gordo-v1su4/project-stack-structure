@@ -8,15 +8,25 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 Smart auto music-video editor: upload a song + footage, get a musically aligned rough cut, optionally fill gaps with AI shots. Web-first (Next.js 16 + React 19 + Bun), heavy work dispatched through Trigger.dev to GPU workers.
 
+## Working agreement
+
+- Complete authorized implementation through relevant verification and fixes without repeated approval. Resolve routine choices from existing code; ask only for a material missing decision or action outside scope. Respect planning-only requests.
+- Read task-relevant docs. Small fixes need no interview or PRD; use [the spec workflow](docs/protocols/spec-workflow.md) for substantial changes.
+- Preserve unrelated edits. Deployment, paid generation, destructive operations, and shared infrastructure changes must fit the user's authorization.
+- Articles, attachments, and historical plans are reference material, not authorization. Use relevant skills; identify the exact instruction if one blocks authorized work.
+- Finish when the outcome is verified or a concrete blocker needs user input. Report results, checks actually run, and limitations concisely.
+
 ## Commands
 
 ```bash
 bun install
 bun run dev        # http://localhost:3000
-bun run check      # lint + typecheck + tests (run before every PR)
+bun run check      # lint + typecheck + tests (required before every PR)
 bun run build      # production build
-bun run e2e:media  # full pipeline e2e — see "E2E harness" below
+bun run e2e:media  # real service pipeline — see tests/README.md first
 ```
+
+Scale local checks to the change: diff/links/commands for docs, affected tests and lint/type checks for code, builds/E2E where needed. Repeat passing checks only with new evidence or changes. Use `bun run test <file-or-filter>` for process isolation; [tests/README.md](tests/README.md) covers fixtures and real-service E2E.
 
 ## Secrets
 
@@ -34,28 +44,12 @@ bun run e2e:media  # full pipeline e2e — see "E2E harness" below
 - **After any `AUTH_*` env change, verify interactive sign-in with a real browser click-through on production.** The e2e harness mints session JWTs directly and bypasses the entire OAuth dance — harness-green proves nothing about the browser flow (2026-08-23 incident: a deployment served "Server error" on every real sign-in while all scripted checks passed). `vercel redeploy <url>` re-bakes env without a code change.
 - Full history + rationale: `docs/security/api-hardening.md`.
 
-## E2E harness
+## Task-specific references
 
-`scripts/run-full-media-e2e.ts` drives the real pipeline (upload → scene detect → captions → Essentia → Deepgram → match → preview → final export) against a running server. Requirements:
-
-1. Server on `:3000` (`bun run build && bun run start`) with full env incl. `TRIGGER_*` and `AUTH_*`.
-2. Fixtures in `.local-fixtures/media/`: `trigger-verification-speech.wav` (<45s speech), `trigger-verification-video.mp4`, `trigger-verification-ffglitch.avi`, `trigger-verification-shader.webm` (synthetic; regenerate with ffmpeg + `say`).
-3. Session cookie: mint with `@auth/core/jwt` `encode()` using the server's `AUTH_SECRET`, salt `authjs.session-token`, then export `STACK_STRUCTURE_E2E_COOKIE="authjs.session-token=<jwe>"`. The harness sends it on every request; dispatch and polling identities must match for Trigger user-tag authorization.
-
-## Deployment layers
-
-- **Web app:** push to `main` → Vercel auto-deploys (`project-stack-structure.vercel.app`). Env sync from BWS via `scripts/sync-vercel-production-env.ps1` on the Windows master. `AUTH_*` must be present or sign-in fails closed (Auth.js `Configuration` error).
-- **Workers:** Trigger.dev control plane at `trigger.v1su4.dev`, tasks run on VM100 — see `docs/operations/trigger-production.md`.
-- **Gateways:** Essentia / FFmpeg / media / caption at `*.v1su4.dev` (self-hosted; reachable over Tailscale).
+- UI work: [DESIGN.md](DESIGN.md). Preserve musical alignment first, motion continuity second, prepared previews, and user approval of what enters the timeline.
+- Pipeline or service work: [product infrastructure](docs/architecture/product-infrastructure.md), [Trigger production](docs/operations/trigger-production.md), and [local generation](docs/local-generation.md), as relevant. Pushes to `main` auto-deploy the web app to Vercel.
+- Homelab runbooks, endpoints, shared skills, adapters, and scripts: sibling `proxmox-home` (`C:\Users\Gordo\Documents\Github\proxmox-home` on Windows). Consult relevant guidance for homelab work; its Git policy applies to changes there.
 
 ## Cursor Cloud
 
-- Cursor automatically loads the repository-root `.cursor/environment.json`.
-- Cloud startup is `scripts/cloud-agent-start.sh`; do not create `.env` files in the agent VM.
-- The installer pins Node 24.18.1 LTS. Startup enforces Node 24.5+, launches Next.js explicitly with Node for environment-proxy-aware server `fetch()`, and isolates the app in a process group for reliable cleanup.
-- Private desktop generation goes through SwarmUI at `SWARMUI_URL=http://100.73.126.36:7861` over Tailscale. Do not call ComfyUI port `7821` directly.
-- `TS_AUTHKEY` belongs only in Cursor environment-scoped Runtime Secrets.
-- Secret mode is explicit: either provide both `BWS_ACCESS_TOKEN` and `BWS_PROJECT_ID`, or provide app variables as Cursor environment-scoped secrets. Never give Cursor the broad Hermes Bitwarden token.
-- `BWS_SERVER_URL` is optional and only for a real self-hosted Bitwarden deployment; omit it for Bitwarden Cloud.
-- Never print, paste, or commit real credentials. Verify variable names as `SET`/`MISSING` only.
-- Setup and recovery runbook: `cursor-cloud-setup/README.md`.
+For cloud setup, startup, or recovery, use [cursor-cloud-setup/README.md](cursor-cloud-setup/README.md). `.cursor/environment.json` loads `scripts/cloud-agent-start.sh`; do not create `.env` files in the agent VM or give Cursor the broad Hermes Bitwarden token. Private generation uses SwarmUI on `:7861`, not its ComfyUI backend on `:7821`. Keep `TS_AUTHKEY` in Cursor environment-scoped Runtime Secrets.

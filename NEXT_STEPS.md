@@ -4,7 +4,9 @@ Actionable priorities for `project-stack-structure`. Canonical detail lives in [
 
 ---
 
-## Read first
+## References by task
+
+Use the references relevant to the requested work; this is a roadmap, not a prerequisite reading sequence for every edit.
 
 1. [`README.md`](README.md) — product summary and services
 2. [`docs/architecture/product-infrastructure.md`](docs/architecture/product-infrastructure.md) — how the stack fits together
@@ -53,7 +55,7 @@ Local comparative research (if you have it) lives outside git in `documents/comp
 
 ## Suggested agent prompt
 
-> Read `NEXT_STEPS.md`, then `docs/architecture/product-infrastructure.md` and the relevant section of `docs/roadmap.md` before changing studio or API code. Preserve musical alignment first, motion continuity second, and prepared preview states.
+> Implement [specific outcome] within [scope]. Success means [observable acceptance criteria]. Use the relevant code and docs to resolve implementation details. Preserve musical alignment first, motion continuity second, and prepared preview states. Run the affected checks, inspect the result where applicable, and fix failures caused by the change. Continue through verification; ask only for a material missing decision or action outside the authorized scope. Stop when the acceptance criteria are met or explain a concrete blocker.
 
 ---
 
