@@ -7,8 +7,10 @@ cutover completed on 2026-07-13. Its old v4.5.2 control plane and ClickHouse
 `scripts/start-local-trigger.ps1` intentionally fails closed for every action.
 Do not restore the old generated environment files, registry authentication,
 local project credential, Compose volumes, or pinned source checkout. The
-retired generated Trigger environment and exported worker environment were
-removed from the workstation on 2026-08-25.
+retired generated Trigger environment, the `trigger-dev-local` workstation
+checkout, and the local Higgsfield credential file were removed on
+2026-09-05. Local development uses `.env.local` materialized from BWS through
+`bun run scripts/sync-local-env.ts`.
 
 The active control plane is `https://trigger.v1su4.dev`. Production operations,
 backup requirements, version pins, ClickHouse checks, credential pointers, and

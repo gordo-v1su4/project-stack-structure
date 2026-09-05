@@ -24,13 +24,19 @@ foreach ($secret in $secrets) {
   $available[$name] = $true
 }
 
+$manifestRoot = Split-Path $ManifestPath -Parent
+$runtimeEnvPath = [string]$manifest.runtimeEnv
+if (-not [System.IO.Path]::IsPathRooted($runtimeEnvPath)) {
+  $runtimeEnvPath = Join-Path $manifestRoot $runtimeEnvPath
+}
+
 $runtimeValues = @{}
-if (Test-Path -LiteralPath $manifest.runtimeEnv) {
-  Get-Content -LiteralPath $manifest.runtimeEnv | ForEach-Object {
+if (Test-Path -LiteralPath $runtimeEnvPath) {
+  Get-Content -LiteralPath $runtimeEnvPath | ForEach-Object {
     if ($_ -match '^([^#=]+)=(.*)$') { $runtimeValues[$matches[1].Trim()] = $matches[2] }
   }
 } elseif ($RequireRuntimeEnv) {
-  throw "Runtime env file is missing: $($manifest.runtimeEnv)"
+  throw "Runtime env file is missing: $runtimeEnvPath"
 }
 
 $allMappings = @($manifest.required) + @($manifest.applicationProduction) + @($manifest.triggerProduction) + @($manifest.triggerDeployment)
