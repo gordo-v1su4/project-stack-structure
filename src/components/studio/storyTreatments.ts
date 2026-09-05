@@ -356,9 +356,10 @@ function parseGeneratedTreatment(value: unknown, index: number): GeneratedTreatm
   if (!STORY_TREATMENT_KINDS.includes(kind as StoryTreatmentKind)) {
     throw new Error(`Treatment ${index + 1} has an invalid kind.`);
   }
-  if (!Array.isArray(record.anchors) || record.anchors.length < 4 || record.anchors.length > 6) {
-    throw new Error(`Treatment ${index + 1} must contain four to six anchors.`);
+  if (!Array.isArray(record.anchors) || record.anchors.length < 4) {
+    throw new Error(`Treatment ${index + 1} must contain at least four anchors.`);
   }
+  const anchorsToParse = record.anchors.slice(0, 4);
   const expectedReusePercent = clamp(finiteNumber(record.expectedReusePercent, 0), 0, 100);
   const expectedGenerationPercent = clamp(finiteNumber(record.expectedGenerationPercent, 0), 0, 100);
   if (Math.abs((expectedReusePercent + expectedGenerationPercent) - 100) > 1) {
