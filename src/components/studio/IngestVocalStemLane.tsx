@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 
 import type { DeepgramTranscriptSummary } from "./deepgramUtils";
-import { fmt } from "./math";
 import { UploadControl } from "./UploadControl";
 import { formatVocalStemTranscriptStatus, transcribeVocalStemFile } from "./vocalStemTranscription";
 import type { BeatJoinAnalysis } from "./types";
@@ -58,7 +57,7 @@ export function IngestVocalStemLane({
     setError(null);
     setIsTranscribing(true);
     setProgress(8);
-    setStatus(`Vocal stem loaded: ${file.name}. Sending stem to Deepgram for lyrics/SRT...`);
+    setStatus(`Transcribing ${file.name}…`);
 
     progressTimer.current = window.setInterval(() => {
       setProgress((current) => Math.min(88, current + (current < 35 ? 7 : current < 65 ? 4 : 2)));
@@ -85,57 +84,49 @@ export function IngestVocalStemLane({
   }
 
   const chunkCount = transcriptSummary?.chunks.length ?? 0;
+  const statusLine = error
+    ?? (vocalStemName
+      ? `${vocalStemName}${transcriptSummary ? ` · ${chunkCount} timed lines` : isTranscribing ? ` · transcribing ${progress}%` : ""}`
+      : status);
 
   return (
-    <section className="rounded-[2px] border border-[#1a1a1a] bg-[#0b0b0b] p-3">
-      <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Vocal stem / lyrics</div>
-          <div className="mt-1 max-w-3xl text-[11px] leading-5 text-[#6d6d6d]">
-            Upload the isolated lead vocal. Deepgram turns it into timed lyric lines and SRT chunks for Match, Story, and Smart captions.
+    <section className="rounded-[2px] border border-[#1a1a1a] bg-[#0b0b0b] px-3 py-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Vocal stem</div>
+            {transcriptSummary ? (
+              <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-[#78c878]">{chunkCount} lines</span>
+            ) : null}
+          </div>
+          <div className={`mt-1 truncate text-[10px] leading-4 ${error ? "text-[#c07a3f]" : transcriptSummary ? "text-[#777]" : "text-[#6d6d6d]"}`}>
+            {!analysis
+              ? "Upload master song first, then the isolated lead vocal."
+              : statusLine}
           </div>
         </div>
-        {transcriptSummary ? (
-          <div className="font-mono text-[10px] uppercase tracking-[0.12em] text-[#78c878]">{chunkCount} timed lines</div>
-        ) : null}
+
+        <div className="shrink-0">
+          <UploadControl
+            accept="audio/*,.wav,.mp3,.m4a,.aac,.ogg"
+            title=""
+            detail=""
+            actionLabel={isTranscribing ? `${progress}%` : transcriptSummary ? "Replace stem" : "Upload stem"}
+            variant="button"
+            disabled={disabled || isTranscribing || !analysis}
+            onFiles={handleUpload}
+          />
+        </div>
       </div>
 
-      <UploadControl
-        accept="audio/*,.wav,.mp3,.m4a,.aac,.ogg"
-        title={isTranscribing ? "Transcribing vocal stem…" : transcriptSummary ? "Replace vocal stem" : "Upload vocal stem"}
-        detail="Use the stem-only vocal track, not the full mix. Story stays locked until lyrics are ready."
-        actionLabel={isTranscribing ? `Transcribing ${progress}%` : transcriptSummary ? "Replace Vocal Stem" : "Upload Vocal Stem"}
-        disabled={disabled || isTranscribing || !analysis}
-        isProcessing={isTranscribing}
-        processingProgress={progress}
-        status={vocalStemName ? `${vocalStemName}${transcriptSummary ? ` · ${chunkCount} chunks` : ""}` : status}
-        error={error}
-        onFiles={handleUpload}
-      />
-
-      {!analysis ? (
-        <div className="mt-2 text-[10px] leading-4 text-[#6f4a12]">Upload the master song first so lyric timing can align to the beat map.</div>
+      {isTranscribing ? (
+        <div className="mt-2 h-1 overflow-hidden rounded-[1px] bg-[#151515]">
+          <div className="h-full bg-[#e05c00] transition-[width] duration-300" style={{ width: `${progress}%` }} />
+        </div>
       ) : null}
 
       {transcriptSummary ? (
-        <details className="mt-3 rounded-[2px] border border-[#171717] bg-[#070707]">
-          <summary className="cursor-pointer px-3 py-2 text-[9px] uppercase tracking-[0.14em] text-[#777]">
-            Preview lyrics · {chunkCount} timed lines
-          </summary>
-          <div className="grid gap-2 border-t border-[#171717] p-2 lg:grid-cols-2">
-            <div className="max-h-48 overflow-auto whitespace-pre-wrap rounded-[2px] bg-[#030303] p-2 text-[10px] leading-4 text-[#a7a7a7]">
-              {transcriptSummary.transcript || "No transcript text returned."}
-            </div>
-            <div className="max-h-48 space-y-1 overflow-auto rounded-[2px] bg-[#030303] p-2 font-mono text-[9px] text-[#878787]">
-              {transcriptSummary.chunks.map((chunk) => (
-                <div key={`${chunk.index}-${chunk.start}`} className="grid grid-cols-[86px_1fr] gap-2 border-b border-[#101010] pb-1 last:border-b-0">
-                  <span className="text-[#e05c00]">{fmt(chunk.start)}–{fmt(chunk.end)}</span>
-                  <span className="text-[#9c9c9c]">{chunk.text}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </details>
+        <div className="mt-1.5 text-[9px] leading-4 text-[#555]">Timed lyrics preview is on Story.</div>
       ) : null}
     </section>
   );
