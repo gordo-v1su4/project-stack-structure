@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { parseDurableCaptionReferences } from "@/lib/captionReferences";
+import { normalizeCaptionReferencesForGateway, parseDurableCaptionReferences } from "@/lib/captionReferences";
 
 describe("durable caption references", () => {
   test("accepts two character identities plus one named environment", () => {
@@ -27,5 +27,15 @@ describe("durable caption references", () => {
       message = error instanceof Error ? error.message : String(error);
     }
     expect(message).toContain("at most two character images and one environment image");
+  });
+
+  test("normalizes gateway payload to two characters plus one environment", () => {
+    const references = normalizeCaptionReferencesForGateway([
+      { name: "Diego", role: "primary", bucket: "stack-structure", objectKey: "refs/diego.png" },
+      { name: "Valentina", role: "secondary", bucket: "stack-structure", objectKey: "refs/valentina.png" },
+      { name: "The Ember Ballroom", role: "environment", bucket: "stack-structure", objectKey: "refs/ember-ballroom.png" },
+    ]);
+
+    expect(references.map((reference) => reference.role)).toEqual(["primary", "secondary", "environment"]);
   });
 });

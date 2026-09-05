@@ -2,11 +2,14 @@
 
 import { useMemo, useState } from "react";
 
+import { waitForTriggerRunOutput } from "@/lib/clientTriggerRuns";
+import type { StoryTreatmentTriggerResult } from "@/lib/triggerOrchestration";
 import type { DeepgramTranscriptSummary } from "./deepgramUtils";
 import type { MusicVideoProject } from "./musicVideoProject";
 import {
   hydrateTreatmentCoverage,
   isStoryPlanConfirmable,
+  parseGeneratedTreatments,
   rerankAnchorCoverage,
   selectedTreatment,
   type CoverageResolution,
@@ -29,6 +32,9 @@ type StoryTreatmentPlannerProps = {
 
 type TreatmentApiPayload = {
   success?: boolean;
+  queued?: boolean;
+  runId?: string;
+  model?: string;
   treatments?: StoryTreatment[];
   meta?: StoryGenerationMeta;
   error?: string;
@@ -64,46 +70,78 @@ export function StoryTreatmentPlanner({ analysis, transcriptSummary, project, st
     if (!canGenerate || isGenerating) return;
     setIsGenerating(true);
     setError(null);
+
+    const requestBody = {
+      brief: state.brief.text,
+      song: {
+        title: analysis?.sourceLabel,
+        duration: analysis?.duration,
+        sections: analysis?.sections ?? [],
+        lyricSummary: transcriptSummary?.summary || undefined,
+        lyricExcerpt: transcriptSummary?.transcript?.slice(0, 4_000) || undefined,
+      },
+      footage: {
+        captionClusters,
+        sourceCount: new Set(project.videoMoments.map((moment) => moment.sourceClipId)).size,
+        momentCount: project.videoMoments.length,
+      },
+      constraints: [
+        "Keep dance and performance at roughly 80-90 percent of screen time.",
+        "Use a light narrative spine with concrete visual geography rather than dialogue-heavy plotting.",
+        "Do not reveal a simulation or survival-game premise early unless the user brief explicitly asks for it.",
+      ],
+    };
+
     try {
-      const response = await fetch("/api/story/treatments", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          brief: state.brief.text,
-          song: {
-            title: analysis?.sourceLabel,
-            duration: analysis?.duration,
-            sections: analysis?.sections ?? [],
-            lyricSummary: transcriptSummary?.summary || undefined,
-            lyricExcerpt: transcriptSummary?.transcript?.slice(0, 4_000) || undefined,
-          },
-          footage: {
-            captionClusters,
-            sourceCount: new Set(project.videoMoments.map((moment) => moment.sourceClipId)).size,
-            momentCount: project.videoMoments.length,
-          },
-          constraints: [
-            "Keep dance and performance at roughly 80-90 percent of screen time.",
-            "Use a light narrative spine with concrete visual geography rather than dialogue-heavy plotting.",
-            "Do not reveal a simulation or survival-game premise early unless the user brief explicitly asks for it.",
-          ],
-        }),
-      });
-      const payload = await readPayload(response);
-      if (!response.ok || !payload.success || payload.treatments?.length !== 3 || !payload.meta) {
-        throw new Error(payload.error || `Story generation failed (${response.status}).`);
+      let lastError: unknown = null;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+          const response = await fetch("/api/story/treatments", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ ...requestBody, validationAttempt: attempt }),
+          });
+          const payload = await readPayload(response);
+          if (!response.ok || payload.success === false) {
+            throw new Error(payload.error || `Story generation failed (${response.status}).`);
+          }
+
+          const result = response.status === 202 && payload.runId
+            ? materializeQueuedStoryTreatment(
+              await waitForTriggerRunOutput(payload.runId, {
+                timeoutMs: 540_000,
+                pollIntervalMs: 2_000,
+              }) as StoryTreatmentTriggerResult,
+              payload.model,
+            )
+            : payload.treatments?.length === 3 && payload.meta
+              ? { treatments: payload.treatments, meta: payload.meta }
+              : null;
+
+          if (!result) {
+            throw new Error(payload.error || "Story generation returned an incomplete response.");
+          }
+
+          const generationKey = Date.now().toString(36);
+          const namespaced = result.treatments.map((treatment) => ({
+            ...treatment,
+            id: `${generationKey}-${treatment.kind}`,
+            anchors: treatment.anchors.map((anchor, index) => ({ ...anchor, id: `${generationKey}-${treatment.kind}-${index + 1}` })),
+          }));
+          onChange({
+            treatments: hydrateTreatmentCoverage(namespaced, project.videoMoments),
+            selectedTreatmentId: null,
+            generationMeta: result.meta,
+          });
+          return;
+        } catch (caught) {
+          lastError = caught;
+        }
       }
-      const generationKey = Date.now().toString(36);
-      const namespaced = payload.treatments.map((treatment) => ({
-        ...treatment,
-        id: `${generationKey}-${treatment.kind}`,
-        anchors: treatment.anchors.map((anchor, index) => ({ ...anchor, id: `${generationKey}-${treatment.kind}-${index + 1}` })),
-      }));
-      onChange({
-        treatments: hydrateTreatmentCoverage(namespaced, project.videoMoments),
-        selectedTreatmentId: null,
-        generationMeta: payload.meta,
-      });
+
+      throw lastError instanceof Error
+        ? lastError
+        : new Error("Story generation failed after validation retry.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Story generation failed.");
     } finally {
@@ -347,4 +385,20 @@ async function readPayload(response: Response): Promise<TreatmentApiPayload> {
   } catch {
     return { error: text.slice(0, 300) };
   }
+}
+
+function materializeQueuedStoryTreatment(
+  result: StoryTreatmentTriggerResult,
+  model?: string,
+): { treatments: StoryTreatment[]; meta: StoryGenerationMeta } {
+  const parsed = parseGeneratedTreatments(result.output);
+  return {
+    treatments: hydrateTreatmentCoverage(parsed, []),
+    meta: {
+      model: result.model || model || "Qwen/Qwen3-VL-4B-Instruct-GGUF:Q4_K_M",
+      generatedAt: new Date().toISOString(),
+      inputTokens: result.usage?.prompt_tokens,
+      outputTokens: result.usage?.completion_tokens,
+    },
+  };
 }

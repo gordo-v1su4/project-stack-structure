@@ -5,7 +5,7 @@ Project Stack Structure uses its own Trigger.dev project at
 
 - Project ref: `proj_wlrcsfnmovzmdwzojzfe`
 - Production dashboard: `https://trigger.v1su4.dev/orgs/v1su4-91d9/projects/project-stack-structure-C5T7/env/prod`
-- Platform, CLI, SDK, build, and React hooks: `4.5.12`
+- Platform, CLI, SDK, build, and React hooks: `4.5.16` (VM100 Docker image must match)
 - Production deployment host: VM100 Linux
 - Authoritative application data: RustFS project JSON, analysis manifests, and generated objects
 

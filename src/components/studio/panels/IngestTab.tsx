@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { fmt } from "../math";
 import { needsSceneDetectionRetry } from "../mediaUpload";
+import { isSourceCaptionFailed } from "../sceneCaptioning";
 import { sceneCaptionMatchesMode } from "../sceneCaptioning";
 import { SourceVideoLibrary } from "../SourceVideoLibrary";
 import { IngestVocalStemLane } from "../IngestVocalStemLane";
@@ -69,7 +70,7 @@ export function IngestTab({
   onVocalStemTranscriptFailed,
 }: IngestTabProps) {
   const [captionSearch, setCaptionSearch] = useState("");
-  const stats = buildVideoStats(videoSources);
+  const stats = buildVideoStats(videoSources, captionMode);
   const audioTone: ReadinessTone = audioError ? "failed" : isPreparingAudio ? "processing" : analysis ? "ready" : "waiting";
   const stemTone: ReadinessTone = transcriptSummary ? "ready" : vocalStemName ? "processing" : "waiting";
   const videoTone: ReadinessTone = videoError ? "failed" : isPreparingVideos || stats.detecting > 0 || stats.captioning > 0 ? "processing" : videoSources.length ? "ready" : "waiting";
@@ -654,7 +655,7 @@ function extractCaptionField(text: string) {
   }
 }
 
-function buildVideoStats(sources: UploadedVideoSource[]) {
+function buildVideoStats(sources: UploadedVideoSource[], captionMode: SceneCaptionMode) {
   return sources.reduce(
     (acc, source) => {
       const scenes = source.scenes ?? [];
@@ -664,7 +665,7 @@ function buildVideoStats(sources: UploadedVideoSource[]) {
       if (source.sceneStatus === "detecting") acc.detecting += 1;
       if (source.sceneStatus === "failed") acc.sceneFailed += 1;
       if (source.captionStatus === "captioning") acc.captioning += 1;
-      if (source.captionStatus === "failed") acc.captionFailed += 1;
+      if (isSourceCaptionFailed(source, captionMode)) acc.captionFailed += 1;
       if (source.storageStatus === "uploaded") acc.storageUploaded += 1;
       if (source.storageStatus === "failed") acc.storageFailed += 1;
       return acc;

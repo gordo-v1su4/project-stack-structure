@@ -33,7 +33,20 @@ describe("POST /api/story/treatments", () => {
     expect(response.status).toBe(502);
   });
 
-  test("returns exactly three generated treatments", async () => {
+  test("queues Trigger and returns a run id for client polling", async () => {
+    const response = await handleStoryTreatmentsPost(request(body), {
+      getUser: user,
+      isConfigured: true,
+      queue: async () => ({ runId: "run-story-1", model: STORY_TREATMENT_MODEL }),
+    });
+    const payload = await response.json() as { success?: boolean; queued?: boolean; runId?: string };
+    expect(response.status).toBe(202);
+    expect(payload.success).toBe(true);
+    expect(payload.queued).toBe(true);
+    expect(payload.runId).toBe("run-story-1");
+  });
+
+  test("returns exactly three generated treatments when a sync generate dependency is injected", async () => {
     const result = { treatments: [{ id: "a" }, { id: "b" }, { id: "c" }] as never, meta: { model: STORY_TREATMENT_MODEL, generatedAt: "2026-09-02T00:00:00.000Z" } };
     const response = await handleStoryTreatmentsPost(request(body), {
       getUser: user,

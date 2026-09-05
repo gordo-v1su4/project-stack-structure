@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { STORY_TREATMENT_MODEL, type StoryTreatmentRequest } from "@/components/studio/storyTreatments";
-import { generateStoryTreatments } from "@/lib/storyTreatmentServer";
+import { generateStoryTreatments, queueStoryTreatmentGeneration } from "@/lib/storyTreatmentServer";
 
 const request: StoryTreatmentRequest = {
   brief: "Two strangers cross paths in an underground maze and reunite in a collapsing dance arena.",
@@ -10,6 +10,14 @@ const request: StoryTreatmentRequest = {
 };
 
 describe("story treatment Qwen service", () => {
+  test("queues Trigger without blocking on the run result", async () => {
+    const queued = await queueStoryTreatmentGeneration(request, {
+      gatewayModel: STORY_TREATMENT_MODEL,
+      trigger: async () => ({ id: "run-story-queue" }),
+    });
+    expect(queued).toEqual({ runId: "run-story-queue", model: STORY_TREATMENT_MODEL });
+  });
+
   test("dispatches Trigger, waits for the run, and retries malformed output once", async () => {
     const calls: Array<{ instructions: string; input: string }> = [];
     const valid = buildValidPayload();

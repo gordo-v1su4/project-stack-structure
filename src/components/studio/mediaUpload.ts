@@ -1,5 +1,11 @@
 import { uploadSceneCaptionManifestToRustFs, uploadVideoFileToRustFs } from "./mediaStorage";
-import { captionDetectedScenes, sceneCaptionMatchesMode, type SceneCaptionOptions } from "./sceneCaptioning";
+import {
+  captionDetectedScenes,
+  deriveSourceCaptionStatus,
+  finalizeCaptionedScenes,
+  sceneCaptionMatchesMode,
+  type SceneCaptionOptions,
+} from "./sceneCaptioning";
 import { detectScenesFromStoredVideo } from "./sceneSplit";
 import type { DetectedSceneSegment, SceneCaptionSettings, UploadedVideoSource } from "./types";
 
@@ -156,8 +162,26 @@ export function selectSceneRetrySources(sources: UploadedVideoSource[], mode: Sc
     if (!source.storageBucket || !source.storagePath) return false;
     if (source.sceneStatus === "detecting") return false;
     if (needsSceneDetectionRetry(source)) return true;
-    return (source.scenes ?? []).some((scene) => Boolean(scene.captionError) || !sceneCaptionMatchesMode(scene, mode));
+    return (source.scenes ?? []).some((scene) => {
+      if (!scene.caption) return true;
+      if (!sceneCaptionMatchesMode(scene, mode)) return true;
+      return Boolean(scene.captionError) && !scene.caption;
+    });
   });
+}
+
+export function reconcileSourceCaptionStatus(
+  source: UploadedVideoSource,
+  mode: SceneCaptionSettings["mode"],
+): UploadedVideoSource {
+  const scenes = finalizeCaptionedScenes(source.scenes ?? [], mode);
+  const caption = deriveSourceCaptionStatus(scenes, mode, { activeStatus: source.captionStatus });
+  return {
+    ...source,
+    scenes,
+    captionStatus: caption.captionStatus,
+    captionError: caption.captionError,
+  };
 }
 
 export function needsSceneDetectionRetry(source: UploadedVideoSource): boolean {
@@ -281,14 +305,13 @@ async function captionAndPersistSourceScenes(
         },
       });
     }, captionOptions);
-    const failedCaptionCount = captionedScenes.filter((scene) => Boolean(scene.captionError)).length;
+    const finalizedScenes = finalizeCaptionedScenes(captionedScenes, captionSettings.mode);
+    const caption = deriveSourceCaptionStatus(finalizedScenes, captionSettings.mode);
     let captionedSource: UploadedVideoSource = {
       ...source,
-      scenes: captionedScenes,
-      captionStatus: failedCaptionCount ? "failed" : "ready",
-      captionError: failedCaptionCount
-        ? `${failedCaptionCount} scene caption${failedCaptionCount === 1 ? "" : "s"} did not refresh.`
-        : null,
+      scenes: finalizedScenes,
+      captionStatus: caption.captionStatus,
+      captionError: caption.captionError,
     };
 
     if (source.storageProvider === "rustfs" && source.storageBucket && source.storagePath) {
