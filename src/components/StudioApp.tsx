@@ -169,7 +169,7 @@ export default function StudioApp() {
   const [finalExportCueCount, setFinalExportCueCount] = useState(0);
   const [isFinalExporting, setIsFinalExporting] = useState(false);
   const [isShaderCaptureExporting, setIsShaderCaptureExporting] = useState(false);
-  const [draftStatus, setDraftStatus] = useState("Project draft autosaves every 5 minutes after changes.");
+  const [draftStatus, setDraftStatus] = useState("Named projects autosave ingest progress to RustFS; refresh reloads your saved project.");
   const [draftRestored, setDraftRestored] = useState(false);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [activeProjectName, setActiveProjectName] = useState("Untitled project");
@@ -178,7 +178,9 @@ export default function StudioApp() {
   const flushPendingAutosaveRef = useRef<(() => Promise<void>) | null>(null);
   const referenceAutosaveRequestedRef = useRef(false);
   const vocalStemAutosaveRequestedRef = useRef(false);
+  const ingestAutosaveDebounceRef = useRef<number | null>(null);
   const workflowCheckpointAutosaveRequestedRef = useRef(false);
+  const [ingestAutosaveTick, setIngestAutosaveTick] = useState(0);
 
   const audioFileRef = useRef<File | null>(null);
   const videoFilesByMediaKeyRef = useRef(new Map<string, Blob>());
@@ -402,6 +404,57 @@ export default function StudioApp() {
       if (saveTimer !== null) window.clearTimeout(saveTimer);
     };
   }, [draftRestored, storyState.transcriptSummary]);
+
+  useEffect(() => {
+    if (!draftRestored) return;
+    if (ingestAutosaveDebounceRef.current) {
+      window.clearTimeout(ingestAutosaveDebounceRef.current);
+    }
+    ingestAutosaveDebounceRef.current = window.setTimeout(() => {
+      ingestAutosaveDebounceRef.current = null;
+      setIngestAutosaveTick((current) => current + 1);
+    }, 20_000);
+
+    return () => {
+      if (ingestAutosaveDebounceRef.current) {
+        window.clearTimeout(ingestAutosaveDebounceRef.current);
+        ingestAutosaveDebounceRef.current = null;
+      }
+    };
+  }, [beatJoinAnalysis, draftRestored, referenceAssets, videoSources]);
+
+  useEffect(() => {
+    if (!draftRestored || ingestAutosaveTick === 0) return;
+
+    let saveTimer: number | null = null;
+    const flushIngestAutosave = () => {
+      if (autosaveInFlightRef.current) {
+        saveTimer = window.setTimeout(flushIngestAutosave, 250);
+        return;
+      }
+      void flushPendingAutosaveRef.current?.();
+    };
+    saveTimer = window.setTimeout(flushIngestAutosave, 250);
+    return () => {
+      if (saveTimer !== null) window.clearTimeout(saveTimer);
+    };
+  }, [draftRestored, ingestAutosaveTick]);
+
+  useEffect(() => {
+    if (!draftRestored) return;
+
+    const flushOnHide = () => {
+      if (document.visibilityState !== "hidden") return;
+      void flushPendingAutosaveRef.current?.();
+    };
+
+    document.addEventListener("visibilitychange", flushOnHide);
+    window.addEventListener("pagehide", flushOnHide);
+    return () => {
+      document.removeEventListener("visibilitychange", flushOnHide);
+      window.removeEventListener("pagehide", flushOnHide);
+    };
+  }, [draftRestored]);
 
   useEffect(() => {
     if (!draftRestored || !workflowCheckpointAutosaveRequestedRef.current) return;
