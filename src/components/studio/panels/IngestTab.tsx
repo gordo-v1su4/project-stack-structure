@@ -5,6 +5,7 @@ import { fmt } from "../math";
 import { needsSceneDetectionRetry } from "../mediaUpload";
 import { sceneCaptionMatchesMode } from "../sceneCaptioning";
 import { SourceVideoLibrary } from "../SourceVideoLibrary";
+import { IngestVocalStemLane } from "../IngestVocalStemLane";
 import { UploadControl } from "../UploadControl";
 import type { DeepgramTranscriptSummary } from "../deepgramUtils";
 import { REFERENCE_ASSET_SLOT_DETAILS, REFERENCE_ASSET_SLOT_LABELS, type ReferenceAsset, type ReferenceAssetKind, type ReferenceAssetLibraryRole, type ReferenceAssetRole } from "../referenceAssets";
@@ -33,7 +34,9 @@ type IngestTabProps = {
   onReferenceAssetUpload: (role: ReferenceAssetLibraryRole, files: File[]) => void | Promise<void>;
   onReferenceAssetUpdate: (assetId: string, patch: Partial<Pick<ReferenceAsset, "displayName" | "promptHint" | "kind">>) => void;
   onReferenceAssetRemove: (assetId: string) => void;
-  onSelectStory: () => void;
+  onVocalStemTranscriptStart: (fileName: string) => void;
+  onVocalStemTranscriptComplete: (summary: DeepgramTranscriptSummary, fileName: string) => void;
+  onVocalStemTranscriptFailed: (message: string) => void;
 };
 
 type ReadinessTone = "ready" | "processing" | "failed" | "waiting";
@@ -61,7 +64,9 @@ export function IngestTab({
   onReferenceAssetUpload,
   onReferenceAssetUpdate,
   onReferenceAssetRemove,
-  onSelectStory,
+  onVocalStemTranscriptStart,
+  onVocalStemTranscriptComplete,
+  onVocalStemTranscriptFailed,
 }: IngestTabProps) {
   const [captionSearch, setCaptionSearch] = useState("");
   const stats = buildVideoStats(videoSources);
@@ -106,13 +111,6 @@ export function IngestTab({
               This is the ordered intake gate for the music-video workflow. Green items are ready to use downstream; orange items are still processing; red items need attention before Match, Join, or Export can run.
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onSelectStory}
-            className="rounded-[2px] border border-[#242424] px-3 py-2 text-[9px] uppercase tracking-[0.14em] text-[#9a9a9a] hover:border-[#e05c00] hover:text-[#e05c00]"
-          >
-            Stem / SRT in Story
-          </button>
         </div>
 
         <div className="grid gap-2 md:grid-cols-3 xl:grid-cols-6">
@@ -145,6 +143,16 @@ export function IngestTab({
           </div>
         ) : null}
       </section>
+
+      <IngestVocalStemLane
+        analysis={analysis}
+        vocalStemName={vocalStemName}
+        transcriptSummary={transcriptSummary}
+        disabled={isPreparingAudio}
+        onTranscriptStart={onVocalStemTranscriptStart}
+        onTranscriptComplete={onVocalStemTranscriptComplete}
+        onTranscriptFailed={onVocalStemTranscriptFailed}
+      />
 
       <ReferenceLibrary
         assets={referenceAssets}
@@ -193,7 +201,7 @@ export function IngestTab({
         </div>
         <div className="grid gap-2 md:grid-cols-2">
           <ReadinessCard label="Active caption lane" value={captionMode === "fast" ? "Fast · LFM" : "Smart · Qwen3-VL"} tone="ready" detail={captionMode === "fast" ? "Lower latency draft captions" : "Detailed cinematic captions with named-character matching"} />
-          <ReadinessCard label="Caption context" value={transcriptSummary ? `${transcriptSummary.chunks.length} lyric chunks` : "Video-only"} tone={transcriptSummary ? "ready" : "waiting"} detail={transcriptSummary ? "lyrics/story context included for new captions" : "upload stem/SRT first if you want lyric context"} />
+          <ReadinessCard label="Caption context" value={transcriptSummary ? `${transcriptSummary.chunks.length} lyric chunks` : "Video-only"} tone={transcriptSummary ? "ready" : "waiting"} detail={transcriptSummary ? "lyrics/story context included for new captions" : "upload the vocal stem above for lyric-aware captions"} />
         </div>
       </section>
 

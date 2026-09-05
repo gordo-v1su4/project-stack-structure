@@ -5,10 +5,11 @@ import { useMemo, useState } from "react";
 import { createMusicVideoProject } from "@/components/studio/musicVideoProject";
 import {
   createDefaultStoryTabState,
-  LOVE_ME_TONIGHT_STORY_SEED,
   StoryTab,
   type StoryTabState,
 } from "@/components/studio/panels/StoryTab";
+
+const LOVE_ME_TONIGHT_STORY_SEED = "Diego and Valentina are strangers moving independently through a hidden underground maze of tunnels, dance rooms, and increasingly dangerous chambers. Each is casually looking for someone capable of matching them. They pass unexpectedly, both realize too late that the other may be the one, and begin searching through the shifting complex until they almost back into one another. They finally dance together in the central arena while floors split, rooms collapse, and dancers continue until they fall. Only near the end may the audience realize this is a last-dancer-standing simulation or game.";
 import { hydrateTreatmentCoverage, parseGeneratedTreatments } from "@/components/studio/storyTreatments";
 import type { BeatJoinAnalysis, UploadedVideoSource } from "@/components/studio/types";
 

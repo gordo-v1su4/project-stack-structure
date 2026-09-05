@@ -2,6 +2,7 @@
 
 import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import { extractWaveformData, fetchEssentiaAnalysis, getEssentiaStorageFromPayload, parseEssentiaPayload } from "./studio/audioAnalysis";
+import type { DeepgramTranscriptSummary } from "./studio/deepgramUtils";
 import { buildArrangementSegments } from "./studio/arrangementBuilder";
 import type { ArrangementSegment } from "./studio/arrangementBuilder";
 import { NAV } from "./studio/constants";
@@ -176,6 +177,7 @@ export default function StudioApp() {
   const autosaveInFlightRef = useRef(false);
   const flushPendingAutosaveRef = useRef<(() => Promise<void>) | null>(null);
   const referenceAutosaveRequestedRef = useRef(false);
+  const vocalStemAutosaveRequestedRef = useRef(false);
   const workflowCheckpointAutosaveRequestedRef = useRef(false);
 
   const audioFileRef = useRef<File | null>(null);
@@ -382,6 +384,24 @@ export default function StudioApp() {
       if (saveTimer !== null) window.clearTimeout(saveTimer);
     };
   }, [draftRestored, referenceAssets]);
+
+  useEffect(() => {
+    if (!draftRestored || !vocalStemAutosaveRequestedRef.current) return;
+    vocalStemAutosaveRequestedRef.current = false;
+
+    let saveTimer: number | null = null;
+    const flushVocalStemAutosave = () => {
+      if (autosaveInFlightRef.current) {
+        saveTimer = window.setTimeout(flushVocalStemAutosave, 250);
+        return;
+      }
+      void flushPendingAutosaveRef.current?.();
+    };
+    saveTimer = window.setTimeout(flushVocalStemAutosave, 250);
+    return () => {
+      if (saveTimer !== null) window.clearTimeout(saveTimer);
+    };
+  }, [draftRestored, storyState.transcriptSummary]);
 
   useEffect(() => {
     if (!draftRestored || !workflowCheckpointAutosaveRequestedRef.current) return;
@@ -851,6 +871,38 @@ export default function StudioApp() {
       if (asset?.previewUrl.startsWith("blob:")) URL.revokeObjectURL(asset.previewUrl);
       return currentAssets.filter((candidate) => candidate.id !== assetId);
     });
+  }
+
+  function handleVocalStemTranscriptStart(fileName: string) {
+    setStoryState((current) => ({
+      ...current,
+      vocalStemName: fileName,
+      transcriptSummary: null,
+      storyGenerated: false,
+      confirmedTreatmentId: null,
+      confirmedTreatmentSnapshot: null,
+      storyContentSignature: null,
+    }));
+  }
+
+  function handleVocalStemTranscriptComplete(summary: DeepgramTranscriptSummary, fileName: string) {
+    vocalStemAutosaveRequestedRef.current = true;
+    setStoryState((current) => ({
+      ...current,
+      vocalStemName: fileName,
+      transcriptSummary: summary,
+      storyGenerated: false,
+      confirmedTreatmentId: null,
+      confirmedTreatmentSnapshot: null,
+      storyContentSignature: null,
+    }));
+  }
+
+  function handleVocalStemTranscriptFailed(_message: string) {
+    setStoryState((current) => ({
+      ...current,
+      transcriptSummary: null,
+    }));
   }
 
   async function handleAudioUpload(files: File[]) {
@@ -1983,6 +2035,7 @@ export default function StudioApp() {
     return buildPipelineState({
       activeTab: tab,
       hasAudioAnalysis: beatJoinAnalysis !== null,
+      hasLyricTranscript: Boolean(storyState.transcriptSummary?.chunks.length),
       videoCount: videoSources.length,
       sceneCount: ingestStats.sceneCount,
       captionReadyCount: ingestStats.captionReady,
@@ -2009,6 +2062,7 @@ export default function StudioApp() {
     storyState.confirmedTreatmentId,
     storyState.confirmedTreatmentSnapshot,
     storyState.storyContentSignature,
+    storyState.transcriptSummary,
     videoSources.length,
     ingestStats,
     musicVideoProject,
@@ -2238,7 +2292,9 @@ export default function StudioApp() {
                 onReferenceAssetUpload={(role, files) => void handleReferenceAssetUpload(role, files)}
                 onReferenceAssetUpdate={handleReferenceAssetUpdate}
                 onReferenceAssetRemove={handleReferenceAssetRemove}
-                onSelectStory={() => handleSelectTab("story")}
+                onVocalStemTranscriptStart={handleVocalStemTranscriptStart}
+                onVocalStemTranscriptComplete={handleVocalStemTranscriptComplete}
+                onVocalStemTranscriptFailed={handleVocalStemTranscriptFailed}
               />
             )}
 

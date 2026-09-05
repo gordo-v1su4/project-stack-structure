@@ -261,6 +261,44 @@ describe("projectPersistence", () => {
     expect(hydrated.videoSources[0].storageProvider).toBe("rustfs");
   });
 
+  test("persists vocal stem lyrics and timed SRT chunks in storyState", () => {
+    const transcriptSummary = {
+      provider: "deepgram" as const,
+      model: "nova-3",
+      duration: 246.4,
+      confidence: 0.94,
+      transcript: "Love me tonight",
+      wordCount: 3,
+      chunks: [{ index: 1, start: 12.4, end: 15.8, text: "Love me tonight" }],
+      srt: "1\n00:00:12,400 --> 00:00:15,800\nLove me tonight\n",
+      summary: "A romantic plea.",
+      topics: [],
+      intents: [],
+      sentiments: null,
+      averageSentiment: null,
+      entities: [],
+      warnings: [],
+    };
+
+    const draft = createPersistableStudioProjectDraft({
+      analysis: null,
+      videoSources: [],
+      storyState: {
+        ...storyState,
+        vocalStemName: "Love me tonight - stem-only-Lead Vocal.wav",
+        transcriptSummary,
+      },
+      musicVideoProject: null,
+      savedAt: "2026-09-05T00:00:00.000Z",
+    });
+
+    const hydrated = hydrateStudioProjectDraft({ draft });
+
+    expect(hydrated.storyState.vocalStemName).toBe("Love me tonight - stem-only-Lead Vocal.wav");
+    expect(hydrated.storyState.transcriptSummary?.chunks).toHaveLength(1);
+    expect(hydrated.storyState.transcriptSummary?.transcript).toBe("Love me tonight");
+  });
+
   test("hydrates persisted reference assets from durable RustFS URLs", () => {
     const draft = createPersistableStudioProjectDraft({
       analysis: null,

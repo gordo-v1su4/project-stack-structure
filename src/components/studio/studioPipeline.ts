@@ -3,6 +3,7 @@ import type { Tab } from "./types";
 export interface PipelineStageInput {
   activeTab: Tab;
   hasAudioAnalysis: boolean;
+  hasLyricTranscript: boolean;
   videoCount: number;
   sceneCount: number;
   captionReadyCount: number;
@@ -47,7 +48,11 @@ export interface PipelineState {
  */
 export function buildPipelineState(input: PipelineStageInput): PipelineState {
   const captionsReady = input.captionTotalCount > 0 && input.captionReadyCount === input.captionTotalCount;
-  const ingestReady = input.hasAudioAnalysis && input.videoCount > 0 && input.sceneCount > 0 && captionsReady;
+  const ingestReady = input.hasAudioAnalysis
+    && input.hasLyricTranscript
+    && input.videoCount > 0
+    && input.sceneCount > 0
+    && captionsReady;
   const storyReady = ingestReady
     && input.storyTreatmentSelected
     && input.storyAnchorsResolved
@@ -77,7 +82,9 @@ export function buildPipelineState(input: PipelineStageInput): PipelineState {
       ready: storyReady,
       complete: storyReady,
       available: ingestReady,
-      blockedReason: ingestReady ? null : "Finish audio analysis, scene detection, and scene captions in Ingest first.",
+      blockedReason: ingestReady
+        ? null
+        : "Finish Ingest first: master song, vocal stem lyrics/SRT, scene detection, and scene captions.",
       prerequisiteKey: ingestReady ? null : "review",
       status: storyReady
         ? `${input.editSlotCount} edit slots`
@@ -190,6 +197,7 @@ function describeIngest(input: PipelineStageInput) {
   if (input.captionTotalCount === 0 || input.captionReadyCount < input.captionTotalCount) {
     return `Captioning ${input.captionReadyCount}/${input.captionTotalCount || input.sceneCount}`;
   }
+  if (!input.hasLyricTranscript) return "Upload vocal stem";
   const captionLabel = input.captionTotalCount > 0 ? ` · ${input.captionReadyCount}/${input.captionTotalCount} captions` : "";
   return `${input.videoCount} clip${input.videoCount === 1 ? "" : "s"}${captionLabel}`;
 }

@@ -1,7 +1,7 @@
 "use client";
 
-import { startTransition, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
-import { transcribeAudioWithDeepgram, type DeepgramTranscriptSummary } from "../deepgramUtils";
+import { startTransition, useEffect, useMemo, type Dispatch, type SetStateAction } from "react";
+import type { DeepgramTranscriptSummary } from "../deepgramUtils";
 import { fmt } from "../math";
 import {
   buildStorySections,
@@ -29,6 +29,7 @@ import {
   splitStorySectionWithTemplate,
   toTimedStoryDrafts,
 } from "../storyStructure";
+import { formatVocalStemTranscriptStatus } from "../vocalStemTranscription";
 import type { BeatJoinAnalysis, SegmentPreview, UploadedVideoSource } from "../types";
 
 export type StoryBeatDraft = StoryPlanDraft;
@@ -59,7 +60,6 @@ const DEFAULT_STORY_BEATS: StoryBeatDraft[] = getDefaultStorySectionDrafts().map
 }));
 
 const STORY_SECTION_TEMPLATES = getDefaultStorySectionDrafts();
-export const LOVE_ME_TONIGHT_STORY_SEED = "Diego and Valentina are strangers moving independently through a hidden underground maze of tunnels, dance rooms, and increasingly dangerous chambers. Each is casually looking for someone capable of matching them. They pass unexpectedly, both realize too late that the other may be the one, and begin searching through the shifting complex until they almost back into one another. They finally dance together in the central arena while floors split, rooms collapse, and dancers continue until they fall. Only near the end may the audience realize this is a last-dancer-standing simulation or game.";
 const STORY_PACE_OPTIONS = [
   { label: "Relaxed", density: 0.3, detail: "Longer phrases" },
   { label: "Balanced", density: 0.55, detail: "Musical rough cut" },
@@ -85,15 +85,8 @@ export function createDefaultStoryTabState(): StoryTabState {
 }
 
 export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews, state, onStateChange, onProjectChange }: StoryTabProps) {
-  const { vocalStemName, transcriptSummary, storyBeats, activeBeatId, storyGenerated } = state;
+  const { transcriptSummary, storyBeats, activeBeatId, storyGenerated } = state;
   const editSettings = normalizeStoryEditSettings(state.editSettings);
-  const [isTranscribingAudio, setIsTranscribingAudio] = useState(false);
-  const [transcriptProgress, setTranscriptProgress] = useState(0);
-  const [transcriptStatus, setTranscriptStatus] = useState(() => formatTranscriptStatus(state.transcriptSummary));
-  const [transcriptError, setTranscriptError] = useState<string | null>(null);
-  const progressTimer = useRef<number | null>(null);
-  const vocalStemInputRef = useRef<HTMLInputElement>(null);
-  const seededBriefSourceRef = useRef<string | null>(null);
 
   function updateState(patch: Partial<StoryTabState>) {
     onStateChange((current) => ({ ...current, ...patch }));
@@ -101,10 +94,6 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews,
 
   function setActiveBeatId(activeBeatId: string) {
     updateState({ activeBeatId });
-  }
-
-  function setTranscriptSummary(transcriptSummary: DeepgramTranscriptSummary | null) {
-    updateState({ transcriptSummary });
   }
 
   function updateEditSettings(patch: Partial<StoryEditSettings>) {
@@ -147,25 +136,10 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews,
   );
 
   const storyRail = musicVideoProject.storySections;
-  useEffect(() => {
-    if (!isTranscribingAudio && !transcriptError) {
-      setTranscriptStatus(formatTranscriptStatus(transcriptSummary));
-    }
-  }, [isTranscribingAudio, transcriptError, transcriptSummary]);
 
   useEffect(() => {
     onProjectChange?.(musicVideoProject);
   }, [musicVideoProject, onProjectChange]);
-
-  useEffect(() => {
-    const sourceLabel = analysis?.sourceLabel?.trim() ?? "";
-    if (!sourceLabel || seededBriefSourceRef.current === sourceLabel) return;
-    seededBriefSourceRef.current = sourceLabel;
-    if (!/love\W*me\W*tonight/i.test(sourceLabel) || state.brief.text.trim() || state.treatments.length) return;
-    updateState({ brief: { text: LOVE_ME_TONIGHT_STORY_SEED } });
-  // The source guard makes this a one-time project-specific suggestion.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [analysis?.sourceLabel]);
 
   useEffect(() => {
     if (hasTimedStoryPlan || !detectedStoryPlan.length) return;
@@ -181,54 +155,6 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews,
       storyContentSignature: null,
     }));
   }, [detectedStoryPlan, hasTimedStoryPlan, onStateChange]);
-
-  async function handleVocalStemUpload(files: File[]) {
-    const file = files[0];
-    if (!file) return;
-
-    if (progressTimer.current) {
-      window.clearInterval(progressTimer.current);
-      progressTimer.current = null;
-    }
-
-    updateState({
-      vocalStemName: file.name,
-      transcriptSummary: null,
-      storyGenerated: false,
-      confirmedTreatmentId: null,
-      confirmedTreatmentSnapshot: null,
-      storyContentSignature: null,
-    });
-    setTranscriptError(null);
-    setIsTranscribingAudio(true);
-    setTranscriptProgress(8);
-    setTranscriptStatus(`Vocal stem loaded: ${file.name}. Sending stem to Deepgram for lyrics/SRT...`);
-
-    progressTimer.current = window.setInterval(() => {
-      setTranscriptProgress((current) => {
-        const next = Math.min(88, current + (current < 35 ? 7 : current < 65 ? 4 : 2));
-        return next;
-      });
-    }, 900);
-
-    try {
-      const summary = await transcribeAudioWithDeepgram(file, { duration: totalDuration || undefined });
-      setTranscriptSummary(summary);
-      setTranscriptProgress(100);
-      setTranscriptStatus(formatTranscriptStatus(summary));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Deepgram transcription unavailable; paste lyrics or SRT to continue.";
-      setTranscriptError(message);
-      setTranscriptProgress(0);
-      setTranscriptStatus(message);
-    } finally {
-      if (progressTimer.current) {
-        window.clearInterval(progressTimer.current);
-        progressTimer.current = null;
-      }
-      setIsTranscribingAudio(false);
-    }
-  }
 
   function updatePlannedStoryBeats(next: StoryPlanDraft[], nextActiveBeatId = activeBeatId) {
     updateState({
@@ -334,34 +260,15 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews,
       <section className="rounded-[2px] border border-[#1a1a1a] bg-[#0b0b0b] p-3">
         <div className="grid gap-3 xl:grid-cols-[1.15fr_0.85fr]">
           <div>
-            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Lyrics timing</div>
-                <div className="mt-1 text-[11px] text-[#6d6d6d]">Deepgram turns the vocal stem into timed lyric lines for the section map.</div>
-              </div>
-              <input
-                ref={vocalStemInputRef}
-                type="file"
-                accept="audio/*,.wav,.mp3,.m4a,.aac,.ogg"
-                disabled={isTranscribingAudio}
-                className="sr-only"
-                onChange={(event) => {
-                  const files = Array.from(event.target.files ?? []);
-                  event.target.value = "";
-                  void handleVocalStemUpload(files);
-                }}
-              />
-              <button type="button" disabled={isTranscribingAudio} onClick={() => vocalStemInputRef.current?.click()} className="rounded-[2px] bg-[#e05c00] px-3 py-2 text-[9px] font-semibold uppercase tracking-[0.14em] text-white hover:bg-[#c95200] disabled:cursor-not-allowed disabled:bg-[#252525] disabled:text-[#666]">
-                {isTranscribingAudio ? `Transcribing ${transcriptProgress}%` : vocalStemName ? "Replace vocal stem" : "Upload vocal stem"}
-              </button>
+            <div className="mb-2">
+              <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Lyrics timing</div>
+              <div className="mt-1 text-[11px] text-[#6d6d6d]">Timed lyrics come from the vocal stem uploaded in Ingest. Story uses those SRT chunks for section windows and Match.</div>
             </div>
 
-            <div className={`rounded-[2px] border px-3 py-2 text-[10px] ${transcriptError ? "border-[#5a1f1a] bg-[#120706] text-[#d66a61]" : "border-[#171717] bg-[#070707] text-[#777]"}`}>
-              <div className="flex items-center justify-between gap-3">
-                <span className="truncate">{transcriptError ?? transcriptStatus}</span>
-                <span className="shrink-0 font-mono text-[#a5a5a5]">{vocalStemName || "No stem"}</span>
-              </div>
-              {isTranscribingAudio ? <div className="mt-2 h-1 overflow-hidden bg-[#151515]"><div className="h-full bg-[#e05c00] transition-[width]" style={{ width: `${transcriptProgress}%` }} /></div> : null}
+            <div className={`rounded-[2px] border px-3 py-2 text-[10px] ${transcriptSummary ? "border-[#171717] bg-[#070707] text-[#777]" : "border-[#5a3219] bg-[#120a05] text-[#c68152]"}`}>
+              {transcriptSummary
+                ? formatVocalStemTranscriptStatus(transcriptSummary)
+                : "Upload the vocal stem in Ingest to unlock lyric-aware story planning."}
             </div>
 
             <div className="mt-2 flex flex-wrap gap-x-5 gap-y-2 border-t border-[#151515] pt-2">
@@ -391,7 +298,7 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews,
         <details className="mt-3 rounded-[2px] border border-[#171717] bg-[#070707]">
           <summary className="cursor-pointer px-3 py-2 text-[9px] uppercase tracking-[0.14em] text-[#777]">View lyrics and {srtChunkCount} timed lines</summary>
           <div className="grid gap-2 border-t border-[#171717] p-2 lg:grid-cols-2">
-            <div className="max-h-56 overflow-auto whitespace-pre-wrap rounded-[2px] bg-[#030303] p-2 text-[10px] leading-4 text-[#a7a7a7]">{transcriptSummary?.transcript || "Lyrics will appear here after vocal stem transcription."}</div>
+            <div className="max-h-56 overflow-auto whitespace-pre-wrap rounded-[2px] bg-[#030303] p-2 text-[10px] leading-4 text-[#a7a7a7]">{transcriptSummary?.transcript || "Lyrics appear here after the vocal stem is transcribed in Ingest."}</div>
             <div className="max-h-56 space-y-1 overflow-auto rounded-[2px] bg-[#030303] p-2 font-mono text-[9px] text-[#878787]">
               {musicVideoProject.lyricChunks.length ? musicVideoProject.lyricChunks.map((chunk) => (
                 <div key={chunk.id} className="grid grid-cols-[86px_1fr] gap-2 border-b border-[#101010] pb-1 last:border-b-0">
@@ -420,7 +327,7 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews,
             ? "Confirmed. Split and downstream stages may use this Story map."
             : state.selectedTreatmentId
               ? "Resolve every selected anchor above, then confirm the Story plan to unlock Split."
-              : "Generate and select one of the three treatments above. Lyrics remain useful context, but are not required for an instrumental track."}
+              : "Generate and select one of the three treatments above once Ingest lyrics and scene captions are ready."}
         </div>
 
         {totalDuration > 0 ? <div className="overflow-x-auto rounded-[2px] border border-[#171717] bg-[#070707]">
@@ -524,14 +431,6 @@ function InlineMetric({ label, value }: { label: string; value: string }) {
       <span className="font-mono text-[9px] text-[#a5a5a5]" title={value}>{value}</span>
     </div>
   );
-}
-
-function formatTranscriptStatus(summary: DeepgramTranscriptSummary | null) {
-  if (!summary) return "Deepgram SRT extraction ready when DEEPGRAM_API_KEY is configured";
-
-  return `Deepgram extracted ${summary.wordCount} words into ${summary.chunks.length} timed SRT chunks${
-    summary.topics.length || summary.intents.length ? ` · ${summary.topics.length + summary.intents.length} topics/intents` : ""
-  }.`;
 }
 
 function ScorePill({ label, value }: { label: string; value: number }) {

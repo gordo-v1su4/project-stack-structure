@@ -6,6 +6,7 @@ function makeInput(overrides: Partial<PipelineStageInput> = {}): PipelineStageIn
   return {
     activeTab: "review",
     hasAudioAnalysis: false,
+    hasLyricTranscript: false,
     videoCount: 0,
     sceneCount: 0,
     captionReadyCount: 0,
@@ -44,7 +45,14 @@ describe("studio pipeline state", () => {
 
   test("story is selectable but downstream work stays gated once ingest is complete", () => {
     const state = buildPipelineState(
-      makeInput({ hasAudioAnalysis: true, videoCount: 2, sceneCount: 12, captionReadyCount: 12, captionTotalCount: 12 }),
+      makeInput({
+        hasAudioAnalysis: true,
+        hasLyricTranscript: true,
+        videoCount: 2,
+        sceneCount: 12,
+        captionReadyCount: 12,
+        captionTotalCount: 12,
+      }),
     );
 
     expect(state.stages[0]?.ready).toBe(true);
@@ -55,9 +63,30 @@ describe("studio pipeline state", () => {
     expect(state.stages.filter((stage) => stage.isNext)).toHaveLength(1);
   });
 
+  test("story stays locked until vocal stem lyrics are transcribed", () => {
+    const state = buildPipelineState(
+      makeInput({
+        hasAudioAnalysis: true,
+        hasLyricTranscript: false,
+        videoCount: 2,
+        sceneCount: 12,
+        captionReadyCount: 12,
+        captionTotalCount: 12,
+      }),
+    );
+
+    expect(state.stages[0]?.ready).toBe(false);
+    expect(state.stages[0]?.status).toBe("Upload vocal stem");
+    expect(state.stages.find((stage) => stage.key === "story")).toMatchObject({
+      available: false,
+      prerequisiteKey: "review",
+    });
+  });
+
   test("treatment selection alone does not unlock Split", () => {
     const state = buildPipelineState(makeInput({
       hasAudioAnalysis: true,
+      hasLyricTranscript: true,
       videoCount: 2,
       sceneCount: 12,
       captionReadyCount: 12,
@@ -76,6 +105,7 @@ describe("studio pipeline state", () => {
     const state = buildPipelineState(
       makeInput({
         hasAudioAnalysis: true,
+        hasLyricTranscript: true,
         videoCount: 2,
         sceneCount: 10,
         captionReadyCount: 10,
@@ -102,6 +132,7 @@ describe("studio pipeline state", () => {
     const state = buildPipelineState(
       makeInput({
         hasAudioAnalysis: true,
+        hasLyricTranscript: true,
         videoCount: 2,
         sceneCount: 10,
         captionReadyCount: 10,
@@ -137,6 +168,7 @@ describe("studio pipeline state", () => {
     const state = buildPipelineState(
       makeInput({
         hasAudioAnalysis: true,
+        hasLyricTranscript: true,
         videoCount: 2,
         sceneCount: 10,
         captionReadyCount: 10,
