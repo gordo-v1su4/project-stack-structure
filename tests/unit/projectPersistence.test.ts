@@ -299,6 +299,30 @@ describe("projectPersistence", () => {
     expect(hydrated.storyState.transcriptSummary?.transcript).toBe("Love me tonight");
   });
 
+  test("hydrates chunked RustFS video uploads when storageUrl was omitted", () => {
+    const chunkedSource = {
+      ...source,
+      storageUrl: "",
+      storagePath: "media-uploads/video-source/assembled/clip.mp4",
+      uploadChunks: { size: source.size, chunks: [{ bucket: "stack-structure", objectKey: "media-uploads/video-source/chunk-0" }] },
+    };
+    const draft = createPersistableStudioProjectDraft({
+      analysis: null,
+      videoSources: [chunkedSource],
+      storyState,
+      musicVideoProject: null,
+      savedAt: "2026-09-05T00:00:00.000Z",
+    });
+
+    const hydrated = hydrateStudioProjectDraft({ draft });
+
+    expect(hydrated.videoSources).toHaveLength(1);
+    expect(hydrated.videoSources[0].videoUrl).toBe(
+      "/api/storage/media?bucket=stack-structure&objectKey=media-uploads%2Fvideo-source%2Fassembled%2Fclip.mp4",
+    );
+    expect(hydrated.videoSources[0].storagePath).toBe("media-uploads/video-source/assembled/clip.mp4");
+  });
+
   test("hydrates persisted reference assets from durable RustFS URLs", () => {
     const draft = createPersistableStudioProjectDraft({
       analysis: null,
