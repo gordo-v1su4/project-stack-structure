@@ -10,6 +10,7 @@ import {
 import type { MusicVideoProject } from "@/components/studio/musicVideoProject";
 import type { ReferenceAsset } from "@/components/studio/referenceAssets";
 import type { UploadedVideoSource } from "@/components/studio/types";
+import type { StoryTreatment } from "@/components/studio/storyTreatments";
 
 const source: UploadedVideoSource = {
   id: 0,
@@ -26,12 +27,42 @@ const source: UploadedVideoSource = {
   storageError: null,
 };
 
+const confirmedTreatment = {
+  id: "maze-faithful",
+  kind: "faithful",
+  title: "The One Across the Maze",
+  logline: "Two strangers cross and lose one another inside a collapsing underground dance labyrinth.",
+  synopsis: "Diego and Valentina move through separate rooms before a missed encounter turns into a search. They reunite in a central arena as the floor collapses.",
+  visualThesis: "Dance carries the story through distinct rooms and escalating structural danger.",
+  endingHook: "The final chamber reveals that only one dancer may leave.",
+  expectedReusePercent: 75,
+  expectedGenerationPercent: 25,
+  anchors: Array.from({ length: 4 }, (_, index) => ({
+    id: `anchor-${index}`,
+    title: `Anchor ${index + 1}`,
+    description: `Filmable story action ${index + 1} inside the underground dance maze.`,
+    purpose: "Advance the search.",
+    generationPrompt: "Cinematic underground dance room.",
+    coverage: "missing" as const,
+    candidates: [],
+    selectedCandidateId: null,
+    resolution: "generate" as const,
+  })),
+} satisfies StoryTreatment;
+
 const storyState = {
   vocalStemName: "vox.wav",
   transcriptSummary: null,
   storyBeats: [{ id: "intro", label: "Intro", prompt: "Open" }],
   activeBeatId: "intro",
   storyGenerated: true,
+  brief: { text: "Two strangers search an underground maze." },
+  treatments: [confirmedTreatment],
+  selectedTreatmentId: confirmedTreatment.id,
+  confirmedTreatmentId: confirmedTreatment.id,
+  confirmedTreatmentSnapshot: confirmedTreatment,
+  generationMeta: { model: "gpt-5.4-mini", generatedAt: "2026-09-02T00:00:00.000Z" },
+  storyContentSignature: "story-v2-test",
 };
 
 const referenceAsset: ReferenceAsset = {
@@ -148,6 +179,7 @@ describe("projectPersistence", () => {
     expect(JSON.stringify(draft)).not.toContain("blob:audio");
     expect(JSON.stringify(draft)).not.toContain("blob:project-audio");
     expect(JSON.stringify(draft)).not.toContain("data:image/jpeg");
+    expect(draft.version).toBe(2);
     expect(draft.videoSources[0].thumbnailUrl).toBe("");
     expect(draft.videoSources[0].storageProvider).toBe("rustfs");
     expect(draft.videoSources[0].storageBucket).toBe("stack-structure");
@@ -179,7 +211,25 @@ describe("projectPersistence", () => {
     expect(hydrated.videoSources).toHaveLength(1);
     expect(hydrated.videoSources[0].videoUrl).toBe("blob:restored-video");
     expect(hydrated.storyState.storyGenerated).toBe(true);
+    expect(hydrated.storyState.confirmedTreatmentSnapshot?.title).toBe("The One Across the Maze");
     expect(hydrated.captionSettings?.mode).toBe("smart");
+  });
+
+  test("migrates version-1 story maps as unconfirmed while preserving their timing", () => {
+    const draft = createPersistableStudioProjectDraft({
+      analysis: null,
+      videoSources: [],
+      storyState,
+      musicVideoProject: null,
+      savedAt: "2026-09-02T00:00:00.000Z",
+    });
+    const hydrated = hydrateStudioProjectDraft({
+      draft: { ...draft, version: 1 },
+    });
+
+    expect(hydrated.storyState.storyGenerated).toBe(false);
+    expect(hydrated.storyState.storyBeats).toEqual(storyState.storyBeats);
+    expect(hydrated.storyState.confirmedTreatmentId).toBeNull();
   });
 
   test("preserves an explicitly saved fast caption mode", () => {
@@ -268,6 +318,12 @@ describe("projectPersistence", () => {
           signature: "workflow-signature",
           committedAt: "2026-06-21T00:01:00.000Z",
         },
+        finalExport: {
+          videoUrl: "https://media.example.test/files/final.mp4",
+          downloadFileName: "final.mp4",
+          cueCount: 42,
+          status: "Final MP4 ready · 246.4s · 42 synced shader cues.",
+        },
       },
       savedAt: "2026-06-21T00:00:00.000Z",
     });
@@ -305,6 +361,12 @@ describe("projectPersistence", () => {
         }],
         signature: "workflow-signature",
         committedAt: "2026-06-21T00:01:00.000Z",
+      },
+      finalExport: {
+        videoUrl: "https://media.example.test/files/final.mp4",
+        downloadFileName: "final.mp4",
+        cueCount: 42,
+        status: "Final MP4 ready · 246.4s · 42 synced shader cues.",
       },
     });
   });

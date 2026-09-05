@@ -215,6 +215,37 @@ describe("mediaGateway", () => {
     expect(Array.from(new Uint8Array(result.bytes))).toEqual([1, 2, 3]);
   });
 
+  test("retries when a large response socket closes while reading the body", async () => {
+    let attempts = 0;
+    const result = await downloadMediaGatewayFile({
+      bucket: "stack-structure",
+      objectKey: "media-uploads/video-source/large.mp4",
+      env: {
+        MEDIA_GATEWAY_URL: "https://media.local",
+        MEDIA_GATEWAY_TOKEN: "media-token",
+      },
+      fetchImpl: (async () => {
+        attempts += 1;
+        if (attempts === 1) {
+          return {
+            ok: true,
+            status: 200,
+            headers: new Headers({ "content-type": "video/mp4" }),
+            arrayBuffer: async () => {
+              throw new Error("socket closed");
+            },
+          } as unknown as Response;
+        }
+        return new Response(new Uint8Array([4, 5, 6]), {
+          headers: { "content-type": "video/mp4" },
+        });
+      }) as typeof fetch,
+    });
+
+    expect(attempts).toBe(2);
+    expect(Array.from(new Uint8Array(result.bytes))).toEqual([4, 5, 6]);
+  });
+
   test("prefers the internal gateway URL for large data transfers", async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = [];
     const env = {

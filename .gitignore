@@ -65,3 +65,6 @@ next-env.d.ts
 media-to-test-with/
 e2e-ingest-state.png
 story-state.jpeg
+
+# Cursor: repo MCP overrides (remote Higgsfield etc.) — copy from proxmox-home/cursor/templates/mcp-higgsfield.json locally
+.cursor/mcp.json

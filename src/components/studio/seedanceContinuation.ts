@@ -2,7 +2,8 @@ import type { GeneratedStudioAsset } from "./generatedAssets";
 import type { VideoMoment } from "./musicVideoProject";
 import { getOrderedSelectedReferenceIds, type GenerationReferenceSelection, type ReferenceAsset } from "./referenceAssets";
 
-export type SeedanceReferenceRole = "accepted-final-frame" | "character-identity" | "environment" | "crowd-extras" | "custom" | "contact-sheet";
+export type SeedanceReferenceRole = "accepted-final-frame" | "character-identity" | "environment" | "crowd-extras" | "custom" | "contact-sheet" | "composition-reference" | "start-frame" | "end-frame";
+export type SeedanceVideoModel = "Seedance 2.0" | "Seedance 2.5";
 
 export interface SeedanceContinuationReference {
   tag: string;
@@ -34,12 +35,12 @@ export interface SeedanceContinuationPacket {
   narrativeJob: string;
   feltIntent: string;
   providerLane: "higgsfield-manual-unlimited";
-  model: "Enhanced Seedance 2.0 Fast";
-  generationMode: "image-to-video";
-  continuationType: "seamless-continuation";
-  durationSeconds: 15;
+  model: SeedanceVideoModel;
+  generationMode: "reference-to-video";
+  continuationType: "whole-shot-replacement";
+  durationSeconds: number;
   aspectRatio: "16:9";
-  resolution: "480p";
+  resolution: "480p" | "720p";
   references: SeedanceContinuationReference[];
   audioVideoReference?: SeedanceAudioVideoReference;
   prompt: string;
@@ -58,21 +59,25 @@ export function buildSeedanceContinuationPacket(params: {
   referenceSelection: GenerationReferenceSelection;
   contactSheet?: GeneratedStudioAsset;
   audioVideoReference?: SeedanceAudioVideoReference;
+  model?: SeedanceVideoModel;
+  resolution?: "480p" | "720p";
+  handleSeconds?: number;
+  approvedFrames?: GeneratedStudioAsset[];
 }): SeedanceContinuationPacket {
   const references: SeedanceContinuationReference[] = [];
   const errors: string[] = [];
-  const finalFrameUrl = durableUrl(params.moment?.lastFrameUrl);
+  const finalFrameUrl = durableUrl(params.moment?.firstFrameUrl ?? params.moment?.thumbnailUrl);
 
   if (finalFrameUrl) {
     references.push({
       tag: "@Image_1",
-      role: "accepted-final-frame",
-      label: `${params.moment?.sourceRefLabel ?? params.moment?.label ?? "source shot"} final frame`,
+      role: "composition-reference",
+      label: `${params.moment?.sourceRefLabel ?? params.moment?.label ?? "source shot"} opening composition`,
       url: finalFrameUrl,
-      instruction: "@Image_1 is the accepted final frame and first-frame continuity source. It controls the actual opening pose, screen position, wardrobe, environment arrangement, lighting phase, and framing.",
+      instruction: "@Image_1 guides composition, layout and blocking only. It is NOT an exact first/last frame or an identity source. Rebuild people from their attached high-resolution character sheets. Do not stitch onto the old action's last frame.",
     });
   } else {
-    errors.push("The selected source moment has no durable last frame. Finish scene processing before preparing a continuation.");
+    errors.push("The selected source moment has no durable opening composition. Finish scene processing before preparing a replacement.");
   }
 
   const selectedAssets = getOrderedSelectedReferenceIds(params.referenceSelection);
@@ -105,11 +110,11 @@ export function buildSeedanceContinuationPacket(params: {
     });
   }
 
-  const contactSheetUrl = durableUrl(
+  const contactSheetUrl = params.contactSheet?.reviewStatus === "approved" ? durableUrl(
     params.contactSheet?.fullStorage?.mediaUrl
       ?? params.contactSheet?.fullStorage?.publicUrl
       ?? params.contactSheet?.resultUrl,
-  );
+  ) : undefined;
   if (contactSheetUrl && references.length < 9) {
     const tag = `@Image_${references.length + 1}`;
     references.push({
@@ -121,33 +126,59 @@ export function buildSeedanceContinuationPacket(params: {
     });
   }
 
-  const completedAction = cleanClause(params.moment?.captionMeta?.action) || "the action already completed in the source shot";
+  for (const frame of params.approvedFrames ?? []) {
+    if (frame.reviewStatus !== "approved" || frame.storyboard?.kind !== "fresh-frame"
+      || frame.storyboard.sectionId !== params.sectionId
+      || frame.storyboard.songStart > params.songStart || frame.storyboard.songEnd < params.songEnd) continue;
+    const url = durableUrl(frame.fullStorage?.mediaUrl ?? frame.fullStorage?.publicUrl ?? frame.resultUrl);
+    if (!url) continue;
+    const tag = `@Image_${references.length + 1}`;
+    const role = frame.frameRole ?? "composition-reference";
+    references.push({ tag, role, label: frame.title ?? "approved fresh frame", url,
+      instruction: role === "composition-reference" ? `${tag} is an approved composition/layout reference only. Character sheets remain authoritative for identity.`
+        : role === "start-frame" ? `${tag} is the requested exact opening frame. No pre-roll exists before this frame; identity must still match the character sheets.`
+        : `${tag} is the requested ending composition; use only if the selected provider mode explicitly supports end-frame conditioning.` });
+  }
+  const model = params.model ?? "Seedance 2.0";
+  const maxDuration = model === "Seedance 2.5" ? 30 : 15;
+  const handles = Math.max(0, Math.min(5, params.handleSeconds ?? 1));
+  const requiredDuration = Math.max(0, params.songEnd - params.songStart);
+  const durationSeconds = Math.max(4, Math.ceil(requiredDuration + 2 * handles));
+  if (durationSeconds > maxDuration) errors.push(`Whole replacement plus handles needs ${durationSeconds}s; ${model} allows at most ${maxDuration}s. Choose a longer-capable Seedance model or plan a purposeful separate shot, never stitch the same movement.`);
+  if (references.length > (model === "Seedance 2.0" ? 9 : 30)) errors.push("Too many image references for this Seedance model. Select fewer composition frames; retain canonical identity sheets.");
+  if (!references.some((reference) => reference.role === "character-identity")) errors.push("Attach an uploaded high-resolution character sheet. A composition frame cannot define identity.");
+  if (handles > 0 && references.some((reference) => reference.role === "start-frame")) errors.push("Exact start-frame conditioning conflicts with leading handles. Use composition-reference mode or set handles to zero.");
+  if (references.some((reference) => reference.role === "end-frame")) errors.push("End-frame conditioning requires a separately verified provider mode. Use composition-reference for this multimodal packet.");
+  const completedAction = cleanClause(params.moment?.captionMeta?.action) || "the planned complete action";
   const storyIntent = cleanClause(params.storyIntent) || "move the current song section forward with a new visual beat";
   const referenceContract = [params.audioVideoReference?.instruction, ...references.map((reference) => reference.instruction)].filter(Boolean).join("\n");
   const audioDirection = params.audioVideoReference
-    ? "Use @Video_1 as the timing clock for the selected song section. Keep visual continuity controlled by the image references; generated production audio may be replaced by the master mix in the final edit."
+    ? `Use @Video_1 as the timing clock: align its selected-section offset ${params.audioVideoReference.sectionOffset.start.toFixed(2)}s with generated-video time ${handles.toFixed(2)}s. The audio reference may have clipped handles at the song boundaries; do not shift the intended song beat. Keep visual continuity controlled by the image references; generated production audio will be replaced by the master mix in the final edit.`
     : "The section-timing @Video_1 has not been prepared yet. Do not submit this packet until its exact song placement and handles are rendered.";
   const prompt = `${referenceContract}
 
-Begin exactly where @Image_1 ends. Continue the open motion naturally without restarting or replaying ${completedAction}. This clip only advances the narrative job for ${params.sectionLabel}: ${storyIntent}. Stage one clearly new, readable action that changes the character's position, relationship, discovery, or objective; let the camera reveal that change with one motivated move. End on a materially different composition that gives the editor clean handles and makes the story feel farther along than the source shot.
+Generate a NEW complete ${durationSeconds}-second replacement take for ${params.sectionLabel}, not an appended extension. Story intent: ${storyIntent}. Re-stage the complete action (${completedAction}) naturally from its beginning. Do not match or continue the old clip's ending frame; do not splice separately generated halves of the same movement.
+0–${handles}s: usable moving lead-in before the key action, preserving composition and screen direction.
+${handles}–${(handles + requiredDuration).toFixed(2)}s: perform the complete narrative action with motivated camera movement. Plan deliberate shot changes only when the story calls for multiple shots; keep a single movement in one take.
+${(handles + requiredDuration).toFixed(2)}–${durationSeconds}s: usable moving tail handle after the action, no freeze frame or fade.
 
-Preserve canonical identities from their assigned character references and preserve the current location from @Image_1${references.some((reference) => reference.role === "environment") ? " plus the assigned environment reference" : ""}. ${audioDirection} Do not introduce an unrelated location, duplicate people, restart the completed action, or jump ahead to a later song section. No captions, titles, logos, or burned-in text. Stop after this one new beat completes.`;
+Canonical high-resolution character sheets ALWAYS control faces, bodies and wardrobe. Source frames and fresh storyboard images control composition/layout only unless explicitly assigned an endpoint role. Preserve location and lighting from the environment reference. ${audioDirection} Generated audio is not the master song. No duplicate people, unrelated location, captions, titles, logos or burned-in text.`;
 
   return {
     projectId: params.projectId,
-    clipId: `${params.sectionId}-continuation-${params.songStart.toFixed(2)}`,
+    clipId: `${params.sectionId}-replacement-${params.songStart.toFixed(2)}`,
     parentClipId: params.moment?.id ?? "missing-parent",
     sceneId: params.sectionId,
     songRange: { start: params.songStart, end: params.songEnd },
     narrativeJob: storyIntent,
     feltIntent: "The viewer should feel the story move forward into a genuinely new beat instead of looping familiar coverage.",
     providerLane: "higgsfield-manual-unlimited",
-    model: "Enhanced Seedance 2.0 Fast",
-    generationMode: "image-to-video",
-    continuationType: "seamless-continuation",
-    durationSeconds: 15,
+    model,
+    generationMode: "reference-to-video",
+    continuationType: "whole-shot-replacement",
+    durationSeconds,
     aspectRatio: "16:9",
-    resolution: "480p",
+    resolution: params.resolution ?? "480p",
     references,
     audioVideoReference: params.audioVideoReference,
     prompt,
@@ -166,7 +197,7 @@ export function serializeSeedanceContinuationPacket(packet: SeedanceContinuation
     `Project: ${packet.projectId} · Clip: ${packet.clipId} · Parent: ${packet.parentClipId} · Scene: ${packet.sceneId}`,
     `Song range: ${packet.songRange.start.toFixed(2)}–${packet.songRange.end.toFixed(2)} · Job: ${packet.narrativeJob}`,
     `Intent: ${packet.feltIntent}`,
-    `${packet.model} · Unlimited · ${packet.durationSeconds}s · ${packet.aspectRatio} · ${packet.resolution}`,
+    `${packet.model} · verify subscription eligibility in provider UI · ${packet.durationSeconds}s · ${packet.aspectRatio} · ${packet.resolution}`,
     `Mode: ${packet.generationMode} · ${packet.continuationType}`,
     audioVideoReference,
     referenceList,

@@ -6,6 +6,7 @@ import { SHADER_CUE_KINDS, type ShaderAccentKinds, type ShaderCueKind } from "./
 import type { BeatJoinAnalysis, ColorGradient, SceneCaptionSettings, Tab, UploadedVideoSource } from "./types";
 import type { SourceTimelineSegment, SplitMode } from "./sourceTimeline";
 import type { SavedStudioProject, StudioProjectSummary } from "@/lib/studioProjectStore";
+import type { StoryBrief, StoryGenerationMeta, StoryTreatment } from "./storyTreatments";
 
 export const STUDIO_PROJECT_STORAGE_KEY = "project-stack-structure:studio-project:v1";
 export const ACTIVE_STUDIO_PROJECT_KEY = "project-stack-structure:active-project:v1";
@@ -20,6 +21,13 @@ export type PersistedStoryState = {
   activeBeatId: string;
   storyGenerated: boolean;
   editSettings?: StoryEditSettings;
+  brief?: StoryBrief;
+  treatments?: StoryTreatment[];
+  selectedTreatmentId?: string | null;
+  confirmedTreatmentId?: string | null;
+  confirmedTreatmentSnapshot?: StoryTreatment | null;
+  generationMeta?: StoryGenerationMeta | null;
+  storyContentSignature?: string | null;
 };
 
 export type PersistedVideoSource = Omit<UploadedVideoSource, "videoUrl"> & {
@@ -42,6 +50,14 @@ export type PersistedWorkflowUiSettings = {
   shaderAccentKinds?: ShaderAccentKinds;
   isPreviewExpanded?: boolean;
   committedSplit?: PersistedCommittedSplit;
+  finalExport?: PersistedFinalExport;
+};
+
+export type PersistedFinalExport = {
+  videoUrl: string;
+  downloadFileName: string;
+  cueCount: number;
+  status: string;
 };
 
 export type PersistedCommittedSplit = {
@@ -52,7 +68,7 @@ export type PersistedCommittedSplit = {
 };
 
 export interface PersistedStudioProjectDraft {
-  version: 1;
+  version: 1 | 2;
   savedAt: string;
   analysis: PersistedBeatJoinAnalysis | null;
   videoSources: PersistedVideoSource[];
@@ -87,7 +103,7 @@ export function createPersistableStudioProjectDraft(params: {
   savedAt?: string;
 }): PersistedStudioProjectDraft {
   return {
-    version: 1,
+    version: 2,
     savedAt: params.savedAt ?? new Date().toISOString(),
     analysis: params.analysis
       ? {
@@ -138,7 +154,7 @@ export function createPersistableStudioProjectDraft(params: {
       captionManifestUrl: stripRuntimeUrl(source.captionManifestUrl),
       mediaKey: buildVideoMediaKey(source),
     })),
-    storyState: params.storyState,
+    storyState: normalizePersistedStoryState(params.storyState, false),
     musicVideoProject: params.musicVideoProject ? sanitizeMusicVideoProjectForStorage(params.musicVideoProject) : null,
     referenceAssets: (params.referenceAssets ?? []).map(sanitizeReferenceAssetForStorage),
     generatedAssets: (params.generatedAssets ?? []).map(sanitizeGeneratedStudioAssetForStorage),
@@ -178,7 +194,7 @@ export function hydrateStudioProjectDraft(params: {
         videoUrl: videoUrlsByMediaKey[source.mediaKey] ?? source.storageUrl ?? "",
       }))
       .filter((source) => source.videoUrl),
-    storyState: params.draft.storyState,
+    storyState: normalizePersistedStoryState(params.draft.storyState, params.draft.version === 1),
     musicVideoProject: params.draft.musicVideoProject,
     referenceAssets: hydrateReferenceAssets(params.draft.referenceAssets ?? []),
     generatedAssets: hydrateGeneratedStudioAssets(params.draft.generatedAssets ?? []),
@@ -271,6 +287,8 @@ export function isEmptyStudioProjectDraft(draft: PersistedStudioProjectDraft) {
     && (draft.generatedAssets?.length ?? 0) === 0
     && !draft.storyState.vocalStemName.trim()
     && !draft.storyState.transcriptSummary
+    && !draft.storyState.brief?.text.trim()
+    && (draft.storyState.treatments?.length ?? 0) === 0
     && hasOnlyDefaultStoryBeats(draft.storyState.storyBeats)
     && !draft.storyState.storyGenerated;
 }
@@ -386,11 +404,56 @@ function stripRuntimeUrl(value: string | undefined) {
 function parsePersistedDraft(raw: string): PersistedStudioProjectDraft | null {
   try {
     const parsed = JSON.parse(raw) as PersistedStudioProjectDraft;
-    if (parsed?.version !== 1 || !parsed.storyState || !Array.isArray(parsed.videoSources)) return null;
+    if ((parsed?.version !== 1 && parsed?.version !== 2) || !parsed.storyState || !Array.isArray(parsed.videoSources)) return null;
     return parsed;
   } catch {
     return null;
   }
+}
+
+export function normalizePersistedStoryState(state: PersistedStoryState, legacy: boolean): PersistedStoryState {
+  const treatments = Array.isArray(state.treatments) ? state.treatments : [];
+  const confirmedTreatmentSnapshot = isPersistedTreatment(state.confirmedTreatmentSnapshot)
+    ? state.confirmedTreatmentSnapshot
+    : null;
+  const confirmedTreatmentId = typeof state.confirmedTreatmentId === "string" && state.confirmedTreatmentId.trim()
+    ? state.confirmedTreatmentId
+    : null;
+  const storyContentSignature = typeof state.storyContentSignature === "string" && state.storyContentSignature.trim()
+    ? state.storyContentSignature
+    : null;
+  const hasConfirmedV2Plan = !legacy
+    && Boolean(state.storyGenerated)
+    && Boolean(confirmedTreatmentSnapshot)
+    && confirmedTreatmentId === confirmedTreatmentSnapshot?.id
+    && Boolean(storyContentSignature);
+  return {
+    ...state,
+    storyGenerated: hasConfirmedV2Plan,
+    brief: { text: typeof state.brief?.text === "string" ? state.brief.text.slice(0, 4_000) : "" },
+    treatments,
+    selectedTreatmentId: typeof state.selectedTreatmentId === "string" ? state.selectedTreatmentId : null,
+    confirmedTreatmentId: hasConfirmedV2Plan ? confirmedTreatmentId : null,
+    confirmedTreatmentSnapshot: hasConfirmedV2Plan ? confirmedTreatmentSnapshot : null,
+    generationMeta: isGenerationMeta(state.generationMeta) ? state.generationMeta : null,
+    storyContentSignature: hasConfirmedV2Plan ? storyContentSignature : null,
+  };
+}
+
+function isPersistedTreatment(value: unknown): value is StoryTreatment {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const treatment = value as Partial<StoryTreatment>;
+  return typeof treatment.id === "string"
+    && typeof treatment.logline === "string"
+    && Array.isArray(treatment.anchors)
+    && treatment.anchors.length >= 4
+    && treatment.anchors.length <= 6;
+}
+
+function isGenerationMeta(value: unknown): value is StoryGenerationMeta {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const meta = value as Partial<StoryGenerationMeta>;
+  return typeof meta.model === "string" && typeof meta.generatedAt === "string";
 }
 
 async function readDraftApiResponse(response: Response): Promise<{ success?: boolean; draft?: PersistedStudioProjectDraft | null; error?: string }> {
@@ -431,7 +494,25 @@ function sanitizeWorkflowUiSettings(settings: PersistedWorkflowUiSettings | unde
   if (typeof settings?.isPreviewExpanded === "boolean") next.isPreviewExpanded = settings.isPreviewExpanded;
   const committedSplit = sanitizeCommittedSplit(settings?.committedSplit);
   if (committedSplit) next.committedSplit = committedSplit;
+  const finalExport = sanitizeFinalExport(settings?.finalExport);
+  if (finalExport) next.finalExport = finalExport;
   return next;
+}
+
+function sanitizeFinalExport(value: PersistedFinalExport | undefined): PersistedFinalExport | undefined {
+  if (!value || typeof value.videoUrl !== "string" || !/^https?:\/\//i.test(value.videoUrl)) return undefined;
+  const downloadFileName = typeof value.downloadFileName === "string"
+    ? value.downloadFileName.trim().replace(/[\\/]+/g, "-").slice(0, 180)
+    : "";
+  if (!downloadFileName) return undefined;
+  return {
+    videoUrl: value.videoUrl.trim().slice(0, 2_048),
+    downloadFileName,
+    cueCount: clampNumber(value.cueCount, 0, 10_000),
+    status: typeof value.status === "string" && value.status.trim()
+      ? value.status.trim().slice(0, 300)
+      : "Final MP4 ready.",
+  };
 }
 
 function sanitizeCommittedSplit(value: PersistedCommittedSplit | undefined): PersistedCommittedSplit | undefined {

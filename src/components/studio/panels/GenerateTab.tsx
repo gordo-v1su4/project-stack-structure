@@ -13,13 +13,14 @@ import {
 import type { BeatJoinAnalysis, ColorPaletteSwatch, MotionDescriptor } from "../types";
 import { buildGeneratedAssetContextPreview, resolveGeneratedAssetTrimFrameControl, resolveGeneratedAssetTrimWindow, type GeneratedStudioAsset } from "../generatedAssets";
 import { uploadGeneratedClipToRustFs } from "../generatedClipUpload";
-import { buildSeedanceContinuationPacket, serializeSeedanceContinuationPacket } from "../seedanceContinuation";
-import { buildSeedanceAudioPlacementKey, SEEDANCE_AUDIO_HANDLE_SECONDS } from "../seedanceAudioReference";
+import { buildSeedanceContinuationPacket, serializeSeedanceContinuationPacket, type SeedanceVideoModel } from "../seedanceContinuation";
+import { buildSeedanceAudioPlacementKey } from "../seedanceAudioReference";
 import { buildAdaptiveCueMap } from "../adaptiveCueMap";
 import type { EditPlanPreviewSegment, MusicVideoProject, TimelineItem, VideoMoment } from "../musicVideoProject";
 import { selectPreviewCutRange, selectPreviewSectionRange, type PreviewCutRange } from "../resolvedPreviewSelection";
 import { waitForTriggerRunOutput } from "@/lib/clientTriggerRuns";
 import { resolveRangePointerRatio } from "../rangePointer";
+import { StoryboardPlanner } from "./StoryboardPlanner";
 
 type GenerateTabProps = {
   project: MusicVideoProject | null;
@@ -68,15 +69,6 @@ type TimelineZoomMode = "fit" | "section" | "selected";
 
 type GeneratedLocalAsset = { provider: "swarmui" | "comfyui"; kind: "image" | "video"; url: string; filename?: string; path?: string };
 
-type HiggsfieldGenerationFormState = {
-  title: string;
-  characterName: string;
-  prompt: string;
-  resolution: "1k" | "2k" | "4k";
-  splitRows: number;
-  splitCols: number;
-  extraReferenceUrls: string;
-};
 
 type LocalSwarmPreset = {
   title: string;
@@ -165,7 +157,7 @@ export type CoverageIssueGroup = {
 const STATUS_LABELS: Record<SlotStatus, string> = {
   filled: "filled",
   weak: "weak match",
-  short: "needs extension",
+  short: "review whole-shot replacement",
   missing: "missing",
 };
 
@@ -179,8 +171,8 @@ const STATUS_STYLES: Record<SlotStatus, { border: string; bg: string; text: stri
 const NEED_LABELS: Record<GenerationNeed, string> = {
   "b-roll": "Generate B-roll",
   "alt-angle": "Generate Alt Angle / Camera B",
-  "extend-start": "Extend From First Frame",
-  "extend-end": "Extend From Last Frame",
+  "extend-start": "Use opening composition",
+  "extend-end": "Replace whole shot + handles",
   bridge: "Bridge A→B",
   "reroll-match": "Reroll Match",
 };
@@ -193,8 +185,6 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedAssets, setGeneratedAssets] = useState<GeneratedLocalAsset[]>([]);
   const [selectedPresetTitle, setSelectedPresetTitle] = useState(LOCAL_SWARM_PRESETS[0].title);
-  const [higgsfieldStatus, setHiggsfieldStatus] = useState("Higgsfield not checked yet.");
-  const [isHiggsfieldGenerating, setIsHiggsfieldGenerating] = useState(false);
   const [generatedImportStatus, setGeneratedImportStatus] = useState("Select exactly one resolved cut below, then import its completed Seedance candidates.");
   const [isImportingGenerated, setIsImportingGenerated] = useState(false);
   const cueMap = useMemo(() => buildAdaptiveCueMap({
@@ -291,42 +281,6 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
   };
 
 
-  const runHiggsfieldGeneration = async (params: HiggsfieldGenerationFormState) => {
-    const inputImages = buildHiggsfieldInputImages(referenceAssets, effectiveReferenceSelection, params.extraReferenceUrls);
-    if (!inputImages.length) {
-      setHiggsfieldStatus("Add at least one RustFS reference image before running Nano Banana Pro.");
-      return;
-    }
-    setIsHiggsfieldGenerating(true);
-    setHiggsfieldStatus(`Sending ${params.resolution.toUpperCase()} Nano Banana Pro grid to Higgsfield...`);
-    try {
-      const response = await fetch("/api/generate/higgsfield", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: params.title,
-          characterName: params.characterName,
-          prompt: params.prompt,
-          aspectRatio: "16:9",
-          resolution: params.resolution,
-          inputImages,
-          splitRows: params.splitRows,
-          splitCols: params.splitCols,
-        }),
-      });
-      const payload = await response.json() as { success?: boolean; error?: string; runId?: string };
-      if (!response.ok || payload.error || !payload.runId) throw new Error(payload.error ?? `Higgsfield failed with HTTP ${response.status}`);
-      setHiggsfieldStatus(`Higgsfield job queued through Trigger.dev (${payload.runId})...`);
-      const asset = await waitForTriggerRunOutput(payload.runId, { timeoutMs: 20 * 60 * 1_000, pollIntervalMs: 3_000 }) as GeneratedStudioAsset;
-      if (!asset?.id || asset.provider !== "higgsfield") throw new Error("Higgsfield completed without a valid durable asset.");
-      onGeneratedAsset(asset);
-      setHiggsfieldStatus(`Completed ${asset.jobId}. Full grid and ${asset.split?.panels.length ?? 0} panels uploaded to RustFS.`);
-    } catch (error) {
-      setHiggsfieldStatus(error instanceof Error ? error.message : "Higgsfield generation failed.");
-    } finally {
-      setIsHiggsfieldGenerating(false);
-    }
-  };
 
   const runLocalGeneration = async (kind: "image" | "video") => {
     if (!focusSlot) return;
@@ -390,9 +344,9 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
       <section className="rounded-[2px] border border-[#1a1a1a] bg-[#0b0b0b] p-3">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Generate missing footage / extensions</div>
+            <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Plan replacement footage</div>
             <div className="mt-1 max-w-5xl text-[11px] leading-5 text-[#6d6d6d]">
-              This page sits between Match and Join. Match exposes holes and weak candidates; Generate turns selected source frames into new B-roll, alt angles, bridges, or clip extensions; Join only assembles approved real/generated shots.
+              This page sits between Match and Join. Match exposes holes and weak candidates; Generate plans complete replacement takes, B-roll and deliberate alternate shots; Join only assembles approved real/generated shots.
             </div>
           </div>
           <div className="flex gap-2">
@@ -404,12 +358,19 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
         <div className="mt-3 grid gap-2 md:grid-cols-3 xl:grid-cols-6">
           <MetricCard label="Required" value={coverage.requiredDuration > 0 ? fmt(coverage.requiredDuration) : "Waiting"} ready={coverage.requiredDuration > 0} />
           <MetricCard label="Real assigned" value={fmt(coverage.assignedDuration)} ready={coverage.coveragePct >= 99} />
-          <MetricCard label="True gaps" value={fmt(coverage.trueGapDuration)} ready={coverage.trueGapDuration === 0 && coverage.requiredDuration > 0} alert={coverage.trueGapDuration > 0} />
+          <MetricCard label="Primary-match shortage (estimate)" value={fmt(coverage.trueGapDuration)} ready={coverage.trueGapDuration === 0 && coverage.requiredDuration > 0} alert={coverage.trueGapDuration > 0} />
           <MetricCard label="Strong match" value={`${coverage.strongMatchPct}%`} ready={coverage.strongMatchPct >= 70} />
-          <MetricCard label="Required queue" value={`${coverage.requiredNeedCount} chunks`} ready={coverage.requiredNeedCount === 0 && slots.length > 0} alert={coverage.requiredNeedCount > 0} />
+          <MetricCard label="Chunks to inspect · not jobs" value={`${coverage.requiredNeedCount} chunks`} ready={coverage.requiredNeedCount === 0 && slots.length > 0} alert={coverage.requiredNeedCount > 0} />
           <MetricCard label="Optional rerolls" value={`${coverage.reviewCount} chunks · ${coverage.reviewSectionCount} sections`} ready={coverage.reviewCount === 0 && slots.length > 0} />
         </div>
       </section>
+
+      <StoryboardPlanner key={project?.id ?? "draft"} projectId={project?.id ?? "draft"} segments={previewSegments}
+        references={referenceAssets.filter((asset) => getOrderedSelectedReferenceIds(effectiveReferenceSelection).includes(asset.id))}
+        assets={persistedGeneratedAssets} onAsset={onGeneratedAsset} locked={!hasRequiredInputs}
+        sourceFrames={Object.fromEntries((project?.videoMoments ?? []).map((moment) => [moment.id, moment.firstFrameUrl ?? moment.thumbnailUrl]))}
+        sectionLabels={Object.fromEntries((project?.storySections ?? []).map((section) => [section.id, section.label]))}
+        onInspect={(startIndex, endIndex) => onAuditionPreviewRange({ startIndex, endIndex })} />
 
       {!hasRequiredInputs ? (
         <section className="rounded-[2px] border border-dashed border-[#252525] bg-[#080808] p-6 text-center">
@@ -424,7 +385,7 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Coverage timeline + generation lanes</div>
-            <div className="mt-1 text-[11px] text-[#6d6d6d]">Blocks are song-length aligned. Red gaps become generate tasks; purple gaps become source-frame extensions; yellow blocks need match approval or reroll.</div>
+            <div className="mt-1 text-[11px] text-[#6d6d6d]">Primary-match diagnostics only: inspect the resolved edit before deciding whether any generation is necessary. Replacement jobs cover complete actions plus handles.</div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <div className="rounded-[2px] border border-[#202020] bg-[#070707] p-1">
@@ -472,13 +433,13 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
               <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Coverage issues by song range</div>
               <div className="mt-1 text-[11px] text-[#6d6d6d]">Adjacent chunks with the same issue are grouped so you can see exactly where the problem starts, ends, and why it was flagged.</div>
             </div>
-            <div className="font-mono text-[10px] text-[#777]">{requiredIssues.length} required ranges · {reviewIssues.length} optional ranges</div>
+            <div className="font-mono text-[10px] text-[#777]">{requiredIssues.length} primary-match ranges to inspect · {reviewIssues.length} optional ranges</div>
           </div>
           {slots.length ? (
             <div className="space-y-4">
               <IssueGroupSection
-                title="Required gaps"
-                detail="Red means no source is assigned. Purple means the assigned source is too short. These ranges block Join."
+                title="Primary-match ranges to inspect"
+                detail="Red means no primary source is assigned. Purple means the primary source is short. Verify the resolved cuts; these estimates are not required generation jobs."
                 emptyLabel="No true gaps"
                 emptyDetail={`Every one of the ${slots.length} adaptive chunks has enough real footage assigned. Nothing must be generated before Join.`}
                 issues={requiredIssues}
@@ -502,8 +463,8 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
 
         <section className="rounded-[2px] border border-[#1a1a1a] bg-[#0b0b0b] p-3 xl:sticky xl:top-3 xl:max-h-[calc(100vh-190px)] xl:self-start xl:overflow-y-auto">
           <div className="mb-3">
-            <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Source-frame extension lab</div>
-            <div className="mt-1 text-[11px] text-[#6d6d6d]">Start/middle/end frames are retained so generation can extend an intro/outro, bridge between clips, or create a related Camera B angle.</div>
+            <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Whole-shot replacement lab</div>
+            <div className="mt-1 text-[11px] text-[#6d6d6d]">Generate the complete action plus edit handles. Source frames guide composition; canonical character sheets control identity. No stitched continuation of the same movement.</div>
           </div>
           <FrameExtensionPanel
             projectId={project?.id ?? "music-video-project-draft"}
@@ -513,12 +474,9 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
             referenceAssets={referenceAssets}
             referenceSelection={effectiveReferenceSelection}
             onReferenceSelection={setReferenceSelection}
-            higgsfieldStatus={higgsfieldStatus}
-            isHiggsfieldGenerating={isHiggsfieldGenerating}
             persistedGeneratedAssets={persistedGeneratedAssets}
             masterAudioRef={masterAudioRef}
             onEnsureOwnedMasterAudio={onEnsureOwnedMasterAudio}
-            onRunHiggsfield={runHiggsfieldGeneration}
             providerStatus={generationStatus}
             isGenerating={isGenerating}
             generatedAssets={generatedAssets}
@@ -527,7 +485,6 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
             onPresetChange={setSelectedPresetTitle}
             onCheckProvider={checkLocalGenerator}
             onGenerateImage={() => runLocalGeneration("image")}
-            onGenerateVideo={() => runLocalGeneration("video")}
           />
         </section>
       </div>
@@ -684,7 +641,7 @@ export function describeCoverageIssue(issue: CoverageIssueGroup) {
     return `No source scene is assigned from ${fmt(issue.start)} to ${fmt(issue.end)}. This is a true gap and must be filled before Join.`;
   }
   if (issue.status === "short") {
-    return `The assigned source covers ${fmt(issue.assignedDuration)} of ${fmt(issue.requiredDuration)}, leaving ${fmt(issue.missingDuration)} uncovered. Extend or replace it before Join.`;
+    return `The assigned source covers ${fmt(issue.assignedDuration)} of ${fmt(issue.requiredDuration)}, leaving ${fmt(issue.missingDuration)} uncovered. Inspect the resolved edit and, if needed, regenerate the whole shot with handles.`;
   }
   return `This Story section's selected match scores ${Math.round(issue.score * 100)}%, below the 45% review threshold. All ${issue.slots.length} chunks contain real footage, so generation is optional.`;
 }
@@ -758,7 +715,7 @@ function CoverageTimeline({
       </div>
       <div className="mt-2 flex items-center justify-between font-mono text-[9px] text-[#555]">
         <span>{fmt(view.start)}</span>
-        <span>green usable · yellow weak · purple extend · red missing</span>
+        <span>green usable · yellow weak · purple short source · red unassigned</span>
         <span>{fmt(view.end)}</span>
       </div>
     </div>
@@ -1108,12 +1065,9 @@ function FrameExtensionPanel({
   referenceAssets,
   referenceSelection,
   onReferenceSelection,
-  higgsfieldStatus,
-  isHiggsfieldGenerating,
   persistedGeneratedAssets,
   masterAudioRef,
   onEnsureOwnedMasterAudio,
-  onRunHiggsfield,
   providerStatus,
   isGenerating,
   generatedAssets,
@@ -1122,7 +1076,6 @@ function FrameExtensionPanel({
   onPresetChange,
   onCheckProvider,
   onGenerateImage,
-  onGenerateVideo,
 }: {
   projectId: string;
   slot?: CoverageSlot;
@@ -1131,12 +1084,9 @@ function FrameExtensionPanel({
   referenceAssets: ReferenceAsset[];
   referenceSelection: GenerationReferenceSelection;
   onReferenceSelection: (selection: GenerationReferenceSelection) => void;
-  higgsfieldStatus: string;
-  isHiggsfieldGenerating: boolean;
   persistedGeneratedAssets: GeneratedStudioAsset[];
   masterAudioRef: SeedanceMasterAudioRef | null;
   onEnsureOwnedMasterAudio: () => Promise<SeedanceMasterAudioRef>;
-  onRunHiggsfield: (params: HiggsfieldGenerationFormState) => void;
   providerStatus: string;
   isGenerating: boolean;
   generatedAssets: GeneratedLocalAsset[];
@@ -1145,12 +1095,11 @@ function FrameExtensionPanel({
   onPresetChange: (title: string) => void;
   onCheckProvider: () => void;
   onGenerateImage: () => void;
-  onGenerateVideo: () => void;
 }) {
   const frames = [
-    { label: "First / start anchor", url: moment?.firstFrameUrl ?? moment?.thumbnailUrl, action: "Extend From First Frame" },
+    { label: "Opening composition", url: moment?.firstFrameUrl ?? moment?.thumbnailUrl, action: "Composition reference only" },
     { label: "Middle / context", url: moment?.middleFrameUrl ?? moment?.storyboardUrl ?? moment?.thumbnailUrl, action: "Generate Alt Angle" },
-    { label: "Last / end anchor", url: moment?.lastFrameUrl ?? moment?.thumbnailUrl, action: "Extend From Last Frame" },
+    { label: "Last / context only", url: moment?.lastFrameUrl ?? moment?.thumbnailUrl, action: "Do not append matching action" },
   ];
   const anchorUrl = moment?.firstFrameUrl ?? moment?.thumbnailUrl;
   const referencePlan = buildGenerationReferenceInputs({
@@ -1160,42 +1109,9 @@ function FrameExtensionPanel({
     selection: referenceSelection,
   });
   const selectedPreset = presets.find((preset) => preset.title === selectedPresetTitle) ?? presets[0];
-  const character1Asset = referenceAssets.find((asset) => asset.id === referenceSelection.character1Id);
-  const character2Asset = referenceAssets.find((asset) => asset.id === referenceSelection.character2Id);
-  const environmentAsset = referenceAssets.find((asset) => asset.id === referenceSelection.environmentId);
-  const crowdAssets = normalizeCrowdReferenceIds(referenceSelection.crowdIds)
-    .flatMap((id) => referenceAssets.filter((asset) => asset.id === id));
-  const customAsset = referenceAssets.find((asset) => asset.id === referenceSelection.customId);
-  const characterNames = [character1Asset?.displayName, character2Asset?.displayName].filter(Boolean) as string[];
-  const defaultCharacterName = characterNames.join(" & ") || "Character";
-  const gridReferences: Array<{ kind: "character" | "environment" | "crowd" | "custom"; name?: string }> = [];
-  if (character1Asset) gridReferences.push({ kind: "character", name: character1Asset.displayName });
-  if (character2Asset) gridReferences.push({ kind: "character", name: character2Asset.displayName });
-  if (environmentAsset) gridReferences.push({ kind: "environment", name: environmentAsset.displayName });
-  for (const crowdAsset of crowdAssets) gridReferences.push({ kind: "crowd", name: crowdAsset.displayName });
-  if (customAsset) gridReferences.push({ kind: "custom", name: customAsset.displayName });
-  const gridPrompt = buildStoryboardGridPrompt({
-    slot,
-    moment,
-    references: gridReferences,
-  });
-  const gridTitle = `${slot?.item.label ?? "storyboard"} grid`;
-  const [editedForm, setEditedForm] = useState<Partial<HiggsfieldGenerationFormState>>({});
-  const higgsfieldForm: HiggsfieldGenerationFormState = {
-    title: gridTitle,
-    characterName: defaultCharacterName,
-    resolution: "2k",
-    splitRows: 3,
-    splitCols: 3,
-    extraReferenceUrls: "",
-    prompt: gridPrompt,
-    ...editedForm,
-  };
-  const setHiggsfieldForm = (update: Partial<HiggsfieldGenerationFormState>) => setEditedForm((current) => ({ ...current, ...update }));
-  const higgsfieldInputCount = buildHiggsfieldInputImages(referenceAssets, referenceSelection, higgsfieldForm.extraReferenceUrls).length;
-  const latestContactSheet = [...persistedGeneratedAssets]
-    .filter((asset) => asset.status === "completed" && Boolean(asset.fullStorage || asset.resultUrl))
-    .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))[0];
+  const [seedanceModel, setSeedanceModel] = useState<SeedanceVideoModel>("Seedance 2.0");
+  const [seedanceResolution, setSeedanceResolution] = useState<"480p" | "720p">("480p");
+  const [handleSeconds, setHandleSeconds] = useState(1);
   const songStart = selectedSegment?.musicStart ?? slot?.item.start ?? 0;
   const songEnd = selectedSegment?.musicEnd ?? slot?.item.end ?? 0;
   const placementKey = masterAudioRef && songEnd > songStart
@@ -1204,7 +1120,7 @@ function FrameExtensionPanel({
         songStart,
         songEnd,
         songDuration: masterAudioRef.duration,
-        handleSeconds: SEEDANCE_AUDIO_HANDLE_SECONDS,
+        handleSeconds,
       })
     : "";
   const [preparedAudioReference, setPreparedAudioReference] = useState<PreparedSeedanceAudioReference | null>(null);
@@ -1224,7 +1140,10 @@ function FrameExtensionPanel({
     moment,
     referenceAssets,
     referenceSelection,
-    contactSheet: latestContactSheet,
+    approvedFrames: persistedGeneratedAssets,
+    model: seedanceModel,
+    resolution: seedanceResolution,
+    handleSeconds,
     audioVideoReference: activeAudioReference ? {
       tag: "@Video_1",
       role: "section-audio-timing",
@@ -1245,7 +1164,7 @@ function FrameExtensionPanel({
       return;
     }
     setIsPreparingAudioReference(true);
-    setSeedanceAudioStatus(`Rendering black Video_1 for ${fmtCutTime(songStart)}–${fmtCutTime(songEnd)} plus two-second handles...`);
+    setSeedanceAudioStatus(`Rendering black Video_1 for ${fmtCutTime(songStart)}–${fmtCutTime(songEnd)} plus ${handleSeconds}s handles...`);
     try {
       const requestKey = sanitizeSeedanceRequestKey(`${projectId}-${slot?.item.id ?? selectedSegment?.sectionId ?? "section"}-${songStart.toFixed(3)}-${songEnd.toFixed(3)}`);
       const queueAudioReference = async (audio: SeedanceMasterAudioRef) => {
@@ -1258,7 +1177,7 @@ function FrameExtensionPanel({
             songStart,
             songEnd,
             songDuration: audio.duration,
-            handleSeconds: SEEDANCE_AUDIO_HANDLE_SECONDS,
+            handleSeconds,
           }),
         });
         const queued = await response.json() as { runId?: string; error?: string };
@@ -1280,7 +1199,7 @@ function FrameExtensionPanel({
         songStart,
         songEnd,
         songDuration: activeMasterAudio.duration,
-        handleSeconds: SEEDANCE_AUDIO_HANDLE_SECONDS,
+        handleSeconds,
       });
       setPreparedAudioReference({ ...output, placementKey: activePlacementKey });
       setSeedanceAudioStatus(`Video_1 ready · audio ${fmtCutTime(output.clipStart)}–${fmtCutTime(output.clipEnd)} · selected section begins ${output.sectionStartOffset.toFixed(2)}s into the reference.`);
@@ -1322,13 +1241,6 @@ function FrameExtensionPanel({
         ))}
       </div>
       <div className="rounded-[2px] border border-[#1f1f1f] bg-[#070707] p-2">
-        <div className="mb-1 flex items-center justify-between gap-2">
-          <div className="text-[8px] uppercase tracking-[0.16em] text-[#555]">AI suggested prompt draft</div>
-          <button type="button" onClick={() => setHiggsfieldForm({ prompt: gridPrompt, title: gridTitle })} className="rounded-[2px] border border-[#2a2a2a] px-2 py-1 text-[8px] uppercase tracking-[0.12em] text-[#aaa] hover:border-[#e05c00] hover:text-[#e05c00]">Use in grid form</button>
-        </div>
-        <div className="text-[11px] leading-5 text-[#b0b0b0]">{gridPrompt}</div>
-      </div>
-      <div className="rounded-[2px] border border-[#1f1f1f] bg-[#070707] p-2">
         <div className="mb-2 flex items-center justify-between gap-2">
           <div className="text-[8px] uppercase tracking-[0.16em] text-[#555]">Nano Banana Pro reference order</div>
           <div className="font-mono text-[8px] text-[#777]">{referencePlan.imageUrls.length} image_urls</div>
@@ -1360,13 +1272,18 @@ function FrameExtensionPanel({
       <div className="rounded-[2px] border border-[#24476f] bg-[#050b16] p-2">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
-            <div className="text-[8px] uppercase tracking-[0.16em] text-[#6ca6d2]">Seedance continuation handoff</div>
-            <div className="mt-1 text-[9px] leading-4 text-[#7d8fa1]">Uses the selected shot&apos;s real last frame as @Image_1. At submission time, Trigger.dev renders the exact placed song range plus two-second handles over solid black as @Video_1. Moving the cut invalidates that timing reference.</div>
+            <div className="text-[8px] uppercase tracking-[0.16em] text-[#6ca6d2]">Seedance whole-shot replacement handoff</div>
+            <div className="mt-1 text-[9px] leading-4 text-[#7d8fa1]">Opening frame = composition/layout only. High-resolution character sheets always control identity. Replace the entire shot plus handles, never append matching movement to its ending frame. Video_1 carries master-song timing only.</div>
           </div>
-          <div className="rounded-[2px] border border-[#24476f] px-2 py-1 font-mono text-[8px] uppercase tracking-[0.12em] text-[#6ca6d2]">Fast · Unlimited · 15s · 16:9 · 480p</div>
+          <div className="rounded-[2px] border border-[#24476f] px-2 py-1 font-mono text-[8px] uppercase tracking-[0.12em] text-[#6ca6d2]">{seedanceModel} · {seedancePacket.durationSeconds}s · 16:9 · {seedanceResolution}</div>
+        </div>
+        <div className="mt-2 grid grid-cols-3 gap-2 text-[10px] text-[#aaa]">
+          <label>Video model<select aria-label="Seedance video model" value={seedanceModel} onChange={(event) => setSeedanceModel(event.target.value as SeedanceVideoModel)} className="w-full bg-[#111] p-2"><option>Seedance 2.0</option><option>Seedance 2.5</option></select></label>
+          <label>Video resolution<select aria-label="Seedance video resolution" value={seedanceResolution} onChange={(event) => setSeedanceResolution(event.target.value as "480p" | "720p")} className="w-full bg-[#111] p-2"><option>480p</option><option>720p</option></select></label>
+          <label>Handles per side<select aria-label="Replacement handles" value={handleSeconds} onChange={(event) => setHandleSeconds(Number(event.target.value))} className="w-full bg-[#111] p-2"><option value={0}>0s</option><option value={1}>1s</option><option value={2}>2s</option><option value={3}>3s</option></select></label>
         </div>
         <div className="mt-2 rounded-[2px] border border-[#14283d] bg-[#03070c] p-2 font-mono text-[8px] leading-4 text-[#72879a]">
-          <div>{seedancePacket.references.length} ordered image references · @Image_1 is the accepted ending frame · @Video_1 is audio/rhythm/lip-sync timing only.</div>
+          <div>{seedancePacket.references.length} ordered image references · @Image_1 is opening composition only · @Video_1 is audio/rhythm/lip-sync timing only. Verify provider subscription and mode before submitting; no video is submitted by this page.</div>
           <div className={`mt-1 ${activeAudioReference ? "text-[#78c878]" : "text-[#d3a236]"}`}>{activeAudioReference ? `@Video_1 · ${activeAudioReference.videoUrl}` : "@Video_1 · not prepared for this placement"}</div>
           {seedancePacket.references.map((reference) => (
             <div key={`${reference.tag}-${reference.url}`} className="mt-1 truncate" title={reference.url}>{reference.tag} · {reference.role} · {reference.label} · {reference.url}</div>
@@ -1388,56 +1305,6 @@ function FrameExtensionPanel({
         </div>
       </div>
 
-      <div className="rounded-[2px] border border-[#352012] bg-[#090604] p-2">
-        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <div className="text-[8px] uppercase tracking-[0.16em] text-[#e05c00]">Higgsfield / Nano Banana Pro storyboard grid</div>
-            <div className="mt-1 text-[9px] leading-4 text-[#777]">Creates the full grid, uploads that full grid to RustFS, splits fixed panels, then uploads the panels to RustFS too.</div>
-          </div>
-          <div className="font-mono text-[8px] uppercase tracking-[0.12em] text-[#9a9a9a]">{higgsfieldInputCount} refs · 16:9</div>
-        </div>
-        <div className="grid gap-2 sm:grid-cols-[1fr_130px_90px]">
-          <label className="block">
-            <span className="mb-1 block text-[8px] uppercase tracking-[0.14em] text-[#666]">Character name (from selected refs)</span>
-            <input value={higgsfieldForm.characterName} onChange={(event) => setHiggsfieldForm({ characterName: event.target.value })} className="w-full rounded-[2px] border border-[#202020] bg-[#050505] px-2 py-1.5 font-mono text-[9px] text-[#9a9a9a] outline-none focus:border-[#e05c00]" />
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-[8px] uppercase tracking-[0.14em] text-[#666]">Resolution</span>
-            <select value={higgsfieldForm.resolution} onChange={(event) => setHiggsfieldForm({ resolution: event.target.value as HiggsfieldGenerationFormState["resolution"] })} className="w-full rounded-[2px] border border-[#202020] bg-[#050505] px-2 py-1.5 font-mono text-[9px] text-[#9a9a9a] outline-none focus:border-[#e05c00]">
-              <option value="1k">1k</option>
-              <option value="2k">2k</option>
-              <option value="4k">4k</option>
-            </select>
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-[8px] uppercase tracking-[0.14em] text-[#666]">Grid</span>
-            <select value={`${higgsfieldForm.splitRows}x${higgsfieldForm.splitCols}`} onChange={(event) => {
-              const [rows, cols] = event.target.value.split("x").map(Number);
-              setHiggsfieldForm({ splitRows: rows, splitCols: cols });
-            }} className="w-full rounded-[2px] border border-[#202020] bg-[#050505] px-2 py-1.5 font-mono text-[9px] text-[#9a9a9a] outline-none focus:border-[#e05c00]">
-              <option value="3x3">3x3</option>
-              <option value="2x2">2x2</option>
-            </select>
-          </label>
-        </div>
-        <label className="mt-2 block">
-          <span className="mb-1 block text-[8px] uppercase tracking-[0.14em] text-[#666]">Title / storage slug</span>
-          <input value={higgsfieldForm.title} onChange={(event) => setHiggsfieldForm({ title: event.target.value })} className="w-full rounded-[2px] border border-[#202020] bg-[#050505] px-2 py-1.5 font-mono text-[9px] text-[#9a9a9a] outline-none focus:border-[#e05c00]" />
-        </label>
-        <label className="mt-2 block">
-          <span className="mb-1 block text-[8px] uppercase tracking-[0.14em] text-[#666]">Extra reference URLs, one per line, appended after selected refs</span>
-          <textarea value={higgsfieldForm.extraReferenceUrls} onChange={(event) => setHiggsfieldForm({ extraReferenceUrls: event.target.value })} rows={2} className="w-full resize-y rounded-[2px] border border-[#202020] bg-[#050505] px-2 py-1.5 font-mono text-[9px] leading-4 text-[#9a9a9a] outline-none focus:border-[#e05c00]" />
-        </label>
-        <label className="mt-2 block">
-          <span className="mb-1 block text-[8px] uppercase tracking-[0.14em] text-[#666]">Prompt</span>
-          <textarea value={higgsfieldForm.prompt} onChange={(event) => setHiggsfieldForm({ prompt: event.target.value })} rows={10} className="w-full resize-y rounded-[2px] border border-[#202020] bg-[#050505] px-2 py-1.5 font-mono text-[9px] leading-4 text-[#c0c0c0] outline-none focus:border-[#e05c00]" />
-        </label>
-        <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_auto]">
-          <div className="rounded-[2px] border border-[#151515] bg-[#050505] p-2 font-mono text-[8px] leading-4 text-[#777]">{higgsfieldStatus}</div>
-          <button type="button" disabled={isHiggsfieldGenerating || !higgsfieldInputCount} onClick={() => onRunHiggsfield(higgsfieldForm)} className="rounded-[2px] border border-[#6e3425] bg-[#160905] px-3 py-2 text-[8px] uppercase tracking-[0.12em] text-[#d26c42] disabled:cursor-not-allowed disabled:opacity-45">Generate grid → split into panels</button>
-        </div>
-        {persistedGeneratedAssets.length ? <GeneratedHiggsfieldAssetGrid assets={persistedGeneratedAssets} /> : null}
-      </div>
 
       <div className="rounded-[2px] border border-[#1f1f1f] bg-[#070707] p-2">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -1466,7 +1333,7 @@ function FrameExtensionPanel({
         <div className="mt-2 grid gap-2 sm:grid-cols-3">
           <button type="button" onClick={onCheckProvider} className="rounded-[2px] border border-[#2a2a2a] px-2 py-2 text-[8px] uppercase tracking-[0.12em] text-[#aaa] hover:border-[#e05c00] hover:text-[#e05c00]">Check SwarmUI</button>
           <button type="button" disabled={isGenerating || !slot} onClick={onGenerateImage} className="rounded-[2px] border border-[#6e3425] bg-[#160905] px-2 py-2 text-[8px] uppercase tracking-[0.12em] text-[#d26c42] disabled:cursor-not-allowed disabled:opacity-45">Generate image</button>
-          <button type="button" disabled={isGenerating || !slot} onClick={onGenerateVideo} className="rounded-[2px] border border-[#24476f] bg-[#050b16] px-2 py-2 text-[8px] uppercase tracking-[0.12em] text-[#6ca6d2] disabled:cursor-not-allowed disabled:opacity-45">Queue video</button>
+          <button type="button" disabled title="Video generation uses the Seedance replacement handoff" className="rounded-[2px] border border-[#24476f] bg-[#050b16] px-2 py-2 text-[8px] uppercase tracking-[0.12em] text-[#6ca6d2] disabled:cursor-not-allowed disabled:opacity-45">Seedance video only</button>
         </div>
         {generatedAssets.length ? (
           <div className="mt-2 grid gap-2 sm:grid-cols-3">
@@ -1491,103 +1358,6 @@ function FrameExtensionPanel({
   );
 }
 
-function buildHiggsfieldInputImages(assets: ReferenceAsset[], selection: GenerationReferenceSelection, extraReferenceUrls: string) {
-  const selectedIds = getOrderedSelectedReferenceIds(selection);
-  const selected = selectedIds.flatMap((id) => {
-    const asset = assets.find((candidate) => candidate.id === id);
-    const url = asset?.storageUrl || asset?.previewUrl;
-    return asset && url ? [{ url, label: asset.displayName }] : [];
-  });
-  const extra = extraReferenceUrls
-    .split(/\r?\n/)
-    .map((url) => url.trim())
-    .filter(Boolean)
-    .map((url, index) => ({ url, label: `Extra reference ${index + 1}` }));
-  return [...selected, ...extra];
-}
-
-function buildStoryboardGridPrompt(args: {
-  slot?: CoverageSlot;
-  moment?: VideoMoment;
-  references: Array<{ kind: "character" | "environment" | "crowd" | "custom"; name?: string }>;
-}) {
-  const { slot, moment, references } = args;
-  const characterNames = references
-    .filter((reference) => reference.kind === "character")
-    .map((reference) => reference.name)
-    .filter(Boolean) as string[];
-  const cast = characterNames.length ? characterNames.join(" and ") : "the lead character";
-  const sectionLine = slot
-    ? `This grid continues the section "${slot.item.label}" (${fmt(slot.item.start)}\u2013${fmt(slot.item.end)}). Story intent: ${moderationSafeText(slot.item.prompt)}`
-    : "This grid continues the current music-video section.";
-  const caption = getGenerationMomentCaption(moment, characterNames);
-  const beatLine = caption ? ` The source beat to continue from (text context only \u2014 it is NOT an attached image): ${caption}.` : "";
-
-  // The image map MUST mirror buildHiggsfieldInputImages order exactly —
-  // these are the only images the model actually receives, and a mismatch
-  // scrambles which reference anchors identity vs location.
-  const imageMap: string[] = [];
-  let imageIndex = 1;
-  for (const reference of references) {
-    if (reference.kind === "character") {
-      imageMap.push(`Image_${imageIndex} is the authoritative character reference for ${reference.name} \u2014 keep the exact visual identity and continuity from that sheet in every panel featuring them; do not invent or restate appearance details in text.`);
-    } else if (reference.kind === "environment") {
-      imageMap.push(`Image_${imageIndex} is the location lock for ${reference.name ?? "the environment"} \u2014 every panel takes place inside this exact space; preserve its layout, materials, palette, and lighting direction.`);
-    } else if (reference.kind === "crowd") {
-      imageMap.push(`Image_${imageIndex} is a crowd/extras sheet${reference.name ? ` (${reference.name})` : ""} \u2014 use it only for background-dancer identity variety and crowd wardrobe. Never transfer a named lead's identity or wardrobe onto the crowd, and ignore composition, camera, lighting, location, and action from this sheet.`);
-    } else {
-      imageMap.push(`Image_${imageIndex} is an additional reference${reference.name ? ` (${reference.name})` : ""} \u2014 honor it wherever relevant.`);
-    }
-    imageIndex += 1;
-  }
-
-  return `Cinematic 3x3 anamorphic grid of shots for ${cast}, built from the ${references.length} attached reference images.
-
-${imageMap.join("\n")}
-
-${sectionLine}.${beatLine}
-
-Render the 3x3 grid of shots as ONE continuing action that reads left-to-right, top-to-bottom: panel 1 opens on ${cast.split(" and ")[0] ?? cast} in the Image_${references.findIndex((reference) => reference.kind === "environment") + 1 || 1} location, and each following panel advances to the next logical beat \u2014 reaction, movement, escalation, turn, consequence, approach, tension peak, settle, and a final forward-moving beat that hands off to the next section. Stay in the same scene and space; do not jump to unrelated moments or invent new locations.
-
-Cinematic register across all nine panels: vintage 2x anamorphic lens character \u2014 oval bokeh on background lights, subtle horizontal flare on point sources, soft frame-edge falloff, gentle halation lifting highlights. Practical-driven night lighting: hard neon, lamp, and fixture practicals cutting through visible volumetric haze, deep shadows that hold detail, rim and edge light separating subjects from darkness, skin reading warm against cooler ambient light at its true natural tone. Atmospheric perspective with real air between planes \u2014 distant elements softer, desaturated, lower contrast than the foreground. Highlights roll off in a filmic curve, blacks lifted but never milky. Fine theatrical 35mm grain across every panel, natural fabric weave and skin texture, no smoothing, unposed realism \u2014 photographed not generated. No labels, no numbers, no text, no borders between panels.`;
-}
-
-function GeneratedHiggsfieldAssetGrid({ assets }: { assets: GeneratedStudioAsset[] }) {
-  return (
-    <div className="mt-3 space-y-3">
-      {assets.slice(0, 4).map((asset) => (
-        <article key={asset.id} className="rounded-[2px] border border-[#202020] bg-[#050505] p-2">
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-[#d0d0d0]">{asset.characterName ?? "Character"} · {asset.resolution ?? "?"} · {asset.aspectRatio ?? "16:9"}</div>
-              <div className="mt-1 font-mono text-[8px] text-[#666]">job {asset.jobId} · full grid + {asset.split?.panels.length ?? 0} panels persisted</div>
-            </div>
-            <a href={asset.fullStorage?.mediaUrl ?? asset.fullStorage?.publicUrl ?? asset.resultUrl} target="_blank" rel="noreferrer" className="rounded-[2px] border border-[#6e3425] px-2 py-1 text-[8px] uppercase tracking-[0.12em] text-[#d26c42]">Open full</a>
-          </div>
-          <div className="grid gap-2 lg:grid-cols-[180px_1fr]">
-            <a href={asset.fullStorage?.mediaUrl ?? asset.fullStorage?.publicUrl ?? asset.resultUrl} target="_blank" rel="noreferrer" className="overflow-hidden rounded-[2px] border border-[#181818] bg-[#030303]">
-              {asset.fullStorage?.mediaUrl || asset.fullStorage?.publicUrl || asset.resultUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={asset.fullStorage?.mediaUrl ?? asset.fullStorage?.publicUrl ?? asset.resultUrl} alt={asset.title ?? asset.jobId ?? "generated grid"} className="aspect-video w-full object-cover" loading="lazy" decoding="async" />
-              ) : <div className="flex aspect-video items-center justify-center text-[8px] uppercase tracking-[0.12em] text-[#444]">No preview</div>}
-            </a>
-            <div className="grid grid-cols-3 gap-1">
-              {(asset.split?.panels ?? []).slice(0, 9).map((panel) => (
-                <a key={panel.index} href={panel.storage?.mediaUrl ?? panel.storage?.publicUrl ?? panel.url} target="_blank" rel="noreferrer" className="overflow-hidden rounded-[1px] border border-[#181818] bg-[#030303]" title={`${panel.label} · ${panel.storage?.storagePath ?? panel.assetPath}`}>
-                  {panel.storage?.mediaUrl || panel.storage?.publicUrl || panel.url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={panel.storage?.mediaUrl ?? panel.storage?.publicUrl ?? panel.url} alt={panel.label} className="aspect-video w-full object-cover" loading="lazy" decoding="async" />
-                  ) : <div className="flex aspect-video items-center justify-center text-[7px] text-[#444]">{panel.label}</div>}
-                </a>
-              ))}
-            </div>
-          </div>
-          <div className="mt-2 truncate font-mono text-[7px] text-[#555]" title={asset.fullStorage?.storagePath}>full: {asset.fullStorage?.storagePath ?? "not uploaded"}</div>
-        </article>
-      ))}
-    </div>
-  );
-}
 
 function ReferenceSelect({ label, value, assets, onChange }: { label: string; value: string; assets: ReferenceAsset[]; onChange: (id: string) => void }) {
   return (

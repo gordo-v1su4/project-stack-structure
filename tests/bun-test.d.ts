@@ -17,6 +17,10 @@ declare module "bun:test" {
     toHaveBeenCalledTimes(expected: number): void;
     toBeNull(): void;
     toBeInstanceOf(expected: unknown): void;
+    toThrow(expected?: RegExp | string | Error): void;
+    toBeTruthy(): void;
+    rejects: Matcher;
+    resolves: Matcher;
   }
 
   export function describe(name: string, fn: () => void): void;

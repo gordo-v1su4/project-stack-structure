@@ -5,6 +5,8 @@ import os from "node:os";
 import path from "node:path";
 import { uploadFileToMediaGateway, type MediaGatewayUploadResult } from "@/lib/mediaGateway";
 import { splitImageWithGateway, uploadImageSplitPanelsToMediaGateway, type ImageSplitManifest } from "@/lib/imageSplitterGateway";
+import type { StoryboardImageModel } from "@/components/studio/storyboardGeneration";
+import { verifyStandalone2kImage } from "@/lib/storyboardImageMetadata";
 
 export type HiggsfieldResolution = "1k" | "2k" | "4k";
 
@@ -18,7 +20,7 @@ export type HiggsfieldInputImage = {
 export type HiggsfieldGeneratedAsset = {
   id: string;
   provider: "higgsfield";
-  model: "nano_banana_2";
+  model: StoryboardImageModel;
   characterName?: string;
   title?: string;
   prompt: string;
@@ -59,7 +61,15 @@ export async function getHiggsfieldAccount(env: Record<string, string | undefine
   return runHiggsfieldJsonCli(["account", "status"], env);
 }
 
+export async function estimateHiggsfieldImageCredits(model: StoryboardImageModel, prompt: string) {
+  // cost is read-only: no generation and no reference uploads.
+  const result = await runHiggsfieldJsonCli(["generate", "cost", model, "--prompt", prompt,
+    "--aspect-ratio", "16:9", "--resolution", "2k"], process.env) as { credits?: number };
+  return typeof result.credits === "number" && Number.isFinite(result.credits) && result.credits >= 0 ? result.credits : null;
+}
+
 export async function createNanoBananaProGrid(args: {
+  model?: StoryboardImageModel;
   prompt: string;
   inputImages: HiggsfieldInputImage[];
   characterName?: string;
@@ -80,7 +90,7 @@ export async function createNanoBananaProGrid(args: {
   const aspectRatio = args.aspectRatio || "16:9";
   const resolution = args.resolution || "2k";
   const createArgs = [
-    "generate", "create", "nano_banana_2",
+    "generate", "create", args.model ?? "nano_banana_pro",
     "--prompt", prompt,
     "--aspect-ratio", aspectRatio,
     "--resolution", resolution,
@@ -102,14 +112,18 @@ export async function createNanoBananaProGrid(args: {
     throw new Error(`Higgsfield job did not complete: ${JSON.stringify(job).slice(0, 500)}`);
   }
 
-  const resultFile = await fetchResultAsFile(job.result_url, buildFullGridFilename(args.characterName || args.title || "higgsfield-grid", jobId));
+  const resultFile = await fetchResultAsFile(job.result_url, buildFullGridFilename(args.characterName || args.title || "higgsfield", jobId, Boolean(args.splitRows && args.splitCols)));
   const folderSlug = buildSlug(args.characterName || args.title || "nano-banana-pro");
   const fullStorage = await uploadFileToMediaGateway({
     file: resultFile,
-    folder: `media-uploads/generated/higgsfield/nano-banana-pro/${folderSlug}/${jobId}`,
+    folder: `media-uploads/generated/higgsfield/${args.model ?? "nano_banana_pro"}/${folderSlug}/${jobId}`,
     env,
   });
 
+  // Persist the paid output first so a resolution mismatch is recoverable.
+  const dimensions = resolution === "2k" ? await verifyStandalone2kImage(resultFile).catch((error) => {
+    throw new Error(`${error instanceof Error ? error.message : "Resolution verification failed."} Provider job ${jobId}; saved output: ${fullStorage.mediaUrl || fullStorage.publicUrl || fullStorage.storagePath}`);
+  }) : undefined;
   let split: ImageSplitManifest | undefined;
   if (args.splitRows && args.splitCols) {
     const splitResponse = await splitImageWithGateway({
@@ -124,7 +138,7 @@ export async function createNanoBananaProGrid(args: {
   return {
     id: `higgsfield:${jobId}`,
     provider: "higgsfield",
-    model: "nano_banana_2",
+    model: args.model ?? "nano_banana_pro",
     characterName: args.characterName,
     title: args.title,
     prompt,
@@ -133,8 +147,8 @@ export async function createNanoBananaProGrid(args: {
     status: "completed",
     aspectRatio,
     resolution,
-    width: job.params?.width,
-    height: job.params?.height,
+    width: dimensions?.width ?? job.params?.width,
+    height: dimensions?.height ?? job.params?.height,
     resultUrl: job.result_url,
     thumbnailUrl: job.min_result_url,
     fullStorage,
@@ -215,6 +229,13 @@ function runHiggsfieldCli(args: string[], env: Record<string, string | undefined
 function resolveHiggsfieldExecutable(env: NodeJS.ProcessEnv) {
   const configured = env.HIGGSFIELD_CLI_PATH?.trim();
   if (configured) return configured;
+  // The npm package can exist without its optional Windows vendor binary.
+  // Prefer the installed native CLI in that case rather than a broken shim.
+  if (process.platform === "win32") {
+    const native = path.join(os.homedir(), ".local", "bin", "hf.exe");
+    const vendor = path.join(process.cwd(), "node_modules", "@higgsfield", "cli", "vendor", "hf.exe");
+    if (!existsSync(vendor) && existsSync(native)) return native;
+  }
   const packageBin = path.join(process.cwd(), "node_modules", "@higgsfield", "cli", "bin", "higgsfield.js");
   if (existsSync(packageBin)) return packageBin;
   const bundled = path.join(process.cwd(), "node_modules", ".bin", process.platform === "win32" ? "higgsfield.cmd" : "higgsfield");
@@ -231,8 +252,8 @@ function readJobId(payload: unknown) {
   return undefined;
 }
 
-function buildFullGridFilename(label: string, jobId: string) {
-  return `${buildSlug(label)}__${jobId}__full-grid.png`;
+function buildFullGridFilename(label: string, jobId: string, grid: boolean) {
+  return `${buildSlug(label)}__${jobId}__${grid ? "full-grid" : "fresh-frame"}.png`;
 }
 
 function buildSlug(value: string) {

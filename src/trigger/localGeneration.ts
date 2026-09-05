@@ -3,6 +3,7 @@ import { Buffer } from "node:buffer";
 import { AbortTaskRunError, logger, task, wait } from "@trigger.dev/sdk";
 
 import {
+  buildSwarmComfyDirectUrl,
   buildSwarmTextToImagePayload,
   extractComfyOutputRefs,
   getComfyHistoryStatus,
@@ -11,7 +12,7 @@ import {
   type ComfyOutputRef,
   type LocalGenerationRequest,
 } from "@/components/studio/localGeneration";
-import { uploadFileToMediaGateway, type MediaGatewayUploadResult } from "@/lib/mediaGateway";
+import { downloadMediaGatewayFile, uploadFileToMediaGateway, type MediaGatewayUploadResult } from "@/lib/mediaGateway";
 
 import { vm100HeavyQueue } from "./queues";
 import { markWorkCompleted, markWorkRunning } from "./workMetadata";
@@ -58,7 +59,7 @@ export const localGenerationTask = task({
       || `media-uploads/generated/local/${provider}/${ctx.run.id}`;
 
     const result = provider === "comfyui"
-      ? await runDirectComfyGeneration(payload.request, outputFolder, timeoutSeconds, ctx.run.id)
+      ? await runComfyGenerationThroughSwarm(payload.request, outputFolder, timeoutSeconds, ctx.run.id)
       : await runSwarmGeneration(payload.request, outputFolder, ctx.run.id);
 
     logger.info("Local generation completed", {
@@ -102,10 +103,14 @@ async function runSwarmGeneration(
     model,
   });
 
+  const mediaParams = await hydrateSwarmMediaParams(request);
   const generateResponse = await fetchWithTimeout(`${baseUrl}/API/GenerateText2Image`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(buildSwarmTextToImagePayload({ ...request, model }, session.session_id)),
+    body: JSON.stringify({
+      ...buildSwarmTextToImagePayload({ ...request, model }, session.session_id),
+      ...mediaParams,
+    }),
   }, 1_600_000);
   const generated = await readJson(generateResponse);
   if (!generateResponse.ok || generated.error) {
@@ -147,21 +152,40 @@ async function runSwarmGeneration(
   };
 }
 
-async function runDirectComfyGeneration(
+async function hydrateSwarmMediaParams(request: LocalGenerationRequest) {
+  const [initimage, videoendimage, ...promptimages] = await Promise.all([
+    request.initImage ? durableImageDataUrl(request.initImage) : undefined,
+    request.videoEndImage ? durableImageDataUrl(request.videoEndImage) : undefined,
+    ...(request.promptImages ?? []).map(durableImageDataUrl),
+  ]);
+  return {
+    ...(initimage ? { initimage } : {}),
+    ...(videoendimage ? { videoendimage } : {}),
+    ...(promptimages.length ? { promptimages } : {}),
+  };
+}
+
+async function durableImageDataUrl(reference: NonNullable<LocalGenerationRequest["initImage"]>) {
+  const media = await downloadMediaGatewayFile(reference);
+  if (!media.mime.startsWith("image/")) throw new AbortTaskRunError("MiniMax conditioning inputs must be durable images.");
+  return `data:${media.mime};base64,${Buffer.from(media.bytes).toString("base64")}`;
+}
+
+async function runComfyGenerationThroughSwarm(
   request: LocalGenerationRequest,
   outputFolder: string,
   timeoutSeconds: number,
   triggerRunId: string,
 ): Promise<LocalGenerationOutput> {
   if (!request.workflow || typeof request.workflow !== "object") {
-    throw new AbortTaskRunError("Direct ComfyUI generation requires a workflow payload.");
+    throw new AbortTaskRunError("ComfyUI generation through SwarmUI requires a workflow payload.");
   }
 
-  const baseUrl = getConfiguredUrl("LOCAL_COMFYUI_URL", "COMFYUI_URL", "http://host.docker.internal:8188");
+  const baseUrl = getConfiguredUrl("LOCAL_SWARMUI_URL", "SWARMUI_URL", "http://host.docker.internal:7861");
   const workflow = patchComfyWorkflow(request.workflow, request, {
     filenamePrefix: `stack-structure/${triggerRunId}`,
   });
-  const promptResponse = await fetchWithTimeout(`${baseUrl}/prompt`, {
+  const promptResponse = await fetchWithTimeout(buildSwarmComfyDirectUrl(baseUrl, "prompt"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -177,7 +201,11 @@ async function runDirectComfyGeneration(
   const startedAt = Date.now();
   let refs: ComfyOutputRef[] = [];
   while (Date.now() - startedAt <= timeoutSeconds * 1_000) {
-    const historyResponse = await fetchWithTimeout(`${baseUrl}/history/${encodeURIComponent(prompt.prompt_id)}`, undefined, 10_000);
+    const historyResponse = await fetchWithTimeout(
+      buildSwarmComfyDirectUrl(baseUrl, `history/${encodeURIComponent(prompt.prompt_id)}`),
+      undefined,
+      10_000,
+    );
     const history = historyResponse.ok ? await readJson(historyResponse) : {};
     const status = getComfyHistoryStatus(history, prompt.prompt_id);
     if (status === "error") {
@@ -210,7 +238,7 @@ async function runDirectComfyGeneration(
   return {
     provider: "comfyui",
     status: "completed",
-    message: "Direct ComfyUI generation completed and assets were persisted to RustFS.",
+    message: "ComfyUI generation through SwarmUI completed and assets were persisted to RustFS.",
     promptId: prompt.prompt_id,
     assets,
   };
@@ -273,10 +301,10 @@ export function dataUrlToFile(value: string, fallbackName: string) {
   return new File([bytes], `${fallbackName}${extensionFromMime(mime)}`, { type: mime });
 }
 
-function buildComfyViewUrl(baseUrl: string, ref: ComfyOutputRef) {
+function buildComfyViewUrl(swarmBaseUrl: string, ref: ComfyOutputRef) {
   const search = new URLSearchParams({ filename: ref.filename, type: ref.type || "output" });
   if (ref.subfolder) search.set("subfolder", ref.subfolder);
-  return `${baseUrl}/view?${search.toString()}`;
+  return buildSwarmComfyDirectUrl(swarmBaseUrl, `view?${search.toString()}`);
 }
 
 function resolveProviderUrl(baseUrl: string, reference: string) {

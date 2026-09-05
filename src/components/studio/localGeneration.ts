@@ -36,6 +36,11 @@ export interface LocalGenerationJob {
 
 export type SwarmParamValue = string | number | boolean | Array<string | number | boolean>;
 
+export interface LocalGenerationMediaReference {
+  bucket: string;
+  objectKey: string;
+}
+
 export interface LocalGenerationRequest {
   provider: LocalGenerationProvider;
   prompt: string;
@@ -50,6 +55,9 @@ export interface LocalGenerationRequest {
   kind?: LocalGenerationKind;
   batchSize?: number;
   swarmParams?: Record<string, SwarmParamValue>;
+  initImage?: LocalGenerationMediaReference;
+  videoEndImage?: LocalGenerationMediaReference;
+  promptImages?: LocalGenerationMediaReference[];
   workflow?: ComfyWorkflow;
   waitForCompletion?: boolean;
 }
@@ -405,6 +413,16 @@ const ALLOWED_SWARM_PARAM_KEYS = new Set([
   "refinersteps",
   "loras",
   "loraweights",
+  "aspectratio",
+  "textvideoframes",
+  "videomodel",
+  "videoframes",
+  "videosteps",
+  "videocfg",
+  "videoresolution",
+  "videofps",
+  "videoformat",
+  "modelspecificenhancements",
 ]);
 
 function pickSwarmParams(params: LocalGenerationRequest["swarmParams"]) {

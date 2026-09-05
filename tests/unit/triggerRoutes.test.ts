@@ -143,7 +143,42 @@ describe("Next route Trigger.dev dispatch boundary", () => {
     expect(triggerMocks.triggerLocalGeneration).toHaveBeenCalledTimes(1);
   });
 
-  test("queues Higgsfield generation", async () => {
+  test("queues MiniMax conditioning only from the configured durable bucket", async () => {
+    resetMocks();
+    const response = await postLocalGeneration(new Request("http://localhost/api/generate/local", {
+      method: "POST",
+      body: JSON.stringify({
+        provider: "swarmui",
+        kind: "video",
+        prompt: "extend the shot",
+        initImage: { bucket: "stack-structure", objectKey: "media-uploads/generated/anchor.png" },
+      }),
+      headers: { "content-type": "application/json" },
+    }));
+
+    expect(response.status).toBe(202);
+    const queued = (triggerMocks.triggerLocalGeneration as unknown as { mock: { calls: unknown[][] } }).mock.calls[0]?.[0] as { request?: { initImage?: unknown } } | undefined;
+    expect(queued?.request?.initImage).toEqual({ bucket: "stack-structure", objectKey: "media-uploads/generated/anchor.png" });
+  });
+
+  test("rejects MiniMax conditioning outside the configured durable bucket", async () => {
+    resetMocks();
+    const response = await postLocalGeneration(new Request("http://localhost/api/generate/local", {
+      method: "POST",
+      body: JSON.stringify({
+        provider: "swarmui",
+        kind: "video",
+        prompt: "extend the shot",
+        initImage: { bucket: "other-user", objectKey: "media-uploads/generated/anchor.png" },
+      }),
+      headers: { "content-type": "application/json" },
+    }));
+
+    expect(response.status).toBe(500);
+    expect(triggerMocks.triggerLocalGeneration).toHaveBeenCalledTimes(0);
+  });
+
+  test("rejects the legacy unquoted paid-generation entry point", async () => {
     resetMocks();
     const response = await postHiggsfield(new Request("http://localhost/api/generate/higgsfield", {
       method: "POST",
@@ -152,9 +187,9 @@ describe("Next route Trigger.dev dispatch boundary", () => {
     }));
     const payload = await jsonResponse(response);
 
-    expect(response.status).toBe(202);
-    expect(payload.runId).toBe("run-higgsfield-123");
-    expect(triggerMocks.triggerHiggsfieldGeneration).toHaveBeenCalledTimes(1);
+    expect(response.status).toBe(409);
+    expect(payload.error).toContain("explicitly approve");
+    expect(triggerMocks.triggerHiggsfieldGeneration).toHaveBeenCalledTimes(0);
   });
 
   test("uploads audio before queuing Deepgram", async () => {

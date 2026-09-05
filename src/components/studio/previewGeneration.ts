@@ -163,6 +163,9 @@ export async function generateConcatPreview(params: {
 
   const segmentPaths: string[] = [];
   const segmentDurations: number[] = [];
+  const segmentFrameCounts = allocateFrameAlignedCounts(
+    segments.map((segment) => clampTime(segment.endTime) - clampTime(segment.startTime)),
+  );
   const outputDir = path.dirname(outputPath);
   for (let index = 0; index < segments.length; index++) {
     const segment = segments[index]!;
@@ -177,13 +180,16 @@ export async function generateConcatPreview(params: {
       throw new PreviewGenerationError("audio-only-input", `Concat segment ${index} has no video stream.`);
     }
 
-    const segmentDuration = frameAlignedDuration(clampTime(segment.endTime) - clampTime(segment.startTime));
+    const segmentFrameCount = segmentFrameCounts[index]!;
     try {
       await execFileAsync(ffmpegPath, [
         "-y",
         "-ss", `${clampTime(segment.startTime)}`,
         "-i", segment.inputPath,
-        "-t", `${segmentDuration}`,
+        // A time-based `-t` can lose nearly one decoded frame per cut when
+        // `-ss` lands between source frames. Across a music-video timeline
+        // that accumulates into seconds of missing video.
+        "-frames:v", `${segmentFrameCount}`,
         "-map", "0:v:0",
         "-vf", "fps=24,scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1,setpts=PTS-STARTPTS",
         "-an",
@@ -268,6 +274,18 @@ export function isPreviewDurationWithinTolerance(actualDuration: number, request
 
 export function frameAlignedDuration(seconds: number, fps = CONCAT_PREVIEW_FPS) {
   return Math.max(1 / fps, Math.round(seconds * fps) / fps);
+}
+
+export function allocateFrameAlignedCounts(durations: number[], fps = CONCAT_PREVIEW_FPS) {
+  let requestedElapsed = 0;
+  let allocatedFrames = 0;
+  return durations.map((duration) => {
+    requestedElapsed += Math.max(0, duration);
+    const targetFrames = Math.max(allocatedFrames + 1, Math.round(requestedElapsed * fps));
+    const frames = targetFrames - allocatedFrames;
+    allocatedFrames = targetFrames;
+    return frames;
+  });
 }
 
 export function concatPreviewDurationTolerance(_segmentCount: number, fps = CONCAT_PREVIEW_FPS) {

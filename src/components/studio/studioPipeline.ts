@@ -3,12 +3,13 @@ import type { Tab } from "./types";
 export interface PipelineStageInput {
   activeTab: Tab;
   hasAudioAnalysis: boolean;
-  hasTranscript: boolean;
   videoCount: number;
   sceneCount: number;
   captionReadyCount: number;
   captionTotalCount: number;
-  storyGenerated: boolean;
+  storyTreatmentSelected: boolean;
+  storyAnchorsResolved: boolean;
+  storyPlanConfirmed: boolean;
   editSlotCount: number;
   matchedSlotCount: number;
   gapSlotCount: number;
@@ -47,7 +48,11 @@ export interface PipelineState {
 export function buildPipelineState(input: PipelineStageInput): PipelineState {
   const captionsReady = input.captionTotalCount > 0 && input.captionReadyCount === input.captionTotalCount;
   const ingestReady = input.hasAudioAnalysis && input.videoCount > 0 && input.sceneCount > 0 && captionsReady;
-  const storyReady = ingestReady && input.hasTranscript && input.storyGenerated && input.editSlotCount > 0;
+  const storyReady = ingestReady
+    && input.storyTreatmentSelected
+    && input.storyAnchorsResolved
+    && input.storyPlanConfirmed
+    && input.editSlotCount > 0;
   const splitReady = storyReady && input.hasCommittedSplit;
   const matchReady = splitReady && input.captionReadyCount > 0 && input.matchedSlotCount > 0;
   const generateReady = matchReady && input.gapSlotCount === 0;
@@ -77,9 +82,11 @@ export function buildPipelineState(input: PipelineStageInput): PipelineState {
       status: storyReady
         ? `${input.editSlotCount} edit slots`
         : ingestReady
-          ? input.hasTranscript
-            ? "Confirm story map"
-            : "Add lyrics / transcript"
+          ? !input.storyTreatmentSelected
+            ? "Choose a treatment"
+            : !input.storyAnchorsResolved
+              ? "Resolve story anchors"
+              : "Confirm story plan"
           : "Finish Ingest",
     },
     {
@@ -88,7 +95,7 @@ export function buildPipelineState(input: PipelineStageInput): PipelineState {
       ready: splitReady,
       complete: splitReady,
       available: storyReady,
-      blockedReason: storyReady ? null : "Confirm the Story map before building source cut windows.",
+      blockedReason: storyReady ? null : "Choose a treatment, resolve every anchor, and confirm the Story plan before building source cut windows.",
       prerequisiteKey: storyReady ? null : "story",
       status: splitReady
         ? "Split committed"
@@ -170,7 +177,7 @@ export function buildPipelineState(input: PipelineStageInput): PipelineState {
   return {
     stages: fullStages,
     nextStage,
-    nextHint: nextStage ? buildNextHint(nextStage, input) : "All stages ready · export from Preview / Export.",
+    nextHint: nextStage ? buildNextHint(nextStage) : "All stages ready · export from Preview / Export.",
   };
 }
 
@@ -187,14 +194,12 @@ function describeIngest(input: PipelineStageInput) {
   return `${input.videoCount} clip${input.videoCount === 1 ? "" : "s"}${captionLabel}`;
 }
 
-function buildNextHint(stage: PipelineStage, input: PipelineStageInput) {
+function buildNextHint(stage: PipelineStage) {
   switch (stage.key) {
     case "review":
       return `Next: ${stage.status} in Ingest.`;
     case "story":
-      return input.hasTranscript
-        ? "Next: confirm the Story map to unlock Split."
-        : "Next: add the vocal stem or timed lyrics, then confirm the Story map.";
+      return "Next: choose a treatment, resolve its anchors, and confirm the Story plan.";
     case "split":
       return "Next: choose a source-window strategy and commit Split.";
     case "shuffle":

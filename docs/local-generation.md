@@ -1,5 +1,10 @@
 # Local SwarmUI Generation Gateway
 
+> **Creative prompting authority:** use
+> [Canonical Higgsfield / Nano Banana reference-continuity protocol](protocols/higgsfield-nano-banana-reference-continuity.md).
+> This file owns local SwarmUI/ComfyUI topology and generation plumbing, not the
+> current still-image reference formula.
+
 The Generate tab talks to the desktop **SwarmUI** server through the server-side route at `/api/generate/local`.
 
 SwarmUI is the only app-facing API surface. ComfyUI is the backend engine that Swarm starts/manages; we do not treat ComfyUI as a separate provider from this Mac app.
@@ -164,10 +169,13 @@ Default generation settings:
 
 Prompt/reference convention:
 
-1. Establish the character name first, for example `Character: Feng.`
-2. Keep reference roles concise: `Use image 1 and image 2 as character references for Feng.`
-3. Use the character name in every shot beat instead of pronouns.
-4. Keep style references last.
+1. Build and validate the exact attachment manifest from the current UI order.
+2. Use a visibly named, high-resolution identity authority and the same canonical
+   name in every shot beat.
+3. Assign one primary role to each location, identity, crowd or optical reference.
+4. Generate continuity-critical frames as standalone 2K images. Treat grids as
+   composition boards only.
+5. Follow the canonical protocol above for prompt wording and acceptance gates.
 
 RustFS paths:
 

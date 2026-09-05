@@ -9,16 +9,19 @@ import {
 
 import { paidGenerationQueue } from "./queues";
 import { markWorkCompleted, markWorkRunning } from "./workMetadata";
+import type { StoryboardImageModel } from "@/components/studio/storyboardGeneration";
 
 export type HiggsfieldGenerationPayload = {
+  model?: StoryboardImageModel;
+  approvalKey?: string;
   prompt: string;
   inputImages: HiggsfieldInputImage[];
   characterName?: string;
   title?: string;
   aspectRatio?: string;
   resolution?: HiggsfieldResolution;
-  splitRows: number;
-  splitCols: number;
+  splitRows?: number;
+  splitCols?: number;
 };
 
 export const higgsfieldGenerationTask = task({

@@ -8,6 +8,16 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 Smart auto music-video editor: upload a song + footage, get a musically aligned rough cut, optionally fill gaps with AI shots. Web-first (Next.js 16 + React 19 + Bun), heavy work dispatched through Trigger.dev to GPU workers.
 
+## Creative generation source of truth
+
+- For Higgsfield / Nano Banana character sheets, reference packets, prompting,
+  still acceptance, and image-to-video conditioning, always use
+  `docs/protocols/higgsfield-nano-banana-reference-continuity.md`.
+- Older plans and provider runbooks may define topology, billing, handoff, or UI
+  operations, but they do not override that creative protocol.
+- All programmatic local video calls go through SwarmUI and its managed ComfyUI
+  backend. Do not call a raw ComfyUI port as a separate provider.
+
 ## Commands
 
 ```bash

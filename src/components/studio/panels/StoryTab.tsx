@@ -15,6 +15,14 @@ import {
   type StorySectionDraft,
 } from "../musicVideoProject";
 import { StoryStructureEditor } from "../StoryStructurePlanner";
+import { StoryTreatmentPlanner } from "../StoryTreatmentPlanner";
+import {
+  applyTreatmentAnchorsToStoryBeats,
+  applyTreatmentCoverageToProject,
+  buildStoryContentSignature,
+  type StoryTreatment,
+  type StoryTreatmentState,
+} from "../storyTreatments";
 import {
   moveStorySectionBoundary,
   removeTimedStorySection,
@@ -25,7 +33,7 @@ import type { BeatJoinAnalysis, SegmentPreview, UploadedVideoSource } from "../t
 
 export type StoryBeatDraft = StoryPlanDraft;
 
-export type StoryTabState = {
+export type StoryTabState = StoryTreatmentState & {
   vocalStemName: string;
   transcriptSummary: DeepgramTranscriptSummary | null;
   storyBeats: StoryBeatDraft[];
@@ -51,6 +59,7 @@ const DEFAULT_STORY_BEATS: StoryBeatDraft[] = getDefaultStorySectionDrafts().map
 }));
 
 const STORY_SECTION_TEMPLATES = getDefaultStorySectionDrafts();
+export const LOVE_ME_TONIGHT_STORY_SEED = "Diego and Valentina are strangers moving independently through a hidden underground maze of tunnels, dance rooms, and increasingly dangerous chambers. Each is casually looking for someone capable of matching them. They pass unexpectedly, both realize too late that the other may be the one, and begin searching through the shifting complex until they almost back into one another. They finally dance together in the central arena while floors split, rooms collapse, and dancers continue until they fall. Only near the end may the audience realize this is a last-dancer-standing simulation or game.";
 const STORY_PACE_OPTIONS = [
   { label: "Relaxed", density: 0.3, detail: "Longer phrases" },
   { label: "Balanced", density: 0.55, detail: "Musical rough cut" },
@@ -65,6 +74,13 @@ export function createDefaultStoryTabState(): StoryTabState {
     activeBeatId: DEFAULT_STORY_BEATS[0].id,
     storyGenerated: false,
     editSettings: DEFAULT_STORY_EDIT_SETTINGS,
+    brief: { text: "" },
+    treatments: [],
+    selectedTreatmentId: null,
+    confirmedTreatmentId: null,
+    confirmedTreatmentSnapshot: null,
+    generationMeta: null,
+    storyContentSignature: null,
   };
 }
 
@@ -77,6 +93,7 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews,
   const [transcriptError, setTranscriptError] = useState<string | null>(null);
   const progressTimer = useRef<number | null>(null);
   const vocalStemInputRef = useRef<HTMLInputElement>(null);
+  const seededBriefSourceRef = useRef<string | null>(null);
 
   function updateState(patch: Partial<StoryTabState>) {
     onStateChange((current) => ({ ...current, ...patch }));
@@ -84,10 +101,6 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews,
 
   function setActiveBeatId(activeBeatId: string) {
     updateState({ activeBeatId });
-  }
-
-  function setStoryGenerated(storyGenerated: boolean) {
-    updateState({ storyGenerated });
   }
 
   function setTranscriptSummary(transcriptSummary: DeepgramTranscriptSummary | null) {
@@ -98,6 +111,9 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews,
     updateState({
       editSettings: normalizeStoryEditSettings({ ...editSettings, ...patch }),
       storyGenerated: false,
+      confirmedTreatmentId: null,
+      confirmedTreatmentSnapshot: null,
+      storyContentSignature: null,
     });
   }
 
@@ -116,7 +132,7 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews,
   const plannedStoryBeats = hasTimedStoryPlan ? storyBeats : detectedStoryPlan.length ? detectedStoryPlan : storyBeats;
 
   const musicVideoProject = useMemo(
-    () =>
+    () => applyTreatmentCoverageToProject(
       createMusicVideoProject({
         analysis,
         duration: totalDuration || 0,
@@ -125,7 +141,9 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews,
         videoSources,
         segmentPreviews,
       }),
-    [analysis, plannedStoryBeats, segmentPreviews, totalDuration, transcriptSummary?.chunks, videoSources],
+      storyGenerated ? state.confirmedTreatmentSnapshot : null,
+    ),
+    [analysis, plannedStoryBeats, segmentPreviews, state.confirmedTreatmentSnapshot, storyGenerated, totalDuration, transcriptSummary?.chunks, videoSources],
   );
 
   const storyRail = musicVideoProject.storySections;
@@ -140,6 +158,16 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews,
   }, [musicVideoProject, onProjectChange]);
 
   useEffect(() => {
+    const sourceLabel = analysis?.sourceLabel?.trim() ?? "";
+    if (!sourceLabel || seededBriefSourceRef.current === sourceLabel) return;
+    seededBriefSourceRef.current = sourceLabel;
+    if (!/love\W*me\W*tonight/i.test(sourceLabel) || state.brief.text.trim() || state.treatments.length) return;
+    updateState({ brief: { text: LOVE_ME_TONIGHT_STORY_SEED } });
+  // The source guard makes this a one-time project-specific suggestion.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [analysis?.sourceLabel]);
+
+  useEffect(() => {
     if (hasTimedStoryPlan || !detectedStoryPlan.length) return;
     onStateChange((current) => ({
       ...current,
@@ -148,6 +176,9 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews,
         ? current.activeBeatId
         : detectedStoryPlan[0]?.id ?? current.activeBeatId,
       storyGenerated: false,
+      confirmedTreatmentId: null,
+      confirmedTreatmentSnapshot: null,
+      storyContentSignature: null,
     }));
   }, [detectedStoryPlan, hasTimedStoryPlan, onStateChange]);
 
@@ -160,7 +191,14 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews,
       progressTimer.current = null;
     }
 
-    updateState({ vocalStemName: file.name, transcriptSummary: null, storyGenerated: false });
+    updateState({
+      vocalStemName: file.name,
+      transcriptSummary: null,
+      storyGenerated: false,
+      confirmedTreatmentId: null,
+      confirmedTreatmentSnapshot: null,
+      storyContentSignature: null,
+    });
     setTranscriptError(null);
     setIsTranscribingAudio(true);
     setTranscriptProgress(8);
@@ -193,7 +231,14 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews,
   }
 
   function updatePlannedStoryBeats(next: StoryPlanDraft[], nextActiveBeatId = activeBeatId) {
-    updateState({ storyBeats: next, activeBeatId: nextActiveBeatId, storyGenerated: false });
+    updateState({
+      storyBeats: next,
+      activeBeatId: nextActiveBeatId,
+      storyGenerated: false,
+      confirmedTreatmentId: null,
+      confirmedTreatmentSnapshot: null,
+      storyContentSignature: null,
+    });
   }
 
   function updateStoryBeat(id: string, patch: Partial<StorySectionDraft>) {
@@ -240,24 +285,51 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews,
     updatePlannedStoryBeats(next, next[0]?.id ?? activeBeatId);
   }
 
-  function generateStoryLayout() {
-    setStoryGenerated(true);
+  function confirmStoryPlan(treatment: StoryTreatment) {
+    const storyBeatsWithAnchors = applyTreatmentAnchorsToStoryBeats(plannedStoryBeats, treatment);
+    updateState({
+      storyBeats: storyBeatsWithAnchors,
+      storyGenerated: true,
+      confirmedTreatmentId: treatment.id,
+      confirmedTreatmentSnapshot: treatment,
+      storyContentSignature: buildStoryContentSignature(treatment, storyBeatsWithAnchors),
+    });
   }
 
   return (
     <div className="space-y-3">
-      <StoryStructureEditor
-        detectedSections={analysis?.sections ?? []}
-        plannedSections={storyRail}
-        duration={totalDuration || 0}
-        activeSectionId={activeBeatId}
-        onSelect={setActiveBeatId}
-        onUpdate={updateStoryBeat}
-        onMoveBoundary={moveStoryBoundary}
-        onSplit={addStoryPart}
-        onRemove={removeStoryBeat}
-        onResetFromDetection={resetStoryPlanFromDetection}
+      <StoryTreatmentPlanner
+        analysis={analysis}
+        transcriptSummary={transcriptSummary}
+        project={musicVideoProject}
+        state={state}
+        onChange={updateState}
+        onConfirm={confirmStoryPlan}
+        onInvalidateConfirmed={() => updateState({
+          storyGenerated: false,
+          confirmedTreatmentId: null,
+          confirmedTreatmentSnapshot: null,
+          storyContentSignature: null,
+        })}
       />
+
+      <details className="rounded-[2px] border border-[#1a1a1a] bg-[#090909]">
+        <summary className="cursor-pointer px-3 py-3 text-[9px] uppercase tracking-[0.16em] text-[#777] hover:text-[#b8b8b8]">Timing &amp; Song Structure · advanced</summary>
+        <div className="border-t border-[#1a1a1a] p-2">
+          <StoryStructureEditor
+            detectedSections={analysis?.sections ?? []}
+            plannedSections={storyRail}
+            duration={totalDuration || 0}
+            activeSectionId={activeBeatId}
+            onSelect={setActiveBeatId}
+            onUpdate={updateStoryBeat}
+            onMoveBoundary={moveStoryBoundary}
+            onSplit={addStoryPart}
+            onRemove={removeStoryBeat}
+            onResetFromDetection={resetStoryPlanFromDetection}
+          />
+        </div>
+      </details>
 
       <section className="rounded-[2px] border border-[#1a1a1a] bg-[#0b0b0b] p-3">
         <div className="grid gap-3 xl:grid-cols-[1.15fr_0.85fr]">
@@ -335,29 +407,20 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews,
       <section className="rounded-[2px] border border-[#1a1a1a] bg-[#0b0b0b] p-3">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Story section map</div>
+            <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Story-to-song translation</div>
             <div className="mt-1 text-[11px] text-[#6d6d6d]">
               Each row shows what belongs together: song section, timed lyrics, story intent, selected footage, and match confidence.
             </div>
           </div>
-          <button
-            type="button"
-            onClick={generateStoryLayout}
-            disabled={!transcriptSummary || isTranscribingAudio}
-            className={`rounded-[2px] px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.18em] ${
-              transcriptSummary && !isTranscribingAudio ? "bg-[#e05c00] text-white hover:bg-[#c95200]" : "bg-[#252525] text-[#646464] cursor-not-allowed"
-            }`}
-          >
-            {storyGenerated ? "Story map confirmed" : "Confirm story map"}
-          </button>
+          <div className="font-mono text-[9px] uppercase text-[#666]">{storyGenerated ? "Anchors confirmed" : "Waiting for anchor review"}</div>
         </div>
 
         <div className={`mb-3 rounded-[2px] border px-3 py-2 text-[9px] leading-4 ${storyGenerated ? "border-[#245c2c] bg-[#071107] text-[#78c878]" : "border-[#5a3219] bg-[#120a05] text-[#c68152]"}`}>
           {storyGenerated
             ? "Confirmed. Split and downstream stages may use this Story map."
-            : transcriptSummary
-              ? "Draft ready. Confirm this map to unlock Split; later Story changes will mark downstream work stale."
-              : "Add the vocal stem or timed lyrics before confirming this Story map."}
+            : state.selectedTreatmentId
+              ? "Resolve every selected anchor above, then confirm the Story plan to unlock Split."
+              : "Generate and select one of the three treatments above. Lyrics remain useful context, but are not required for an instrumental track."}
         </div>
 
         {totalDuration > 0 ? <div className="overflow-x-auto rounded-[2px] border border-[#171717] bg-[#070707]">

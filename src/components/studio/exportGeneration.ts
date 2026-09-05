@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 
@@ -214,8 +215,16 @@ export async function generateMusicVideoExport(params: {
     "-i", muxAudioPath,
   ];
 
+  let effectFilterScriptPath: string | null = null;
   if (effectFilter) {
-    args.push("-filter:v", effectFilter);
+    // A full-song cue plan can exceed Windows' process command-line limit.
+    // Keep the FFmpeg invocation short by passing the filter chain by file.
+    effectFilterScriptPath = path.join(
+      path.dirname(outputPath),
+      `${path.basename(outputPath)}.${process.pid}.${Date.now()}.filter.txt`,
+    );
+    await writeFile(effectFilterScriptPath, effectFilter, "utf8");
+    args.push("-filter_script:v", effectFilterScriptPath);
   }
 
   args.push(
@@ -231,7 +240,11 @@ export async function generateMusicVideoExport(params: {
     outputPath,
   );
 
-  await execFileAsync(ffmpegPath, args);
+  try {
+    await execFileAsync(ffmpegPath, args);
+  } finally {
+    if (effectFilterScriptPath) await rm(effectFilterScriptPath, { force: true });
+  }
 
   const outputMetadata = await probeFn(outputPath);
   return {
