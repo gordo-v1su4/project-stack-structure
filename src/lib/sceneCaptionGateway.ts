@@ -31,7 +31,7 @@ export function formatSceneCaptionGatewayError(
 ) {
   const detail = readGatewayError(payload);
   if (detail && /<!doctype html/i.test(detail)) {
-    return `Caption gateway ${endpoint} returned Cloudflare HTML (${status}). VM100 Trigger workers must use SCENE_CAPTION_SMART_GATEWAY_INTERNAL_URL=http://127.0.0.1:18091 and the gateway must expose ${endpoint}.`;
+    return `Caption gateway ${endpoint} returned Cloudflare HTML (${status}). VM100 Trigger workers must use SCENE_CAPTION_SMART_GATEWAY_INTERNAL_URL=http://192.168.8.222:18091 and the gateway must expose ${endpoint}.`;
   }
   return detail || `Caption gateway ${endpoint} failed (${status})`;
 }

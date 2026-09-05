@@ -5,11 +5,11 @@ import { formatSceneCaptionGatewayError, resolveSceneCaptionGatewayAuth } from "
 describe("resolveSceneCaptionGatewayAuth", () => {
   test("prefers the internal URL for VM100 Trigger workers", () => {
     const auth = resolveSceneCaptionGatewayAuth({
-      SCENE_CAPTION_SMART_GATEWAY_INTERNAL_URL: "http://127.0.0.1:18091",
+      SCENE_CAPTION_SMART_GATEWAY_INTERNAL_URL: "http://192.168.8.222:18091",
       SCENE_CAPTION_SMART_GATEWAY_URL: "https://caption.v1su4.dev",
       SCENE_CAPTION_SMART_GATEWAY_TOKEN: "token",
     });
-    expect(auth.gatewayUrl).toBe("http://127.0.0.1:18091");
+    expect(auth.gatewayUrl).toBe("http://192.168.8.222:18091");
     expect(auth.token).toBe("token");
   });
 

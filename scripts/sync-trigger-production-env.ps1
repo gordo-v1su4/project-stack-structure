@@ -53,9 +53,9 @@ foreach ($mapping in $manifest.triggerProduction) {
   $variables[[string]$mapping.env] = Read-BwsValue ([string]$mapping.bws)
 }
 
-# VM100 workers must not hairpin through Cloudflare for caption/story gateway calls.
-$variables["SCENE_CAPTION_SMART_GATEWAY_INTERNAL_URL"] = "http://127.0.0.1:18091"
-$variables["SCENE_CAPTION_SMART_GATEWAY_URL"] = "http://127.0.0.1:18091"
+# Trigger workers run in Docker; host loopback is unreachable from the container.
+$variables["SCENE_CAPTION_SMART_GATEWAY_INTERNAL_URL"] = "http://192.168.8.222:18091"
+$variables["SCENE_CAPTION_SMART_GATEWAY_URL"] = "http://192.168.8.222:18091"
 
 $apiToken = Read-BwsValue "STACK_STRUCTURE_TRIGGER_PROD_SECRET_KEY"
 $body = @{ variables = $variables; override = $true } | ConvertTo-Json -Depth 5 -Compress
