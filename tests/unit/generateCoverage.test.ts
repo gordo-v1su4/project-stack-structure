@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { buildCoverageIssueGroups, buildCoverageSlots, describeCoverageIssue, summarizeCoverage } from "@/components/studio/panels/GenerateTab";
+import { buildCoverageIssueGroups, buildCoverageSlots, describeCoverageIssue, summarizeCoverage } from "@/components/studio/editPlanCoverage";
 import type { MusicVideoProject, SemanticClipMatch, TimelineItem, VideoMoment } from "@/components/studio/musicVideoProject";
 
 function match(momentId: string, score: number): SemanticClipMatch {
@@ -112,7 +112,12 @@ describe("Generate coverage truth", () => {
     const shortSlots = buildCoverageSlots(project(shortItem, shortMoment), [chunks[0]!]);
 
     expect(shortSlots[0]).toMatchObject({ status: "short", assignedDuration: 3, missingDuration: 2 });
-    expect(summarizeCoverage(shortSlots, 5)).toMatchObject({ trueGapDuration: 2, requiredNeedCount: 1 });
+    expect(summarizeCoverage(shortSlots, 5)).toMatchObject({
+      trueGapDuration: 2,
+      requiredNeedCount: 0,
+      blockingGapCount: 0,
+      shortReviewCount: 1,
+    });
     const shortIssues = buildCoverageIssueGroups(shortSlots);
     expect(describeCoverageIssue(shortIssues[0]!)).toBe("The assigned source covers 0:03 of 0:05, leaving 0:02 uncovered. Inspect the resolved edit and, if needed, regenerate the whole shot with handles.");
   });

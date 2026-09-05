@@ -37,9 +37,9 @@ describe("readout", () => {
     ]);
   });
 
-  test("beatjoin tab exposes onset and chaos when ready", () => {
+  test("join tab shows resolved edit metrics when ready", () => {
     const rows = buildReadout({
-      tab: "beatjoin",
+      tab: "join",
       clipDur: 5,
       splitSegmentCount: 4,
       bpm: 120,
@@ -49,6 +49,8 @@ describe("readout", () => {
       minScore: 0.4,
       lookahead: 3,
       joinClips: makeJoinClips(),
+      resolvedJoinClipCount: 12,
+      resolvedJoinDuration: 48.5,
       minDur: 0.22,
       maxDur: 0.88,
       lowEnergyRange: 0.31,
@@ -63,7 +65,8 @@ describe("readout", () => {
       rampDur: 0.5,
     });
 
-    expect(rows).toContainEqual(["Onset", "0.65"]);
-    expect(rows).toContainEqual(["Chaos", "0.35"]);
+    expect(rows).toContainEqual(["Cuts", 12]);
+    expect(rows).toContainEqual(["Format", "MP4"]);
+    expect(rows).toContainEqual(["Source", "Resolved edit"]);
   });
 });

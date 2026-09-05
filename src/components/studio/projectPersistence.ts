@@ -504,7 +504,8 @@ async function readProjectApiResponse<T>(response: Response): Promise<T & { succ
 
 function sanitizeWorkflowUiSettings(settings: PersistedWorkflowUiSettings | undefined): PersistedWorkflowUiSettings {
   const next: PersistedWorkflowUiSettings = {};
-  if (isKnownTab(settings?.activeTab)) next.activeTab = settings.activeTab;
+  const normalizedTab = normalizeLegacyTab(settings?.activeTab);
+  if (normalizedTab) next.activeTab = normalizedTab;
   if (isKnownSplitMode(settings?.splitMode)) next.splitMode = settings.splitMode;
   if (typeof settings?.matchMode === "string" && settings.matchMode.trim()) next.matchMode = settings.matchMode;
   const matchOnsetDensity = settings?.matchOnsetDensity;
@@ -593,7 +594,13 @@ function isShaderCueKind(value: unknown): value is ShaderCueKind {
 }
 
 function isKnownTab(value: unknown): value is Tab {
-  return typeof value === "string" && ["review", "story", "compose", "split", "beatsplit", "shuffle", "generate", "join", "beatjoin", "ramp"].includes(value);
+  return typeof value === "string" && ["review", "story", "compose", "split", "shuffle", "generate", "join", "ramp"].includes(value);
+}
+
+function normalizeLegacyTab(value: unknown): Tab | undefined {
+  if (value === "beatsplit") return "split";
+  if (value === "beatjoin") return "join";
+  return isKnownTab(value) ? value : undefined;
 }
 
 function isKnownSplitMode(value: unknown): value is SplitMode {

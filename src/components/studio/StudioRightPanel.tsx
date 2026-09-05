@@ -300,9 +300,9 @@ export function StudioRightPanel({
             <>
               Use <span className="text-[#e05c00]">Dynamic</span> with drop slowdown &lt;0.5 for cinematic music video pacing.
             </>
-          ) : tab === "beatjoin" ? (
+          ) : tab === "join" ? (
             <>
-              Set <span className="text-[#e05c00]">Onset Boost</span> above 0.6 for punchy drum-reactive cuts on EDM.
+              Review the <span className="text-[#e05c00]">resolved edit</span> cuts before exporting from Preview / Export.
             </>
           ) : (
             <>
