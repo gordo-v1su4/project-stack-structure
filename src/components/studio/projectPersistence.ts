@@ -173,7 +173,12 @@ export function hydrateStudioProjectDraft(params: {
     analysis: params.draft.analysis
       ? {
           sourceLabel: params.draft.analysis.sourceLabel,
-          audioUrl: params.audioUrl ?? params.draft.analysis.storageUrl ?? "",
+          audioUrl: params.audioUrl
+            ?? resolvePersistedPlaybackUrl(
+              params.draft.analysis.storageUrl,
+              params.draft.analysis.storageBucket,
+              params.draft.analysis.storagePath,
+            ),
           waveform: params.draft.analysis.waveform,
           energy: params.draft.analysis.energy,
           beats: params.draft.analysis.beats,
@@ -191,7 +196,8 @@ export function hydrateStudioProjectDraft(params: {
     videoSources: params.draft.videoSources
       .map((source) => ({
         ...source,
-        videoUrl: videoUrlsByMediaKey[source.mediaKey] ?? source.storageUrl ?? "",
+        videoUrl: videoUrlsByMediaKey[source.mediaKey]
+          ?? resolvePersistedPlaybackUrl(source.storageUrl, source.storageBucket, source.storagePath),
       }))
       .filter((source) => source.videoUrl),
     storyState: normalizePersistedStoryState(params.draft.storyState, params.draft.version === 1),
@@ -374,6 +380,26 @@ export function buildAudioMediaKey(sourceLabel: string) {
 
 export function buildVideoMediaKey(source: Pick<UploadedVideoSource, "name" | "size" | "duration">) {
   return `video:${source.name}:${source.size}:${source.duration.toFixed(3)}`;
+}
+
+export function buildStoredMediaPlaybackUrl(bucket: string, objectKey: string) {
+  const params = new URLSearchParams({ bucket, objectKey });
+  return `/api/storage/media?${params.toString()}`;
+}
+
+function resolvePersistedPlaybackUrl(
+  storageUrl: string | undefined,
+  storageBucket: string | undefined,
+  storagePath: string | undefined,
+) {
+  const trimmed = storageUrl?.trim() ?? "";
+  if (trimmed && !trimmed.startsWith("blob:") && !trimmed.startsWith("data:")) {
+    return trimmed;
+  }
+  if (storageBucket?.trim() && storagePath?.trim()) {
+    return buildStoredMediaPlaybackUrl(storageBucket.trim(), storagePath.trim());
+  }
+  return "";
 }
 
 function sanitizeMusicVideoProjectForStorage(project: MusicVideoProject): MusicVideoProject {
