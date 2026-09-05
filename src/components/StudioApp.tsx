@@ -6,7 +6,7 @@ import type { DeepgramTranscriptSummary } from "./studio/deepgramUtils";
 import { buildArrangementSegments } from "./studio/arrangementBuilder";
 import type { ArrangementSegment } from "./studio/arrangementBuilder";
 import { NAV } from "./studio/constants";
-import { mergeUploadedVideoSourceUpdate, needsSceneDetectionRetry, prepareVideoSources, rerunSourceSceneAnalysis, revokePreparedVideoSources, selectSceneRetrySources } from "./studio/mediaUpload";
+import { mergeUploadedVideoSourceUpdate, needsSceneDetectionRetry, prepareVideoSources, reconcileSourceCaptionStatus, rerunSourceSceneAnalysis, revokePreparedVideoSources, selectSceneRetrySources } from "./studio/mediaUpload";
 import { uploadFileInChunks } from "./studio/chunkedUploadClient";
 import type { VideoSceneUpdate } from "./studio/mediaUpload";
 import { buildEditPlanPreviewSegments, normalizeStoryEditSettings, type EditPlanPreviewSegment, type MusicVideoProject } from "./studio/musicVideoProject";
@@ -492,7 +492,7 @@ export default function StudioApp() {
     videoFilesByMediaKeyRef.current.clear();
     setBeatJoinAnalysis(draft.analysis);
     setAudioStatus(draft.analysis ? `Restored · ${draft.analysis.sourceLabel}` : "Upload a song to unlock beat sync.");
-    setVideoSources(draft.videoSources);
+    setVideoSources(draft.videoSources.map((source) => reconcileSourceCaptionStatus(source, draft.captionSettings?.mode ?? "smart")));
     setVideoStatus(draft.videoSources.length
       ? `Restored ${draft.videoSources.length} clip${draft.videoSources.length === 1 ? "" : "s"} from durable storage.`
       : "Upload one or more video clips to begin.");
@@ -858,7 +858,7 @@ export default function StudioApp() {
 
         const queue = [...pending];
         await Promise.all(
-          Array.from({ length: Math.min(2, queue.length) }, async () => {
+          Array.from({ length: Math.min(1, queue.length) }, async () => {
             for (let source = queue.shift(); source; source = queue.shift()) {
               await rerunSourceSceneAnalysis(source, captionSettings, applySceneUpdate).catch(() => undefined);
             }

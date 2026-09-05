@@ -1,5 +1,6 @@
 import { logger, task, wait } from "@trigger.dev/sdk";
 
+import { formatSceneCaptionGatewayError, resolveSceneCaptionGatewayAuth } from "@/lib/sceneCaptionGateway";
 import { vm100HeavyQueue } from "./queues";
 
 export type StoryTreatmentPayload = {
@@ -42,15 +43,7 @@ export const storyTreatmentTask = task({
 });
 
 async function runStoryTreatmentGateway(payload: StoryTreatmentPayload, triggerRunId: string) {
-  const gatewayUrl = (process.env.SCENE_CAPTION_SMART_GATEWAY_URL
-    || process.env.QWEN_CAPTION_GATEWAY_URL
-    || "http://192.168.8.222:18091").replace(/\/+$/, "");
-  const isLoopbackGateway = /^https?:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?$/i.test(gatewayUrl);
-  const token = (process.env.STACK_STRUCTURE_LOCAL_TRIGGER === "1" || isLoopbackGateway)
-    ? ""
-    : process.env.SCENE_CAPTION_SMART_GATEWAY_TOKEN
-      || process.env.QWEN_CAPTION_GATEWAY_TOKEN
-      || "";
+  const { gatewayUrl, token } = resolveSceneCaptionGatewayAuth();
   const endpoint = normalizeEndpoint(process.env.STORY_TREATMENT_GATEWAY_ENDPOINT || "/story/treatments");
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -70,7 +63,7 @@ async function runStoryTreatmentGateway(payload: StoryTreatmentPayload, triggerR
   });
   const result = await readJson(response);
   if (!response.ok || readBoolean(result, "ok") === false) {
-    throw new Error(readString(result, "detail") || readString(result, "error") || `Story gateway failed (${response.status})`);
+    throw new Error(formatSceneCaptionGatewayError(response.status, result, endpoint));
   }
   const output = result.output;
   if (!output || typeof output !== "object" || Array.isArray(output)) {

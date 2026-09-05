@@ -2,7 +2,6 @@
 param(
   [string]$NextBaseUrl = "http://127.0.0.1:3000",
   [switch]$LocalOnly,
-  [switch]$LocalTrigger,
   [switch]$Production,
   [switch]$RunLocalGeneration,
   [switch]$RunCoreMatrix,
@@ -92,13 +91,8 @@ function Wait-QueuedOutput([string]$name, $queued) {
 }
 
 if (-not $LocalOnly) {
-  if ($Production -and $LocalTrigger) {
-    throw "-Production and -LocalTrigger cannot be combined."
-  }
   if ($Production) {
     . (Join-Path $PSScriptRoot "load-production-app-env.ps1")
-  } elseif ($LocalTrigger) {
-    . (Join-Path $PSScriptRoot "load-trigger-staging-env.ps1") -LocalTrigger
   } else {
     . (Join-Path $PSScriptRoot "load-trigger-staging-env.ps1")
   }

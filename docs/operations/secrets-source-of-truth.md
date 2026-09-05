@@ -28,6 +28,10 @@ The production application uses `STACK_STRUCTURE_TRIGGER_PROD_SECRET_KEY`.
 Local Trigger development uses `STACK_STRUCTURE_TRIGGER_DEV_SECRET_KEY`; the
 two keys are never interchangeable.
 
+Workstation runtime env for `bun run secrets:check` is the repo-local
+`.env.local` file, usually hydrated from BWS with
+`bun run scripts/sync-local-env.ts`.
+
 Trigger task variables and deployment credentials are declared by name in
 `config/secrets.manifest.json`. Use `bun run trigger:env:check` to verify the
 BWS pointers and `bun run trigger:env:sync` to import the task variables into

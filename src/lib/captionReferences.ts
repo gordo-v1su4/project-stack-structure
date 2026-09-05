@@ -8,6 +8,23 @@ export type DurableCaptionReference = {
   fileName?: string;
 };
 
+const CAPTION_REFERENCE_ROLE_ORDER: DurableCaptionReference["role"][] = ["primary", "secondary", "environment"];
+
+/** Smart captions support two character sheets plus one named environment reference. */
+export function normalizeCaptionReferencesForGateway(
+  references: DurableCaptionReference[] | undefined,
+): DurableCaptionReference[] {
+  if (!references?.length) return [];
+  const normalized = [
+    ...references.filter((reference) => reference.role === "primary").slice(0, 1),
+    ...references.filter((reference) => reference.role === "secondary").slice(0, 1),
+    ...references.filter((reference) => reference.role === "environment").slice(0, 1),
+  ];
+  return normalized.sort(
+    (left, right) => CAPTION_REFERENCE_ROLE_ORDER.indexOf(left.role) - CAPTION_REFERENCE_ROLE_ORDER.indexOf(right.role),
+  );
+}
+
 export function parseDurableCaptionReferences(value: unknown, expectedBucket: string): DurableCaptionReference[] {
   let parsed = value;
   if (typeof value === "string") {

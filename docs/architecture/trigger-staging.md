@@ -127,26 +127,14 @@ for the temporary local project.
 
 Inject `FFMPEG_GATEWAY_API_KEY`, `MEDIA_GATEWAY_TOKEN`, and the other provider
 keys from BWS into the Trigger worker environment as well. Do not allow an
-older local `.env` value to override those BWS values. For this Windows
-rehearsal, also set `MEDIA_WORKER_URL=http://127.0.0.1:18090`.
+older local `.env` value to override those BWS values.
 
 The checked-in helper `scripts/load-trigger-staging-env.ps1` performs this
-injection without printing secret values. For the temporary local control
-plane, provide `STACK_STRUCTURE_LOCAL_TRIGGER_SECRET_KEY` and start a worker
+injection without printing secret values and always targets the VM100 production
+control plane at `https://trigger.v1su4.dev`.
+
+After VM100's Trigger control plane is healthy, start a local Trigger dev worker
 with:
-
-```powershell
-$env:STACK_STRUCTURE_LOCAL_TRIGGER_SECRET_KEY = '<local development key>'
-$env:STACK_STRUCTURE_LOCAL_CAPTION_API_TOKEN = ''
-.\scripts\load-trigger-staging-env.ps1 -LocalTrigger -Start trigger
-```
-
-The local worker uses the isolated project at `http://127.0.0.1:8030` and
-refreshes an external env file so the repository's `.env.local` cannot route
-the task back to VM100. See [Temporary local Trigger.dev control plane](trigger-local.md)
-for the Docker lifecycle and migration procedure.
-
-After VM100's Trigger control plane is healthy, the production worker remains:
 
 ```powershell
 .\scripts\load-trigger-staging-env.ps1 -Start trigger
@@ -157,8 +145,8 @@ the development Trigger key or provider credentials.
 
 Use `scripts/verify-trigger-staging.ps1 -LocalOnly` for the local service
 health pass. After starting Next and the Trigger worker with the BWS loader,
-run `scripts/verify-trigger-staging.ps1 -LocalTrigger -RunLocalGeneration`
-for the local control-plane smoke test, or omit `-LocalTrigger` for the
+run `scripts/verify-trigger-staging.ps1 -RunLocalGeneration` for a local
+generation smoke test, or add `-Production` for the production control plane.
 recovered VM100 control plane.
 
 For the Windows rehearsal, the worker environment should also resolve:

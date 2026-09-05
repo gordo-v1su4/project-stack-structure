@@ -11,12 +11,12 @@ Do not move credentials, sessions, or credits between them.
 ## Lane 1: Trigger.dev API/CLI
 
 - Account: `gordo@v1su4.com`
-- Runtime: Next.js dispatch -> Trigger.dev -> Bun task -> official `@higgsfield/cli`
-- Credential file: `C:\Users\Gordo\Documents\Github\trigger-dev-local\higgsfield-gordo-credentials.json`
-- The credential file is outside this repository and selected through
-  `HIGGSFIELD_CREDENTIALS_PATH`.
-- `HIGGSFIELD_ACCESS_TOKEN` stays blank locally; short-lived OAuth tokens are
-  managed by the official CLI.
+- Runtime: Next.js dispatch -> Trigger.dev on VM100 -> Bun task -> official `@higgsfield/cli`
+- Credentials: `HIGGSFIELD_CREDENTIALS_JSON` in BWS (`STACK_STRUCTURE_HIGGSFIELD_CREDENTIALS_JSON`),
+  synced into the VM100 Trigger production environment. The worker materializes
+  that JSON at runtime; there is no workstation credential file.
+- `HIGGSFIELD_ACCESS_TOKEN` stays blank; short-lived OAuth tokens are managed by
+  the official CLI inside the Trigger worker image.
 - The task uses the explicit external-provider queue, one attempt for paid
   generation, request idempotency, terminal failure handling, and durable RustFS
   output persistence.

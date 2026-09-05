@@ -26,6 +26,10 @@ export type SceneCaptionOptions = {
 
 let serverCaptionAvailablePromise: Promise<boolean> | null = null;
 
+export function resetServerCaptionAvailabilityCache() {
+  serverCaptionAvailablePromise = null;
+}
+
 /**
  * True when a scene's existing caption already satisfies the requested
  * caption mode. The caption source is authoritative: Qwen captions satisfy
@@ -40,6 +44,56 @@ export function sceneCaptionMatchesMode(scene: DetectedSceneSegment, mode: Scene
   return scene.captionSource === "lfm-webgpu" || scene.captionSource === "lfm-server";
 }
 
+/**
+ * Clears stale captionError values left by a failed refresh when the scene
+ * still has a caption that satisfies the requested lane.
+ */
+export function finalizeCaptionedScenes(
+  scenes: DetectedSceneSegment[],
+  mode: SceneCaptionSettings["mode"],
+): DetectedSceneSegment[] {
+  return scenes.map((scene) => {
+    if (!scene.captionError || !scene.caption || !sceneCaptionMatchesMode(scene, mode)) return scene;
+    return { ...scene, captionError: null };
+  });
+}
+
+export function deriveSourceCaptionStatus(
+  scenes: DetectedSceneSegment[],
+  mode: SceneCaptionSettings["mode"],
+  options: { activeStatus?: UploadedVideoSource["captionStatus"] } = {},
+): Pick<UploadedVideoSource, "captionStatus" | "captionError"> {
+  if (options.activeStatus === "captioning") {
+    return { captionStatus: "captioning", captionError: null };
+  }
+
+  const finalized = finalizeCaptionedScenes(scenes, mode);
+  if (!finalized.length) {
+    return { captionStatus: "ready", captionError: null };
+  }
+
+  const missingCaptions = finalized.filter((scene) => !scene.caption).length;
+  const hardFailures = finalized.filter((scene) => Boolean(scene.captionError) && !scene.caption).length;
+  const mismatchedCaptions = finalized.filter((scene) => scene.caption && !sceneCaptionMatchesMode(scene, mode)).length;
+
+  if (!missingCaptions && !hardFailures && !mismatchedCaptions) {
+    return { captionStatus: "ready", captionError: null };
+  }
+
+  const parts: string[] = [];
+  if (missingCaptions) parts.push(`${missingCaptions} scene${missingCaptions === 1 ? "" : "s"} missing captions`);
+  if (hardFailures) parts.push(`${hardFailures} scene caption${hardFailures === 1 ? "" : "s"} failed`);
+  if (mismatchedCaptions) {
+    parts.push(`${mismatchedCaptions} scene caption${mismatchedCaptions === 1 ? "" : "s"} need the selected lane`);
+  }
+
+  return { captionStatus: "failed", captionError: parts.join("; ") };
+}
+
+export function isSourceCaptionFailed(source: UploadedVideoSource, mode: SceneCaptionSettings["mode"]): boolean {
+  return deriveSourceCaptionStatus(source.scenes ?? [], mode, { activeStatus: source.captionStatus }).captionStatus === "failed";
+}
+
 export async function captionDetectedScenes(
   source: UploadedVideoSource,
   scenes: DetectedSceneSegment[],
@@ -49,6 +103,7 @@ export async function captionDetectedScenes(
 ): Promise<DetectedSceneSegment[]> {
   if (!scenes.length) return scenes;
 
+  resetServerCaptionAvailabilityCache();
   let video: HTMLVideoElement | null = null;
   const captioned = [...scenes];
 
@@ -69,7 +124,7 @@ export async function captionDetectedScenes(
       );
 
       try {
-        const result = await captionSceneFrame(video, source, scene, sampleTime, settings);
+        const result = await captionSceneFrame(source, scene, sampleTime, settings, video);
         captioned[index] = {
           ...scene,
           caption: result.text,
@@ -103,14 +158,14 @@ export function countSceneCaptions(scenes: DetectedSceneSegment[] | undefined) {
 }
 
 async function captionSceneFrame(
-  video: HTMLVideoElement,
   source: UploadedVideoSource,
   scene: DetectedSceneSegment,
   sampleTime: number,
   settings: SceneCaptionSettings,
+  video: HTMLVideoElement,
 ) {
   if (settings.mode === "fast") {
-    const bitmap = await grabBitmap(video, sampleTime);
+    const bitmap = await loadSceneCaptionBitmap(video, scene, sampleTime);
     const result = await captionFrameWithLfm(bitmap);
     return {
       text: result.text,
@@ -125,7 +180,27 @@ async function captionSceneFrame(
     throw new Error("Smart Qwen3-VL scene caption gateway is not configured or reachable.");
   }
 
-  return await captionSceneFrameViaServer(video, source, scene, sampleTime, settings);
+  return await captionSceneFrameViaServer(source, scene, sampleTime, settings, video);
+}
+
+async function loadSceneCaptionBitmap(
+  video: HTMLVideoElement,
+  scene: DetectedSceneSegment,
+  sampleTime: number,
+) {
+  if (scene.storyboardUrl) {
+    try {
+      const response = await fetch(scene.storyboardUrl, { cache: "no-store" });
+      if (response.ok) {
+        const blob = await response.blob();
+        return await createImageBitmap(blob);
+      }
+    } catch {
+      // Fall back to decoding the source video when storyboard fetch fails.
+    }
+  }
+
+  return grabBitmap(video, sampleTime);
 }
 
 async function isServerCaptioningAvailable() {
@@ -142,13 +217,13 @@ async function isServerCaptioningAvailable() {
 }
 
 async function captionSceneFrameViaServer(
-  video: HTMLVideoElement,
   source: UploadedVideoSource,
   scene: DetectedSceneSegment,
   sampleTime: number,
   settings: SceneCaptionSettings,
+  video: HTMLVideoElement,
 ) {
-  const bitmap = await grabBitmap(video, sampleTime);
+  const bitmap = await loadSceneCaptionBitmap(video, scene, sampleTime);
   try {
     const image = await bitmapToJpegBlob(bitmap);
     const form = new FormData();

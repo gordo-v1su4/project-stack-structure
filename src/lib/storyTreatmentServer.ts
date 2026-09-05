@@ -24,42 +24,66 @@ type GenerateStoryTreatmentsOptions = {
   gatewayModel?: string;
 };
 
+export async function queueStoryTreatmentGeneration(
+  request: StoryTreatmentRequest,
+  options: GenerateStoryTreatmentsOptions = {},
+) {
+  const gateway = getStoryTreatmentGatewayConfig();
+  const usingDefaults = !options.trigger;
+  if (usingDefaults && !gateway.configured) {
+    throw new Error("Story treatment gateway is not configured. Set SCENE_CAPTION_SMART_GATEWAY_URL.");
+  }
+
+  const model = options.gatewayModel ?? gateway.model ?? STORY_TREATMENT_MODEL;
+  const trigger = options.trigger ?? triggerStoryTreatment;
+  const attempt = request.validationAttempt ?? 0;
+  const handle = await trigger({
+    instructions: STORY_DIRECTOR_INSTRUCTIONS,
+    input: buildStoryInput(request, attempt),
+    model,
+    maxTokens: 4_096,
+  });
+  return { runId: handle.id, model };
+}
+
+export function materializeStoryTreatmentResult(
+  result: StoryTreatmentTriggerResult,
+  options: { now?: () => Date; model?: string } = {},
+): StoryTreatmentGenerationResult {
+  const parsed = parseGeneratedTreatments(result.output);
+  const model = result.model || options.model || STORY_TREATMENT_MODEL;
+  return {
+    treatments: hydrateTreatmentCoverage(parsed, []),
+    meta: {
+      model,
+      generatedAt: (options.now?.() ?? new Date()).toISOString(),
+      inputTokens: result.usage?.prompt_tokens,
+      outputTokens: result.usage?.completion_tokens,
+    },
+  };
+}
+
 export async function generateStoryTreatments(
   request: StoryTreatmentRequest,
   options: GenerateStoryTreatmentsOptions = {},
 ): Promise<StoryTreatmentGenerationResult> {
-  const gateway = getStoryTreatmentGatewayConfig();
-  const usingDefaults = !options.trigger && !options.waitForRun;
-  if (usingDefaults && !gateway.configured) {
-    throw new Error("Story treatment gateway is not configured. Set SCENE_CAPTION_SMART_GATEWAY_URL.");
-  }
-  const model = options.gatewayModel ?? gateway.model ?? STORY_TREATMENT_MODEL;
-  const trigger = options.trigger ?? triggerStoryTreatment;
   const waitForRun = options.waitForRun ?? waitForTriggerRunResult;
   let lastError: unknown = null;
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      const handle = await trigger({
-        instructions: STORY_DIRECTOR_INSTRUCTIONS,
-        input: buildStoryInput(request, attempt),
-        model,
-        maxTokens: 4_096,
-      });
-      const result = await waitForRun<StoryTreatmentTriggerResult>(handle.id, {
+      const queued = await queueStoryTreatmentGeneration(
+        { ...request, validationAttempt: attempt },
+        options,
+      );
+      const result = await waitForRun<StoryTreatmentTriggerResult>(queued.runId, {
         timeoutMs: 540_000,
         pollIntervalMs: 2_000,
       });
-      const parsed = parseGeneratedTreatments(result.output);
-      return {
-        treatments: hydrateTreatmentCoverage(parsed, []),
-        meta: {
-          model: result.model || model,
-          generatedAt: (options.now?.() ?? new Date()).toISOString(),
-          inputTokens: result.usage?.prompt_tokens,
-          outputTokens: result.usage?.completion_tokens,
-        },
-      };
+      return materializeStoryTreatmentResult(result, {
+        now: options.now,
+        model: queued.model,
+      });
     } catch (error) {
       lastError = error;
     }

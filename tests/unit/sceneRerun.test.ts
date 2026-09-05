@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
-import { countMismatchedSceneCaptions, rerunSourceSceneAnalysis, selectSceneRetrySources, type VideoSceneUpdate } from "@/components/studio/mediaUpload";
-import { sceneCaptionMatchesMode } from "@/components/studio/sceneCaptioning";
+import { countMismatchedSceneCaptions, reconcileSourceCaptionStatus, rerunSourceSceneAnalysis, selectSceneRetrySources, type VideoSceneUpdate } from "@/components/studio/mediaUpload";
+import { deriveSourceCaptionStatus, finalizeCaptionedScenes, sceneCaptionMatchesMode } from "@/components/studio/sceneCaptioning";
 import type { DetectedSceneSegment, UploadedVideoSource } from "@/components/studio/types";
 
 const originalFetch = globalThis.fetch;
@@ -100,7 +100,7 @@ describe("selectSceneRetrySources", () => {
       makeSource({ id: 3, sceneStatus: "failed", scenes: [] }),
     ];
 
-    expect(selectSceneRetrySources(sources, "smart").map((source) => source.id)).toEqual([1, 4, 2]);
+    expect(selectSceneRetrySources(sources, "smart").map((source) => source.id)).toEqual([1, 2]);
   });
 
   test("keeps stored clips with active scene detection out of the retry queue", () => {
@@ -111,6 +111,57 @@ describe("selectSceneRetrySources", () => {
     ];
 
     expect(selectSceneRetrySources(sources, "smart").map((source) => source.id)).toEqual([1]);
+  });
+});
+
+describe("deriveSourceCaptionStatus", () => {
+  test("treats a failed refresh as ready when the previous caption still matches the lane", () => {
+    const scenes = [
+      makeScene({ caption: "x", captionSource: "qwen3-vl-server", captionError: "proxy timeout" }),
+    ];
+
+    expect(deriveSourceCaptionStatus(scenes, "smart")).toEqual({
+      captionStatus: "ready",
+      captionError: null,
+    });
+  });
+
+  test("marks missing or hard-failed scenes as failed", () => {
+    const scenes = [
+      makeScene({ captionError: "gateway down" }),
+      makeScene({ caption: "x", captionSource: "lfm-webgpu" }),
+    ];
+
+    expect(deriveSourceCaptionStatus(scenes, "smart").captionStatus).toBe("failed");
+  });
+});
+
+describe("reconcileSourceCaptionStatus", () => {
+  test("clears stale clip-level failed status when every scene still has a valid caption", () => {
+    const source = makeSource({
+      captionStatus: "failed",
+      captionError: "3 scene captions did not refresh.",
+      scenes: [
+        makeScene({ caption: "a", captionSource: "qwen3-vl-server", captionError: "timeout" }),
+        makeScene({ caption: "b", captionSource: "qwen3-vl-server", captionError: "timeout" }),
+      ],
+    });
+
+    expect(reconcileSourceCaptionStatus(source, "smart")).toMatchObject({
+      captionStatus: "ready",
+      captionError: null,
+      scenes: [
+        { captionError: null },
+        { captionError: null },
+      ],
+    });
+  });
+});
+
+describe("finalizeCaptionedScenes", () => {
+  test("keeps real caption errors when no caption was preserved", () => {
+    const scenes = [makeScene({ captionError: "decode failed" })];
+    expect(finalizeCaptionedScenes(scenes, "smart")[0]?.captionError).toBe("decode failed");
   });
 });
 

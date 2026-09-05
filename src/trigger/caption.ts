@@ -2,7 +2,8 @@ import { createHash } from "node:crypto";
 import { logger, task, wait } from "@trigger.dev/sdk";
 
 import { downloadMediaGatewayFile, uploadJsonToMediaGateway } from "@/lib/mediaGateway";
-import type { DurableCaptionReference } from "@/lib/captionReferences";
+import { normalizeCaptionReferencesForGateway, type DurableCaptionReference } from "@/lib/captionReferences";
+import { resolveSceneCaptionGatewayAuth } from "@/lib/sceneCaptionGateway";
 
 import { vm100HeavyQueue } from "./queues";
 import { markWorkCompleted, markWorkRunning, setWorkProgress } from "./workMetadata";
@@ -121,20 +122,7 @@ export const sceneCaptionBatchTask = task({
 });
 
 async function runSmartSceneCaption(payload: SmartSceneCaptionPayload, triggerRunId: string) {
-    const gatewayUrl = (process.env.SCENE_CAPTION_SMART_GATEWAY_URL
-      || process.env.QWEN_CAPTION_GATEWAY_URL
-      || "http://192.168.8.222:18091").replace(/\/+$/, "");
-    // The temporary Windows Trigger worker reaches the local caption gateway
-    // over loopback. Its gateway is intentionally unauthenticated, and this
-    // explicit flag prevents a stale repo .env.local token from leaking into
-    // the local request while preserving production/VM100 authentication.
-    const isLoopbackGateway = /^https?:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?$/i.test(gatewayUrl);
-    const token = (process.env.STACK_STRUCTURE_LOCAL_TRIGGER === "1" || isLoopbackGateway)
-      ? ""
-      : process.env.SCENE_CAPTION_SMART_GATEWAY_TOKEN
-        || process.env.QWEN_CAPTION_GATEWAY_TOKEN
-        || "";
-
+    const { gatewayUrl, token } = resolveSceneCaptionGatewayAuth();
     const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
     await ensureQwenBackend(gatewayUrl, headers, triggerRunId);
 
@@ -155,7 +143,7 @@ async function runSmartSceneCaption(payload: SmartSceneCaptionPayload, triggerRu
     copyOptional(form, payload, "sceneEnd");
     copyOptional(form, payload, "sceneDuration");
     copyOptional(form, payload, "captionContext");
-    for (const reference of (payload.captionReferences ?? []).slice(0, 3)) {
+    for (const reference of normalizeCaptionReferencesForGateway(payload.captionReferences)) {
       const storedReference = await downloadMediaGatewayFile({
         bucket: reference.bucket,
         objectKey: reference.objectKey,

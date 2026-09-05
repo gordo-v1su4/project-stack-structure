@@ -88,6 +88,8 @@ export type StoryTreatmentRequest = {
     momentCount: number;
   };
   constraints?: string[];
+  /** Internal retry hint when Qwen returns schema-invalid JSON. */
+  validationAttempt?: number;
 };
 
 export const STORY_TREATMENTS_JSON_SCHEMA = {
@@ -183,6 +185,9 @@ export function parseStoryTreatmentRequest(value: unknown): StoryTreatmentReques
     },
     constraints: Array.isArray(record.constraints)
       ? record.constraints.map((item) => limitedString(item, 300, "")).filter(Boolean).slice(0, 20)
+      : undefined,
+    validationAttempt: Number.isFinite(record.validationAttempt)
+      ? Math.round(clamp(Number(record.validationAttempt), 0, 1))
       : undefined,
   };
 }
