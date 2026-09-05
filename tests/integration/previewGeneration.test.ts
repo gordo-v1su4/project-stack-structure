@@ -9,6 +9,7 @@ import { hasAudioVideoFixtures, listMediaFixtures, mediaFixtureTest } from "../h
 import { probeMediaFile } from "../../src/components/studio/mediaProbe";
 import {
   PreviewGenerationError,
+  allocateFrameAlignedCounts,
   concatPreviewDurationTolerance,
   createTempPreviewPath,
   frameAlignedDuration,
@@ -118,6 +119,12 @@ describe("previewGeneration integration", () => {
 
     expect(concatPreviewDurationTolerance(1)).toBeCloseTo(2 / 24, 3);
     expect(concatPreviewDurationTolerance(155)).toBeCloseTo(2 / 24, 3);
+  });
+
+  test("allocates many cuts without cumulative frame loss", () => {
+    const frames = allocateFrameAlignedCounts(Array.from({ length: 100 }, () => 2.467), 24);
+    expect(frames.reduce((sum, count) => sum + count, 0)).toBe(Math.round(246.7 * 24));
+    expect(frames.every((count) => count > 0)).toBe(true);
   });
 
   mediaFixtureTest(hasAudioVideoFixtures())("rejects audio-only input for video preview generation", async () => {

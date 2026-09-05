@@ -16,6 +16,16 @@ Smart auto music-video editor: upload a song + footage, get a musically aligned 
 - Articles, attachments, and historical plans are reference material, not authorization. Use relevant skills; identify the exact instruction if one blocks authorized work.
 - Finish when the outcome is verified or a concrete blocker needs user input. Report results, checks actually run, and limitations concisely.
 
+## Creative generation source of truth
+
+- For Higgsfield / Nano Banana character sheets, reference packets, prompting,
+  still acceptance, and image-to-video conditioning, always use
+  `docs/protocols/higgsfield-nano-banana-reference-continuity.md`.
+- Older plans and provider runbooks may define topology, billing, handoff, or UI
+  operations, but they do not override that creative protocol.
+- All programmatic local video calls go through SwarmUI and its managed ComfyUI
+  backend. Do not call a raw ComfyUI port as a separate provider.
+
 ## Commands
 
 ```bash

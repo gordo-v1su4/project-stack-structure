@@ -149,6 +149,9 @@ export async function triggerHiggsfieldGeneration(payload: HiggsfieldGenerationP
   });
   return tasks.trigger<typeof higgsfieldGenerationTask>(STACK_STRUCTURE_TRIGGER_TASKS.higgsfieldGeneration, payload, {
     idempotencyKey: createTriggerIdempotencyKey("higgsfield", [
+      dispatch.userId,
+      payload.approvalKey ?? "legacy",
+      payload.model ?? "nano_banana_pro",
       payload.prompt,
       payload.title ?? "",
       payload.characterName ?? "",

@@ -6,12 +6,13 @@ function makeInput(overrides: Partial<PipelineStageInput> = {}): PipelineStageIn
   return {
     activeTab: "review",
     hasAudioAnalysis: false,
-    hasTranscript: false,
     videoCount: 0,
     sceneCount: 0,
     captionReadyCount: 0,
     captionTotalCount: 0,
-    storyGenerated: false,
+    storyTreatmentSelected: false,
+    storyAnchorsResolved: false,
+    storyPlanConfirmed: false,
     editSlotCount: 0,
     matchedSlotCount: 0,
     gapSlotCount: 0,
@@ -54,16 +55,34 @@ describe("studio pipeline state", () => {
     expect(state.stages.filter((stage) => stage.isNext)).toHaveLength(1);
   });
 
+  test("treatment selection alone does not unlock Split", () => {
+    const state = buildPipelineState(makeInput({
+      hasAudioAnalysis: true,
+      videoCount: 2,
+      sceneCount: 12,
+      captionReadyCount: 12,
+      captionTotalCount: 12,
+      storyTreatmentSelected: true,
+      storyAnchorsResolved: false,
+      storyPlanConfirmed: false,
+      editSlotCount: 9,
+    }));
+
+    expect(state.stages.find((stage) => stage.key === "story")?.status).toBe("Resolve story anchors");
+    expect(state.stages.find((stage) => stage.key === "split")).toMatchObject({ available: false, prerequisiteKey: "story" });
+  });
+
   test("match reports slot coverage and generate reports gaps", () => {
     const state = buildPipelineState(
       makeInput({
         hasAudioAnalysis: true,
-        hasTranscript: true,
         videoCount: 2,
         sceneCount: 10,
         captionReadyCount: 10,
         captionTotalCount: 10,
-        storyGenerated: true,
+        storyTreatmentSelected: true,
+        storyAnchorsResolved: true,
+        storyPlanConfirmed: true,
         editSlotCount: 9,
         matchedSlotCount: 7,
         gapSlotCount: 2,
@@ -83,12 +102,13 @@ describe("studio pipeline state", () => {
     const state = buildPipelineState(
       makeInput({
         hasAudioAnalysis: true,
-        hasTranscript: true,
         videoCount: 2,
         sceneCount: 10,
         captionReadyCount: 10,
         captionTotalCount: 10,
-        storyGenerated: true,
+        storyTreatmentSelected: true,
+        storyAnchorsResolved: true,
+        storyPlanConfirmed: true,
         editSlotCount: 9,
         matchedSlotCount: 9,
         gapSlotCount: 0,
@@ -117,12 +137,13 @@ describe("studio pipeline state", () => {
     const state = buildPipelineState(
       makeInput({
         hasAudioAnalysis: true,
-        hasTranscript: true,
         videoCount: 2,
         sceneCount: 10,
         captionReadyCount: 10,
         captionTotalCount: 10,
-        storyGenerated: true,
+        storyTreatmentSelected: true,
+        storyAnchorsResolved: true,
+        storyPlanConfirmed: true,
         editSlotCount: 9,
         matchedSlotCount: 9,
         gapSlotCount: 0,

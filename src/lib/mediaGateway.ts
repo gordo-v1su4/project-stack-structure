@@ -53,20 +53,60 @@ export async function downloadMediaGatewayFile(args: {
   }
 
   const fetcher = args.fetchImpl ?? fetch;
-  const response = await fetcher(buildMediaGatewayFileUrl({ url: config.internalUrl || config.url }, args.bucket, args.objectKey), {
-    headers: { Authorization: `Bearer ${config.token}` },
-    redirect: "follow",
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(`Media gateway download failed (${response.status}): ${text.slice(0, 300)}`);
+  const gatewayUrls = [...new Set([config.internalUrl, config.url].filter((value): value is string => Boolean(value)))];
+  let downloaded: { bytes: ArrayBuffer; mime: string } | null = null;
+  let lastRequestError: unknown = null;
+  let lastHttpError: { status: number; text: string } | null = null;
+  let lastDownloadUrl = "";
+  for (const gatewayUrl of gatewayUrls) {
+    const downloadUrl = buildMediaGatewayFileUrl({ url: gatewayUrl }, args.bucket, args.objectKey);
+    lastDownloadUrl = downloadUrl;
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        const response = await fetcher(downloadUrl, {
+          headers: { Authorization: `Bearer ${config.token}` },
+          redirect: "follow",
+        });
+        if (!response.ok) {
+          lastHttpError = {
+            status: response.status,
+            text: await response.text().catch(() => ""),
+          };
+          break;
+        }
+        // Consume the body inside the retry boundary: Bun can establish the
+        // response and still lose the socket while reading a large object.
+        downloaded = {
+          bytes: await response.arrayBuffer(),
+          mime: response.headers.get("content-type")?.split(";")[0]?.trim() || "application/octet-stream",
+        };
+        break;
+      } catch (error) {
+        lastRequestError = error;
+        if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, attempt * 200));
+      }
+    }
+    if (downloaded) break;
   }
-
+  if (!downloaded) {
+    if (lastHttpError) {
+      throw new Error(`Media gateway download failed (${lastHttpError.status}): ${lastHttpError.text.slice(0, 300)}`);
+    }
+    const host = (() => {
+      try {
+        return new URL(lastDownloadUrl).host;
+      } catch {
+        return "configured gateway";
+      }
+    })();
+    const detail = lastRequestError instanceof Error ? lastRequestError.message : String(lastRequestError);
+    throw new Error(`Media gateway download request failed (${host}): ${detail}`, { cause: lastRequestError });
+  }
   const objectName = normalizeMediaPath(args.objectKey).split("/").pop() || "media.bin";
   return {
-    bytes: await response.arrayBuffer(),
+    bytes: downloaded.bytes,
     fileName: args.fileName?.trim() || objectName,
-    mime: response.headers.get("content-type")?.split(";")[0]?.trim() || "application/octet-stream",
+    mime: downloaded.mime,
   };
 }
 

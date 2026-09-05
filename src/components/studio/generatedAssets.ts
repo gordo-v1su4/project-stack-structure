@@ -1,6 +1,7 @@
 import type { ImageSplitManifest } from "@/lib/imageSplitterGateway";
 import type { MediaGatewayUploadResult } from "@/lib/mediaGateway";
 import type { EditPlanPreviewSegment } from "./musicVideoProject";
+import type { StoryboardJob, VideoFrameRole } from "./storyboardGeneration";
 
 export type GeneratedStudioAssetProvider = "higgsfield" | "swarmui";
 export type GeneratedStudioAssetReviewStatus = "pending" | "approved" | "rejected";
@@ -38,6 +39,11 @@ export type GeneratedStudioAsset = {
   reviewStatus?: GeneratedStudioAssetReviewStatus;
   reviewNotes?: string;
   target?: GeneratedStudioAssetTarget;
+  storyboard?: StoryboardJob;
+  panelReviews?: Record<string, GeneratedStudioAssetReviewStatus>;
+  frameRole?: VideoFrameRole;
+  triggerRunId?: string;
+  approvedAt?: string;
 };
 
 export type GeneratedAssetContextPreview = {
@@ -142,6 +148,11 @@ export function sanitizeGeneratedStudioAssetForStorage(asset: GeneratedStudioAss
     reviewStatus: asset.reviewStatus,
     reviewNotes: asset.reviewNotes,
     target: asset.target,
+    storyboard: asset.storyboard,
+    panelReviews: asset.panelReviews,
+    frameRole: asset.frameRole,
+    triggerRunId: asset.triggerRunId,
+    approvedAt: asset.approvedAt,
   };
 }
 

@@ -165,7 +165,7 @@ function isDraftEnvelope(value: unknown): value is { draft: unknown } {
 function isPersistedDraft(value: unknown): value is PersistedStudioProjectDraft {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const record = value as Partial<PersistedStudioProjectDraft>;
-  return record.version === 1 && Boolean(record.storyState) && Array.isArray(record.videoSources);
+  return (record.version === 1 || record.version === 2) && Boolean(record.storyState) && Array.isArray(record.videoSources);
 }
 
 function missingGatewayResponse() {

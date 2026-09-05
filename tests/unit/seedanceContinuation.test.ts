@@ -71,6 +71,7 @@ const contactSheet: GeneratedStudioAsset = {
   prompt: "grid",
   createdAt: "2026-08-27T00:00:00.000Z",
   status: "completed",
+  reviewStatus: "approved",
   fullStorage: {
     bucket: "media",
     objectKey: "generated/grid.png",
@@ -81,8 +82,8 @@ const contactSheet: GeneratedStudioAsset = {
   },
 };
 
-describe("Seedance continuation packet", () => {
-  test("uses the accepted last frame first and gives every reference one bounded role", () => {
+describe("Seedance whole-shot replacement packet", () => {
+  test("uses opening composition without overriding high-resolution identity sheets", () => {
     const packet = buildSeedanceContinuationPacket({
       projectId: "project-1",
       sectionId: "verse-2",
@@ -90,6 +91,8 @@ describe("Seedance continuation packet", () => {
       storyIntent: "Diego discovers a new room beyond the hallway",
       songStart: 42,
       songEnd: 57,
+      model: "Seedance 2.5",
+      handleSeconds: 2,
       moment: {
         id: "hallway-7",
         sourceClipId: 2,
@@ -99,6 +102,7 @@ describe("Seedance continuation packet", () => {
         end: 8,
         duration: 4,
         lastFrameUrl: "https://media.example/hallway-last.jpg",
+        firstFrameUrl: "https://media.example/hallway-first.jpg",
         captionMeta: { action: "Diego walks through the hallway" },
       },
       referenceAssets,
@@ -120,7 +124,7 @@ describe("Seedance continuation packet", () => {
 
     expect(packet.errors).toEqual([]);
     expect(packet.references.map((reference) => [reference.tag, reference.role])).toEqual([
-      ["@Image_1", "accepted-final-frame"],
+      ["@Image_1", "composition-reference"],
       ["@Image_2", "character-identity"],
       ["@Image_3", "environment"],
       ["@Image_4", "crowd-extras"],
@@ -128,8 +132,9 @@ describe("Seedance continuation packet", () => {
       ["@Image_6", "contact-sheet"],
     ]);
     expect(packet.resolution).toBe("480p");
-    expect(packet.prompt).toContain("without restarting or replaying Diego walks through the hallway");
-    expect(packet.prompt).toContain("one clearly new, readable action");
+    expect(packet.prompt).toContain("NEW complete 19-second replacement take");
+    expect(packet.prompt).toContain("Do not match or continue the old clip's ending frame");
+    expect(packet.references[0]?.url).toBe("https://media.example/hallway-first.jpg");
     expect(packet.prompt).toContain("@Video_1 controls song audio, rhythm, lyric timing, and lip-sync timing only");
     expect(packet.prompt).not.toContain("song is added in post");
     expect(packet.references[1]?.instruction).toBe("@Image_2 controls Diego's identity and wardrobe only.");
@@ -137,12 +142,12 @@ describe("Seedance continuation packet", () => {
     expect(packet.references[3]?.instruction).toContain("Do not copy a named lead's identity or wardrobe");
     expect(packet.prompt).not.toContain("red plaid shirt");
     const serialized = serializeSeedanceContinuationPacket(packet);
-    expect(serialized).toContain("Project: project-1 · Clip: verse-2-continuation-42.00");
+    expect(serialized).toContain("Project: project-1 · Clip: verse-2-replacement-42.00");
     expect(serialized).toContain("@Video_1 | section-audio-timing");
     expect(serialized).toContain("selected section occurs at 2.00–17.00 inside Video_1");
   });
 
-  test("blocks a speculative continuation when the selected shot has no durable final frame", () => {
+  test("blocks missing composition and missing canonical identity", () => {
     const packet = buildSeedanceContinuationPacket({
       projectId: "project-1",
       sectionId: "verse-2",
@@ -155,7 +160,8 @@ describe("Seedance continuation packet", () => {
       referenceSelection: {},
     });
 
-    expect(packet.errors).toEqual(["The selected source moment has no durable last frame. Finish scene processing before preparing a continuation."]);
+    expect(packet.errors).toContain("The selected source moment has no durable opening composition. Finish scene processing before preparing a replacement.");
+    expect(packet.errors.some((error) => error.includes("character sheet"))).toBe(true);
     expect(packet.references).toEqual([]);
   });
 });

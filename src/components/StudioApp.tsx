@@ -27,7 +27,7 @@ import {
   type RuntimeStudioProjectDraft,
 } from "./studio/projectPersistence";
 import type { StudioProjectSummary } from "@/lib/studioProjectStore";
-import { applyApprovedGeneratedAssets, buildGeneratedAssetContextPreview, type GeneratedStudioAsset } from "./studio/generatedAssets";
+import { applyApprovedGeneratedAssets, buildGeneratedAssetContextPreview, buildGeneratedAssetPlaybackUrl, type GeneratedStudioAsset } from "./studio/generatedAssets";
 import { createLocalReferenceAsset, uploadReferenceAssetToRustFs, type ReferenceAsset, type ReferenceAssetLibraryRole } from "./studio/referenceAssets";
 import { BrowserPreviewPlayer, createPreviewPlayerState, type PreviewPlayerState, type PreviewSegment } from "./studio/previewPlayer";
 import { slicePreviewCutRange, type PreviewCutRange } from "./studio/resolvedPreviewSelection";
@@ -47,6 +47,7 @@ import { StudioRightPanel } from "./studio/StudioRightPanel";
 import { StudioSidebar } from "./studio/StudioSidebar";
 import { StudioStatusBar } from "./studio/StudioStatusBar";
 import { buildPipelineState } from "./studio/studioPipeline";
+import { isStoryPlanConfirmable, type StoryTreatment } from "./studio/storyTreatments";
 import { WorkflowPrerequisitePanel } from "./studio/WorkflowPrerequisitePanel";
 import { buildShuffleQueue } from "./studio/shuffleQueue";
 import { waitForTriggerRunOutput } from "@/lib/clientTriggerRuns";
@@ -308,10 +309,16 @@ export default function StudioApp() {
           shaderAccentKinds,
           isPreviewExpanded,
           committedSplit: committedBeatSplit ?? undefined,
+          finalExport: finalExportUrl ? {
+            videoUrl: finalExportUrl,
+            downloadFileName: finalExportName ?? "stack-structure-final.mp4",
+            cueCount: finalExportCueCount,
+            status: finalExportStatus,
+          } : undefined,
         },
       },
     };
-  }, [activeProjectId, activeProjectName, beatJoinAnalysis, captionMode, colorGradient, committedBeatSplit, draftRestored, generatedAssets, isPreviewExpanded, matchLyricCueBlend, matchLyricMergeWindow, matchMode, matchOnsetDensity, musicVideoProject, referenceAssets, shaderAccentKinds, shaderPresetId, splitMode, storyState, tab, videoSources]);
+  }, [activeProjectId, activeProjectName, beatJoinAnalysis, captionMode, colorGradient, committedBeatSplit, draftRestored, finalExportCueCount, finalExportName, finalExportStatus, finalExportUrl, generatedAssets, isPreviewExpanded, matchLyricCueBlend, matchLyricMergeWindow, matchMode, matchOnsetDensity, musicVideoProject, referenceAssets, shaderAccentKinds, shaderPresetId, splitMode, storyState, tab, videoSources]);
 
   useEffect(() => {
     if (!draftRestored) return;
@@ -392,7 +399,7 @@ export default function StudioApp() {
     return () => {
       if (saveTimer !== null) window.clearTimeout(saveTimer);
     };
-  }, [committedBeatSplit, draftRestored]);
+  }, [committedBeatSplit, draftRestored, finalExportUrl]);
 
   useEffect(() => {
     referenceAssetsRef.current = referenceAssets;
@@ -438,9 +445,12 @@ export default function StudioApp() {
     setShaderAccentKinds(workflowUi?.shaderAccentKinds ?? {});
     if (workflowUi?.isPreviewExpanded !== undefined) setIsPreviewExpanded(workflowUi.isPreviewExpanded);
     setCommittedBeatSplit(workflowUi?.committedSplit ?? null);
-    setFinalExportUrl(null);
-    setFinalExportName(null);
-    setDone(false);
+    const restoredFinalExport = workflowUi?.finalExport;
+    setFinalExportUrl(restoredFinalExport?.videoUrl ?? null);
+    setFinalExportName(restoredFinalExport?.downloadFileName ?? null);
+    setFinalExportCueCount(restoredFinalExport?.cueCount ?? 0);
+    setFinalExportStatus(restoredFinalExport?.status ?? "Final export waits for a generated story preview and master audio.");
+    setDone(Boolean(restoredFinalExport));
   }
 
   function handleProjectSelected(project: StudioProjectSummary, draft: RuntimeStudioProjectDraft) {
@@ -515,10 +525,11 @@ export default function StudioApp() {
         sourceCount: sourceClips.length,
         sourceDuration: sourceClips[sourceClips.length - 1]?.end ?? 0,
         audioSource: beatJoinAnalysis?.sourceLabel ?? null,
+        storyContentSignature: storyState.storyContentSignature,
         story: storyState.storyBeats.map((beat) => [beat.id, beat.label, beat.start, beat.end, beat.prompt]),
         storyPace: normalizeStoryEditSettings(storyState.editSettings).cutDensity,
       }),
-    [beatJoinAnalysis?.sourceLabel, clipDur, sensitivity, sourceClips, splitMode, storyState.editSettings, storyState.storyBeats],
+    [beatJoinAnalysis?.sourceLabel, clipDur, sensitivity, sourceClips, splitMode, storyState.editSettings, storyState.storyBeats, storyState.storyContentSignature],
   );
   const beatSplitSignature = useMemo(
     () =>
@@ -1127,8 +1138,12 @@ export default function StudioApp() {
       let missingVideoRef = false;
       for (const url of uniqueVideoUrls) {
         const source = videoSourcesRef.current.find((item) => item.videoUrl === url);
+        const generated = generatedAssets.find((asset) => buildGeneratedAssetPlaybackUrl(asset) === url);
+        const generatedObjectKey = generated?.fullStorage?.objectKey ?? generated?.fullStorage?.storagePath;
         if (source?.storageBucket && source?.storagePath) {
           videoRefs.push({ bucket: source.storageBucket, objectKey: source.storagePath });
+        } else if (generated?.fullStorage?.bucket && generatedObjectKey) {
+          videoRefs.push({ bucket: generated.fullStorage.bucket, objectKey: generatedObjectKey });
         } else {
           missingVideoRef = true;
           break;
@@ -1308,6 +1323,7 @@ export default function StudioApp() {
       setFinalExportName(asset.downloadFileName ?? "stack-structure-final.mp4");
       setFinalExportCueCount(asset.effectCues?.length ?? 0);
       setFinalExportStatus(`Final MP4 ready · ${(asset.duration || 0).toFixed(1)}s · ${asset.effectCues?.length ?? 0} synced shader cues.`);
+      workflowCheckpointAutosaveRequestedRef.current = true;
       setProgress(100);
       setDone(true);
     } catch (error) {
@@ -1426,6 +1442,7 @@ export default function StudioApp() {
       setFinalExportName(asset.downloadFileName ?? "stack-structure-webgpu-final.mp4");
       setFinalExportCueCount(shaderEffectCues.length);
       setFinalExportStatus(`WebGPU MP4 ready · ${(asset.duration || 0).toFixed(1)}s · ${shaderEffectCues.length} live shader cues captured.`);
+      workflowCheckpointAutosaveRequestedRef.current = true;
       setProgress(100);
       setDone(true);
     } catch (error) {
@@ -1475,10 +1492,16 @@ export default function StudioApp() {
       // When every clip lives assembled in RustFS, send durable refs so the raw
       // files never re-enter the browser or cross Vercel's serverless body cap.
       const sourcesByUrl = new Map(videoSources.map((source) => [source.videoUrl, source]));
+      const generatedByUrl = new Map(generatedAssets.map((asset) => [buildGeneratedAssetPlaybackUrl(asset), asset]));
       const durableRefs = uniqueVideoUrls.map((url) => {
         const source = sourcesByUrl.get(url);
-        return source?.storageBucket && source.storagePath && !source.uploadChunks
-          ? { bucket: source.storageBucket, objectKey: source.storagePath }
+        if (source?.storageBucket && source.storagePath && !source.uploadChunks) {
+          return { bucket: source.storageBucket, objectKey: source.storagePath };
+        }
+        const generated = generatedByUrl.get(url);
+        const generatedObjectKey = generated?.fullStorage?.objectKey ?? generated?.fullStorage?.storagePath;
+        return generated?.fullStorage?.bucket && generatedObjectKey
+          ? { bucket: generated.fullStorage.bucket, objectKey: generatedObjectKey }
           : null;
       });
 
@@ -1960,12 +1983,15 @@ export default function StudioApp() {
     return buildPipelineState({
       activeTab: tab,
       hasAudioAnalysis: beatJoinAnalysis !== null,
-      hasTranscript: Boolean(storyState.transcriptSummary),
       videoCount: videoSources.length,
       sceneCount: ingestStats.sceneCount,
       captionReadyCount: ingestStats.captionReady,
       captionTotalCount: ingestStats.captionTotal,
-      storyGenerated: storyState.storyGenerated,
+      storyTreatmentSelected: Boolean(storyState.selectedTreatmentId || storyState.confirmedTreatmentId),
+      storyAnchorsResolved: isStoryPlanConfirmable(storyState.confirmedTreatmentSnapshot),
+      storyPlanConfirmed: storyState.storyGenerated
+        && Boolean(storyState.confirmedTreatmentId)
+        && Boolean(storyState.storyContentSignature),
       editSlotCount: timelineItems.length,
       matchedSlotCount: timelineItems.filter((item) => item.videoMomentId).length,
       gapSlotCount: timelineItems.filter((item) => !item.videoMomentId).length,
@@ -1973,13 +1999,16 @@ export default function StudioApp() {
       storySegmentCount: storyPreviewSegments.length,
       hasCommittedSplit: isCommittedSplitCurrent,
       shaderPresetLabel: shaderPresetSummary.preset.label,
-      finalExportReady: Boolean(finalExportUrl),
+      finalExportReady: Boolean(finalExportUrl) && storyState.storyGenerated && isCommittedSplitCurrent,
     });
   }, [
     tab,
     beatJoinAnalysis,
-    storyState.transcriptSummary,
     storyState.storyGenerated,
+    storyState.selectedTreatmentId,
+    storyState.confirmedTreatmentId,
+    storyState.confirmedTreatmentSnapshot,
+    storyState.storyContentSignature,
     videoSources.length,
     ingestStats,
     musicVideoProject,
@@ -2045,10 +2074,8 @@ export default function StudioApp() {
     hasAudioSource: beatJoinAnalysis !== null,
     activeRequestKey: previewState.activeRequestKey,
   });
-  const storyActionReason = !storyState.transcriptSummary
-    ? "Add lyrics timing first."
-    : !storyState.storyGenerated
-      ? "Confirm story map above."
+  const storyActionReason = !storyState.storyGenerated
+      ? "Confirm the treatment and resolve its anchors first."
     : storyPreviewSegments.length === 0
       ? "Upload source clips."
       : previewState.activeRequestKey
@@ -2170,6 +2197,14 @@ export default function StudioApp() {
                 ))}
               </div>
             </div>
+
+            {tab !== "review" && tab !== "story" && storyState.confirmedTreatmentSnapshot ? (
+              <StoryPlanSummaryBar
+                treatment={storyState.confirmedTreatmentSnapshot}
+                confirmed={storyState.storyGenerated}
+                onOpenStory={() => handleSelectTab("story")}
+              />
+            ) : null}
 
             {activeStageBlocked && activePipelineStage ? (
               <WorkflowPrerequisitePanel
@@ -2356,7 +2391,7 @@ export default function StudioApp() {
 
             </>}
 
-            {tab !== "review" && !activeStageBlocked ? (
+            {tab !== "review" && tab !== "story" && !activeStageBlocked ? (
               <ProcessActionBar
                 tab={tab}
                 done={done}
@@ -2480,6 +2515,21 @@ function buildVideoSourceKey(source: Pick<UploadedVideoSource, "name" | "size" |
   return `${source.name}::${source.size}::${source.duration.toFixed(3)}`;
 }
 
+function StoryPlanSummaryBar({ treatment, confirmed, onOpenStory }: { treatment: StoryTreatment; confirmed: boolean; onOpenStory: () => void }) {
+  const generationGaps = treatment.anchors.filter((anchor) => anchor.resolution === "generate").length;
+  return (
+    <button
+      type="button"
+      onClick={onOpenStory}
+      className={`grid w-full gap-2 rounded-[2px] border px-3 py-2 text-left lg:grid-cols-[auto_minmax(0,1fr)_auto] lg:items-center ${confirmed ? "border-[#24492f] bg-[#071008]" : "border-[#5a3219] bg-[#120a05]"}`}
+    >
+      <span className={`text-[8px] uppercase tracking-[0.18em] ${confirmed ? "text-[#68b979]" : "text-[#d18a55]"}`}>{confirmed ? "Story locked" : "Story changed"}</span>
+      <span className="truncate text-[10px] text-[#aaa39c]"><strong className="mr-2 text-[#d7d0c8]">{treatment.title}</strong>{treatment.logline}</span>
+      <span className="font-mono text-[8px] uppercase text-[#6c665f]">{treatment.anchors.length} anchors · {generationGaps} generation gap{generationGaps === 1 ? "" : "s"} · edit story</span>
+    </button>
+  );
+}
+
 function buildSceneCaptionSettings(
   mode: SceneCaptionMode,
   analysis: BeatJoinAnalysis | null,
@@ -2530,9 +2580,12 @@ function buildSceneCaptionSettings(
       songTitle: analysis?.sourceLabel,
       vocalStemName: storyState.vocalStemName || undefined,
       lyricExcerpt: transcript ? transcript.slice(0, 900) : undefined,
-      storySummary: storyState.transcriptSummary?.summary || undefined,
-      storyPrompts: storyState.storyBeats
-        .map((beat) => beat.prompt)
+      storySummary: storyState.confirmedTreatmentSnapshot?.synopsis
+        || storyState.transcriptSummary?.summary
+        || undefined,
+      storyPrompts: (storyState.confirmedTreatmentSnapshot?.anchors
+        .map((anchor) => anchor.description)
+        ?? storyState.storyBeats.map((beat) => beat.prompt))
         .filter(Boolean)
         .slice(0, 10),
       projectIntent: "Music-video source footage captioning for later semantic matching against lyrics, story sections, action, mood, and setting.",

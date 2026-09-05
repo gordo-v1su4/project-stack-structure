@@ -32,7 +32,7 @@ export async function PUT(request: Request, context: RouteContext) {
 function isPersistedDraft(value: unknown): value is PersistedStudioProjectDraft {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const draft = value as Partial<PersistedStudioProjectDraft>;
-  return draft.version === 1 && Boolean(draft.storyState) && Array.isArray(draft.videoSources);
+  return (draft.version === 1 || draft.version === 2) && Boolean(draft.storyState) && Array.isArray(draft.videoSources);
 }
 
 function unauthorized() {

@@ -114,6 +114,6 @@ describe("Generate coverage truth", () => {
     expect(shortSlots[0]).toMatchObject({ status: "short", assignedDuration: 3, missingDuration: 2 });
     expect(summarizeCoverage(shortSlots, 5)).toMatchObject({ trueGapDuration: 2, requiredNeedCount: 1 });
     const shortIssues = buildCoverageIssueGroups(shortSlots);
-    expect(describeCoverageIssue(shortIssues[0]!)).toBe("The assigned source covers 0:03 of 0:05, leaving 0:02 uncovered. Extend or replace it before Join.");
+    expect(describeCoverageIssue(shortIssues[0]!)).toBe("The assigned source covers 0:03 of 0:05, leaving 0:02 uncovered. Inspect the resolved edit and, if needed, regenerate the whole shot with handles.");
   });
 });

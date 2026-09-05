@@ -1,17 +1,28 @@
 # Reference-Driven Studio E2E Handoff — 2026-08-30
 
+> **Creative prompting authority:** use
+> [Canonical Higgsfield / Nano Banana reference-continuity protocol](../protocols/higgsfield-nano-banana-reference-continuity.md).
+> This handoff owns the E2E fixture and execution contract. It does not override
+> the current asset-quality, prompt, or still-acceptance rules.
+
 ## Goal
 
 Complete a new, evidence-backed Project Stack Structure end-to-end music-video run for “Love Me Tonight” using the existing repository song and source videos plus the newly supplied canonical references: Diego (new male sheet), Valentina (new female sheet), all three background-dancer sheets, and the new Underground Latin Club environment sheet. First inventory and ingest/caption the media and references, then write and confirm a story that fits the actual footage and lyrics, split and semantically match real footage into that story, distinguish true gaps from weak or repetitive matches, generate reference-consistent stills and any necessary continuation/cutaway footage only for selected story holes, audition and approve replacements, complete Join/Effects/Export, and verify the final playable audiovisual output and persisted project in the visible app. Preserve unrelated local changes and never print or store secrets. Stop for action-time confirmation immediately before any paid generation submission.
 
 ## Canonical fixture contract
 
+**Current asset-quality status (2026-09-01): not ready for continuity-critical
+generation.** The installed `character-1.png` and `character-2.png` are sharp
+source material but have no printed canonical names and only one frontal facial
+view each. Rebuild and replace them with visibly named, face-led sheets before
+the next image/video E2E. Their existing checksums must not bypass this gate.
+
 The Studio E2E accepts only the following active reference filenames under `.local-fixtures/media/reference-sheets/`:
 
 | File | Role | Authority |
 |---|---|---|
-| `character-1.png` | Diego | Lead identity and wardrobe sheet; replaces every older Diego reference. |
-| `character-2.png` | Valentina | Lead identity and wardrobe sheet; replaces every older Valentina reference. |
+| `character-1.png` | Diego | Visibly named, sharp, face-led identity and wardrobe authority; replaces every older Diego reference. |
+| `character-2.png` | Valentina | Visibly named, sharp, face-led identity and wardrobe authority; replaces every older Valentina reference. |
 | `environment.png` | Underground Latin Club | Location, layout, lighting, materials, and palette. |
 | `crowd-1.png` | Background dancers | Black-styled underground-club crowd sheet. |
 | `crowd-2.png` | Background dancers | Gold/red performance crowd sheet. |
@@ -23,6 +34,12 @@ The fixture lane also requires exactly 21 MP4s directly under `.local-fixtures/m
 - `.local-fixtures/media/Love me tonight (Remastered x2) Stems (132BPM)/Love me tonight - stem-only-Lead Vocal.wav`
 
 Older or similarly named reference files are intentionally not fallback candidates. The harness fails before upload when the six canonical sheets or exact video count are missing.
+
+Filename presence and checksum integrity are necessary but not sufficient. Before
+generation, visually verify that each lead sheet contains the correct canonical
+name, multiple sharp facial angles with readable skin texture, a stable look and
+one useful wardrobe view. Full-body views are secondary. Low-resolution video
+grabs may guide blocking only and cannot become texture or likeness authorities.
 
 ## Desktop pickup
 

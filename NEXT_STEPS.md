@@ -13,7 +13,7 @@ Use the references relevant to the requested work; this is a roadmap, not a prer
 3. [`docs/architecture/clip-audio-sync.md`](docs/architecture/clip-audio-sync.md) — clip-to-master alignment and lanes (planned)
 4. [`docs/local-generation.md`](docs/local-generation.md) — SwarmUI / gap-fill generation wiring
 
-Local comparative research (if you have it) lives outside git in `documents/comparative-research/` — attach in chat when needed; agents should not expect it in the repo.
+Comparative research lives in [`docs/comparative-research/`](docs/comparative-research/) (cross-repo analysis and workflow recommendations).
 
 ---
 

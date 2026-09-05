@@ -4,9 +4,11 @@ param(
   [string]$Start,
   [string]$BwsProjectId = "47ec1504-ac10-4577-89fe-b46c00772ec4",
   [switch]$LocalTrigger,
+  [switch]$Production,
   [string]$LocalTriggerApiUrl = "http://127.0.0.1:8030",
   [string]$LocalTriggerProjectRef = "proj_jgeclohuxwwdjwlctdnf",
   [string]$LocalEssentiaApiUrl = "https://essentia.v1su4.dev",
+  [string]$MediaGatewayInternalUrl = "http://100.99.110.105:4545",
   [string]$LocalAppUrl = "http://192.168.8.175:3000",
   [string]$LocalHiggsfieldCredentialsPath = (Join-Path $env:USERPROFILE "Documents\Github\trigger-dev-local\higgsfield-gordo-credentials.json"),
   [string]$LocalTriggerEnvFile = (Join-Path $env:USERPROFILE "Documents\Github\trigger-dev-local\stack-structure-local-trigger.env")
@@ -14,6 +16,10 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+
+if ($LocalTrigger -and $Production) {
+  throw "LocalTrigger and Production are mutually exclusive."
+}
 
 if (-not (Get-Command bws -ErrorAction SilentlyContinue)) {
   throw "Bitwarden Secrets Manager CLI (bws) is required."
@@ -25,11 +31,11 @@ if (-not (Get-Command bun -ErrorAction SilentlyContinue)) {
 
 $packageJsonPath = Join-Path $PSScriptRoot "..\package.json"
 $packageJson = Get-Content -LiteralPath $packageJsonPath -Raw | ConvertFrom-Json
-$triggerVersions = @(
+$triggerVersions = @(@(
   [string]$packageJson.dependencies.'@trigger.dev/sdk'
   [string]$packageJson.dependencies.'@trigger.dev/react-hooks'
   [string]$packageJson.devDependencies.'@trigger.dev/build'
-) | Select-Object -Unique
+) | Select-Object -Unique)
 if ($triggerVersions.Count -ne 1 -or [string]::IsNullOrWhiteSpace($triggerVersions[0])) {
   throw "Trigger.dev package pins must use one exact version before starting the CLI."
 }
@@ -90,10 +96,20 @@ $envValues = @{
   AUTH_URL = $LocalAppUrl
   AUTH_TRUST_HOST = "true"
   TRIGGER_API_URL = if ($LocalTrigger) { $LocalTriggerApiUrl } else { "https://trigger.v1su4.dev" }
-  TRIGGER_SECRET_KEY = if ($LocalTrigger) { $localTriggerKey } else { Get-BwsSecretValue "STACK_STRUCTURE_TRIGGER_DEV_SECRET_KEY" $byName }
+  TRIGGER_SECRET_KEY = if ($LocalTrigger) {
+    $localTriggerKey
+  } elseif ($Production) {
+    Get-BwsSecretValue "STACK_STRUCTURE_TRIGGER_PROD_SECRET_KEY" $byName
+  } else {
+    Get-BwsSecretValue "STACK_STRUCTURE_TRIGGER_DEV_SECRET_KEY" $byName
+  }
   TRIGGER_PROJECT_REF = if ($LocalTrigger) { $LocalTriggerProjectRef } else { "proj_wlrcsfnmovzmdwzojzfe" }
   STACK_STRUCTURE_LOCAL_TRIGGER = if ($LocalTrigger) { "1" } else { "" }
   MEDIA_GATEWAY_URL = Get-BwsSecretValue "MEDIA_GATEWAY_URL" $byName
+  # Large preview/final uploads must bypass Cloudflare's request-body limit.
+  # VM114's tailnet origin is reachable from both the Windows rehearsal host
+  # and the VM100 Trigger worker.
+  MEDIA_GATEWAY_INTERNAL_URL = $MediaGatewayInternalUrl
   MEDIA_GATEWAY_TOKEN = Get-BwsSecretValue "MEDIA_GATEWAY_TOKEN" $byName
   MEDIA_API_TOKEN = Get-BwsSecretValue "MEDIA_API_TOKEN" $byName
   FFMPEG_GATEWAY_URL = Get-BwsSecretValue "FFMPEG_GATEWAY_URL" $byName
@@ -117,7 +133,7 @@ foreach ($entry in $envValues.GetEnumerator()) {
   Set-Item -Path "Env:$($entry.Key)" -Value ([string]$entry.Value)
 }
 
-Write-Host "Loaded BWS-backed Project Stack Structure staging environment."
+Write-Host "Loaded BWS-backed Project Stack Structure $(if ($Production) { 'production' } else { 'staging' }) environment."
 Write-Host "Trigger control plane: $env:TRIGGER_API_URL"
 Write-Host "Generation provider: $(if ($env:SWARMUI_URL) { $env:SWARMUI_URL } else { '(local generation disabled)' })"
 Write-Host "Caption gateway: $env:SCENE_CAPTION_SMART_GATEWAY_URL"

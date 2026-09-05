@@ -1,5 +1,10 @@
 # Higgsfield provider routing
 
+> **Creative prompting authority:** use
+> [Canonical Higgsfield / Nano Banana reference-continuity protocol](../protocols/higgsfield-nano-banana-reference-continuity.md).
+> This file owns provider identities, routing, billing and browser operations;
+> it does not own the current character-sheet or reference-packet formula.
+
 Project Stack Structure has separate Higgsfield identities and execution lanes.
 Do not move credentials, sessions, or credits between them.
 
@@ -64,39 +69,13 @@ prompt/reference set instead of treating technical completion as success.
 3. Add any other required references and write the new prompt.
 4. Recheck every setting and the Unlimited button before submission.
 
-### Build a character-continuity sheet
+### Character and reference-package construction
 
-1. Choose one strong existing portrait with `Reference`, or start from a written
-   character brief when no identity exists yet.
-2. Give the character a stable name and ask for a clean continuity sheet with a
-   small number of useful views: front, three-quarter, profile, full-body, and
-   one neutral expression/wardrobe view. Prefer a white or neutral background.
-3. Keep identity, age, facial structure, hair, skin tone, body proportions, and
-   signature wardrobe locked across every panel. Avoid text labels and duplicate
-   people inside a panel.
-4. Avoid a single oversized face filling the sheet; this can be rejected by the
-   downstream video provider. Do not fill the sheet with near-duplicate poses.
-5. Explore at `2K`, then create the accepted reference set at `4K`. Manual 4K
-   may be selected in Higgsfield; CLI/API/MCP 4K generation is a paid-credit
-   lane and must use the normal estimate/idempotency guardrails.
-6. Upload the completed sheet to RustFS and use it as the first reference in all
-   later shot-grid and Seedance prompts. Refer to the character by name rather
-   than pronouns in every shot beat.
-
-### Build a reference package, not one overloaded grid
-
-Use separate high-information assets with one primary role each:
-
-1. `@Image_1`: 4K character sheet for lead A and subject identity only.
-2. `@Image_2`: 4K character sheet for lead B, when present.
-3. `@Image_3`: clean 4K environment plate with no people, defining architecture,
-   lighting, color, and atmosphere.
-4. Optional later images: wardrobe, prop, or a single composition/keyframe.
-
-A 2K 3x3 shot grid contains nine small frames and often repeats the same faces.
-It is useful as a composition board, but it is a weak sole identity reference.
-Do not ask one grid to define two identities, the environment, lighting, action,
-and shot order simultaneously.
+Follow the canonical protocol linked at the top of this file. In particular,
+identity sheets now require the visible canonical character name and prioritize
+multiple sharp facial angles and skin texture; full-body views are secondary.
+Continuity-critical frames are generated as standalone 2K images, while grids
+are composition boards only.
 
 ## Lane 3: Chrome manual Seedance Unlimited
 

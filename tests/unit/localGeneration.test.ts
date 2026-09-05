@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  buildSwarmComfyDirectUrl,
   buildSwarmTextToImagePayload,
   chooseSwarmModel,
   extractComfyOutputRefs,
@@ -19,6 +20,15 @@ const workflow: ComfyWorkflow = {
 };
 
 describe("local ComfyUI generation helpers", () => {
+  test("routes every ComfyUI API path through the stable SwarmUI proxy", () => {
+    expect(buildSwarmComfyDirectUrl("http://127.0.0.1:7861/", "prompt"))
+      .toBe("http://127.0.0.1:7861/ComfyBackendDirect/prompt");
+    expect(buildSwarmComfyDirectUrl("http://100.73.126.36:7861", "/history/prompt-1"))
+      .toBe("http://100.73.126.36:7861/ComfyBackendDirect/history/prompt-1");
+    expect(buildSwarmComfyDirectUrl("http://127.0.0.1:7861", "view?filename=clip.mp4&type=output"))
+      .toBe("http://127.0.0.1:7861/ComfyBackendDirect/view?filename=clip.mp4&type=output");
+  });
+
   test("patches prompt, negative prompt, dimensions, sampler, and filename prefix", () => {
     const patched = patchComfyWorkflow(workflow, {
       provider: "comfyui",
@@ -87,6 +97,31 @@ describe("local SwarmUI generation helpers", () => {
     expect((payload as Record<string, unknown>).sampler).toBe("euler");
     expect((payload as Record<string, unknown>).scheduler).toBe("simple");
     expect(payload.prompt).toBe("city dance");
+  });
+
+  test("passes only the supported MiniMax video controls through the raw map", () => {
+    const payload = buildSwarmTextToImagePayload({
+      provider: "swarmui",
+      kind: "video",
+      prompt: "extend the shot",
+      model: "minimax_h3_fl2va_pruned_int8_convrot",
+      swarmParams: {
+        videomodel: "minimax_h3_fl2va_pruned_int8_convrot",
+        videoframes: 124,
+        videosteps: 20,
+        videocfg: 1,
+        videoresolution: "Image",
+        videofps: 24,
+        videoformat: "h264-mp4",
+        modelspecificenhancements: true,
+        initimage: "data:image/png;base64,unsafe-client-value",
+      },
+    }, "session-video");
+
+    expect((payload as Record<string, unknown>).videoframes).toBe(124);
+    expect((payload as Record<string, unknown>).videomodel).toBe("minimax_h3_fl2va_pruned_int8_convrot");
+    expect((payload as Record<string, unknown>).videoformat).toBe("h264-mp4");
+    expect((payload as Record<string, unknown>).initimage).toBe(undefined);
   });
 
   test("chooses an installed non-FP16 image model when SwarmUI does not provide one", () => {
