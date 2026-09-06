@@ -26,7 +26,7 @@ type ActiveActivityCredentials = ActivityCredentials & {
   version: number;
 };
 
-export function WorkActivity() {
+export function WorkActivity({ layout = "popover" }: { layout?: "popover" | "inline" }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const close = useCallback(() => setOpen(false), []);
@@ -110,6 +110,39 @@ export function WorkActivity() {
     return () => window.clearInterval(timer);
   }, [summary.active, summary.queued]);
 
+  const panelBody = (
+    <>
+      {requiresSignIn ? (
+        <div className="rounded-md border border-line bg-ink-0 p-3 text-[12px] leading-5 text-fg-2">
+          Sign in with GitHub from the project menu to view your scoped production work.
+        </div>
+      ) : connectionError ? (
+        <div className="rounded-md border border-danger-lo bg-danger-tint p-3 text-[12px] leading-5 text-danger">{connectionError}</div>
+      ) : !credentials ? (
+        <div className="py-4 text-center text-[12px] text-fg-3">Connecting...</div>
+      ) : activity.length === 0 ? (
+        <div className="py-3 text-[11px] text-fg-3">No production runs in the last 24 hours.</div>
+      ) : (
+        <div className={layout === "inline" ? "max-h-56 overflow-y-auto" : "max-h-[420px] overflow-y-auto"}>
+          {activity.map((item) => <ActivityRow key={item.id} item={item} />)}
+        </div>
+      )}
+    </>
+  );
+
+  if (layout === "inline") {
+    if (!summary.total && !summary.active && !summary.failed && !connectionError && !requiresSignIn) return null;
+    return (
+      <section aria-label="Work activity" className="border-b border-line px-5 py-3">
+        <div className="mb-2 flex items-baseline justify-between gap-2">
+          <div className="text-[10px] uppercase tracking-[0.14em] text-fg-3">Production runs</div>
+          <div className="font-mono text-[10px] text-fg-4">{summaryLabel}</div>
+        </div>
+        {panelBody}
+      </section>
+    );
+  }
+
   return (
     <div ref={rootRef} className="relative">
       {credentials ? (
@@ -164,12 +197,8 @@ export function WorkActivity() {
             <div className="rounded-md border border-danger-lo bg-danger-tint p-3 text-[12px] leading-5 text-danger">{connectionError}</div>
           ) : !credentials ? (
             <div className="py-6 text-center text-[12px] text-fg-3">Connecting...</div>
-          ) : activity.length === 0 ? (
-            <div className="py-6 text-center text-[12px] text-fg-3">No work in the last 24 hours.</div>
           ) : (
-            <div className="max-h-[420px] overflow-y-auto">
-              {activity.map((item) => <ActivityRow key={item.id} item={item} />)}
-            </div>
+            panelBody
           )}
         </section>
       ) : null}

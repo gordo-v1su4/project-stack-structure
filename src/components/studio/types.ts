@@ -101,7 +101,7 @@ export interface SceneVisualAnalysis {
 
 export type SceneSplitStatus = "idle" | "uploading" | "detecting" | "ready" | "failed";
 export type MediaStorageStatus = "local" | "uploading" | "uploaded" | "failed";
-export type SceneCaptionStatus = "idle" | "captioning" | "ready" | "failed";
+export type SceneCaptionStatus = "idle" | "waiting" | "captioning" | "ready" | "failed";
 export type SceneCaptionMode = "fast" | "smart";
 export type SceneCaptionSource = "lfm-webgpu" | "lfm-server" | "qwen3-vl-server" | "manual" | "imported";
 

@@ -31,6 +31,9 @@ export function ThumbMatchCard({ label, start, end, match, moment, mode }: { lab
         <span className="truncate">{moment?.sourceRefLabel ?? "No candidate"}</span>
         <span className={hole ? "text-[#d24b3f]" : "text-[#777]"}>{getMatchModeLabel(mode, match)}</span>
       </div>
+      <div className="border-t border-[#141414] px-2 py-1.5 text-[8px] leading-4 text-[#555]">
+        Frames show composition context for ranking — not final quality. Identity comes from character sheets at Generate.
+      </div>
     </article>
   );
 }

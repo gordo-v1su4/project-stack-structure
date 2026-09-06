@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { ParamSlider } from "../ParamSlider";
+import { CollapsibleSection } from "../ui";
 import type { BeatJoinAnalysis, UploadedVideoSource } from "../types";
 import { buildAdaptiveCueMap } from "../adaptiveCueMap";
 import type { MusicVideoProject } from "../musicVideoProject";
@@ -80,13 +81,15 @@ export function MatchTab({
           </div>
         </div>
 
-        <div className="grid gap-2 md:grid-cols-5">
-          <GateCard label="Story" ready={storyGenerated} value={storyGenerated ? `${project?.storySections.length ?? 0} sections` : "Generate Story"} />
-          <GateCard label="Lyrics" ready={hasLyrics} value={hasLyrics ? `${project?.lyricChunks.length ?? 0} SRT chunks` : "Waiting for stem"} />
-          <GateCard label="Video captions" ready={hasCaptions} value={hasCaptions ? `${project?.videoMoments.filter((moment) => moment.caption).length ?? 0} captioned moments` : "Waiting for captions"} />
-          <GateCard label="Cut blocks" ready={cueMap.chunks.length > 0} value={cueMap.chunks.length ? `${cueMap.chunks.length} blocks · ${cueMap.onsetActiveCount} music · ${cueMap.lyricActiveCount} lyric` : "Waiting for song"} />
-          <GateCard label="Findings" ready={ready && weakCount === 0 && holeCount === 0} value={ready ? `${weakCount} weak · ${holeCount} holes` : "Locked"} />
-        </div>
+        <CollapsibleSection title="Readiness · sections, lyrics, captions" defaultOpen={false} className="rounded-[2px] border-[#171717] bg-[#070707]">
+          <div className="grid gap-2 p-2 md:grid-cols-5">
+            <GateCard label="Story" ready={storyGenerated} value={storyGenerated ? `${project?.storySections.length ?? 0} sections` : "Generate Story"} />
+            <GateCard label="Lyrics" ready={hasLyrics} value={hasLyrics ? `${project?.lyricChunks.length ?? 0} SRT chunks` : "Waiting for stem"} />
+            <GateCard label="Video captions" ready={hasCaptions} value={hasCaptions ? `${project?.videoMoments.filter((moment) => moment.caption).length ?? 0} captioned moments` : "Waiting for captions"} />
+            <GateCard label="Cut blocks" ready={cueMap.chunks.length > 0} value={cueMap.chunks.length ? `${cueMap.chunks.length} blocks · ${cueMap.onsetActiveCount} music · ${cueMap.lyricActiveCount} lyric` : "Waiting for song"} />
+            <GateCard label="Findings" ready={ready && weakCount === 0 && holeCount === 0} value={ready ? `${weakCount} weak · ${holeCount} holes` : "Locked"} />
+          </div>
+        </CollapsibleSection>
       </section>
 
       <section className="rounded-[2px] border border-[#1a1a1a] bg-[#0b0b0b] p-3">

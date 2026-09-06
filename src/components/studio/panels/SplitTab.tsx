@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState, type MouseEvent } from "react";
 import { fmt } from "../math";
 import { SourceVideoTimeline } from "../SourceVideoTimeline";
 import type { SourceClipSpan, SourceTimelineSegment, SplitMode } from "../sourceTimeline";
@@ -65,6 +65,9 @@ export function SplitTab({
   onActiveClip,
 }: SplitTabProps) {
   const [captionSearch, setCaptionSearch] = useState("");
+  const [hoveredCutIndex, setHoveredCutIndex] = useState<number | null>(null);
+  const [hoverAnchor, setHoverAnchor] = useState<{ x: number; y: number } | null>(null);
+  const hoverCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const totalDuration = sourceClips[sourceClips.length - 1]?.end ?? 0;
   const hasSources = videoSources.length > 0;
   const stats = getSplitStats(videoSources);
@@ -83,6 +86,22 @@ export function SplitTab({
         .filter((cut) => matchesCutSearch(captionSearch, cut)),
     [captionSearch, segments, sourceClips, videoSources],
   );
+  const hoveredCut = hoveredCutIndex === null ? null : describeSegment(segments[hoveredCutIndex]!, hoveredCutIndex, videoSources, sourceClips);
+
+  function scheduleHoverClose() {
+    if (hoverCloseTimer.current) clearTimeout(hoverCloseTimer.current);
+    hoverCloseTimer.current = setTimeout(() => {
+      setHoveredCutIndex(null);
+      setHoverAnchor(null);
+    }, 120);
+  }
+
+  function openHoverPreview(index: number, event: MouseEvent<HTMLElement>) {
+    if (hoverCloseTimer.current) clearTimeout(hoverCloseTimer.current);
+    const rect = event.currentTarget.getBoundingClientRect();
+    setHoveredCutIndex(index);
+    setHoverAnchor({ x: rect.left + rect.width / 2, y: rect.top });
+  }
 
   return (
     <div className="space-y-3">
@@ -131,8 +150,9 @@ export function SplitTab({
         <SourceVideoTimeline
           sources={videoSources}
           playhead={playhead}
-          label={buildSourceLabel(videoSources, sourceClips.length, totalDuration, visibleMode, segments.length)}
-          height={86}
+          label={`Footage inventory · ${buildSourceLabel(videoSources, sourceClips.length, totalDuration, visibleMode, segments.length)}`}
+          height={140}
+          layout="equal"
         />
       ) : (
         <div className="border border-[#1e1e1e] rounded-[2px] bg-[#070707] p-4">
@@ -155,9 +175,9 @@ export function SplitTab({
       <section className="rounded-[2px] border border-[#1a1a1a] bg-[#0b0b0b] p-3">
         <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
           <div>
-            <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Cut map</div>
+            <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Footage cut map · source time</div>
             <div className="mt-1 text-[11px] text-[#606060]">
-              Cut numbers are candidate windows, not frames. Scroll horizontally to inspect dense results; switching strategy redraws this map immediately.
+              Numbered blocks are searchable slices of your uploads (not song sections yet). Hover for a quick preview; Match maps these onto the song timeline above.
             </div>
           </div>
           {visibleMode === "scene" ? <div className="rounded-[2px] border border-[#244429] px-3 py-2 text-[9px] uppercase tracking-[0.12em] text-[#72a97a]">Original scene boundaries</div> : (
@@ -192,6 +212,8 @@ export function SplitTab({
                     className={`relative flex-shrink-0 border-r border-[#0d0d0d] text-left transition-colors ${i === activeClip ? "bg-[#e05c0040]" : cut.tone === "ready" ? "bg-[#0b1810] hover:bg-[#102415]" : cut.tone === "failed" ? "bg-[#190a08] hover:bg-[#24100d]" : "bg-[#101010] hover:bg-[#171717]"}`}
                     style={{ width: `${(segment.duration / Math.max(totalDuration, 0.001)) * 100}%` }}
                     onClick={() => onActiveClip(i)}
+                    onMouseEnter={(event) => openHoverPreview(i, event)}
+                    onMouseLeave={scheduleHoverClose}
                   >
                     {i === activeClip ? <div className="absolute inset-x-0 top-0 h-[2px] bg-[#e05c00]" /> : null}
                     <span className={`absolute left-1 top-1 h-[5px] w-[5px] ${getToneColor(cut.tone, "dot")}`} />
@@ -210,6 +232,17 @@ export function SplitTab({
           </div>
         )}
       </section>
+
+      {hoveredCut && hoverAnchor ? (
+        <CutHoverPreview
+          cut={hoveredCut}
+          anchor={hoverAnchor}
+          onMouseEnter={() => {
+            if (hoverCloseTimer.current) clearTimeout(hoverCloseTimer.current);
+          }}
+          onMouseLeave={scheduleHoverClose}
+        />
+      ) : null}
 
       <div className="grid gap-3 xl:grid-cols-[320px_1fr]">
         <section className="rounded-[2px] border border-[#1a1a1a] bg-[#0b0b0b] p-3">
@@ -279,11 +312,48 @@ export function getCutMapRailWidth(totalDuration: number) {
 
 type SegmentCut = ReturnType<typeof describeSegment>;
 
+function CutHoverPreview({ cut, anchor, onMouseEnter, onMouseLeave }: {
+  cut: SegmentCut;
+  anchor: { x: number; y: number };
+  onMouseEnter: () => void;
+  onMouseLeave: () => void;
+}) {
+  const left = Math.min(Math.max(12, anchor.x - 156), window.innerWidth - 324);
+  const top = Math.max(12, anchor.y - 12);
+  return (
+    <div
+      role="tooltip"
+      className="pointer-events-auto fixed z-50 w-[312px] -translate-y-full rounded-[4px] border border-[#2a2a2a] bg-[#0a0a0a] shadow-[0_12px_40px_rgba(0,0,0,0.55)]"
+      style={{ left, top }}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+    >
+      <div className="relative aspect-video overflow-hidden rounded-t-[4px] bg-[#050505]">
+        {cut.clipUrl ? (
+          <video src={cut.clipUrl} className="h-full w-full object-cover" muted playsInline autoPlay loop preload="metadata" />
+        ) : cut.thumbnailUrl ? (
+          <ThumbnailFill src={cut.thumbnailUrl} />
+        ) : (
+          <div className="flex h-full items-center justify-center text-[9px] uppercase tracking-[0.12em] text-[#555]">No preview</div>
+        )}
+        <div className="absolute left-2 top-2 rounded-[2px] bg-[#000000aa] px-2 py-1 font-mono text-[9px] text-[#e05c00]">CUT {cut.index + 1}</div>
+      </div>
+      <div className="space-y-1.5 p-2.5">
+        <div className="font-mono text-[9px] text-[#888]">{cut.sourceTimeLabel} · {cut.segment.duration.toFixed(2)}s</div>
+        <div className="line-clamp-4 text-[10px] leading-4 text-[#a8a8a8]">{cut.captionText}</div>
+        <div className="text-[8px] uppercase tracking-[0.1em] text-[#555]">Source inventory · not placed on song yet</div>
+      </div>
+    </div>
+  );
+}
+
 function CutInspector({ cut }: { cut: SegmentCut }) {
   return (
     <div className="space-y-3">
       <div className="relative aspect-video overflow-hidden rounded-[2px] border border-[#181818] bg-[#050505]">
-        {cut.thumbnailUrl ? <ThumbnailFill src={cut.thumbnailUrl} /> : null}
+        {cut.clipUrl ? (
+          <video src={cut.clipUrl} className="h-full w-full object-cover" muted playsInline controls preload="metadata" />
+        ) : cut.thumbnailUrl ? <ThumbnailFill src={cut.thumbnailUrl} /> : null}
         <div className="absolute left-2 top-2 rounded-[2px] bg-[#000000aa] px-2 py-1 font-mono text-[9px] text-[#e05c00]">CUT {cut.index + 1}</div>
         <div className="absolute bottom-2 right-2 rounded-[2px] bg-[#000000aa] px-2 py-1 font-mono text-[9px] text-[#d0d0d0]">{cut.sourceTimeLabel}</div>
       </div>
@@ -414,6 +484,7 @@ function describeSegment(segment: SourceTimelineSegment, index: number, sources:
     sourceLabel: segment.sceneLabel ? `${shortSourceLabel} · ${segment.sceneLabel}` : scene ? `${shortSourceLabel} · ${scene.label}` : shortSourceLabel,
     sourceTimeLabel: formatSourceTimeLabel(segment, sourceClips),
     thumbnailUrl: segment.thumbnailUrl ?? scene?.thumbnailUrl ?? source?.thumbnailUrl,
+    clipUrl: segment.clipUrl ?? scene?.clipUrl ?? null,
     captionText: captionError ?? caption ?? "No caption text returned for this cut yet.",
   };
 }

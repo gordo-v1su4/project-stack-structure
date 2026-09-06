@@ -85,8 +85,9 @@ export function Inspector({
           <StatusDot tone={save.tone} pulse />
           {save.label}
         </div>
-        <WorkActivity />
       </div>
+
+      <WorkActivity layout="inline" />
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {model ? (

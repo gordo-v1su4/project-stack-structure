@@ -1,6 +1,6 @@
 "use client";
 
-import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from "react";
+import { useState, type ButtonHTMLAttributes, type HTMLAttributes, type ReactNode } from "react";
 
 /**
  * Small shared primitives for the studio shell. Colors come from the
@@ -143,5 +143,34 @@ export function ProgressBar({ value, tone = "processing", className = "" }: { va
     >
       <div className={`h-full ${tone === "ready" ? "bg-ok" : "bg-accent"} transition-[width] duration-300`} style={{ width: `${clamped}%` }} />
     </div>
+  );
+}
+
+/** Button-driven disclosure — more reliable than native details in the studio shell. */
+export function CollapsibleSection({
+  title,
+  children,
+  defaultOpen = false,
+  className = "",
+}: {
+  title: string;
+  children: ReactNode;
+  defaultOpen?: boolean;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <section className={`overflow-hidden rounded-md border border-line bg-ink-0 ${className}`}>
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+        className="flex w-full cursor-pointer items-center justify-between gap-3 px-3 py-2 text-left text-[9px] uppercase tracking-[0.14em] text-fg-3 hover:text-fg-1"
+      >
+        <span>{title}</span>
+        <span aria-hidden className="font-mono text-[11px] text-fg-4">{open ? "−" : "+"}</span>
+      </button>
+      {open ? <div className="border-t border-line">{children}</div> : null}
+    </section>
   );
 }

@@ -49,7 +49,7 @@ type ReadinessTone = StatusTone;
 
 type IngestStepKey = "song" | "stem" | "references" | "footage" | "captions";
 
-const STEP_ORDER: IngestStepKey[] = ["song", "stem", "references", "footage", "captions"];
+const STEP_ORDER: IngestStepKey[] = ["song", "references", "footage", "stem", "captions"];
 
 const STEP_TITLES: Record<IngestStepKey, string> = {
   song: "Master song",
@@ -184,6 +184,21 @@ export function IngestTab({
     [captionSearch, videoSources],
   );
   const filteredCutCount = cutGroups.reduce((total, group) => total + group.cuts.length, 0);
+  const characterNames = useMemo(
+    () => referenceAssets
+      .filter((asset) => asset.storageStatus === "uploaded" && (asset.role === "character-1" || asset.role === "character-2"))
+      .map((asset) => asset.displayName.trim())
+      .filter(Boolean),
+    [referenceAssets],
+  );
+  const genericCaptionCount = useMemo(() => {
+    if (!characterNames.length) return 0;
+    return videoSources.reduce((total, source) => total + (source.scenes ?? []).filter((scene) => {
+      const text = (scene.captionMeta?.caption ?? scene.caption ?? "").toLowerCase();
+      if (!text) return false;
+      return !characterNames.some((name) => text.includes(name.toLowerCase()));
+    }).length, 0);
+  }, [characterNames, videoSources]);
 
   function scrollToStep(key: IngestStepKey) {
     document.getElementById(`ingest-step-${key}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -215,19 +230,7 @@ export function IngestTab({
         )}
       </IngestStep>
 
-      <IngestStep step={2} id="stem" title={STEP_TITLES.stem} tone={steps.stem.tone} status={steps.stem.status} hint="Deepgram needs the isolated lead vocal for timed lyrics. Story cannot start without it.">
-        <IngestVocalStemLane
-          analysis={analysis}
-          vocalStemName={vocalStemName}
-          transcriptSummary={transcriptSummary}
-          disabled={isPreparingAudio}
-          onTranscriptStart={onVocalStemTranscriptStart}
-          onTranscriptComplete={onVocalStemTranscriptComplete}
-          onTranscriptFailed={onVocalStemTranscriptFailed}
-        />
-      </IngestStep>
-
-      <IngestStep step={3} id="references" title={STEP_TITLES.references} tone={steps.references.tone} status={steps.references.status} hint="Character 1 and Environment are required; their names appear in captions and the story. Character 2, crowd, and custom sheets are optional.">
+      <IngestStep step={2} id="references" title={STEP_TITLES.references} tone={steps.references.tone} status={steps.references.status} hint="Character 1 and Environment are required. Set each sheet's display name (e.g. Diego) — that exact name is used in scene captions and downstream prompts. Fixture path: .local-fixtures/reference-sheets/character-1.png">
         <ReferenceLibrary
           assets={referenceAssets}
           onUpload={onReferenceAssetUpload}
@@ -236,7 +239,7 @@ export function IngestTab({
         />
       </IngestStep>
 
-      <IngestStep step={4} id="footage" title={STEP_TITLES.footage} tone={steps.footage.tone} status={steps.footage.status} hint="Clips upload to RustFS and scene detection starts automatically.">
+      <IngestStep step={3} id="footage" title={STEP_TITLES.footage} tone={steps.footage.tone} status={steps.footage.status} hint="Clips upload to RustFS and scene detection starts automatically.">
         {videoSources.length ? (
           <SourceVideoLibrary
             sources={videoSources}
@@ -269,6 +272,18 @@ export function IngestTab({
         ) : null}
       </IngestStep>
 
+      <IngestStep step={4} id="stem" title={STEP_TITLES.stem} tone={steps.stem.tone} status={steps.stem.status} hint="Deepgram transcribes the isolated vocal for timed lyrics. Story and smart captions use these lines.">
+        <IngestVocalStemLane
+          analysis={analysis}
+          vocalStemName={vocalStemName}
+          transcriptSummary={transcriptSummary}
+          disabled={isPreparingAudio}
+          onTranscriptStart={onVocalStemTranscriptStart}
+          onTranscriptComplete={onVocalStemTranscriptComplete}
+          onTranscriptFailed={onVocalStemTranscriptFailed}
+        />
+      </IngestStep>
+
       <IngestStep
         step={5}
         id="captions"
@@ -298,8 +313,8 @@ export function IngestTab({
               size="sm"
               variant="secondary"
               onClick={() => onRerunSceneAnalysis("all")}
-              disabled={isRerunningSceneAnalysis || isPreparingVideos || stats.captionTotal === 0}
-              reason={stats.captionTotal === 0 ? "No scenes to caption yet" : null}
+              disabled={isRerunningSceneAnalysis || isPreparingVideos || stats.captionTotal === 0 || !captionContextReady}
+              reason={!captionContextReady ? "Upload vocal stem + Char 1 + Environment first" : stats.captionTotal === 0 ? "No scenes to caption yet" : null}
             >
               {isRerunningSceneAnalysis ? "Recaptioning…" : "Recaption all"}
             </Button>
@@ -309,6 +324,11 @@ export function IngestTab({
         {mismatchedCaptionCount > 0 ? (
           <div className="mb-3 rounded-md border border-warn-lo bg-warn-tint px-3 py-2 text-[12px] text-warn">
             {mismatchedCaptionCount} caption{mismatchedCaptionCount === 1 ? "" : "s"} came from a different lane than the selected {captionMode === "smart" ? "Smart" : "Fast"} mode. Recaption to refresh them.
+          </div>
+        ) : null}
+        {genericCaptionCount > 0 && characterNames.length ? (
+          <div className="mb-3 rounded-md border border-line-2 bg-ink-0 px-3 py-2 text-[12px] leading-5 text-fg-2">
+            {genericCaptionCount} caption{genericCaptionCount === 1 ? "" : "s"} still use generic terms instead of {characterNames.join(" / ")}. Set reference display names first, then use Recaption all so Match and Story see the canonical names.
           </div>
         ) : null}
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
@@ -377,12 +397,12 @@ export function IngestTab({
 function IngestChecklist({ steps, onSelect }: { steps: Record<IngestStepKey, { tone: ReadinessTone; status: string }>; onSelect: (key: IngestStepKey) => void }) {
   const readyCount = STEP_ORDER.filter((key) => steps[key].tone === "ready").length;
   return (
-    <nav aria-label="Ingest checklist" className="rounded-md border border-line bg-ink-2 px-4 py-3">
-      <div className="mb-2 flex items-center justify-between">
+    <nav aria-label="Ingest checklist" className="rounded-md border border-line bg-ink-2 px-3 py-2.5">
+      <div className="mb-1.5 flex items-center justify-between">
         <Kicker>Checklist</Kicker>
         <span className="font-mono text-[11px] text-fg-3">{readyCount}/{STEP_ORDER.length} ready</span>
       </div>
-      <ol className="grid gap-2 md:grid-cols-5">
+      <ol className="grid gap-1 md:grid-cols-5">
         {STEP_ORDER.map((key, index) => {
           const step = steps[key];
           return (
@@ -390,12 +410,12 @@ function IngestChecklist({ steps, onSelect }: { steps: Record<IngestStepKey, { t
               <button
                 type="button"
                 onClick={() => onSelect(key)}
-                className="flex w-full items-start gap-2 rounded-md border border-transparent px-2 py-1.5 text-left hover:border-line-2 hover:bg-ink-3"
+                className="flex w-full items-start gap-2 rounded-md px-1.5 py-1 text-left hover:bg-ink-3"
               >
-                <StatusDot tone={step.tone} pulse className="mt-[5px]" />
+                <StepStatusIcon tone={step.tone} step={index + 1} />
                 <span className="min-w-0">
-                  <span className="block text-[12px] font-medium text-fg-0">{index + 1}. {STEP_TITLES[key]}</span>
-                  <span className={`block truncate text-[11px] ${TONE_TEXT[step.tone]}`} title={step.status}>{step.status}</span>
+                  <span className="block text-[11.5px] font-medium text-fg-0">{STEP_TITLES[key]}</span>
+                  <span className={`block truncate text-[10.5px] ${TONE_TEXT[step.tone]}`} title={step.status}>{step.status}</span>
                 </span>
               </button>
             </li>
@@ -403,6 +423,24 @@ function IngestChecklist({ steps, onSelect }: { steps: Record<IngestStepKey, { t
         })}
       </ol>
     </nav>
+  );
+}
+
+function StepStatusIcon({ tone, step }: { tone: ReadinessTone; step: number }) {
+  if (tone === "ready") {
+    return (
+      <span className="mt-0.5 flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full bg-ok" aria-hidden>
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="text-ink-0">
+          <path d="M2 5.2 4.1 7.3 8 3.2" />
+        </svg>
+      </span>
+    );
+  }
+  const ring = tone === "processing" ? "border-warn" : tone === "failed" ? "border-danger" : "border-line-3";
+  return (
+    <span className={`mt-0.5 flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full border ${ring} font-mono text-[9px] text-fg-3`} aria-hidden>
+      {step}
+    </span>
   );
 }
 
@@ -421,12 +459,9 @@ function IngestStep({ step, id, title, tone, status, hint, actions, children }: 
       <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2.5">
-            <span className={`flex h-6 w-6 items-center justify-center rounded-full border font-mono text-[11px] ${tone === "ready" ? "border-ok-lo bg-ok-tint text-ok" : "border-line-2 text-fg-2"}`}>
-              {tone === "ready" ? "✓" : step}
-            </span>
+            <StepStatusIcon tone={tone} step={step} />
             <h2 className="text-[14px] font-semibold text-fg-0">{title}</h2>
             <span className={`flex items-center gap-1.5 text-[11.5px] ${TONE_TEXT[tone]}`}>
-              <StatusDot tone={tone} pulse />
               <span className="max-w-[440px] truncate" title={status}>{status}</span>
             </span>
           </div>
@@ -464,7 +499,7 @@ function ReferenceLibrary({
         <div>
           <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Reference library / character bible</div>
           <div className="mt-1 max-w-4xl text-[11px] leading-5 text-[#6d6d6d]">
-            Upload persistent character sheets and continuity references once. Generate keeps a stable order after the selected source frame: Char 1, Char 2, Environment, selected Crowd sheets, Custom.
+            Upload persistent character sheets and continuity references once. Generate orders references after the composition frame from the cut: Char 1, Char 2, Environment, selected Crowd sheets, Custom.
           </div>
         </div>
         <div className="font-mono text-[10px] text-[#777]">
@@ -573,39 +608,41 @@ function ReferenceSlotCard({
   const failed = asset?.storageStatus === "failed";
   const ready = asset?.storageStatus === "uploaded" && Boolean(asset.storageUrl);
   const uploading = asset?.storageStatus === "uploading";
-  const border = failed ? "border-[#743029]" : ready ? "border-[#245c2c]" : uploading ? "border-[#6e5522]" : "border-[#242424]";
-  const toneText = failed ? "text-[#d24b3f]" : ready ? "text-[#78c878]" : uploading ? "text-[#d6a13a]" : "text-[#777]";
+  const border = "border-line-2";
 
   return (
-    <div className={`flex min-h-[424px] flex-col rounded-[2px] border ${border} bg-[#070707] p-2`}>
-      <div className="mb-2 grid min-h-[58px] grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
+    <div className={`flex flex-col rounded-md border ${border} bg-ink-0 p-2`}>
+      <div className="mb-2 flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <div className="text-[9px] uppercase tracking-[0.16em] text-[#d0d0d0]">{REFERENCE_ASSET_SLOT_LABELS[role]}</div>
-          <div className="mt-1 line-clamp-2 text-[9px] leading-4 text-[#555]">{REFERENCE_ASSET_SLOT_DETAILS[role]}</div>
+          <div className="text-[9px] uppercase tracking-[0.16em] text-fg-2">{REFERENCE_ASSET_SLOT_LABELS[role]}</div>
+          <div className="mt-0.5 line-clamp-2 text-[9px] leading-4 text-fg-4">{REFERENCE_ASSET_SLOT_DETAILS[role]}</div>
         </div>
-        <span className={`pt-[1px] text-right font-mono text-[8px] uppercase tracking-[0.12em] ${toneText}`}>{asset ? asset.storageStatus : "empty"}</span>
+        <StatusDot tone={failed ? "failed" : ready ? "ready" : uploading ? "processing" : "waiting"} pulse={uploading} />
       </div>
 
       {asset ? (
-        <div className="flex min-h-0 flex-1 flex-col">
-          <div className="relative h-[168px] overflow-hidden rounded-[2px] border border-[#181818] bg-[#030303]">
+        <div className="flex flex-col">
+          <div className="relative h-[120px] overflow-hidden rounded-sm border border-line bg-ink-1">
             {asset.previewUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={asset.previewUrl} alt={asset.displayName} className="h-full w-full object-cover" loading="lazy" decoding="async" />
-            ) : <div className="flex h-full items-center justify-center text-[8px] uppercase tracking-[0.12em] text-[#444]">No preview</div>}
-            <div className="absolute bottom-1 left-1 rounded-[1px] bg-[#000000b8] px-1.5 py-0.5 font-mono text-[7px] text-[#aaa]">{asset.fileName}</div>
+              <img src={asset.previewUrl} alt={asset.displayName} className="h-full w-full object-contain" loading="lazy" decoding="async" />
+            ) : <div className="flex h-full items-center justify-center text-[8px] uppercase tracking-[0.12em] text-fg-4">No preview</div>}
+            <span className="absolute left-1 top-1 rounded-sm bg-ink-0/90 px-1.5 py-0.5 font-mono text-[7px] uppercase tracking-[0.1em] text-fg-2">{asset.kind}</span>
+            <span className="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-ink-0/95 to-transparent px-2 pb-1 pt-4 font-mono text-[10px] font-medium text-fg-0">{asset.displayName || REFERENCE_ASSET_SLOT_LABELS[role]}</span>
           </div>
-          <div className="mt-2 grid gap-2">
+          <div className="mt-2 grid gap-1.5">
             <input
               value={asset.displayName}
               onChange={(event) => onUpdate(asset.id, { displayName: event.target.value })}
-              className="h-[30px] w-full rounded-[2px] border border-[#202020] bg-[#050505] px-2 font-mono text-[10px] text-[#d0d0d0] outline-none focus:border-[#e05c00]"
-              placeholder="Reference name"
+              className="h-[28px] w-full rounded-sm border border-line-2 bg-ink-1 px-2 font-mono text-[10px] text-fg-1 outline-none focus:border-accent"
+              placeholder="Canonical name (e.g. Diego)"
+              aria-label={`${REFERENCE_ASSET_SLOT_LABELS[role]} display name`}
             />
             <select
               value={asset.kind}
               onChange={(event) => onUpdate(asset.id, { kind: event.target.value as ReferenceAssetKind })}
-              className="h-[30px] w-full rounded-[2px] border border-[#202020] bg-[#050505] px-2 font-mono text-[10px] text-[#9a9a9a] outline-none focus:border-[#e05c00]"
+              className="h-[28px] w-full rounded-sm border border-line-2 bg-ink-1 px-2 font-mono text-[10px] text-fg-2 outline-none focus:border-accent"
+              aria-label={`${REFERENCE_ASSET_SLOT_LABELS[role]} kind`}
             >
               {(["character", "environment", "crowd", "prop", "vehicle", "wardrobe", "custom"] as const).map((kind) => <option key={kind} value={kind}>{kind}</option>)}
             </select>
@@ -613,39 +650,32 @@ function ReferenceSlotCard({
               value={asset.promptHint}
               onChange={(event) => onUpdate(asset.id, { promptHint: event.target.value })}
               rows={2}
-              className="h-[54px] w-full resize-none rounded-[2px] border border-[#202020] bg-[#050505] px-2 py-1.5 text-[10px] leading-4 text-[#9a9a9a] outline-none focus:border-[#e05c00]"
-              placeholder="Prompt lock / reference instruction"
+              className="h-[44px] w-full resize-none rounded-sm border border-line-2 bg-ink-1 px-2 py-1 text-[10px] leading-4 text-fg-2 outline-none focus:border-accent"
+              placeholder="Identity lock note for captions / Nano Banana"
             />
           </div>
-          <div className="mt-2 min-h-[28px]">
-            {asset.storageError ? <div className="rounded-[2px] border border-[#743029] bg-[#160706] p-2 text-[9px] leading-4 text-[#d24b3f]">{asset.storageError}</div> : null}
-            {asset.storageUrl ? <div className="truncate font-mono text-[8px] leading-4 text-[#555]" title={asset.storagePath}>{asset.storagePath}</div> : null}
+          <div className="mt-1.5 min-h-[20px]">
+            {asset.storageError ? <div className="rounded-sm border border-danger-lo bg-danger-tint p-1.5 text-[9px] leading-4 text-danger">{asset.storageError}</div> : null}
           </div>
-          <div className="mt-auto flex gap-1.5 pt-2">
+          <div className="mt-2 flex gap-1.5">
             <UploadControl accept="image/*" title="Replace reference" detail="Upload a new reference image." actionLabel="Replace" variant="button" onFiles={onUpload} />
-            <button type="button" onClick={() => onRemove(asset.id)} className="rounded-[2px] border border-[#242424] px-2 py-[2px] text-[10px] uppercase tracking-[0.12em] text-[#777] hover:border-[#743029] hover:text-[#d24b3f]">Remove</button>
+            <button type="button" onClick={() => onRemove(asset.id)} className="rounded-sm border border-line-2 px-2 py-[2px] text-[10px] uppercase tracking-[0.12em] text-fg-3 hover:border-danger-lo hover:text-danger">Remove</button>
           </div>
         </div>
       ) : (
-        <div className="flex min-h-0 flex-1 flex-col">
-          <div className="flex h-[168px] items-center justify-center rounded-[2px] border border-dashed border-[#252525] bg-[#050505] px-5 text-center">
+        <div className="flex flex-col">
+          <div className="flex h-[120px] items-center justify-center rounded-sm border border-dashed border-line-2 bg-ink-1 px-4 text-center">
             <div>
-              <div className="text-[12px] text-[#b0b0b0]">Upload {REFERENCE_ASSET_SLOT_LABELS[role]}</div>
-              <div className="mt-3 text-[9px] uppercase tracking-[0.16em] text-[#555]">Stored to RustFS before Generate can use it.</div>
+              <div className="text-[11px] text-fg-2">Upload {REFERENCE_ASSET_SLOT_LABELS[role]}</div>
+              <div className="mt-2 text-[9px] uppercase tracking-[0.14em] text-fg-4">RustFS · used in captions</div>
             </div>
           </div>
-          <div className="mt-2 grid gap-2 opacity-45">
-            <div className="h-[30px] rounded-[2px] border border-[#1b1b1b] bg-[#050505]" />
-            <div className="h-[30px] rounded-[2px] border border-[#1b1b1b] bg-[#050505]" />
-            <div className="h-[54px] rounded-[2px] border border-[#1b1b1b] bg-[#050505]" />
-          </div>
-          <div className="mt-2 min-h-[28px]" />
-          <div className="mt-auto pt-2">
+          <div className="mt-2">
             <UploadControl
               accept="image/*"
               title=""
               detail=""
-              actionLabel="Add Reference"
+              actionLabel="Add reference"
               variant="button"
               onFiles={onUpload}
             />
@@ -660,16 +690,16 @@ function CutCaptionCard({ sourceName, scene, fallbackThumbnail, onMergeLeft }: {
   const hasCaption = Boolean(scene.caption);
   const failed = Boolean(scene.captionError);
   const tone: ReadinessTone = failed ? "failed" : hasCaption ? "ready" : "waiting";
-  const colors = toneColors(tone);
   const displayCaption = getDisplayCaption(scene) ?? scene.captionError ?? "No caption yet.";
+  const namedSubjects = scene.captionMeta?.subjects?.filter(Boolean) ?? [];
   const frameStrip = [
     ["first", scene.firstFrameUrl ?? scene.thumbnailUrl ?? fallbackThumbnail],
     ["middle", scene.middleFrameUrl],
     ["last", scene.lastFrameUrl],
   ].filter((entry): entry is [string, string] => Boolean(entry[1]));
   return (
-    <div className={`overflow-hidden rounded-[2px] border bg-[#080808] ${colors.border}`}>
-      <div className="relative aspect-video bg-[#030303]">
+    <div className="overflow-hidden rounded-md border border-line bg-ink-0">
+      <div className="relative aspect-video bg-ink-1">
         {scene.firstFrameUrl || scene.thumbnailUrl || fallbackThumbnail ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={scene.firstFrameUrl ?? scene.thumbnailUrl ?? fallbackThumbnail} alt="" className="absolute inset-0 h-full w-full object-cover" loading="lazy" decoding="async" />
@@ -689,11 +719,21 @@ function CutCaptionCard({ sourceName, scene, fallbackThumbnail, onMergeLeft }: {
             ))}
           </div>
         ) : null}
-        <div className="truncate font-mono text-[8px] text-[#666]" title={sourceName}>{sourceName}</div>
-        <div className={`text-[8px] uppercase tracking-[0.12em] ${colors.text}`} title={scene.captionError ?? undefined}>
-          {failed ? (hasCaption ? "Recaption failed · kept previous" : "Caption failed") : hasCaption ? "Caption ready" : "Caption pending"}
+        <div className="truncate font-mono text-[8px] text-fg-3" title={sourceName}>{sourceName}</div>
+        <div className="flex items-center gap-1.5 text-[8px] uppercase tracking-[0.12em] text-fg-3">
+          <StatusDot tone={tone} pulse={tone === "processing"} />
+          <span title={scene.captionError ?? undefined}>
+            {failed ? (hasCaption ? "Recaption failed · kept previous" : "Caption failed") : hasCaption ? "Caption ready" : "Caption pending"}
+          </span>
         </div>
-        <div className="line-clamp-3 min-h-12 text-[9px] leading-4 text-[#9a9a9a]" title={displayCaption}>
+        {namedSubjects.length ? (
+          <div className="flex flex-wrap gap-1">
+            {namedSubjects.map((subject) => (
+              <span key={subject} className="rounded-sm border border-line-2 bg-ink-2 px-1.5 py-[1px] font-mono text-[8px] uppercase tracking-[0.08em] text-accent">{subject}</span>
+            ))}
+          </div>
+        ) : null}
+        <div className="line-clamp-3 min-h-12 text-[9px] leading-4 text-fg-2" title={displayCaption}>
           {displayCaption}
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-1 font-mono text-[8px] uppercase tracking-[0.1em] text-[#555]">
@@ -803,17 +843,4 @@ function buildVideoStats(sources: UploadedVideoSource[], captionMode: SceneCapti
       storageFailed: 0,
     },
   );
-}
-
-function toneColors(tone: ReadinessTone) {
-  switch (tone) {
-    case "ready":
-      return { border: "border-[#245c2c]", bg: "bg-[#081108]", dot: "bg-[#3a8a3a]", text: "text-[#79c779]" };
-    case "processing":
-      return { border: "border-[#6f4a12]", bg: "bg-[#120d05]", dot: "bg-[#e05c00] animate-pulse", text: "text-[#e05c00]" };
-    case "failed":
-      return { border: "border-[#7a241e]", bg: "bg-[#130706]", dot: "bg-[#d24b3f]", text: "text-[#d24b3f]" };
-    default:
-      return { border: "border-[#202020]", bg: "bg-[#080808]", dot: "bg-[#454545]", text: "text-[#777]" };
-  }
 }

@@ -67,6 +67,10 @@ export function deriveSourceCaptionStatus(
     return { captionStatus: "captioning", captionError: null };
   }
 
+  if (options.activeStatus === "waiting") {
+    return { captionStatus: "waiting", captionError: null };
+  }
+
   const finalized = finalizeCaptionedScenes(scenes, mode);
   if (!finalized.length) {
     return { captionStatus: "ready", captionError: null };

@@ -37,7 +37,7 @@ export function BeatSpine({ analysis, bpm, playhead, onSeek, caption, slots, sel
 
   return (
     <section aria-label="Beat spine" className="vt-spine shrink-0 overflow-hidden rounded-[10px] border border-line bg-ink-1">
-      <div className="relative h-6 border-b border-line">
+      <div className="relative h-7 border-b border-line">
         {analysis.sections.map((section, index) => {
           const left = (Math.max(0, section.start) / duration) * 100;
           const width = Math.max(0.5, ((Math.min(duration, section.end) - Math.max(0, section.start)) / duration) * 100);
@@ -48,7 +48,7 @@ export function BeatSpine({ analysis, bpm, playhead, onSeek, caption, slots, sel
               onClick={() => onSeek(Math.max(0, section.start) / duration)}
               title={`${section.label} · ${fmt(section.start)}–${fmt(section.end)}`}
               style={{ left: `${left}%`, width: `${width}%` }}
-              className="absolute top-0 h-full border-r border-line px-2 text-left font-display text-[13px] italic leading-6 text-fg-2 hover:bg-ink-2 hover:text-fg-0"
+              className="absolute top-0 h-full border-r border-line px-2 text-left font-display text-[13px] italic leading-7 text-fg-2 hover:bg-ink-2 hover:text-fg-0"
             >
               <span className="block truncate">{section.label}</span>
             </button>
@@ -57,7 +57,12 @@ export function BeatSpine({ analysis, bpm, playhead, onSeek, caption, slots, sel
       </div>
 
       {slots.length ? (
-        <div role="listbox" aria-label="Cuts" className="relative h-[58px] border-b border-line bg-ink-0" onClick={(event) => { if (event.target === event.currentTarget) onSelectSlot(null); }}>
+        <>
+          <div className="flex items-center justify-between border-b border-line bg-ink-1 px-2 py-1">
+            <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-fg-3">Edit plan · song time</span>
+            <span className="font-mono text-[9px] text-fg-3">Match places footage here · Space plays song</span>
+          </div>
+          <div role="listbox" aria-label="Cuts" className="relative h-[68px] border-b border-line bg-ink-0" onClick={(event) => { if (event.target === event.currentTarget) onSelectSlot(null); }}>
           {slots.map((slot) => {
             const isSelected = slot.id === selectedSlotId;
             const isLive = playheadSeconds >= slot.start && playheadSeconds < slot.end;
@@ -72,7 +77,7 @@ export function BeatSpine({ analysis, bpm, playhead, onSeek, caption, slots, sel
                 onDoubleClick={() => onSeek(slot.start / duration)}
                 title={`${slot.sectionLabel} · ${fmt(slot.start)}–${fmt(slot.end)}\n${slot.label}${slot.kind === "generated" ? "\nGenerated shot" : ""}`}
                 style={{ left: pct(slot.start), width: `calc(${(slot.duration / duration) * 100}% - 2px)` }}
-                className={`group absolute top-[5px] h-[48px] overflow-hidden rounded-[5px] bg-ink-3 text-left outline-offset-[-1px] transition-[transform,box-shadow] duration-[var(--duration-fast)] ease-[var(--ease-out-soft)] ${
+                className={`group absolute top-[5px] h-[58px] overflow-hidden rounded-[5px] bg-ink-3 text-left outline-offset-[-1px] transition-[transform,box-shadow] duration-[var(--duration-fast)] ease-[var(--ease-out-soft)] ${
                   isSelected
                     ? "z-10 scale-y-[1.04] shadow-[0_0_0_1.5px_var(--color-accent)]"
                     : isLive
@@ -99,6 +104,7 @@ export function BeatSpine({ analysis, bpm, playhead, onSeek, caption, slots, sel
           })}
           <span aria-hidden className="pointer-events-none absolute top-0 h-full w-px bg-fg-0/80" style={{ left: pct(playheadSeconds) }} />
         </div>
+        </>
       ) : null}
 
       {selected && takes.length > 1 ? (
@@ -138,7 +144,7 @@ export function BeatSpine({ analysis, bpm, playhead, onSeek, caption, slots, sel
           durationSeconds={duration}
           beatsPerBar={4}
           accent="oklch(0.7 0.19 45)"
-          height={slots.length ? 64 : 92}
+          height={slots.length ? 88 : 112}
           label={caption ?? ""}
           showRuler
           zoom={1}

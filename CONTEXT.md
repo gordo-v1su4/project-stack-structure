@@ -51,24 +51,24 @@ Pipeline gating: `src/components/studio/studioPipeline.ts` (`buildPipelineState`
 
 **Ingest UX:** show per-lane readiness (green/orange/red) while the user works, but **do not unlock Story** until every required lane is complete. The user may browse later tabs, but story map generation and captioning that names characters depend on reference assets + lyrics being present first.
 
-**Code gap (2026-09):** `ingestReady` today does not check reference assets or transcript; `storyReady` checks transcript but not references. Product intent requires both — pipeline gating should be tightened to match.
+**Pipeline gating (code):** `buildStudioPipelineInput` + `isIngestReady` require vocal stem, Char 1 + environment refs, clips, scenes, and smart captions before Story unlocks (`tests/unit/studioPipeline.test.ts`). Remaining gaps are **runtime** (caption jobs firing before `isCaptionContextReady`, soft-gate browse vs hard-block messaging) — not missing `ingestReady` checks.
 
 ### Match / shuffle naming (current truth)
 
 - **Match** is the user-facing stage: semantic assignment of **video moments** to **story sections** / **edit slots**, with scores and alternates visible (`DESIGN.md` Match UX rules).
-- Tab key is still **`shuffle`** — legacy from the old “shuffle clips by motion/color” workflow. The active panel is **`MatchTab`**, not `ShuffleTab`.
-- **`ShuffleTab`**, **`BeatSplitTab`**, **`BeatJoinTab`**, and **`ReviewTab`** are orphaned panel files (not imported by `StudioApp.tsx`). Do not wire new work to them; safe to delete in a cleanup pass.
+- Tab key is still **`shuffle`** — legacy from the old “shuffle clips by motion/color” workflow. The active panel is **`MatchTab`**.
+- Legacy panel files (`ShuffleTab`, `BeatSplitTab`, `BeatJoinTab`, `ReviewTab`) are **removed** from the tree; do not reintroduce them.
 - **`ShuffleMode`** (`simple` | `size` | `color` | `motion`) is an internal continuity-ranking mode still used in arrangement/preview code — not the same thing as the Match stage.
 - **Match mode (product):** simplified to a single **balanced** picker in `MatchTab` (no multi-mode UI). Scoring blends semantic/story fit, lyric alignment, **motion continuity** (camera/movement direction between cuts), motion energy, duration fit, and **color continuity** — motion and color are factors, not separate user-facing modes. Legacy `MatchMode` variants (`motion`, `color`, `energy`, etc.) remain in `matchModes.ts` for scoring helpers only.
 
-### Legacy tab keys (nav removed, code paths remain)
+### Legacy tab keys (persistence only)
 
 | Tab key | Was | Superseded by |
 | --- | --- | --- |
 | `beatsplit` | Beat-driven split | `split` (`SplitTab`) |
 | `beatjoin` | Beat-driven join | `join` (`JoinTab`) |
 
-`StudioApp.tsx` still contains run/preview branches for these keys. Treat as cleanup debt, not active workflow.
+`projectPersistence.normalizeLegacyTab` migrates saved drafts. `localStorage` active tab only accepts current `NAV` keys. No runtime branches remain in `StudioApp.tsx`.
 
 ---
 
@@ -209,7 +209,7 @@ Smart captions receive character names, location continuity, and reference image
 
 **Provider (target — replace OpenAI):** local **Qwen3-VL Instruct** on the homelab stack — same model and gateway as smart captions. One model: **scene captions** (multimodal, per scene storyboard) then **story treatments** (text-in, JSON-out).
 
-**Grounding rule:** Story must be **caption-grounded**, not invented. Ingest already ran Qwen on each scene storyboard; those captions are the evidence catalog of what exists (e.g. river/drowning vs fire). The story director pass reads **caption text + user brief + lyrics/sections** — it does **not** re-send video frames. If a beat is not supported by any caption, mark it as generate/omit later; do not write a story about imagery that is not in the rushes.
+**Grounding rule (lyric-led structure, caption-grounded execution):** Lyrics and song structure define the narrative arc; scene captions are the evidence catalog of what exists in the rushes. Treatments may propose beats from lyrics + brief, but every **story anchor** must show coverage (`covered` | `weak` | `missing`) against `VideoMoment` captions before the plan is confirmed — never silently pretend footage exists. The director pass reads **caption text + user brief + lyrics/sections**; it does **not** re-send video frames. Unsupported beats resolve as `generate` or `omit` anchors, not invented imagery in the story text.
 
 **Three treatments (existing UI):** `faithful` (user brief is canon), `bold` (location/system as antagonist), `wildcard` (late reveal). User picks one; `hydrateTreatmentCoverage` then ranks anchors against `VideoMoment` captions.
 
@@ -227,7 +227,57 @@ Smart captions receive character names, location continuity, and reference image
 | **Short source** (primary assigned but shorter than slot) | Purple | **No** | Optional whole-shot replacement review; user may continue; UI should surface the issue clearly |
 | **Weak match** (score &lt; 45%) | Yellow | **No** | Optional quality reroll in Generate; not a workflow blocker |
 
-**Seedance external handoff order** (whole-shot replacement): select resolved cut → **2×2 storyboard frame grid** for that section (Nano Banana) → prepare Video_1 timing reference → copy operator packet → generate externally → import completed clip → approve exactly one candidate for Join. Storyboard is the first creative step; the current Generate UI buries this flow and needs clearer step-by-step guidance (see GitHub issue #61).
+**Seedance external handoff order** (whole-shot replacement): select resolved cut → **2×2 storyboard frame grid** for that section (Nano Banana) → prepare Video_1 timing reference → copy operator packet → generate externally → import completed clip → approve exactly one candidate for Join. Storyboard is the first creative step; the current Generate UI buries this flow and needs clearer step-by-step guidance (see GitHub issue #61). ADR: `docs/adr/0001-generate-join-coverage-gating.md`.
+
+**Continuity review (current):** Match per-slot evidence + Generate resolved-cut audition (`selectPreviewSectionRange`). **Section-level preview** (play intro/verse/chorus as one unit across acts) is deferred — backlog item below.
+
+**Local still generation (two lanes):**
+
+| Lane | Tooling | Role |
+| --- | --- | --- |
+| **Storyboard / composition boards** | Higgsfield Nano Banana Pro (canonical protocol) | 2×2 / 3×3 grids for whole-shot replacement; grid split via fixed splitter only |
+| **Gap-fill stills (local)** | SwarmUI → ComfyUI, **Qwen Image Edit 2511** (see `docs/local-generation.md`) | Reference-conditioned stills without Nano Banana; same ingest **reference assets**, different API surface |
+
+Validate the Qwen 2511 reference contract in a **separate test pass** from this studio cleanup. Do not assume Nano Banana prompt/manifest wording ports verbatim to Comfy.
+
+### Composition reference vs quality authority
+
+Rushes are usually **low resolution**. A frame pulled from a matched cut or scene thumbnail is **never** a quality, likeness, or texture authority. Think of it as a **low-res placeholder**: the pipeline **replaces** the grab with sheet-driven identity at full resolution — motion blur, soft focus, and compression artifacts from the clip must not propagate.
+
+| Asset | Role | Controls |
+| --- | --- | --- |
+| **Character sheet** (Char 1, Char 2) | Quality authority | Identity, face, skin, wardrobe — **who** each person is |
+| **Environment sheet** | Quality authority (broad) | Venue type, materials, palette, overall lighting language — **which world** |
+| **Crowd / custom sheets** | Quality authority (scoped) | Extras, props — per slot rules |
+| **Cut / scene frame** | **Composition reference only** | **Which character is in which position**, blocking, camera angle, screen direction, narrative beat — and **localized placement within the room** (e.g. by the door vs the far wall) when the broad environment sheet alone would be ambiguous |
+| **Storyboard grid panel** | Composition audition only | Layout to re-create at 2K — not to upscale or inpaint |
+
+The environment sheet may describe the club in general; the composition reference disambiguates **where in that club** the action happens so prompts do not conflict (e.g. “by the door” vs a different zone). That is still blocking/spatial context, not texture or likeness from the grab.
+
+**Whole-shot replacement** means **re-create the shot** from sheets + composition context, not match, enhance, or continue the muddy frame. Prompts must say: re-render from scratch; do not copy low-res texture or identity from the video grab.
+
+**Two paths to video:**
+
+| Path | Status | Steps |
+| --- | --- | --- |
+| **Manual Seedance (current MVP)** | **Active now** | Generate tab builds packet (text + ordered sheet refs + composition ref + `Video_1` timing) → operator copies prompt/refs → runs Seedance externally → imports completed clip → approves for Join |
+| **Still-first (default product path)** | Target UI default | Composition ref → fresh 2K still (sheets + optional grid) → Seedance R2V |
+| **R2V direct** | After validation | Text + sheets + timing; skip intermediate still |
+| **Local SwarmUI / Qwen 2511** | **Next session** | Prove image conditioning with same role split; homelab workflows already exist, need workflow wiring + API tests (order: 2511 still → Seedance still-first packet → R2V direct if still step optional) |
+
+Match ranks by **captions and timing**, not thumbnail sharpness. Output quality today is “decent enough” via Nano Banana → Seedance; wrong creative intent → regenerate, not pick a sharper frame in Match.
+
+**Code gap (2026-09):** ~~`referenceAssets.buildGenerationReferenceInputs` anchor copy~~ — updated to composition-reference wording (ADR-0002). Remaining B work: see [checklist](plans/2026-09-06-studio-story-match-generate-checklist.md).
+
+### Story → Match → Generate acceptance (Love Me Tonight fixtures)
+
+Checklist before calling the loop trustworthy (manual + unit tests first; `bun run e2e:media` only after A+B land):
+
+1. Story treatment cites **real caption content**, not generic boilerplate.
+2. Match assignments are musically and visually plausible on fixture rushes.
+3. Generate shows correct **red / purple / yellow** with no false blocking reds.
+4. One **whole-shot replacement** completes on a purple short-source slot (storyboard → packet → import → approve).
+5. Local SwarmUI/Qwen 2511 gap-fill stills work with ingest reference sheets (own test track).
 
 ---
 
@@ -246,6 +296,9 @@ Not scheduled. Capture product intent here so agents do not re-litigate in sessi
 | **Reference name from sheet (vision)** | Maybe | On reference upload, use Qwen3-VL (caption gateway) to read the printed character or location name from the image and set `displayName`. Sheets will always include a visible name somewhere; filenames are unreliable. Manual edit remains. Until then, user supplies names (e.g. Diego, Valentina, Underground Latin Club). |
 | **Project database (Convex-style)** | Maybe | Evaluate a proper DB for project metadata, ingest lanes, media catalog, reference assets, scene/caption manifests, and pipeline job state — similar to **Pindac** and **review-room** (both Convex). Today: RustFS blobs + `project.json` + in-browser state; works for solo use but caused orphaned clips and weak catalog queries. Convex is preferred if we pursue this; not committed — migration cost and dual-write period need a spec first. |
 | **Ingest parallelism tuning** | Maybe | Investigate whether current parallelism helps or hurts wall-clock time. Today: up to 3 scene-detect children at once, but Qwen captioning is globally serial (`vm100-heavy` concurrency 1) and batches run scenes sequentially inside each child. Parallel scene detect can pile work into the GPU queue and increase wait time vs a simpler one-clip-at-a-time flow. Measure queue wait vs runtime before changing limits. **Out of scope:** routing work to the local 5090 as a second remote GPU — homelab VM100 stays the single caption worker to avoid ops confusion. |
+| **Section-level preview** | Deferred | Play intro/verse/chorus (or arbitrary story section) as one prepared cut from Match or Generate, not only per-cut audition or full Join preview. |
+| **Qwen Image Edit 2511 reference validation** | Next session | Prove SwarmUI/Comfy local stills honor ingest reference sheets + composition ref role split. Workflows/APIs exist on homelab; wire and test in order: 2511 still → Seedance still-first packet → R2V direct. |
+| **Studio cleanup (2026-09)** | In progress | Phased checklist: [2026-09-06-studio-story-match-generate-checklist.md](plans/2026-09-06-studio-story-match-generate-checklist.md). **A** docs done → **B** gating/UX/manual Seedance → **C** e2e after B. |
 
 ---
 

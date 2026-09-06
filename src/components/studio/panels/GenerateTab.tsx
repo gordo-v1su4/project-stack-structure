@@ -37,7 +37,7 @@ import {
   type GenerationNeed,
   type SlotStatus,
 } from "../editPlanCoverage";
-import { countStoryboardFramesForSegment, getReplacementWorkflowState } from "../wholeShotReplacement";
+import { countStoryboardFramesForSegment, getReplacementWorkflowState, type ReplacementWorkflowStep } from "../wholeShotReplacement";
 
 export type { CoverageIssueGroup, CoverageSlot, GenerationNeed, SlotStatus } from "../editPlanCoverage";
 export { buildCoverageIssueGroups, buildCoverageSlots, describeCoverageIssue, summarizeCoverage } from "../editPlanCoverage";
@@ -353,11 +353,11 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
         <div className="mt-3 grid gap-2 md:grid-cols-3 xl:grid-cols-6">
           <MetricCard label="Required" value={coverage.requiredDuration > 0 ? fmt(coverage.requiredDuration) : "Waiting"} ready={coverage.requiredDuration > 0} />
           <MetricCard label="Real assigned" value={fmt(coverage.assignedDuration)} ready={coverage.coveragePct >= 99} />
-          <MetricCard label="Primary-match shortage (estimate)" value={fmt(coverage.trueGapDuration)} ready={coverage.trueGapDuration === 0 && coverage.requiredDuration > 0} alert={coverage.trueGapDuration > 0} />
+          <MetricCard label="Blocking gap duration" value={fmt(coverage.blockingGapDuration)} ready={coverage.blockingGapDuration === 0 && coverage.requiredDuration > 0} alert={coverage.blockingGapCount > 0} />
           <MetricCard label="Strong match" value={`${coverage.strongMatchPct}%`} ready={coverage.strongMatchPct >= 70} />
           <MetricCard label="True gaps (blocks Join)" value={`${coverage.blockingGapCount} chunk${coverage.blockingGapCount === 1 ? "" : "s"}`} ready={coverage.blockingGapCount === 0 && slots.length > 0} alert={coverage.blockingGapCount > 0} />
-          <MetricCard label="Short source review" value={`${coverage.shortReviewCount} optional`} ready={coverage.shortReviewCount === 0 && slots.length > 0} />
-          <MetricCard label="Weak match review" value={`${coverage.reviewCount} chunks · ${coverage.reviewSectionCount} sections`} ready={coverage.reviewCount === 0 && slots.length > 0} />
+          <MetricCard label="Short source review" value={`${coverage.shortReviewCount} optional`} ready={coverage.shortReviewCount === 0 && slots.length > 0} review={coverage.shortReviewCount > 0} />
+          <MetricCard label="Weak match review" value={`${coverage.reviewCount} chunks · ${coverage.reviewSectionCount} sections`} ready={coverage.reviewCount === 0 && slots.length > 0} review={coverage.reviewCount > 0} />
         </div>
       </section>
 
@@ -565,9 +565,14 @@ function ReplacementWorkflowChecklist({
 
   return (
     <div className="rounded-[2px] border border-[#1a2a3d] bg-[#05080f] p-3">
-      <div className="text-[10px] uppercase tracking-[0.18em] text-[#6ca6d2]">Seedance operator checklist</div>
+      <div className="text-[10px] uppercase tracking-[0.18em] text-[#6ca6d2]">Manual Seedance operator checklist</div>
+      <p className="mt-2 text-[9px] leading-4 text-[#8aa0b3]">
+        Copy the packet below, run Seedance externally (paste prompt + attach refs in order), then import the completed clip and approve exactly one candidate for Join. This page does not submit paid generation.
+      </p>
       <ol className="mt-3 space-y-2">
-        {workflow.steps.map((step) => (
+        {workflow.steps.map((step) => {
+          const stepBlockers = blockersForWorkflowStep(workflow.blockers, step.id);
+          return (
           <li
             key={step.id}
             className={`rounded-[2px] border px-2 py-1.5 text-[10px] ${
@@ -580,24 +585,42 @@ function ReplacementWorkflowChecklist({
           >
             <div className="font-mono uppercase tracking-[0.12em]">{step.label}</div>
             <div className="mt-1 text-[9px] leading-4">{step.detail}</div>
+            {step.active && stepBlockers.length ? (
+              <div className="mt-2 rounded-[2px] border border-[#695019] bg-[#120e04] px-2 py-1 text-[9px] leading-4 text-[#d3a236]">
+                {stepBlockers.join(" ")}
+              </div>
+            ) : null}
           </li>
-        ))}
+          );
+        })}
       </ol>
-      {workflow.blockers.length ? (
+      {workflow.blockers.length && !workflow.steps.some((step) => step.active) ? (
         <div className="mt-3 text-[9px] leading-4 text-[#d3a236]">{workflow.blockers.join(" ")}</div>
       ) : null}
     </div>
   );
 }
 
-function MetricCard({ label, value, ready, alert = false }: { label: string; value: string; ready: boolean; alert?: boolean }) {
+function blockersForWorkflowStep(blockers: string[], step: ReplacementWorkflowStep): string[] {
+  const matchers: Record<ReplacementWorkflowStep, (message: string) => boolean> = {
+    "select-cut": (message) => message.includes("Select exactly one"),
+    "storyboard-frames": (message) => message.toLowerCase().includes("storyboard"),
+    "prepare-video1": (message) => message.includes("Video_1") || message.toLowerCase().includes("timing reference"),
+    "copy-packet": (message) => message.toLowerCase().includes("packet") || message.toLowerCase().includes("validation"),
+    "import-result": (message) => message.toLowerCase().includes("import"),
+    "approve-for-join": () => false,
+  };
+  return blockers.filter((message) => matchers[step](message));
+}
+
+function MetricCard({ label, value, ready, alert = false, review = false }: { label: string; value: string; ready: boolean; alert?: boolean; review?: boolean }) {
   return (
-    <div className={`rounded-[2px] border px-3 py-2 ${ready ? "border-[#245c2c] bg-[#081108]" : alert ? "border-[#743029] bg-[#120706]" : "border-[#252525] bg-[#080808]"}`}>
+    <div className={`rounded-[2px] border px-3 py-2 ${ready ? "border-[#245c2c] bg-[#081108]" : alert ? "border-[#743029] bg-[#120706]" : review ? "border-[#5b356f] bg-[#100817]" : "border-[#252525] bg-[#080808]"}`}>
       <div className="mb-1 flex items-center justify-between gap-2">
         <span className="text-[8px] uppercase tracking-[0.16em] text-[#5c5c5c]">{label}</span>
-        <span className={`h-2 w-2 rounded-full ${ready ? "bg-[#3a8a3a]" : alert ? "bg-[#d24b3f]" : "bg-[#454545]"}`} />
+        <span className={`h-2 w-2 rounded-full ${ready ? "bg-[#3a8a3a]" : alert ? "bg-[#d24b3f]" : review ? "bg-[#c37bea]" : "bg-[#454545]"}`} />
       </div>
-      <div className={`font-mono text-[10px] ${ready ? "text-[#79c779]" : alert ? "text-[#d24b3f]" : "text-[#777]"}`}>{value}</div>
+      <div className={`font-mono text-[10px] ${ready ? "text-[#79c779]" : alert ? "text-[#d24b3f]" : review ? "text-[#c37bea]" : "text-[#777]"}`}>{value}</div>
     </div>
   );
 }
@@ -821,7 +844,7 @@ function ResolvedClipQueue({
                 <div className={`absolute right-1 top-1 rounded-[1px] border px-1.5 py-0.5 font-mono text-[7px] uppercase ${style.border} ${style.text}`}>{STATUS_LABELS[status]}</div>
                 <div className="absolute bottom-1 left-1 rounded-[1px] bg-[#000000c0] px-1.5 py-0.5 font-mono text-[7px] text-[#aaa]">SRC {fmtCutTime(segment.startTime)}–{fmtCutTime(segment.endTime)}</div>
                 <div className="absolute bottom-1 right-1 rounded-[1px] bg-[#000000c0] px-1.5 py-0.5 font-mono text-[7px] text-[#aaa]">{cutDuration.toFixed(1)}s</div>
-                {status !== "filled" ? <div className="absolute inset-0 flex items-center justify-center bg-[#00000055] text-[9px] uppercase tracking-[0.16em] text-[#b96c43]">{status === "weak" ? "review match" : "needs work"}</div> : null}
+                {status !== "filled" ? <div className="absolute inset-0 flex items-center justify-center bg-[#00000055] text-[9px] uppercase tracking-[0.16em] text-[#b96c43]">{status === "weak" ? "optional weak" : status === "short" ? "optional short" : "blocks join"}</div> : null}
               </div>
               <div className="border-t border-[#151515] px-2 py-1.5">
                 <div className="truncate font-mono text-[8px] uppercase tracking-[0.1em] text-[#8a8a8a]">CUT {String(index + 1).padStart(3, "0")} · {segment.label}</div>
@@ -931,7 +954,7 @@ function CoverageIssueCard({ issue, selected, onSelect }: { issue: CoverageIssue
     ? issue.moment.sourceRefLabel ?? `S${issue.moment.sourceClipId + 1} · ${issue.moment.label}`
     : "No source assigned";
   const sourceRange = issue.moment ? `${fmt(issue.moment.start)}–${fmt(issue.moment.end)} in source` : "No source time range";
-  const optional = issue.status === "weak";
+  const optional = issue.status === "weak" || issue.status === "short";
   return (
     <article
       role="button"
@@ -1048,7 +1071,7 @@ function FrameExtensionPanel({
   const anchorUrl = moment?.firstFrameUrl ?? moment?.thumbnailUrl;
   const referencePlan = buildGenerationReferenceInputs({
     anchorUrl,
-    anchorLabel: selectedSegment?.sourceRefLabel ?? slot?.item.label ?? moment?.sourceRefLabel ?? "source frame",
+    anchorLabel: selectedSegment?.sourceRefLabel ?? slot?.item.label ?? moment?.sourceRefLabel ?? "composition reference (from cut)",
     assets: referenceAssets,
     selection: referenceSelection,
   });
@@ -1241,7 +1264,7 @@ function FrameExtensionPanel({
           {referencePlan.inputs.map((input, index) => (
             <div key={`${input.role}-${input.assetId ?? input.url}`} className="truncate" title={input.url}>[{index}] {input.role} · {input.label} · {input.url}</div>
           ))}
-          {!referencePlan.inputs.length ? <div>No source frame or references selected.</div> : null}
+          {!referencePlan.inputs.length ? <div>No composition reference or character/location sheets selected.</div> : null}
         </div>
       </div>
 

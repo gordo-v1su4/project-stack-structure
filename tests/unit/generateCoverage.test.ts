@@ -115,6 +115,7 @@ describe("Generate coverage truth", () => {
     expect(shortSlots[0]).toMatchObject({ status: "short", assignedDuration: 3, missingDuration: 2 });
     expect(summarizeCoverage(shortSlots, 5)).toMatchObject({
       trueGapDuration: 2,
+      blockingGapDuration: 0,
       requiredNeedCount: 0,
       blockingGapCount: 0,
       shortReviewCount: 1,

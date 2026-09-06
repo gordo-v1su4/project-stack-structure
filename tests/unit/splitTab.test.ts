@@ -52,7 +52,8 @@ describe("SplitTab simplified workflow", () => {
     expect(markup).toContain("Create source cut windows");
     expect(markup).toContain("Scene + Rhythm");
     expect(markup).toContain("Candidate cut table");
-    expect(markup).toContain("Cut numbers are candidate windows, not frames");
+    expect(markup).toContain("Footage cut map · source time");
+    expect(markup).toContain("searchable slices of your uploads");
     expect(markup).toContain("S1 · 0:00–0:04");
     expect(markup).not.toContain("Scene + Beat");
     expect(markup).not.toContain("Cut thumbnails + caption readiness");

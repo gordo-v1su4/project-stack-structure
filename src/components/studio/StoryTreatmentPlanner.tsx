@@ -184,25 +184,24 @@ export function StoryTreatmentPlanner({ analysis, transcriptSummary, project, st
 
   return (
     <section className="overflow-hidden rounded-[2px] border border-[#2a211b] bg-[#090807]">
-      <div className="relative border-b border-[#2a211b] bg-[linear-gradient(115deg,#180d07_0%,#0a0908_56%,#07100d_100%)] px-4 py-4">
+      <div className="relative border-b border-[#2a211b] bg-[linear-gradient(115deg,#180d07_0%,#0a0908_56%,#07100d_100%)] px-3 py-2.5">
         <div className="pointer-events-none absolute inset-y-0 right-0 w-1/2 opacity-20 [background-image:linear-gradient(135deg,transparent_45%,#e05c00_46%,#e05c00_47%,transparent_48%)] [background-size:28px_28px]" />
-        <div className="relative flex flex-wrap items-start justify-between gap-4">
+        <div className="relative flex flex-wrap items-start justify-between gap-3">
           <div className="max-w-3xl">
-            <div className="text-[9px] uppercase tracking-[0.28em] text-[#e05c00]">Story decision · required before Split</div>
-            <h2 className="mt-2 font-serif text-2xl leading-none text-[#e8e1d8]">Find the throughline before the floor gives way.</h2>
-            <p className="mt-2 max-w-2xl text-[11px] leading-5 text-[#817970]">Describe the film in a paragraph. The director pass returns three distinct treatments, then checks every major beat against the footage you actually ingested.</p>
+            <div className="text-[8px] uppercase tracking-[0.24em] text-[#e05c00]">Story decision · required before Split</div>
+            <h2 className="mt-1 font-serif text-lg leading-tight text-[#b8b0a8]">Find the throughline before the floor gives way.</h2>
+            <p className="mt-1 max-w-2xl text-[10px] leading-4 text-[#6f6862]">Describe the film in a paragraph. The director pass returns three treatments, then checks every major beat against ingested footage.</p>
           </div>
-          <div className="min-w-44 border-l border-[#49301f] pl-4 font-mono text-[9px] uppercase tracking-[0.14em] text-[#817970]">
+          <div className="min-w-36 border-l border-[#49301f] pl-3 font-mono text-[8px] uppercase tracking-[0.12em] text-[#6f6862]">
             <div>{project.videoMoments.length} captioned moments</div>
-            <div className="mt-1">3 treatments · 1 decision</div>
-            <div className="mt-1 text-[#c9a27e]">Caption evidence only · local Qwen</div>
+            <div className="mt-0.5">3 treatments · 1 decision</div>
           </div>
         </div>
       </div>
 
-      <div className="p-4">
+      <div className="p-3">
         {confirmed ? (
-          <div className="mb-4 grid gap-3 border border-[#24492f] bg-[#07110a] p-3 lg:grid-cols-[1fr_auto]">
+          <div className="mb-3 grid gap-2 border border-[#24492f] bg-[#07110a] p-2.5 lg:grid-cols-[1fr_auto]">
             <div>
               <div className="text-[8px] uppercase tracking-[0.2em] text-[#63b078]">Confirmed story</div>
               <div className="mt-1 text-sm font-semibold text-[#d7e5d8]">{confirmed.title}</div>
@@ -217,20 +216,19 @@ export function StoryTreatmentPlanner({ analysis, transcriptSummary, project, st
           <textarea
             value={state.brief.text}
             onChange={(event) => onChange({ brief: { text: event.target.value } })}
-            rows={5}
+            rows={3}
             maxLength={4_000}
             placeholder="What should happen? A sentence or a short paragraph is enough."
-            className="mt-2 w-full resize-y border border-[#2b2723] bg-[#050505] px-3 py-3 text-[12px] leading-5 text-[#d2cbc3] outline-none transition-colors placeholder:text-[#4b4642] focus:border-[#e05c00]"
+            className="mt-1.5 w-full resize-y border border-[#2b2723] bg-[#050505] px-2.5 py-2 text-[11px] leading-4 text-[#b8b0a8] outline-none transition-colors placeholder:text-[#4b4642] focus:border-[#e05c00]"
           />
         </label>
 
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-          <div className="text-[9px] leading-4 text-[#625c56]">Uses song structure, lyric summary, and scene captions. Raw audio and video stay in the media pipeline.</div>
+        <div className="mt-2 flex flex-wrap items-center justify-end gap-2">
           <button
             type="button"
             disabled={!canGenerate || isGenerating}
             onClick={() => void generateTreatments()}
-            className="min-w-52 bg-[#e05c00] px-4 py-2.5 text-[9px] font-semibold uppercase tracking-[0.18em] text-white hover:bg-[#c95200] disabled:cursor-not-allowed disabled:bg-[#27231f] disabled:text-[#6b625a]"
+            className="min-w-48 bg-[#e05c00] px-3 py-2 text-[9px] font-semibold uppercase tracking-[0.16em] text-white hover:bg-[#c95200] disabled:cursor-not-allowed disabled:bg-[#27231f] disabled:text-[#6b625a]"
           >
             {isGenerating ? "Directing three treatments…" : state.treatments.length ? "Generate three new treatments" : "Generate three treatments"}
           </button>
@@ -239,7 +237,7 @@ export function StoryTreatmentPlanner({ analysis, transcriptSummary, project, st
         {error ? <div role="alert" className="mt-3 border border-[#5a1f1a] bg-[#170807] px-3 py-2 text-[10px] text-[#df786d]">{error} Your brief has been preserved; retry when ready.</div> : null}
 
         {state.treatments.length ? (
-          <div className="mt-5 grid gap-2 xl:grid-cols-3">
+          <div className="mt-3 grid gap-2 xl:grid-cols-3">
             {state.treatments.map((treatment) => {
               const copy = KIND_COPY[treatment.kind];
               const active = treatment.id === state.selectedTreatmentId;
@@ -250,15 +248,15 @@ export function StoryTreatmentPlanner({ analysis, transcriptSummary, project, st
                   type="button"
                   aria-pressed={active}
                   onClick={() => selectTreatment(treatment.id)}
-                  className={`group relative min-h-72 overflow-hidden border p-4 text-left transition-colors ${active ? "border-[#e05c00] bg-[#160c06]" : "border-[#27231f] bg-[#070707] hover:border-[#6f4227]"}`}
+                  className={`group relative min-h-[11rem] overflow-hidden border p-3 text-left transition-colors ${active ? "border-[#e05c00] bg-[#160c06]" : "border-[#27231f] bg-[#070707] hover:border-[#6f4227]"}`}
                 >
-                  <div className="absolute right-3 top-1 font-serif text-6xl text-[#24201d] transition-colors group-hover:text-[#32251d]">{copy.number}</div>
+                  <div className="absolute right-2 top-0 font-serif text-5xl text-[#24201d] transition-colors group-hover:text-[#32251d]">{copy.number}</div>
                   <div className="relative">
                     <div className="text-[8px] uppercase tracking-[0.2em] text-[#e05c00]">{copy.label}</div>
-                    <div className="mt-1 text-[8px] uppercase tracking-[0.12em] text-[#625a53]">{copy.detail}</div>
-                    <h3 className="mt-5 max-w-[85%] font-serif text-xl leading-tight text-[#e5ddd4]">{treatment.title}</h3>
-                    <p className="mt-3 text-[11px] leading-5 text-[#aaa097]">{treatment.logline}</p>
-                    <p className="mt-3 line-clamp-4 text-[9px] leading-4 text-[#706962]">{treatment.synopsis}</p>
+                    <div className="mt-0.5 text-[8px] uppercase tracking-[0.12em] text-[#625a53]">{copy.detail}</div>
+                    <h3 className="mt-3 max-w-[85%] font-serif text-lg leading-tight text-[#cfc7be]">{treatment.title}</h3>
+                    <p className="mt-2 line-clamp-3 text-[10px] leading-4 text-[#8f877f]">{treatment.logline}</p>
+                    <p className="mt-2 line-clamp-2 text-[9px] leading-4 text-[#706962]">{treatment.synopsis}</p>
                     <div className="mt-4 grid grid-cols-3 gap-px bg-[#29231e] font-mono text-[8px] uppercase">
                       <Metric value={`${stats.resolved}/${treatment.anchors.length}`} label="auto-resolved" />
                       <Metric value={`${stats.missing}`} label="missing" />
@@ -272,7 +270,7 @@ export function StoryTreatmentPlanner({ analysis, transcriptSummary, project, st
         ) : null}
 
         {selected && coverage ? (
-          <div className="mt-5 border-t border-[#2a211b] pt-5">
+          <div className="mt-3 border-t border-[#2a211b] pt-3">
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div>
                 <div className="text-[8px] uppercase tracking-[0.2em] text-[#e05c00]">Anchor review · {selected.title}</div>
@@ -287,13 +285,13 @@ export function StoryTreatmentPlanner({ analysis, transcriptSummary, project, st
               ))}
             </div>
 
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[#211d1a] pt-4">
-              <div className="text-[9px] leading-4 text-[#645d57]">Confirmation writes these anchors into the song-section prompts. Generated gaps remain empty until the paid Generate stage.</div>
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-[#211d1a] pt-3">
+              <div className="text-[8px] leading-4 text-[#645d57]">Confirmation writes anchors into section prompts. Generated gaps stay empty until Generate.</div>
               <button
                 type="button"
                 disabled={!isStoryPlanConfirmable(selected)}
                 onClick={() => onConfirm(selected)}
-                className="min-w-48 border border-[#3f7a4c] bg-[#0d2614] px-4 py-2.5 text-[9px] font-semibold uppercase tracking-[0.18em] text-[#82cf91] hover:bg-[#12351c] disabled:cursor-not-allowed disabled:border-[#2b2b2b] disabled:bg-[#151515] disabled:text-[#5d5d5d]"
+                className="min-w-44 border border-[#3f7a4c] bg-[#0d2614] px-3 py-2 text-[9px] font-semibold uppercase tracking-[0.16em] text-[#82cf91] hover:bg-[#12351c] disabled:cursor-not-allowed disabled:border-[#2b2b2b] disabled:bg-[#151515] disabled:text-[#5d5d5d]"
               >
                 {state.confirmedTreatmentId === selected.id ? "Story plan confirmed" : "Confirm story plan"}
               </button>

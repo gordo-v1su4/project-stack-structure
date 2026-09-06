@@ -5,7 +5,7 @@ import { flushSync } from "react-dom";
 import { extractWaveformData, fetchEssentiaAnalysis, getEssentiaStorageFromPayload, parseEssentiaPayload } from "./studio/audioAnalysis";
 import type { DeepgramTranscriptSummary } from "./studio/deepgramUtils";
 import { GATE_HEADLINE, NAV, resolveCaptionMode } from "./studio/constants";
-import { mergeUploadedVideoSourceUpdate, needsSceneDetectionRetry, prepareVideoSources, reconcileSourceCaptionStatus, rerunSourceSceneAnalysis, revokePreparedVideoSources, selectSceneRetrySources } from "./studio/mediaUpload";
+import { mergeUploadedVideoSourceUpdate, needsSceneDetectionRetry, prepareVideoSources, reconcileSourceCaptionStatus, rerunSourceSceneAnalysis, revokePreparedVideoSources, selectSceneRetrySources, captionDeferredSources, isStudioCaptionContextReady } from "./studio/mediaUpload";
 import { uploadFileInChunks } from "./studio/chunkedUploadClient";
 import type { VideoSceneUpdate } from "./studio/mediaUpload";
 import { buildEditPlanPreviewSegments, normalizeStoryEditSettings, type EditPlanPreviewSegment, type MusicVideoProject } from "./studio/musicVideoProject";
@@ -41,6 +41,8 @@ import { SplitTab } from "./studio/panels/SplitTab";
 import { createDefaultStoryTabState, StoryTab } from "./studio/panels/StoryTab";
 import { ActRail } from "./studio/shell/ActRail";
 import { BeatSpine } from "./studio/shell/BeatSpine";
+import { StageGateBanner } from "./studio/shell/StageGateBanner";
+import { TrackHeader } from "./studio/shell/TrackHeader";
 import { SlotInspector } from "./studio/shell/SlotInspector";
 import { buildSpineSlots, describeSlot, neighborSlot, type SpineSlot } from "./studio/shell/spineSlots";
 import { CommandPalette, ShortcutSheet } from "./studio/shell/CommandPalette";
@@ -56,7 +58,7 @@ import { createSaveState, type SaveState } from "./studio/saveState";
 import type { StatusTone } from "./studio/ui";
 import { buildStudioPipelineInput } from "./studio/buildStudioPipelineInput";
 import { buildPipelineState } from "./studio/studioPipeline";
-import { isStoryPlanConfirmable, type StoryTreatment } from "./studio/storyTreatments";
+import { isStoryPlanConfirmable, selectedTreatment, type StoryTreatment } from "./studio/storyTreatments";
 import { buildShuffleQueue } from "./studio/shuffleQueue";
 import { waitForTriggerRunOutput } from "@/lib/clientTriggerRuns";
 import { rankManifestCandidates } from "./studio/manifestRanking";
@@ -719,6 +721,12 @@ export default function StudioApp() {
         mergePreparedSourceUpdate,
         mergePreparedSourceUpdate,
         buildSceneCaptionSettings(captionMode, beatJoinAnalysis, storyState, referenceAssets),
+        {
+          captionContextReady: isStudioCaptionContextReady({
+            hasLyricTranscript: Boolean(storyState.transcriptSummary?.chunks.length),
+            referenceAssets,
+          }),
+        },
       );
       if (!prepared.length) {
         throw new Error("No readable video files were selected.");
@@ -860,6 +868,10 @@ export default function StudioApp() {
       // that miss (timeout / gateway error) keep their previous caption and
       // are retried in follow-up rounds once the pass finishes.
       const captionSettings = buildSceneCaptionSettings(captionMode, beatJoinAnalysis, storyState, referenceAssets);
+      const captionContextReady = isStudioCaptionContextReady({
+        hasLyricTranscript: Boolean(storyState.transcriptSummary?.chunks.length),
+        referenceAssets,
+      });
       const maxRounds = 3;
       let pending = targets;
 
@@ -873,7 +885,7 @@ export default function StudioApp() {
         await Promise.all(
           Array.from({ length: Math.min(1, queue.length) }, async () => {
             for (let source = queue.shift(); source; source = queue.shift()) {
-              await rerunSourceSceneAnalysis(source, captionSettings, applySceneUpdate).catch(() => undefined);
+              await rerunSourceSceneAnalysis(source, captionSettings, applySceneUpdate, { captionContextReady }).catch(() => undefined);
             }
           }),
         );
@@ -1987,6 +1999,46 @@ export default function StudioApp() {
         ? shaderEffectCues
         : lastPreviewEffectCuesRef.current;
 
+  const captionResumeInFlightRef = useRef(false);
+
+  const captionContextReady = useMemo(
+    () => isStudioCaptionContextReady({
+      hasLyricTranscript: Boolean(storyState.transcriptSummary?.chunks.length),
+      referenceAssets,
+    }),
+    [referenceAssets, storyState.transcriptSummary],
+  );
+
+  useEffect(() => {
+    if (!captionContextReady || captionResumeInFlightRef.current) return;
+    const pending = videoSourcesRef.current.filter(
+      (source) => source.captionStatus === "waiting" && (source.scenes?.length ?? 0) > 0,
+    );
+    if (!pending.length) return;
+
+    captionResumeInFlightRef.current = true;
+    const captionSettings = buildSceneCaptionSettings(captionMode, beatJoinAnalysis, storyState, referenceAssets);
+    const applySceneUpdate = ({ key, source }: VideoSceneUpdate) => {
+      startTransition(() => {
+        setVideoSources((currentSources) =>
+          currentSources.map((currentSource) => {
+            if (buildVideoSourceKey(currentSource) !== key) return currentSource;
+            return withVideoSourceId(
+              { ...source, videoUrl: currentSource.videoUrl, thumbnailUrl: currentSource.thumbnailUrl },
+              currentSource.id,
+            );
+          }),
+        );
+      });
+    };
+
+    void captionDeferredSources(pending, captionSettings, applySceneUpdate)
+      .catch(() => undefined)
+      .finally(() => {
+        captionResumeInFlightRef.current = false;
+      });
+  }, [beatJoinAnalysis, captionContextReady, captionMode, referenceAssets, storyState]);
+
   const ingestStats = useMemo(() => {
     const sceneCount = videoSources.reduce((total, source) => total + (source.scenes?.length ?? 0), 0);
     const captionReady = videoSources.reduce((total, source) => total + (source.scenes?.filter((scene) => Boolean(scene.caption)).length ?? 0), 0);
@@ -1994,6 +2046,8 @@ export default function StudioApp() {
     return { sceneCount, captionReady, captionTotal };
   }, [videoSources]);
 
+  const activeStoryTreatment = storyState.confirmedTreatmentSnapshot
+    ?? selectedTreatment(storyState.treatments, storyState.selectedTreatmentId);
   const pipeline = useMemo(() => buildPipelineState(buildStudioPipelineInput({
     activeTab: tab,
     hasAudioAnalysis: beatJoinAnalysis !== null,
@@ -2004,7 +2058,7 @@ export default function StudioApp() {
     captionReadyCount: ingestStats.captionReady,
     captionTotalCount: ingestStats.captionTotal,
     storyTreatmentSelected: Boolean(storyState.selectedTreatmentId || storyState.confirmedTreatmentId),
-    storyAnchorsResolved: isStoryPlanConfirmable(storyState.confirmedTreatmentSnapshot),
+    storyAnchorsResolved: isStoryPlanConfirmable(activeStoryTreatment),
     storyPlanConfirmed: storyState.storyGenerated
       && Boolean(storyState.confirmedTreatmentId)
       && Boolean(storyState.storyContentSignature),
@@ -2019,8 +2073,10 @@ export default function StudioApp() {
     beatJoinAnalysis,
     storyState.storyGenerated,
     storyState.selectedTreatmentId,
+    storyState.treatments,
     storyState.confirmedTreatmentId,
     storyState.confirmedTreatmentSnapshot,
+    activeStoryTreatment,
     storyState.storyContentSignature,
     storyState.transcriptSummary,
     referenceAssets,
@@ -2252,27 +2308,20 @@ export default function StudioApp() {
     ? Math.max(0, Math.min(1, browserPreviewState.currentTime / Math.max(beatJoinAnalysis.duration, 0.001)))
     : songTransport.playhead;
   const monitorFocused = isPreviewExpanded && hasBrowserPreview;
+  const showFfmpegProgramPreview = !hasBrowserPreview && !isBrowserPreviewActive && Boolean(previewAssetUrl);
+  const showProgramMonitor = hasBrowserPreview || showFfmpegProgramPreview || monitorFocused;
 
   const monitorNext = pipeline.nextHint?.replace(/^Next:\s*/i, "") ?? null;
-  // Scene thumbnails sampled evenly across the footage back the empty monitor.
-  const monitorFrames = useMemo(() => {
-    const all = videoSources.flatMap((source) => (source.scenes?.length ? source.scenes.map((scene) => scene.thumbnailUrl ?? scene.middleFrameUrl ?? "") : [source.thumbnailUrl])).filter(Boolean);
-    if (all.length <= 16) return all;
-    const step = all.length / 16;
-    return Array.from({ length: 16 }, (_, index) => all[Math.floor(index * step)] ?? "").filter(Boolean);
-  }, [videoSources]);
   const monitorEmpty = beatJoinAnalysis
     ? {
         headline: beatJoinAnalysis.sourceLabel,
         meta: `${displayBpm} BPM · ${fmt(beatJoinAnalysis.duration)} · ${beatJoinAnalysis.sections.length} sections${videoSources.length ? ` · ${videoSources.length} clips` : ""}`,
         next: null,
-        frames: monitorFrames,
       }
     : {
         headline: "Start with the song.",
         meta: isPreparingAudio ? audioStatus : "Drop a master track to unlock the beat grid.",
         next: monitorNext,
-        frames: monitorFrames,
       };
   const gatePrerequisite = stageHeaderModel?.primary?.kind === "open-prerequisite" && stageHeaderModel.primary.targetTab
     ? { tab: stageHeaderModel.primary.targetTab, label: NAV.find((item) => item.key === stageHeaderModel.primary?.targetTab)?.label ?? stageHeaderModel.primary.label }
@@ -2355,24 +2404,14 @@ export default function StudioApp() {
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <div className="flex min-h-0 flex-1 overflow-hidden">
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 bg-ink-1 p-3">
-            <ProgramMonitor
-              previewPlayer={previewPlayer}
-              browserPreviewSegments={displayedBrowserPreviewSegments}
-              browserPreviewState={browserPreviewState}
-              isBrowserPreviewActive={isBrowserPreviewActive}
-              previewEffectCues={displayedPreviewEffectCues}
-              audioTimeline={beatJoinAnalysis}
-              masterAudioUrl={masterAudioUrl}
-              previewAssetKey={previewState.currentAssetKey}
-              previewAssetUrl={previewAssetUrl}
-              empty={monitorEmpty}
-              focused={monitorFocused}
-              onToggleFocused={() => setIsPreviewExpanded((current) => !current)}
-              gate={monitorGate}
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2 bg-ink-1 p-3">
+            <TrackHeader
+              headline={monitorEmpty.headline}
+              meta={monitorEmpty.meta}
+              next={monitorEmpty.next}
             />
 
-            {beatJoinAnalysis && tab !== "review" && !monitorFocused ? (
+            {beatJoinAnalysis && !monitorFocused ? (
               <BeatSpine
                 analysis={beatJoinAnalysis}
                 bpm={displayBpm ?? bpm}
@@ -2386,6 +2425,25 @@ export default function StudioApp() {
                 onSelectSlot={handleSelectSlot}
                 takes={slotEvidence?.takes ?? []}
                 onSelectTake={handleSelectSemanticCandidate}
+              />
+            ) : null}
+
+            {monitorGate && !monitorFocused ? <StageGateBanner gate={monitorGate} /> : null}
+
+            {showProgramMonitor ? (
+              <ProgramMonitor
+                previewPlayer={previewPlayer}
+                browserPreviewSegments={displayedBrowserPreviewSegments}
+                browserPreviewState={browserPreviewState}
+                isBrowserPreviewActive={isBrowserPreviewActive}
+                previewEffectCues={displayedPreviewEffectCues}
+                audioTimeline={beatJoinAnalysis}
+                masterAudioUrl={masterAudioUrl}
+                previewAssetKey={previewState.currentAssetKey}
+                previewAssetUrl={previewAssetUrl}
+                empty={monitorEmpty}
+                focused={monitorFocused}
+                onToggleFocused={() => setIsPreviewExpanded((current) => !current)}
               />
             ) : null}
 
@@ -2586,7 +2644,6 @@ export default function StudioApp() {
             onNewProject={handleNewProject}
             onProjectSelected={handleProjectSelected}
             onProjectSaved={handleProjectSaved}
-            hideGateChrome={Boolean(monitorGate)}
           >
             {slotEvidence && tab !== "review" ? (
               <SlotInspector

@@ -29,6 +29,7 @@ import {
   splitStorySectionWithTemplate,
   toTimedStoryDrafts,
 } from "../storyStructure";
+import { CollapsibleSection } from "../ui";
 import { formatVocalStemTranscriptStatus } from "../vocalStemTranscription";
 import type { BeatJoinAnalysis, SegmentPreview, UploadedVideoSource } from "../types";
 
@@ -239,9 +240,8 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews,
         })}
       />
 
-      <details className="rounded-[2px] border border-[#1a1a1a] bg-[#090909]">
-        <summary className="cursor-pointer px-3 py-3 text-[9px] uppercase tracking-[0.16em] text-[#777] hover:text-[#b8b8b8]">Timing &amp; Song Structure · advanced</summary>
-        <div className="border-t border-[#1a1a1a] p-2">
+      <CollapsibleSection title="Timing & Song Structure · advanced" className="rounded-[2px] border-[#1a1a1a] bg-[#090909]">
+        <div className="p-2">
           <StoryStructureEditor
             detectedSections={analysis?.sections ?? []}
             plannedSections={storyRail}
@@ -255,9 +255,9 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews,
             onResetFromDetection={resetStoryPlanFromDetection}
           />
         </div>
-      </details>
+      </CollapsibleSection>
 
-      <section className="rounded-[2px] border border-[#1a1a1a] bg-[#0b0b0b] p-3">
+      <section className="rounded-[2px] border border-[#1a1a1a] bg-[#0b0b0b] p-2.5">
         <div className="grid gap-3 xl:grid-cols-[1.15fr_0.85fr]">
           <div>
             <div className="mb-2">
@@ -295,9 +295,8 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews,
           </div>
         </div>
 
-        <details className="mt-3 rounded-[2px] border border-[#171717] bg-[#070707]">
-          <summary className="cursor-pointer px-3 py-2 text-[9px] uppercase tracking-[0.14em] text-[#777]">View lyrics and {srtChunkCount} timed lines</summary>
-          <div className="grid gap-2 border-t border-[#171717] p-2 lg:grid-cols-2">
+        <CollapsibleSection title={`View lyrics and ${srtChunkCount} timed lines`} className="mt-2 rounded-[2px] border-[#171717] bg-[#070707]">
+          <div className="grid gap-2 p-2 lg:grid-cols-2">
             <div className="max-h-56 overflow-auto whitespace-pre-wrap rounded-[2px] bg-[#030303] p-2 text-[10px] leading-4 text-[#a7a7a7]">{transcriptSummary?.transcript || "Lyrics appear here after the vocal stem is transcribed in Ingest."}</div>
             <div className="max-h-56 space-y-1 overflow-auto rounded-[2px] bg-[#030303] p-2 font-mono text-[9px] text-[#878787]">
               {musicVideoProject.lyricChunks.length ? musicVideoProject.lyricChunks.map((chunk) => (
@@ -308,7 +307,7 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews,
               )) : <div>No timed lyrics yet.</div>}
             </div>
           </div>
-        </details>
+        </CollapsibleSection>
       </section>
 
       <section className="rounded-[2px] border border-[#1a1a1a] bg-[#0b0b0b] p-3">

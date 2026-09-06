@@ -50,6 +50,8 @@ describe("referenceAssets", () => {
       "https://media.local/chain.png",
     ]);
     expect(plan.instructions.join("\n")).toContain('character "Milo"');
+    expect(plan.instructions.join("\n")).toContain("composition reference from the matched cut only");
+    expect(plan.instructions.join("\n")).toContain("Do not use this low-resolution grab for identity");
     expect(plan.instructions.join("\n")).toContain('environment/location "Blue room"');
     expect(plan.instructions.join("\n")).toContain('crowd/extras sheet "Club crowd A"');
     expect(plan.instructions.join("\n")).toContain("do not copy a named lead's wardrobe onto the crowd");

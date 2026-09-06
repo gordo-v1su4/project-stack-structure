@@ -127,9 +127,10 @@ export function buildGenerationReferenceInputs(params: {
   if (params.anchorUrl) {
     inputs.push({
       role: "anchor",
-      label: params.anchorLabel ?? "source frame / shot anchor",
+      label: params.anchorLabel ?? "composition reference (from cut)",
       url: params.anchorUrl,
-      instruction: "Use Reference 1 as the source frame / shot anchor for composition, continuity, and camera intent.",
+      instruction:
+        "Use Reference 1 as a composition reference from the matched cut only: character placement and blocking, camera angle, screen direction, and where in the room the action happens. Do not use this low-resolution grab for identity, face, skin, wardrobe, texture, sharpness, or location materials — character and environment sheets are the quality authorities. Re-create the shot from sheets; do not upscale or continue the muddy frame.",
     });
   }
 
@@ -186,7 +187,7 @@ export function defaultPromptHint(role: ReferenceAssetLibraryRole) {
   switch (role) {
     case "character-1":
     case "character-2":
-      return "Do not replace this person with a generic subject.";
+      return "Identity and wardrobe lock. Use this exact display name in every caption and prompt when this person is visible.";
     case "environment":
       return "Treat this as the continuity anchor for the scene world.";
     case "crowd":

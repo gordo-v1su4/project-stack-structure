@@ -57,6 +57,8 @@ export type CoverageSummary = {
   duration: number;
   /** True holes (missing primary match) — blocks Join */
   blockingGapCount: number;
+  /** Uncovered duration for missing slots only — drives red blocking metrics */
+  blockingGapDuration: number;
   /** Purple short-source slots — optional review */
   shortReviewCount: number;
   /** @deprecated Use blockingGapCount — kept for gradual UI migration */
@@ -190,6 +192,9 @@ export function summarizeCoverage(slots: CoverageSlot[], cueDuration = 0): Cover
   const strongMatchPct = requiredDuration > 0 ? Math.round((strongMatchDuration / requiredDuration) * 100) : 0;
   const duration = Math.max(cueDuration, slots[slots.length - 1]?.item.end ?? 0, requiredDuration, 1);
   const blockingGapCount = slots.filter((slot) => slot.status === "missing").length;
+  const blockingGapDuration = slots
+    .filter((slot) => slot.status === "missing")
+    .reduce((total, slot) => total + slot.missingDuration, 0);
   const shortReviewCount = slots.filter((slot) => slot.status === "short").length;
   const reviewCount = slots.filter((slot) => slot.status === "weak").length;
   const reviewSectionCount = new Set(slots.filter((slot) => slot.status === "weak").map((slot) => slot.item.sectionId)).size;
@@ -204,6 +209,7 @@ export function summarizeCoverage(slots: CoverageSlot[], cueDuration = 0): Cover
     strongMatchPct,
     duration,
     blockingGapCount,
+    blockingGapDuration,
     shortReviewCount,
     requiredNeedCount: blockingGapCount,
     reviewCount,

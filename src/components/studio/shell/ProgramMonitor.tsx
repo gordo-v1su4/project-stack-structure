@@ -14,8 +14,6 @@ export type MonitorEmptyState = {
   meta: string | null;
   /** The pipeline's next-step line for the current act. */
   next: string | null;
-  /** Footage frames (scene thumbnails) that back the empty state as a contact sheet. */
-  frames: string[];
 };
 
 export type MonitorGate = {
@@ -83,7 +81,7 @@ export function ProgramMonitor({
     <section
       aria-label="Program monitor"
       className={`vt-monitor studio-grain relative w-full shrink-0 overflow-hidden rounded-[10px] bg-black ${
-        focused || gate ? "min-h-0 flex-1" : showBrowserPreview || showFfmpegPreview ? "aspect-video max-h-[42vh]" : "h-[clamp(220px,32vh,360px)]"
+        focused || gate ? "min-h-0 flex-1" : showBrowserPreview || showFfmpegPreview ? "aspect-video max-h-[36vh]" : "h-[clamp(140px,22vh,240px)]"
       }`}
     >
       {showBrowserPreview ? (
@@ -128,26 +126,9 @@ export function ProgramMonitor({
 }
 
 function EmptyState({ empty, gate, children }: { empty: MonitorEmptyState; gate: MonitorGate | null; children?: React.ReactNode }) {
-  const frames = empty.frames.slice(0, 16);
-  const rows = frames.length > 4 ? 2 : 1;
-  const cols = Math.max(1, Math.ceil(frames.length / rows));
   return (
     <div className="absolute inset-0 flex flex-col justify-end bg-[linear-gradient(180deg,oklch(0.12_0.004_60),oklch(0.09_0.004_60))]">
-      {frames.length ? (
-        // Contact sheet of the footage: the room is never empty once media exists.
-        <div
-          aria-hidden
-          style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))` }}
-          className="absolute inset-0 grid gap-px opacity-[0.45] [mask-image:linear-gradient(180deg,oklch(0_0_0/0.85),oklch(0_0_0/0.35)_55%,oklch(0_0_0/0.92))]"
-        >
-          {frames.map((src, index) => (
-            // eslint-disable-next-line @next/next/no-img-element -- object URLs and gateway thumbnails
-            <img key={`${src}-${index}`} src={src} alt="" className="h-full w-full object-cover saturate-[0.7]" />
-          ))}
-        </div>
-      ) : (
-        <div aria-hidden className="absolute inset-0 bg-[radial-gradient(90%_70%_at_50%_80%,oklch(0.28_0.05_45/0.45),transparent_62%)]" />
-      )}
+      <div aria-hidden className="absolute inset-0 bg-[radial-gradient(90%_70%_at_50%_80%,oklch(0.28_0.05_45/0.45),transparent_62%)]" />
       <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-[linear-gradient(180deg,oklch(0_0_0/0.55),transparent)]" />
 
       <div className="relative flex items-start justify-between gap-6 px-6 pt-5">

@@ -453,4 +453,19 @@ describe("projectPersistence", () => {
     });
   });
 
+  test("normalizes legacy beatsplit and beatjoin tabs on hydrate", () => {
+    for (const [legacy, normalized] of [["beatsplit", "split"], ["beatjoin", "join"]] as const) {
+      const draft = createPersistableStudioProjectDraft({
+        analysis: null,
+        videoSources: [],
+        storyState,
+        musicVideoProject: null,
+        workflowUiSettings: { activeTab: legacy as never },
+        savedAt: "2026-06-21T00:00:00.000Z",
+      });
+
+      expect(hydrateStudioProjectDraft({ draft }).workflowUiSettings?.activeTab).toBe(normalized);
+    }
+  });
+
 });

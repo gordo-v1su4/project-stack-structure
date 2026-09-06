@@ -27,6 +27,7 @@ import {
   type ReferenceAsset,
   type ReferenceAssetLibraryRole,
 } from "../src/components/studio/referenceAssets";
+import { analyzeEditPlanCoverage } from "../src/components/studio/editPlanCoverage";
 import { normalizeSplitterManifest } from "../src/components/studio/sceneSplit";
 import { generateConcatPreview } from "../src/components/studio/previewGeneration";
 import { generateMusicVideoExport } from "../src/components/studio/exportGeneration";
@@ -64,6 +65,10 @@ type FixtureLane = {
 };
 
 const EXPECTED_STUDIO_VIDEO_COUNT = 21;
+const studioVideoLimit = Number(process.env.STACK_STRUCTURE_E2E_VIDEO_LIMIT || "0");
+const expectedStudioVideoCount = studioVideoLimit > 0
+  ? Math.min(studioVideoLimit, EXPECTED_STUDIO_VIDEO_COUNT)
+  : EXPECTED_STUDIO_VIDEO_COUNT;
 const TERMINAL_TRIGGER_FAILURES = new Set([
   "FAILED",
   "CRASHED",
@@ -99,12 +104,12 @@ const resumeEssentiaRunId = process.env.STACK_STRUCTURE_E2E_RESUME_ESSENTIA_RUN_
 const resumeDeepgramRunId = process.env.STACK_STRUCTURE_E2E_RESUME_DEEPGRAM_RUN_ID?.trim() || "";
 const resumeAnalysis = resumeMediaRunIds.length > 0 || resumeEssentiaRunId || resumeDeepgramRunId;
 if (resumeAnalysis && (
-  resumeMediaRunIds.length !== EXPECTED_STUDIO_VIDEO_COUNT
+  resumeMediaRunIds.length !== expectedStudioVideoCount
   || !resumeEssentiaRunId
   || !resumeDeepgramRunId
 )) {
   throw new Error(
-    `Analysis resume requires ${EXPECTED_STUDIO_VIDEO_COUNT} media run ids plus Essentia and Deepgram run ids.`,
+    `Analysis resume requires ${expectedStudioVideoCount} media run ids plus Essentia and Deepgram run ids.`,
   );
 }
 // SECURITY: every API route requires an authenticated session, so the cookie is
@@ -611,6 +616,22 @@ if (fixtureMode === "studio") {
   console.info(`[e2e] studio draft saved at ${savedDraft.savedAt}`);
 }
 
+const coverage = analyzeEditPlanCoverage(project, [], persistedGeneratedAssets);
+const missingSlotCount = coverage.slots.filter((slot) => slot.status === "missing").length;
+if (coverage.summary.blockingGapCount !== missingSlotCount || coverage.trueGapCount !== missingSlotCount) {
+  throw new Error(
+    `Coverage invariant failed: blocking=${coverage.summary.blockingGapCount} trueGap=${coverage.trueGapCount} missingSlots=${missingSlotCount}`,
+  );
+}
+const shortCountedAsBlocking = coverage.slots.some((slot) => slot.status === "short")
+  && coverage.summary.blockingGapCount > missingSlotCount;
+if (shortCountedAsBlocking) {
+  throw new Error("Short-source slots inflated blocking gap count.");
+}
+console.info(
+  `[e2e] generate coverage: ${coverage.summary.blockingGapCount} blocking · ${coverage.shortReviewCount} short · ${coverage.weakReviewCount} weak · joinReady=${coverage.summary.blockingGapCount === 0}`,
+);
+
 const report = {
   schema: "stack-structure.full-media-e2e.v2",
   runKey,
@@ -686,6 +707,20 @@ const report = {
     joinedSegmentCount: exportSegments.length,
     joinedDuration,
   },
+  generateCoverage: {
+    blockingGapCount: coverage.summary.blockingGapCount,
+    blockingGapDuration: coverage.summary.blockingGapDuration,
+    shortReviewCount: coverage.shortReviewCount,
+    weakReviewCount: coverage.weakReviewCount,
+    trueGapDuration: coverage.summary.trueGapDuration,
+    joinReady: coverage.summary.blockingGapCount === 0,
+    slotsByStatus: {
+      filled: coverage.slots.filter((slot) => slot.status === "filled").length,
+      weak: coverage.slots.filter((slot) => slot.status === "weak").length,
+      short: coverage.slots.filter((slot) => slot.status === "short").length,
+      missing: coverage.slots.filter((slot) => slot.status === "missing").length,
+    },
+  },
   preview: previewOutput && previewProbe ? {
     localPath: previewOutputPath,
     probe: previewProbe,
@@ -757,13 +792,25 @@ async function resolveFixtureLane(mode: FixtureMode, workDir: string): Promise<F
   const videoPaths = listMediaFixtures(studioVideoDir).video
     .filter((filePath) => path.dirname(filePath) === studioVideoDir)
     .sort();
-  if (videoPaths.length !== EXPECTED_STUDIO_VIDEO_COUNT) {
+  if (studioVideoLimit <= 0 && videoPaths.length !== EXPECTED_STUDIO_VIDEO_COUNT) {
     throw new Error(
       `Expected exactly ${EXPECTED_STUDIO_VIDEO_COUNT} studio source videos under ${studioVideoDir}, found ${videoPaths.length}. Restore the canonical 2026-08-30 fixture bundle before running the E2E.`,
     );
   }
+  if (videoPaths.length < expectedStudioVideoCount) {
+    throw new Error(
+      `Need at least ${expectedStudioVideoCount} studio source videos under ${studioVideoDir}, found ${videoPaths.length}.`,
+    );
+  }
 
-  const videoInputs = await Promise.all(videoPaths.map(async (filePath) => {
+  const selectedVideoPaths = studioVideoLimit > 0
+    ? videoPaths.slice(0, expectedStudioVideoCount)
+    : videoPaths;
+  if (studioVideoLimit > 0) {
+    console.info(`[e2e] using ${selectedVideoPaths.length}/${videoPaths.length} studio videos (STACK_STRUCTURE_E2E_VIDEO_LIMIT=${studioVideoLimit})`);
+  }
+
+  const videoInputs = await Promise.all(selectedVideoPaths.map(async (filePath) => {
     const name = path.basename(filePath);
     const file = await fileFromPath(filePath, "video/mp4", name);
     return { name, path: filePath, mime: "video/mp4", file };

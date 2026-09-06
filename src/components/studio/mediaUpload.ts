@@ -1,4 +1,5 @@
 import { uploadSceneCaptionManifestToRustFs, uploadVideoFileToRustFs } from "./mediaStorage";
+import { isCaptionContextReady, type IngestLaneInput } from "./ingestLanes";
 import {
   captionDetectedScenes,
   deriveSourceCaptionStatus,
@@ -19,11 +20,17 @@ export type VideoStorageUpdate = {
   source: UploadedVideoSource;
 };
 
+export type PrepareVideoSourcesOptions = {
+  /** When false, scene detect completes but smart captions wait for stem + reference sheets. */
+  captionContextReady?: boolean;
+};
+
 export async function prepareVideoSources(
   files: File[],
   onSceneUpdate?: (update: VideoSceneUpdate) => void,
   onStorageUpdate?: (update: VideoStorageUpdate) => void,
   captionSettings: SceneCaptionSettings = { mode: "smart" },
+  options: PrepareVideoSourcesOptions = {},
 ) {
   const videoFiles = files.filter((file) => file.type.startsWith("video/"));
 
@@ -100,6 +107,18 @@ export async function prepareVideoSources(
                     key,
                     source: readySource,
                   });
+
+                  if (!options.captionContextReady) {
+                    onSceneUpdate({
+                      key,
+                      source: {
+                        ...readySource,
+                        captionStatus: "waiting",
+                        captionError: null,
+                      },
+                    });
+                    return;
+                  }
 
                   const captionedSource = await captionAndPersistSourceScenes(readySource, key, captionSettings, onSceneUpdate);
                   onSceneUpdate({ key, source: captionedSource });
@@ -213,6 +232,7 @@ export async function rerunSourceSceneAnalysis(
   source: UploadedVideoSource,
   captionSettings: SceneCaptionSettings,
   onUpdate: (update: VideoSceneUpdate) => void,
+  options: { captionContextReady?: boolean } = {},
 ): Promise<void> {
   const key = buildPreparedSourceKey(source);
 
@@ -270,11 +290,60 @@ export async function rerunSourceSceneAnalysis(
     }
   }
 
+  if (!options.captionContextReady) {
+    onUpdate({
+      key,
+      source: {
+        ...workingSource,
+        captionStatus: "waiting",
+        captionError: null,
+      },
+    });
+    return;
+  }
+
   workingSource = { ...workingSource, captionStatus: "captioning", captionError: null };
   onUpdate({ key, source: workingSource });
 
   const captionedSource = await captionAndPersistSourceScenes(workingSource, key, captionSettings, onUpdate, { force: true });
   onUpdate({ key, source: captionedSource });
+}
+
+export function buildCaptionContextInput(params: {
+  hasLyricTranscript: boolean;
+  referenceAssets: IngestLaneInput["referenceAssets"];
+}): Pick<IngestLaneInput, "hasLyricTranscript" | "referenceAssets"> {
+  return {
+    hasLyricTranscript: params.hasLyricTranscript,
+    referenceAssets: params.referenceAssets,
+  };
+}
+
+export function isStudioCaptionContextReady(params: {
+  hasLyricTranscript: boolean;
+  referenceAssets: IngestLaneInput["referenceAssets"];
+}) {
+  return isCaptionContextReady(buildCaptionContextInput(params));
+}
+
+/**
+ * Caption sources that finished scene detect while stem/refs were still missing.
+ */
+export async function captionDeferredSources(
+  sources: UploadedVideoSource[],
+  captionSettings: SceneCaptionSettings,
+  onUpdate: (update: VideoSceneUpdate) => void,
+): Promise<void> {
+  const pending = sources.filter(
+    (source) => source.captionStatus === "waiting" && (source.scenes?.length ?? 0) > 0 && source.storageBucket && source.storagePath,
+  );
+  for (const source of pending) {
+    const key = buildPreparedSourceKey(source);
+    const workingSource = { ...source, captionStatus: "captioning" as const, captionError: null };
+    onUpdate({ key, source: workingSource });
+    const captionedSource = await captionAndPersistSourceScenes(workingSource, key, captionSettings, onUpdate, { force: true });
+    onUpdate({ key, source: captionedSource });
+  }
 }
 
 async function captionAndPersistSourceScenes(
