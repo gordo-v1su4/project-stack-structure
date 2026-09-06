@@ -20,7 +20,7 @@ This is a prompt-driven skill, not a deterministic script. Explore, present what
 
 Look at the current repo to understand its starting state. Read whatever exists; don't assume:
 
-- `git remote -v` and `.git/config`: is this a GitHub repo? Which one?
+- `git remote -v` and `.git/config`: is this a GitHub repo? Which one? **When summarizing findings, never echo raw remote URLs or config values.** Report only the host and repository path (e.g. `github.com/gordo-v1su4/project-stack-structure`). For any credential or token field, report `SET` or `MISSING` only — never paste values.
 - `AGENTS.md` and `CLAUDE.md` at the repo root: does either exist? Is there already an `## Agent skills` section in either?
 - `CONTEXT.md` and `CONTEXT-MAP.md` at the repo root
 - `docs/adr/` and any `src/*/docs/adr/` directories

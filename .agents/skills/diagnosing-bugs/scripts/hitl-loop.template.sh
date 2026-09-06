@@ -41,4 +41,9 @@ capture ERROR_MSG "Paste the error message (or 'none'):"
 
 printf '\n--- Captured ---\n'
 printf 'ERRORED=%s\n' "$ERRORED"
-printf 'ERROR_MSG=%s\n' "$ERROR_MSG"
+if [[ -n "$ERROR_MSG" && "$ERROR_MSG" != "none" ]]; then
+  printf 'ERROR_MSG_PRESENT=yes\n'
+  printf 'ERROR_MSG_LEN=%s\n' "${#ERROR_MSG}"
+else
+  printf 'ERROR_MSG_PRESENT=no\n'
+fi
