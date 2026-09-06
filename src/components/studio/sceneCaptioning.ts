@@ -108,15 +108,14 @@ export async function captionDetectedScenes(
   if (!scenes.length) return scenes;
 
   resetServerCaptionAvailabilityCache();
-  let video: HTMLVideoElement | null = null;
+  const media: { video: HTMLVideoElement | null } = { video: null };
   const captioned = [...scenes];
+  const getVideo = async () => media.video ??= await createAnalysisVideo(source.videoUrl);
 
   try {
-    video = await createAnalysisVideo(source.videoUrl);
-
     for (let index = 0; index < captioned.length; index += 1) {
       const scene = captioned[index]!;
-      const skipExisting = !options.force && Boolean(scene.caption);
+      const skipExisting = !options.force && sceneCaptionMatchesMode(scene, settings.mode);
       if (skipExisting) {
         onProgress?.({ completed: index + 1, total: captioned.length, sceneId: scene.id }, [...captioned]);
         continue;
@@ -128,7 +127,7 @@ export async function captionDetectedScenes(
       );
 
       try {
-        const result = await captionSceneFrame(source, scene, sampleTime, settings, video);
+        const result = await captionSceneFrame(source, scene, sampleTime, settings, getVideo);
         captioned[index] = {
           ...scene,
           caption: result.text,
@@ -150,9 +149,9 @@ export async function captionDetectedScenes(
 
     return captioned;
   } finally {
-    if (video) {
-      video.src = "";
-      video.remove();
+    if (media.video) {
+      media.video.src = "";
+      media.video.remove();
     }
   }
 }
@@ -166,10 +165,10 @@ async function captionSceneFrame(
   scene: DetectedSceneSegment,
   sampleTime: number,
   settings: SceneCaptionSettings,
-  video: HTMLVideoElement,
+  getVideo: () => Promise<HTMLVideoElement>,
 ) {
   if (settings.mode === "fast") {
-    const bitmap = await loadSceneCaptionBitmap(video, scene, sampleTime);
+    const bitmap = await loadSceneCaptionBitmap(getVideo, scene, sampleTime);
     const result = await captionFrameWithLfm(bitmap);
     return {
       text: result.text,
@@ -184,11 +183,11 @@ async function captionSceneFrame(
     throw new Error("Smart Qwen3-VL scene caption gateway is not configured or reachable.");
   }
 
-  return await captionSceneFrameViaServer(source, scene, sampleTime, settings, video);
+  return await captionSceneFrameViaServer(source, scene, sampleTime, settings, getVideo);
 }
 
 async function loadSceneCaptionBitmap(
-  video: HTMLVideoElement,
+  getVideo: () => Promise<HTMLVideoElement>,
   scene: DetectedSceneSegment,
   sampleTime: number,
 ) {
@@ -204,7 +203,7 @@ async function loadSceneCaptionBitmap(
     }
   }
 
-  return grabBitmap(video, sampleTime);
+  return grabBitmap(await getVideo(), sampleTime);
 }
 
 async function isServerCaptioningAvailable() {
@@ -225,9 +224,9 @@ async function captionSceneFrameViaServer(
   scene: DetectedSceneSegment,
   sampleTime: number,
   settings: SceneCaptionSettings,
-  video: HTMLVideoElement,
+  getVideo: () => Promise<HTMLVideoElement>,
 ) {
-  const bitmap = await loadSceneCaptionBitmap(video, scene, sampleTime);
+  const bitmap = await loadSceneCaptionBitmap(getVideo, scene, sampleTime);
   try {
     const image = await bitmapToJpegBlob(bitmap);
     const form = new FormData();

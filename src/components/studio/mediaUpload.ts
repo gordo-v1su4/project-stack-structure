@@ -305,7 +305,9 @@ export async function rerunSourceSceneAnalysis(
   workingSource = { ...workingSource, captionStatus: "captioning", captionError: null };
   onUpdate({ key, source: workingSource });
 
-  const captionedSource = await captionAndPersistSourceScenes(workingSource, key, captionSettings, onUpdate, { force: true });
+  // A fresh pipeline result already includes captions for this context. Only
+  // force a new pass when the caller is refreshing existing scene captions.
+  const captionedSource = await captionAndPersistSourceScenes(workingSource, key, captionSettings, onUpdate, { force: !needsDetection });
   onUpdate({ key, source: captionedSource });
 }
 
