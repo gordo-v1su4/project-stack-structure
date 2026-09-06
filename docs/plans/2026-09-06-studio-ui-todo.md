@@ -53,6 +53,20 @@ not a request to remove the library or its expand/collapse interaction.
   viewport-centering bug is repaired during technical E2E; player styling is
   explicitly deferred at the user's request.
 
+- [ ] **12 · Scene/caption layout (later):** simplify the busy per-video cut
+  groups in `#ingest-step-captions`. Reduce nested borders, repeated filenames,
+  status labels, model names, and competing frame thumbnails. Make source groups
+  and individual cuts easy to scan; disclose technical details and secondary
+  actions on demand while preserving caption editing, search, frame inspection,
+  and merge controls. Captured from the S1 group in the six-video walkthrough.
+
+- [ ] **13 · Captioning speed options (later):** review ways to reduce captioning
+  time on the home server after the technical walkthrough. Measure queue time
+  and processing time before comparing batching, concurrency, model choices,
+  caching, and optional alternative compute. Explain quality, resource, and cost
+  tradeoffs before selecting changes. The current speed is acceptable for now;
+  keep the current server and captioning setup for this walkthrough.
+
 Validate these changes against DESIGN.md and the actual populated project.
 Preserve musical alignment, readable status, keyboard access, and the ability
 to inspect errors. Do not substitute visual polish for verified pipeline work.

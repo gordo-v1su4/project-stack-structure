@@ -2,6 +2,7 @@ import { logger, task, wait } from "@trigger.dev/sdk";
 
 import { formatSceneCaptionGatewayError, resolveSceneCaptionGatewayAuth } from "@/lib/sceneCaptionGateway";
 import { vm100HeavyQueue } from "./queues";
+import { markWorkCompleted, markWorkRunning } from "./workMetadata";
 
 export type StoryTreatmentPayload = {
   instructions: string;
@@ -33,7 +34,9 @@ export const storyTreatmentTask = task({
     randomize: true,
   },
   run: async (payload: StoryTreatmentPayload, { ctx }) => {
+    markWorkRunning("preparing", "Preparing story model", { progressMode: "indeterminate" });
     const result = await runStoryTreatmentGateway(payload, ctx.run.id);
+    markWorkCompleted("Story treatments ready");
     logger.info("Story treatment completed", {
       triggerRunId: ctx.run.id,
       model: result.model,
@@ -50,6 +53,7 @@ async function runStoryTreatmentGateway(payload: StoryTreatmentPayload, triggerR
 
   await ensureQwenBackend(gatewayUrl, token ? headers : undefined, triggerRunId);
 
+  markWorkRunning("generating", "Generating three story treatments");
   const response = await fetch(`${gatewayUrl}${endpoint}`, {
     method: "POST",
     headers,
@@ -88,6 +92,7 @@ async function ensureQwenBackend(
   let health = await fetchGatewayHealth(gatewayUrl, headers);
   if (readBoolean(health, "qwenBackendHealthy") === true) return;
 
+  markWorkRunning("starting", "Starting story model");
   const startResponse = await fetch(`${gatewayUrl}/admin/qwen/start`, {
     method: "POST",
     headers,
