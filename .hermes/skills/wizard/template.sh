@@ -107,6 +107,11 @@ ask() {
   fi
   read -r input || true
   [[ -z "$input" && -n "$current" ]] && input="$current"
+  if [[ "$input" == *$'\n'* || "$input" == *$'\r'* ]]; then
+    warn "multiline values are not supported; paste a single line"
+    input="${input//$'\r'/}"
+    input="${input%%$'\n'*}"
+  fi
   printf -v "$key" '%s' "$input"
 }
 
@@ -122,16 +127,33 @@ ask_secret() {
   read -rs input || true
   printf '\n'
   [[ -z "$input" && -n "$current" ]] && input="$current"
+  if [[ "$input" == *$'\n'* || "$input" == *$'\r'* ]]; then
+    warn "multiline values are not supported; paste a single line"
+    input="${input//$'\r'/}"
+    input="${input%%$'\n'*}"
+  fi
   printf -v "$key" '%s' "$input"
 }
 
 # write_env KEY VALUE upserts KEY=VALUE into ENV_FILE (creates it; replaces
-# any existing line). Idempotent.
+# any existing line). Idempotent. Rejects multiline values.
 write_env() {
-  local key="$1" value="$2" tmp
+  local key="$1" value="$2" tmp status
+  if [[ "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
+    warn "refusing to write multiline value for $key"
+    return 1
+  fi
   touch "$ENV_FILE"
   tmp=$(mktemp)
-  grep -vE "^${key}=" "$ENV_FILE" > "$tmp" || true
+  set +e
+  grep -vE "^${key}=" "$ENV_FILE" > "$tmp"
+  status=$?
+  set -e
+  if [[ $status -gt 1 ]]; then
+    rm -f "$tmp"
+    warn "could not read $ENV_FILE; left unchanged"
+    return 1
+  fi
   printf '%s=%s\n' "$key" "$value" >> "$tmp"
   mv "$tmp" "$ENV_FILE"
   WRITTEN_ENV+=("$key")

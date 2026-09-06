@@ -23,6 +23,7 @@ function isTypingTarget(target: EventTarget | null): boolean {
   if (target.isContentEditable) return true;
   const tag = target.tagName;
   if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+  if (target.closest("button, a[href], [role='button'], [role='link'], [role='menuitem'], [role='option']")) return true;
   return Boolean(target.closest("dialog[open], [role='dialog']"));
 }
 

@@ -74,6 +74,8 @@ export function CommandPalette({ open, onClose, commands }: CommandPaletteProps)
     }
   }
 
+  const listboxId = "studio-command-listbox";
+
   return (
     <dialog
       ref={dialogRef}
@@ -97,11 +99,16 @@ export function CommandPalette({ open, onClose, commands }: CommandPaletteProps)
           onKeyDown={onKeyDown}
           placeholder="Type a command or act…"
           aria-label="Search commands"
+          role="combobox"
+          aria-expanded={open}
+          aria-controls={listboxId}
+          aria-activedescendant={flat[cursor]?.id}
+          aria-autocomplete="list"
           className="h-12 flex-1 bg-transparent text-[14px] text-fg-0 outline-none placeholder:text-fg-4"
         />
         <kbd className="studio-kbd">esc</kbd>
       </div>
-      <div className="max-h-[52vh] overflow-y-auto p-2" role="listbox" aria-activedescendant={flat[cursor]?.id}>
+      <div id={listboxId} className="max-h-[52vh] overflow-y-auto p-2" role="listbox">
         {flat.length === 0 ? <div className="px-3 py-6 text-center text-[12px] text-fg-3">Nothing matches “{query}”.</div> : null}
         {grouped.map((entry) => (
           <div key={entry.group ?? "results"} className="mb-1">
