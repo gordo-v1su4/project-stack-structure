@@ -67,6 +67,25 @@ not a request to remove the library or its expand/collapse interaction.
   tradeoffs before selecting changes. The current speed is acceptable for now;
   keep the current server and captioning setup for this walkthrough.
 
+- [ ] **14 · Section-focused timeline zoom (later):** the full-song cut strip is
+  too dense and confusing with 113 cuts. Add a clear way to zoom into one song
+  section, move between sections, and return to the full-song overview. Keep
+  cut selection and playback position consistent across zoom levels.
+- [ ] **15 · Collapsible program monitor (later):** restore a compact drawer or
+  footer presentation when the monitor is unused, with an explicit expand/focus
+  action. Its current location is acceptable, but the large empty black region
+  should not occupy the workspace. Preserve playback state when minimizing and
+  restoring; make idle, preparing, ready, and failed states understandable.
+
+- [ ] **16 · Split → Match → Generate → Join flow (later):** review the sequence
+  as one user journey. The current transitions feel awkward and the overall UI
+  is confusing. Clarify each step's purpose, what changes automatically, what
+  needs a user decision, and what happens next. Reduce repeated controls and
+  competing timelines; make optional generation and the approved edit's handoff
+  into Join easy to understand. Consider simplifying or combining surfaces
+  while preserving source inspection, musical alignment, and explicit approval
+  of generated footage before it enters the edit.
+
 Validate these changes against DESIGN.md and the actual populated project.
 Preserve musical alignment, readable status, keyboard access, and the ability
 to inspect errors. Do not substitute visual polish for verified pipeline work.

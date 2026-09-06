@@ -15,10 +15,10 @@ export function runStoryboardChecks() {
   check("Ten resolved cuts become two review boards, not ten required generations", sequences.length === 2 && sequences[0].cuts.length === 9);
   const refs: ReferenceAsset[] = [{ id: "diego", role: "character-1", kind: "character", displayName: "Diego", fileName: "diego.png", previewUrl: "https://fixture.invalid/diego.png", storageUrl: "https://fixture.invalid/diego.png", storageStatus: "uploaded", promptHint: "", createdAt: "2026-08-30" }];
   const refInputs = [{ url: refs[0].storageUrl!, label: "Diego", role: "character-1" }];
-  const job: StoryboardJob = { id: "fixture", projectId: "fixture", sequenceId: "verse:0.000", sectionId: "verse", title: "Fixture", songStart: 0, songEnd: 10, kind: "grid", model: "nano_banana_pro", billing: "subscription-manual", resolution: "2k", references: refInputs, prompt: buildSequenceGridPrompt(sequences[0], refInputs, "Walk to the club") };
-  check("Grid includes canonical identity and 3×3 contract", job.prompt.includes("authoritative high-resolution character") && job.prompt.includes("3 rows by 3 columns"));
-  const freshPrompt = buildFreshFramePrompt(job, "Panel 1", [...refInputs, { url: "https://fixture.invalid/panel.png", label: "Panel", role: "composition" }]);
-  check("Fresh-frame prompt creates a new image, never an upscale", freshPrompt.includes("NEW standalone 2K") && freshPrompt.includes("Do NOT upscale"));
+  const job: StoryboardJob = { id: "fixture", projectId: "fixture", sequenceId: "verse:0.000", sectionId: "verse", title: "Fixture", songStart: 0, songEnd: 10, kind: "grid", model: "nano_banana_pro", billing: "subscription-manual", resolution: "2k", references: refInputs, prompt: buildSequenceGridPrompt(refInputs, "Walk to the club") };
+  check("Grid includes canonical identity and 3×3 contract", job.prompt.includes("exact identity and wardrobe lock") && job.prompt.includes("3x3"));
+  const freshPrompt = buildFreshFramePrompt( [...refInputs, { url: "https://fixture.invalid/panel.png", label: "Panel", role: "composition" }]);
+  check("Fresh-frame prompt creates a new image, never an upscale", freshPrompt.includes("one new cinematic anamorphic photograph") && freshPrompt.includes("Do not upscale"));
   const base = { projectId: "fixture", sectionId: "verse", sectionLabel: "Verse", storyIntent: "Walk to club", songStart: 0, songEnd: 10,
     moment: { id: "moment", sourceClipId: 1, label: "Walk", start: 0, end: 5, duration: 5, firstFrameUrl: "https://fixture.invalid/first.png", lastFrameUrl: "https://fixture.invalid/last.png" }, referenceAssets: refs, referenceSelection: { character1Id: "diego" } };
   const packet = buildSeedanceContinuationPacket(base);

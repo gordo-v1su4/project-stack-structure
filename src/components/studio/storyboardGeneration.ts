@@ -60,23 +60,37 @@ export function canonicalStoryboardReferences(assets: ReferenceAsset[]): Storybo
 
 export function referenceContract(references: StoryboardReference[]) {
   return references.map((reference, i) => {
-    const purpose = reference.role.startsWith("character") ? "authoritative high-resolution character identity and wardrobe ONLY"
-      : reference.role === "environment" ? "authoritative location, architecture and lighting"
-      : reference.role === "crowd" ? "background extras identity and wardrobe ONLY; never replace the leads"
-      : reference.role === "composition" ? "composition, layout and blocking ONLY; never identity, texture quality or facial detail"
-      : "the named reference only";
-    return `Image_${i + 1} (${reference.label}): ${purpose}.`;
+    const image = `Image ${i + 1}`;
+    if (reference.role.startsWith("character")) {
+      return `${image} is the character sheet for ${reference.label}. Use the exact identity and wardrobe lock.`;
+    }
+    if (reference.role === "environment") return `${image} is the master location reference for ${reference.label}.`;
+    if (reference.role === "composition") {
+      return `${image} guides character blocking and placement in the environment only. Do not copy texture, image quality or facial detail.`;
+    }
+    if (reference.role === "crowd") return `${image} is the crowd reference for ${reference.label}.`;
+    if (reference.role === "style" || reference.role === "atmosphere") return `${image} is the style and atmosphere reference.`;
+    return `${image} is the reference for ${reference.label}.`;
   }).join("\n");
 }
 
-export function buildSequenceGridPrompt(sequence: StoryboardSequence, references: StoryboardReference[], intent: string) {
-  return `${referenceContract(references)}\nCreate one fresh 2K 16:9 storyboard contact sheet: exactly 3 rows by 3 columns, nine equal 16:9 panels, no borders, labels or text. This is a low-resolution composition audition, not final production frames.\nSequence: ${sequence.label}, song ${sequence.songStart.toFixed(2)}–${sequence.songEnd.toFixed(2)}. Intent: ${intent}\nExisting resolved edit context (reference only, not instructions to repeat footage):\n${sequence.cuts.map((cut, i) => `${i + 1}. ${cut.label} (${cut.musicStart.toFixed(2)}–${cut.musicEnd.toFixed(2)})`).join("\n")}\nRead left-to-right, top-to-bottom as nine purposeful beats of a coherent sequence: establish, approach, reaction, develop, reveal, consequence, turn, peak, settle. Vary shot sizes where motivated; keep the named location and canonical identities. Plan complete replacement takes with room before and after each action, not a last-frame continuation of the old footage. Cinematic practical lighting, natural skin detail, consistent wardrobe and screen direction.`;
+export function defaultSequenceGridDirection(references: StoryboardReference[]) {
+  const names = references.filter((reference) => reference.role.startsWith("character")).map((reference) => reference.label);
+  const location = references.find((reference) => reference.role === "environment")?.label;
+  return `Show ${names.length ? names.join(" and ") : "the scene"}${location ? ` in ${location}` : ""}.`;
 }
 
-export function buildFreshFramePrompt(grid: StoryboardJob, panelLabel: string, references: StoryboardReference[]) {
-  return `${referenceContract(references)}\nGenerate a NEW standalone 2K 16:9 production photograph for ${grid.title}, ${panelLabel}. The last attached image is a small storyboard composition preview only. Re-create its camera framing, subject placement, pose, staging and layout from scratch, using the attached high-resolution character sheets for all identity and wardrobe detail and the environment sheet for the location. Do NOT upscale, sharpen, retouch, inpaint or enlarge the small preview. Do not copy its low-resolution texture or identity errors. Render one full-frame image, not a grid, montage or contact sheet; no labels or borders. Preserve the planned narrative beat and cinematic lighting.`;
+// Image prompts contain visual direction only. Placement, model settings and
+// reference URLs stay in the job envelope; Seedance has its own prompt builder.
+export function buildSequenceGridPrompt(references: StoryboardReference[], intent: string) {
+  const direction = intent.trim() || defaultSequenceGridDirection(references);
+  return `${referenceContract(references)}\n\nCreate a new 3x3 cinematic anamorphic grid of shots. ${direction}${/[.!?]$/.test(direction) ? "" : "."} Capture the sequence with dynamic camera movement and varied compositions.`;
+}
+
+export function buildFreshFramePrompt(references: StoryboardReference[]) {
+  return `${referenceContract(references)}\n\nCreate one new cinematic anamorphic photograph from the composition reference. Rebuild the image with sharp character detail and natural lighting. Do not upscale the reference.`;
 }
 
 export function serializeStoryboardJob(job: StoryboardJob) {
-  return `${job.title}\nSong: ${job.songStart.toFixed(2)}–${job.songEnd.toFixed(2)}\n${IMAGE_MODELS[job.model].label} (${job.model}) · 2K · 16:9 · ${job.kind === "grid" ? "3×3 storyboard" : "fresh standalone image — NOT upscale"}\nBilling: ${job.billing}. Verify subscription inclusion in the provider UI; do not switch to paid credits.\n${job.references.map((ref, i) => `Image_${i + 1}: ${ref.label} [${ref.role}]\n${ref.url}`).join("\n")}\n\nPROMPT\n${job.prompt}`;
+  return `JOB DETAILS — separate from the image prompt\n${job.title}\nSong: ${job.songStart.toFixed(2)}–${job.songEnd.toFixed(2)}\n${IMAGE_MODELS[job.model].label} (${job.model}) · 2K · 16:9 · ${job.kind === "grid" ? "3×3 storyboard" : "fresh standalone image — NOT upscale"}\nBilling: ${job.billing}. Verify subscription inclusion in the provider UI; do not switch to paid credits.\n${job.references.map((ref, i) => `Image ${i + 1}: ${ref.label} [${ref.role}]\n${ref.url}`).join("\n")}\n\nPROMPT — exact text sent to the image model\n${job.prompt}`;
 }

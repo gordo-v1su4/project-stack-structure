@@ -6,7 +6,7 @@ import type { EditPlanPreviewSegment } from "../musicVideoProject";
 import type { ReferenceAsset } from "../referenceAssets";
 import { waitForTriggerRunOutput } from "@/lib/clientTriggerRuns";
 import { fmt } from "../math";
-import { buildFreshFramePrompt, buildSequenceGridPrompt, buildStoryboardSequences, canonicalStoryboardReferences,
+import { buildFreshFramePrompt, buildSequenceGridPrompt, buildStoryboardSequences, canonicalStoryboardReferences, defaultSequenceGridDirection,
   IMAGE_MODELS, IMAGE_PRICE_GUIDE, identifyStoryboardJob, serializeStoryboardJob, type GenerationBilling, type StoryboardImageModel,
   type StoryboardJob, type StoryboardQuote, type VideoFrameRole } from "../storyboardGeneration";
 
@@ -76,7 +76,7 @@ export function StoryboardPlanner({ projectId, segments, references, assets, onA
     return { id: `${projectId}:grid:${sequence.id}:${model}`, projectId, sequenceId: sequence.id,
       sectionId: sequence.sectionId, title: `${sequence.label} · ${fmt(sequence.songStart)}–${fmt(sequence.songEnd)} storyboard`,
       songStart: sequence.songStart, songEnd: sequence.songEnd, kind: "grid", model, billing, resolution: "2k",
-      references: refs, prompt: buildSequenceGridPrompt(sequence, refs, intents[sequence.id] || "Preserve the section's story; cover its action with complete new takes and editorial handles.") };
+      references: refs, prompt: buildSequenceGridPrompt(refs, intents[sequence.id] ?? defaultSequenceGridDirection(refs)) };
   }
 
   async function review(jobs: StoryboardJob[]) {
@@ -151,7 +151,7 @@ export function StoryboardPlanner({ projectId, segments, references, assets, onA
       url: panel.storage?.mediaUrl || panel.storage?.publicUrl || panel.url, label: panel.label, role: "composition" }];
     return { ...grid, id: `${asset.id}:panel:${index}:${model}`, sourceGridId: asset.id, panelIndex: index,
       title: `${grid.title} · ${panel.label} fresh frame`, kind: "fresh-frame", model, billing,
-      references: refs, prompt: buildFreshFramePrompt(grid, panel.label, refs) };
+      references: refs, prompt: buildFreshFramePrompt(refs) };
   }
 
   const manualJobs = assets.filter((asset) => asset.storyboard?.billing === "subscription-manual" && asset.status === "queued" && !asset.triggerRunId)
@@ -195,7 +195,7 @@ export function StoryboardPlanner({ projectId, segments, references, assets, onA
         <label className="flex gap-2 text-xs"><input type="checkbox" checked={selected.includes(sequence.id)} disabled={busy || !!batch} onChange={(event) => setSelected((current) => event.target.checked ? [...current, sequence.id] : current.filter((id) => id !== sequence.id))} />
           <span>{sequence.label} · {fmt(sequence.songStart)}–{fmt(sequence.songEnd)}</span></label>
         <p className="text-xs text-zinc-500">{sequence.cuts.length} resolved cuts · one 3×3 sequence board · suggested review scope, not a confirmed gap</p>
-        <label className="block text-xs text-zinc-400">Sequence direction<textarea aria-label={`Direction for ${sequence.id}`} className={field} rows={2} disabled={busy || !!batch} value={intents[sequence.id] ?? ""} placeholder="Describe the complete action and purposeful shot changes…" onChange={(event) => setIntents((current) => ({ ...current, [sequence.id]: event.target.value }))} /></label>
+        <label className="block text-xs text-zinc-400">Sequence direction<textarea aria-label={`Direction for ${sequence.id}`} className={field} rows={2} disabled={busy || !!batch} value={intents[sequence.id] ?? defaultSequenceGridDirection(canonical)} placeholder="Describe the action and mood in one sentence…" onChange={(event) => setIntents((current) => ({ ...current, [sequence.id]: event.target.value }))} /></label>
         <div className="flex gap-2"><button className={button} disabled={blocked || busy || !!batch} onClick={() => void review([gridJob(sequence.id)])}>Review this grid</button>
           {onInspect ? <button className={button} onClick={() => onInspect(segments.indexOf(sequence.cuts[0]), segments.indexOf(sequence.cuts.at(-1)!))}>Watch sequence</button> : null}</div>
       </article>)}

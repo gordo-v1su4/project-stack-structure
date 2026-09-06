@@ -23,7 +23,7 @@ export function StoryboardBrowserFixture({ serverChecks }: { serverChecks: { lab
   const checks = [...serverChecks, ...runStoryboardChecks()];
   const sequence = buildStoryboardSequences(segments)[0];
   const refs = canonicalStoryboardReferences(references);
-  const job: StoryboardJob = { id: "fixture-grid", projectId: project.id, sequenceId: sequence.id, sectionId: sequence.sectionId, title: "Verse 1 fixture board", songStart: 0, songEnd: 20, kind: "grid", model: "nano_banana_pro", billing: "subscription-manual", resolution: "2k", references: refs, prompt: buildSequenceGridPrompt(sequence, refs, "Walk into club") };
+  const job: StoryboardJob = { id: "fixture-grid", projectId: project.id, sequenceId: sequence.id, sectionId: sequence.sectionId, title: "Verse 1 fixture board", songStart: 0, songEnd: 20, kind: "grid", model: "nano_banana_pro", billing: "subscription-manual", resolution: "2k", references: refs, prompt: buildSequenceGridPrompt(refs, "Walk into club") };
   const upsert = (asset: GeneratedStudioAsset) => setAssets((current) => [asset, ...current.filter((candidate) => candidate.id !== asset.id)]);
   return <main className="min-h-screen space-y-4 bg-black p-6 text-zinc-200">
     <h1 className="text-xl">Development-only browser verification · synthetic media · no paid generation</h1>

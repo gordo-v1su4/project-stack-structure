@@ -102,25 +102,47 @@ image number.
 
 ## Prompt pattern
 
-Keep the role map explicit and the shot instruction short.
+Keep image prompts short and conversational. The user refined this template
+on 2026-09-06; it applies to Nano Banana image generation, not Seedance video
+prompts.
+
+- Write `Image 1`, never `Image_1`. Declare each attachment's role once, in the
+  actual attachment order. Use ordinary sentences without parenthetical role
+  labels or technical qualifiers such as "authoritative high-resolution".
+- Character sheets lock the named character's exact identity and wardrobe.
+  After that declaration, use canonical names rather than pronouns or generic
+  lead labels. Name the location when referring to it.
+- A source frame controls character blocking and placement in the environment
+  only. Explicitly exclude its texture, image quality and facial detail.
+- Ask for a `3x3 cinematic anamorphic grid of shots`. Avoid "storyboard" and
+  "contact sheet" in model-facing image text. Describe the overall action and
+  mood in a short paragraph; do not prescribe nine individual panels.
+- Keep resolution, aspect ratio, song placement, section labels, panel indices,
+  attachment URLs and billing in the job metadata/API settings. Do not repeat
+  them inside the prompt. Omit timecodes, reading order and video edit handles.
+- Avoid extra negative instructions by default. Add a narrow correction, such
+  as "no borders", only if an actual result needs it.
+
+Example for the current three canonical references plus a source frame:
 
 ```text
-Image 1 is LA_CASA_ROJA_SIDE_ROOM, the location and geometry authority only.
-Image 5 is DIEGO, the exact identity and wardrobe lock. Images 2 and 3 control
-grade, lens response and atmosphere only; do not copy their people, props or
-architecture. Medium dynamic shot of DIEGO moving through the packed crowd,
-gently pushing past dancers while searching for someone. Warm red-amber haze,
-sharp face and wardrobe, localized subject motion blur. No visible camera,
-operator, crew, rig, monitor, boom or production equipment.
+Image 1 is the character sheet for Diego. Use the exact identity and wardrobe lock.
+Image 2 is the character sheet for Valentina. Use the exact identity and wardrobe lock.
+Image 3 is the master location reference for Underground Latin Club.
+Image 4 guides character blocking and placement in the environment only. Do not copy texture, image quality or facial detail.
+
+Create a new 3x3 cinematic anamorphic grid of shots. Diego and Valentina dance together in the crowded Underground Latin Club. Dark red and amber light, a little darker and hazy. Capture the sequence with dynamic camera movement and varied compositions.
 ```
 
-Do not over-explain wardrobe that is already visible in the identity authority.
-Use `same wardrobe as the DIEGO reference` or `exact wardrobe lock`.
+For a fresh standalone frame, retain the same role declarations and ask for one
+new cinematic photograph from the composition reference, with sharp character
+detail and natural lighting. Do not upscale the reference. Keep its parent grid
+and panel identity in metadata rather than in the prompt.
 
-Describe the rendered viewpoint and optical result, not a literal camera in the
-scene. Prefer `35mm Cooke-style anamorphic image, shoulder-height lateral
-viewpoint` over `shot on an ARRI Alexa camera`. The latter produced a visible
-camera and operator in one otherwise useful frame.
+Lens and camera language is optional, never boilerplate. Prefer describing the
+optical result, such as "cinematic anamorphic", for the default template. The
+previous ARRI wording produced a visible camera/operator in one result; inspect
+outputs if a more specific camera description is deliberately requested.
 
 ## Generation and editing loop
 
