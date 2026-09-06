@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getCompletedDirectUpload } from "@/lib/directStorageUpload";
 
 import { normalizeChunkedContentType, validateOrderedChunkManifest } from "@/lib/chunkedMediaUpload";
 import { getMediaGatewayConfig, normalizeMediaPath, uploadFileToMediaGateway } from "@/lib/mediaGateway";
@@ -25,7 +26,20 @@ export async function POST(request: NextRequest) {
         contentType?: unknown;
         size?: unknown;
         chunks?: unknown;
+        uploadToken?: unknown;
       };
+      if (payload.uploadToken) {
+        const uploaded = await getCompletedDirectUpload(payload.uploadToken, user.id);
+        if ((!uploaded.mime.startsWith("audio/") && uploaded.mime !== "application/octet-stream") || uploaded.size > MAX_AUDIO_BYTES) {
+          return NextResponse.json({ ok: false, error: "A supported vocal audio file is required." }, { status: 400 });
+        }
+        const handle = await triggerDeepgramTranscription({
+          bucket: uploaded.bucket, objectKey: uploaded.objectKey,
+          sourceLabel: typeof payload.sourceLabel === "string" ? payload.sourceLabel.slice(0, 255) : filename,
+          contentType: uploaded.mime,
+        });
+        return NextResponse.json({ ok: true, queued: true, orchestration: "trigger.dev", runId: handle.id }, { status: 202 });
+      }
       const sourceLabel = typeof payload.sourceLabel === "string" ? payload.sourceLabel.trim().slice(0, 255) : "";
       const contentType = normalizeChunkedContentType(payload.contentType, "audio/wav");
       const size = typeof payload.size === "number" && Number.isSafeInteger(payload.size) && payload.size > 0

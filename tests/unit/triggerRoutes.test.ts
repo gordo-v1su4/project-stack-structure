@@ -95,6 +95,7 @@ const { POST: postHiggsfield } = await import("@/app/api/generate/higgsfield/rou
 const { POST: postDeepgram } = await import("@/app/api/deepgram/transcribe/route");
 const { POST: postEssentia } = await import("@/app/api/essentia/full/route");
 const { POST: postStorageUpload } = await import("@/app/api/storage/upload/route");
+const { POST: postStorageDirect } = await import("@/app/api/storage/direct/route");
 const { POST: postMediaJob } = await import("@/app/api/media/video/jobs/route");
 const { POST: postPreviewGateway } = await import("@/app/api/preview/gateway/route");
 const { POST: postSeedanceAudioReference } = await import("@/app/api/generate/seedance/audio-reference/route");
@@ -653,5 +654,25 @@ describe("Next route Trigger.dev dispatch boundary", () => {
     expect(payload.runId).toBe("run-splitter-123");
     expect(uploadFileToMediaGatewayMock).toHaveBeenCalledTimes(1);
     expect(triggerMocks.triggerImageSplitter).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("direct storage authorization", () => {
+  test("rejects anonymous upload initialization and completion", async () => {
+    authenticatedUserId = null;
+    try {
+      for (const action of ["start", "complete", "abort"]) {
+        const response = await postStorageDirect(new Request("http://localhost/api/storage/direct", {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }),
+        }));
+        expect(response.status).toBe(401);
+      }
+    } finally { authenticatedUserId = "github-test-user"; }
+  });
+  test("rejects malformed metadata and traversal without issuing storage capabilities", async () => {
+    for (const body of ["{", JSON.stringify({ action: "start", fileName: "sheet.png", size: 5, contentType: "image/png", folder: "media-uploads/../other" })]) {
+      const response = await postStorageDirect(new Request("http://localhost/api/storage/direct", { method: "POST", body }));
+      expect(response.status).toBe(400);
+    }
   });
 });

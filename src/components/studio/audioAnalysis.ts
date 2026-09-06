@@ -1,11 +1,7 @@
 import type { BeatJoinAnalysis, BeatJoinSection } from "./types";
 import { waitForTriggerRunOutput } from "@/lib/clientTriggerRuns";
-import {
-  buildAudioChunkRanges,
-  ESSENTIA_AUDIO_CHUNK_SIZE_BYTES,
-  ESSENTIA_MAX_AUDIO_SIZE_BYTES,
-  type EssentiaAudioChunkReference,
-} from "@/lib/essentiaUpload";
+import { ESSENTIA_MAX_AUDIO_SIZE_BYTES } from "@/lib/essentiaUpload";
+import { uploadFileDirectlyToRustFs } from "./directUploadClient";
 
 export { buildAudioChunkRanges } from "@/lib/essentiaUpload";
 
@@ -20,7 +16,6 @@ interface EssentiaRequestTarget {
 export async function fetchEssentiaAnalysis(file: File) {
   const startedAt = performance.now();
   const requestTarget = resolveEssentiaRequestTarget();
-  const chunked = file.size > ESSENTIA_AUDIO_CHUNK_SIZE_BYTES;
   if (file.size > ESSENTIA_MAX_AUDIO_SIZE_BYTES) {
     throw new Error(`Audio files larger than ${Math.round(ESSENTIA_MAX_AUDIO_SIZE_BYTES / 1024 / 1024)} MiB are not supported.`);
   }
@@ -29,23 +24,16 @@ export async function fetchEssentiaAnalysis(file: File) {
     fileName: file.name,
     fileSize: file.size,
     mimeType: file.type || "unknown",
-    transport: chunked ? "chunked-proxy" : requestTarget.transport,
+    transport: "direct-storage",
     url: requestTarget.url,
   });
 
   try {
-    const body = chunked
-      ? JSON.stringify({
-          sourceLabel: file.name,
-          mimeType: file.type || "application/octet-stream",
-          size: file.size,
-          chunks: await uploadAudioChunks(file),
-        })
-      : createAudioFormData(file);
+    const uploaded = await uploadFileDirectlyToRustFs(file, "media-uploads/source-audio");
     const response = await fetch(requestTarget.url, {
       method: "POST",
-      headers: chunked ? { "content-type": "application/json" } : requestTarget.headers,
-      body,
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sourceLabel: file.name, uploadToken: uploaded.uploadToken }),
     });
 
     const initialPayload = await readResponsePayload(response);
@@ -362,38 +350,6 @@ function mergeOrchestrationResult(output: unknown, initialPayload: unknown, runI
       runId,
     },
   };
-}
-
-function createAudioFormData(file: File) {
-  const formData = new FormData();
-  formData.append("file", file);
-  return formData;
-}
-
-async function uploadAudioChunks(file: File): Promise<EssentiaAudioChunkReference[]> {
-  const uploadId = crypto.randomUUID();
-  const folder = `media-uploads/source-audio/chunks/${uploadId}`;
-  const chunks: EssentiaAudioChunkReference[] = [];
-
-  for (const range of buildAudioChunkRanges(file.size)) {
-    const partName = `${String(range.index).padStart(5, "0")}.part`;
-    const part = new File([file.slice(range.start, range.end)], partName, {
-      type: "application/octet-stream",
-    });
-    const formData = new FormData();
-    formData.set("file", part);
-    formData.set("folder", folder);
-    const response = await fetch("/api/storage/upload", { method: "POST", body: formData });
-    const payload = await readResponsePayload(response);
-    const bucket = readStringField(payload, "bucket");
-    const objectKey = readStringField(payload, "objectKey") ?? readStringField(payload, "storagePath");
-    if (!response.ok || !bucket || !objectKey) {
-      throw new Error(extractErrorText(payload) ?? `Audio chunk ${range.index + 1} failed to upload.`);
-    }
-    chunks.push({ bucket, objectKey });
-  }
-
-  return chunks;
 }
 
 function readStringField(value: unknown, key: string) {

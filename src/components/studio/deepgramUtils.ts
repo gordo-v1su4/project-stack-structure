@@ -1,6 +1,6 @@
 import { exportSRT, type SrtChunk } from "./srtUtils";
 import { waitForTriggerRunOutput } from "@/lib/clientTriggerRuns";
-import { uploadFileInChunks } from "./chunkedUploadClient";
+import { uploadFileDirectlyToRustFs } from "./directUploadClient";
 import { transcodeWavToMp3ForTranscription } from "./audioTranscode";
 
 export const DEEPGRAM_DEV_TRANSCRIBE_ENDPOINT = "/deepgram-transcribe";
@@ -346,29 +346,15 @@ export async function transcribeAudioWithDeepgram(
   }
   console.info(`[Deepgram] POST ${endpoint}`, { file: uploadFile.name, size: uploadFile.size, type: uploadFile.type || "application/octet-stream", transcodedFrom: uploadFile === file ? undefined : file.name });
 
-  const chunked = await uploadFileInChunks(uploadFile, "media-uploads/source-audio/deepgram-chunks");
-  const response = chunked
-    ? await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Audio-Filename": encodeURIComponent(uploadFile.name || "song-audio"),
-        },
-        body: JSON.stringify({
-          sourceLabel: file.name || "vocal-stem",
-          contentType: chunked.contentType,
-          size: chunked.size,
-          chunks: chunked.chunks,
-        }),
-      })
-    : await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": uploadFile.type || "application/octet-stream",
-          "X-Audio-Filename": encodeURIComponent(uploadFile.name || "song-audio"),
-        },
-        body: uploadFile,
-      });
+  const uploaded = await uploadFileDirectlyToRustFs(uploadFile, "media-uploads/source-audio/deepgram");
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Audio-Filename": encodeURIComponent(uploadFile.name || "song-audio"),
+    },
+    body: JSON.stringify({ sourceLabel: file.name || "vocal-stem", uploadToken: uploaded.uploadToken }),
+  });
 
   const text = await response.text();
   let payload: JsonRecord;

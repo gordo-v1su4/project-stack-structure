@@ -46,8 +46,8 @@ describe("StoryTab section map", () => {
     expect(markup).toContain("Story intent");
     expect(markup).toContain("Matched source");
     expect(markup).toContain("No matched source");
-    expect(markup).toContain('role="slider"');
-    expect(markup).toContain("Drag an orange divider");
+    expect(markup).toContain("Timing &amp; Song Structure · advanced");
+    expect(markup).not.toContain('role="slider"');
     expect(markup).not.toContain("Image prompt");
     expect(markup).not.toContain("Stitch slot");
     expect(markup).not.toContain("Live edit density");

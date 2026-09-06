@@ -1,4 +1,5 @@
 import { auth } from "@/auth";
+import { getCompletedDirectUpload } from "@/lib/directStorageUpload";
 import { ESSENTIA_MAX_AUDIO_SIZE_BYTES, validateEssentiaAudioChunks } from "@/lib/essentiaUpload";
 import { getMediaGatewayConfig, uploadFileToMediaGateway } from "@/lib/mediaGateway";
 import { triggerEssentiaAnalysis } from "@/lib/triggerOrchestration";
@@ -17,6 +18,22 @@ export async function POST(request: Request) {
     if (request.headers.get("content-type")?.includes("application/json")) {
       const payload = await readJsonObject(request);
       if (!payload) return Response.json({ error: "A valid JSON request body is required." }, { status: 400 });
+
+      if (payload.uploadToken) {
+        const uploaded = await getCompletedDirectUpload(payload.uploadToken, session.user.id);
+        if (!isAudioMimeType(uploaded.mime) || uploaded.size > ESSENTIA_MAX_AUDIO_SIZE_BYTES) {
+          return Response.json({ error: "A supported audio file is required." }, { status: 400 });
+        }
+        const handle = await triggerEssentiaAnalysis({
+          bucket: uploaded.bucket, objectKey: uploaded.objectKey,
+          sourceLabel: readRequiredString(payload.sourceLabel, 255) || "song-audio", mode,
+        });
+        return queuedResponse(handle.id, { storage: {
+          storageProvider: "rustfs", storageBucket: uploaded.bucket,
+          storagePath: uploaded.objectKey, storageUrl: uploaded.publicUrl,
+          storageStatus: "uploaded", storageError: null,
+        } });
+      }
 
       const sourceLabel = readRequiredString(payload.sourceLabel, 255);
       const mimeType = readRequiredString(payload.mimeType, 127);

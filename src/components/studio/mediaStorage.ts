@@ -1,4 +1,4 @@
-import { uploadFileInChunks } from "./chunkedUploadClient";
+import { uploadFileDirectlyToRustFs } from "./directUploadClient";
 import type { UploadedVideoSource } from "./types";
 
 export type UploadedVideoStorage = Pick<
@@ -21,31 +21,7 @@ type StorageUploadResponse = {
 };
 
 export async function uploadVideoFileToRustFs(file: File): Promise<UploadedVideoStorage> {
-  const chunked = await uploadFileInChunks(file, "media-uploads/video-source");
-  if (chunked) {
-    return {
-      storageProvider: "rustfs",
-      storageBucket: chunked.chunks[0]?.bucket ?? "",
-      storagePath: chunked.chunks[0]?.objectKey ?? "",
-      storageUrl: "",
-      storageStatus: "uploaded",
-      storageError: null,
-      uploadChunks: { size: chunked.size, chunks: chunked.chunks },
-    };
-  }
-
-  const formData = new FormData();
-  formData.append("file", file, file.name);
-
-  const response = await fetch("/api/storage/upload", {
-    method: "POST",
-    body: formData,
-  });
-  const payload = await readJson(response);
-
-  if (!response.ok) {
-    throw new Error(payload.error || `${response.status} ${response.statusText}`);
-  }
+  const payload = await uploadFileDirectlyToRustFs(file, "media-uploads/video-source");
 
   const storageUrl = payload.publicUrl || payload.mediaUrl;
   const storagePath = payload.storagePath || payload.objectKey;

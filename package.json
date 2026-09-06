@@ -30,6 +30,8 @@
     "vercel:env:sync": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sync-vercel-production-env.ps1"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1127.0",
+    "@aws-sdk/s3-request-presigner": "^3.1127.0",
     "@breezystack/lamejs": "^1.2.7",
     "@higgsfield/cli": "^1.1.23",
     "@huggingface/transformers": "^4.2.0",
@@ -43,7 +45,6 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
-    "@aws-sdk/client-s3": "^3.1127.0",
     "@tailwindcss/postcss": "^4",
     "@trigger.dev/build": "4.5.16",
     "@types/node": "^20",

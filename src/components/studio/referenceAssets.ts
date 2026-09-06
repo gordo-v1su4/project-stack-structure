@@ -1,3 +1,5 @@
+import { uploadFileDirectlyToRustFs } from "./directUploadClient";
+
 export type ReferenceAssetRole = "character-1" | "character-2" | "environment" | "custom";
 export type ReferenceAssetLibraryRole = ReferenceAssetRole | "crowd";
 export type ReferenceAssetKind = "character" | "environment" | "crowd" | "prop" | "vehicle" | "wardrobe" | "custom";
@@ -86,23 +88,11 @@ export function createLocalReferenceAsset(params: {
 }
 
 export async function uploadReferenceAssetToRustFs(file: File, role: ReferenceAssetLibraryRole): Promise<Pick<ReferenceAsset, "storageProvider" | "storageBucket" | "storagePath" | "storageUrl" | "storageStatus" | "storageError">> {
-  const formData = new FormData();
-  formData.append("file", file, file.name);
-  formData.append("folder", buildReferenceAssetFolder(role));
-
-  const response = await fetch("/api/storage/upload", {
-    method: "POST",
-    body: formData,
-  });
-  const payload = await readUploadJson(response);
-
-  if (!response.ok) {
-    throw new Error(payload.error || `${response.status} ${response.statusText}`);
-  }
+  const payload = await uploadFileDirectlyToRustFs(file, `media-uploads/${buildReferenceAssetFolder(role)}`);
 
   const storageUrl = payload.publicUrl || payload.mediaUrl;
   const storagePath = payload.storagePath || payload.objectKey;
-  if (!storageUrl || !storagePath) {
+  if (!payload.bucket || !storageUrl || !storagePath) {
     throw new Error("RustFS reference upload returned an incomplete storage payload.");
   }
 
@@ -245,23 +235,4 @@ function stripExtension(value: string) {
 function stripRuntimeUrl(value: string | undefined) {
   if (!value) return "";
   return value.startsWith("data:") || value.startsWith("blob:") ? "" : value;
-}
-
-type UploadPayload = {
-  bucket?: string;
-  publicUrl?: string;
-  mediaUrl?: string;
-  storagePath?: string;
-  objectKey?: string;
-  error?: string;
-};
-
-async function readUploadJson(response: Response): Promise<UploadPayload> {
-  const text = await response.text();
-  if (!text.trim()) return {};
-  try {
-    return JSON.parse(text) as UploadPayload;
-  } catch {
-    return { error: text.slice(0, 300) };
-  }
 }

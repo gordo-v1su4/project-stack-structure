@@ -27,7 +27,7 @@ describe("prepareVideoSources", () => {
       await flushAsyncUpload();
 
       expect(prepared).toHaveLength(1);
-      expect(fetchUrls).toEqual(["/api/storage/upload"]);
+      expect(fetchUrls).toEqual(["/api/storage/direct"]);
       expect(fetchUrls).not.toContain("/api/splitter/scene");
       expect(updates).toHaveLength(1);
     } finally {
