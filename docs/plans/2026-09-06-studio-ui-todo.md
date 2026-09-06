@@ -44,6 +44,15 @@ not a request to remove the library or its expand/collapse interaction.
   This follows the observed 25 MiB Qwen limit; final standard sizes still need
   to be chosen against the actual sheets and provider requirements.
 
+- [ ] **11 · Source preview player (later):** replace generic browser controls,
+  the harsh white seek bar, and native volume icons with restrained controls
+  matching the studio. Remove repetitive timecode displays. Keep one clear
+  readout in seconds plus frame position and FPS; use the actual source frame
+  rate rather than the current hardcoded 24 fps. Preserve seeking, volume,
+  fullscreen, keyboard access, and visible playback errors. The popup's
+  viewport-centering bug is repaired during technical E2E; player styling is
+  explicitly deferred at the user's request.
+
 Validate these changes against DESIGN.md and the actual populated project.
 Preserve musical alignment, readable status, keyboard access, and the ability
 to inspect errors. Do not substitute visual polish for verified pipeline work.

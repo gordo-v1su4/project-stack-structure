@@ -35,6 +35,7 @@ type IngestTabProps = {
   onAppendVideos: (files: File[]) => void | Promise<void>;
   onRemoveVideo: (sourceId: number) => void;
   onRerunSceneAnalysis: (scope: "failed" | "all") => void;
+  onRerunVideoCaptions: (sourceId: number) => void;
   onMergeScene: (sourceId: number, sceneId: number) => void;
   referenceAssets: ReferenceAsset[];
   onReferenceAssetUpload: (role: ReferenceAssetLibraryRole, files: File[]) => void | Promise<void>;
@@ -84,6 +85,7 @@ export function IngestTab({
   onAppendVideos,
   onRemoveVideo,
   onRerunSceneAnalysis,
+  onRerunVideoCaptions,
   onMergeScene,
   referenceAssets,
   onReferenceAssetUpload,
@@ -247,6 +249,8 @@ export function IngestTab({
             onAppendVideos={onAppendVideos}
             onReplaceVideos={onVideoUpload}
             onRemoveVideo={onRemoveVideo}
+            onRerunCaptions={onRerunVideoCaptions}
+            captionsDisabled={isRerunningSceneAnalysis || !captionContextReady}
           />
         ) : (
           <UploadControl

@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { fmt } from "./math";
 import { UploadControl } from "./UploadControl";
+import { Button } from "./ui";
 import type { UploadedVideoSource } from "./types";
 
 type SourceVideoLibraryProps = {
@@ -11,6 +13,8 @@ type SourceVideoLibraryProps = {
   onAppendVideos: (files: File[]) => void | Promise<void>;
   onReplaceVideos: (files: File[]) => void | Promise<void>;
   onRemoveVideo: (sourceId: number) => void;
+  onRerunCaptions?: (sourceId: number) => void;
+  captionsDisabled?: boolean;
   activeSourceIds?: number[];
 };
 
@@ -20,6 +24,8 @@ export function SourceVideoLibrary({
   onAppendVideos,
   onReplaceVideos,
   onRemoveVideo,
+  onRerunCaptions,
+  captionsDisabled = false,
   activeSourceIds = [],
 }: SourceVideoLibraryProps) {
   const [previewSourceId, setPreviewSourceId] = useState<number | null>(null);
@@ -129,6 +135,17 @@ export function SourceVideoLibrary({
               </div>
               {source.sceneError ? <div className="mt-1 truncate text-[8px] text-[#7b5b48]" title={source.sceneError}>{source.sceneError}</div> : null}
               {source.captionError ? <div className="mt-1 truncate text-[8px] text-[#7b5b48]" title={source.captionError}>{source.captionError}</div> : null}
+              {onRerunCaptions ? (
+                <Button
+                  size="sm"
+                  className="mt-2 w-full"
+                  aria-label={`Rerun captions for S${source.id + 1} ${source.name}`}
+                  onClick={() => onRerunCaptions(source.id)}
+                  disabled={captionsDisabled || isPreparingVideos || source.sceneStatus !== "ready" || !sceneCount || source.captionStatus === "captioning"}
+                >
+                  {source.captionStatus === "captioning" ? "Captioning…" : "Rerun captions"}
+                </Button>
+              ) : null}
             </div>
           </div>
           );
@@ -173,7 +190,11 @@ function SourceVideoPreviewDialog({ source, onClose }: { source: UploadedVideoSo
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [onClose]);
 
-  return (
+  if (typeof document === "undefined") return null;
+
+  // The animated Ingest container establishes a containing block for fixed
+  // children. Portal to the body so scroll position cannot offset the modal.
+  return createPortal(
     <div
       className="fixed inset-0 z-[80] flex items-center justify-center bg-black/85 p-4"
       role="dialog"
@@ -220,7 +241,8 @@ function SourceVideoPreviewDialog({ source, onClose }: { source: UploadedVideoSo
           <span>{readout.frame}</span>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

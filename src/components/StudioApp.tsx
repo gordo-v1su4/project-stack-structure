@@ -828,10 +828,11 @@ export default function StudioApp() {
     );
   }
 
-  async function handleRerunSceneAnalysis(scope: "failed" | "all") {
+  async function handleRerunSceneAnalysis(scope: "failed" | "all", sourceId?: number) {
     if (isRerunningSceneAnalysis || isPreparingVideos) return;
 
     const targets = videoSources.filter((source) => {
+      if (sourceId !== undefined && (source.id !== sourceId || source.sceneStatus !== "ready" || !source.scenes?.length)) return false;
       if (!source.storageBucket || !source.storagePath) return false;
       if (source.sceneStatus === "detecting") return false;
       if (scope === "all") return true;
@@ -842,7 +843,9 @@ export default function StudioApp() {
     setIsRerunningSceneAnalysis(true);
     setVideoError(null);
     setVideoStatus(
-      `${scope === "all" ? "Re-running scene analysis + captions" : "Re-running failed scene detection"} on ${targets.length} clip${targets.length === 1 ? "" : "s"}...`,
+      sourceId !== undefined
+        ? `Rerunning captions for ${targets[0].name}...`
+        : `${scope === "all" ? "Re-running scene analysis + captions" : "Re-running failed scene detection"} on ${targets.length} clip${targets.length === 1 ? "" : "s"}...`,
     );
 
     const applySceneUpdate = ({ key, source }: VideoSceneUpdate) => {
@@ -2470,6 +2473,7 @@ export default function StudioApp() {
                 onAppendVideos={handleAppendVideos}
                 onRemoveVideo={handleRemoveVideo}
                 onRerunSceneAnalysis={(scope) => void handleRerunSceneAnalysis(scope)}
+                onRerunVideoCaptions={(sourceId) => void handleRerunSceneAnalysis("all", sourceId)}
                 onMergeScene={handleMergeSceneIntoPrevious}
                 referenceAssets={referenceAssets}
                 onReferenceAssetUpload={(role, files) => void handleReferenceAssetUpload(role, files)}
