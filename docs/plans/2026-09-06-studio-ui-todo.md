@@ -4,6 +4,10 @@ Captured from the user's nine production-browser comments on 2026-09-06.
 Finish the six-video walkthrough and technical repairs before implementing
 these changes. Keep this list open as further stages are reviewed.
 
+**Preserve the expandable library upload section.** The user explicitly likes
+it. Removing the crowd references from this test is a content-selection change,
+not a request to remove the library or its expand/collapse interaction.
+
 - [ ] **1 · Beat spine:** restore the waveform gradient; inspect the previous
   implementation and match the intended visual treatment.
 - [ ] **2 · Ingest feedback:** remove the cluttered checklist from the main
@@ -27,6 +31,18 @@ these changes. Keep this list open as further stages are reviewed.
 - [ ] **9 · Right drawer:** clarify its role throughout import and subsequent
   stages. Show live Trigger.dev job status and useful errors; let the drawer
   collapse toward the right edge and reopen predictably.
+  The user requested immediate restoration of the existing live feed during
+  the technical walkthrough; that wiring repair proceeds now. Drawer redesign
+  and the remaining visual changes stay deferred.
+- [ ] **10 · Reference image preparation (later):** automatically resize and
+  standardize reference-sheet dimensions and delivery formats. Preserve the
+  uploaded originals; create derivatives appropriate for display and each
+  analysis/generation provider. Preserve aspect ratio without cropping sheet
+  panels, and keep names, faces, identity details, and environment labels
+  readable. Define pixel and byte limits from provider contracts, validate the
+  prepared output before dispatch, and show a concise preparation status.
+  This follows the observed 25 MiB Qwen limit; final standard sizes still need
+  to be chosen against the actual sheets and provider requirements.
 
 Validate these changes against DESIGN.md and the actual populated project.
 Preserve musical alignment, readable status, keyboard access, and the ability

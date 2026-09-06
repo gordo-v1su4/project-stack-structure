@@ -17,6 +17,10 @@ and browser transport with tests. Build and run the required checks, deploy,
 then upload the supplied master, vocal stem, reference sheets, and exactly six
 selected videos through visible Studio controls. Verify analysis, captions,
 story/matching, prepared playback, persistence, and export using those assets.
+The current test uses only three reference sheets, supplied on September 6:
+Diego, Valentina, and Underground Latin Club. They replace the three canonical
+lead/environment PNGs; the previous versions are archived locally. Crowd sheets
+are omitted from the current project, and the expandable library UI is retained.
 Preserve the saved pre-test workspace and all source files. Improve observed
 UI friction only after the technical walkthrough, per the user's later request;
 the nine specific items are saved in [the UI todo](2026-09-06-studio-ui-todo.md).

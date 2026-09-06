@@ -130,29 +130,35 @@ export function WorkActivity({ layout = "popover" }: { layout?: "popover" | "inl
     </>
   );
 
+  // The subscription must mount in both layouts, including before the first
+  // run arrives. Hiding an empty inline panel must never prevent connection.
+  const subscription = credentials ? (
+    <WorkActivitySubscription
+      key={credentials.version}
+      credentials={credentials}
+      subscriptionId={`stack-structure-work-${credentials.version}`}
+      onSnapshot={onSnapshot}
+    />
+  ) : null;
+
   if (layout === "inline") {
-    if (!summary.total && !summary.active && !summary.failed && !connectionError && !requiresSignIn) return null;
     return (
-      <section aria-label="Work activity" className="border-b border-line px-5 py-3">
-        <div className="mb-2 flex items-baseline justify-between gap-2">
-          <div className="text-[10px] uppercase tracking-[0.14em] text-fg-3">Production runs</div>
-          <div className="font-mono text-[10px] text-fg-4">{summaryLabel}</div>
-        </div>
-        {panelBody}
-      </section>
+      <>
+        {subscription}
+        <section aria-label="Work activity" className="shrink-0 border-b border-line px-5 py-3">
+          <div className="mb-2 flex items-baseline justify-between gap-2">
+            <div className="text-[10px] uppercase tracking-[0.14em] text-fg-3">Production runs</div>
+            <div className="font-mono text-[10px] text-fg-4">{summaryLabel}</div>
+          </div>
+          {panelBody}
+        </section>
+      </>
     );
   }
 
   return (
     <div ref={rootRef} className="relative">
-      {credentials ? (
-        <WorkActivitySubscription
-          key={credentials.version}
-          credentials={credentials}
-          subscriptionId={`stack-structure-work-${credentials.version}`}
-          onSnapshot={onSnapshot}
-        />
-      ) : null}
+      {subscription}
       {/* Quiet by default: an icon with a count. It only speaks when work is running or failed. */}
       <button
         type="button"

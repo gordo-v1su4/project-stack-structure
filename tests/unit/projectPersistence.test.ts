@@ -11,6 +11,7 @@ import type { MusicVideoProject } from "@/components/studio/musicVideoProject";
 import type { ReferenceAsset } from "@/components/studio/referenceAssets";
 import type { UploadedVideoSource } from "@/components/studio/types";
 import type { StoryTreatment } from "@/components/studio/storyTreatments";
+import { needsSceneDetectionRetry } from "@/components/studio/mediaUpload";
 
 const source: UploadedVideoSource = {
   id: 0,
@@ -213,6 +214,24 @@ describe("projectPersistence", () => {
     expect(hydrated.storyState.storyGenerated).toBe(true);
     expect(hydrated.storyState.confirmedTreatmentSnapshot?.title).toBe("The One Across the Maze");
     expect(hydrated.captionSettings?.mode).toBe("smart");
+  });
+
+  test("makes interrupted scene analysis retryable after reopening without losing completed sources", () => {
+    const draft = createPersistableStudioProjectDraft({
+      analysis: null,
+      videoSources: [
+        { ...source, sceneStatus: "detecting", scenes: [] },
+        { ...source, id: 1, sceneStatus: "ready" },
+      ],
+      storyState,
+      musicVideoProject: null,
+    });
+    const hydrated = hydrateStudioProjectDraft({ draft });
+
+    expect(hydrated.videoSources[0].sceneStatus).toBe("idle");
+    expect(needsSceneDetectionRetry(hydrated.videoSources[0])).toBe(true);
+    expect(hydrated.videoSources[0].storagePath).toBe(source.storagePath);
+    expect(hydrated.videoSources[1].sceneStatus).toBe("ready");
   });
 
   test("migrates version-1 story maps as unconfirmed while preserving their timing", () => {

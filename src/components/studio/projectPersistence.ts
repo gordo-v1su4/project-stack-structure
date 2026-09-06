@@ -196,6 +196,9 @@ export function hydrateStudioProjectDraft(params: {
     videoSources: params.draft.videoSources
       .map((source) => ({
         ...source,
+        // The browser poller does not survive a refresh. Let the user resume
+        // analysis through the idempotent dispatch instead of remaining stuck.
+        sceneStatus: source.sceneStatus === "detecting" ? "idle" as const : source.sceneStatus,
         videoUrl: videoUrlsByMediaKey[source.mediaKey]
           ?? resolvePersistedPlaybackUrl(source.storageUrl, source.storageBucket, source.storagePath),
       }))
