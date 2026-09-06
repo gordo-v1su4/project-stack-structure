@@ -721,7 +721,7 @@ function CutCaptionCard({ sourceName, scene, fallbackThumbnail, onMergeLeft }: {
         ) : null}
         <div className="truncate font-mono text-[8px] text-fg-3" title={sourceName}>{sourceName}</div>
         <div className="flex items-center gap-1.5 text-[8px] uppercase tracking-[0.12em] text-fg-3">
-          <StatusDot tone={tone} pulse={tone === "processing"} />
+          <StatusDot tone={tone} />
           <span title={scene.captionError ?? undefined}>
             {failed ? (hasCaption ? "Recaption failed · kept previous" : "Caption failed") : hasCaption ? "Caption ready" : "Caption pending"}
           </span>
