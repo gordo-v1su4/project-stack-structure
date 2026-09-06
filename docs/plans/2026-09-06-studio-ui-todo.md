@@ -89,3 +89,12 @@ not a request to remove the library or its expand/collapse interaction.
 Validate these changes against DESIGN.md and the actual populated project.
 Preserve musical alignment, readable status, keyboard access, and the ability
 to inspect errors. Do not substitute visual polish for verified pipeline work.
+
+
+- [ ] **17 · Image prompt consistency and provider comparison (later):** revisit
+  reference-packet design and concise prose versus structured JSON prompting.
+  Compare the user-supplied Nano Banana/ChatGPT examples for identity, red haze,
+  contrast and blotchiness. Preserve the current application prompt template
+  during the technical walkthrough. The exact successful five-reference prompt,
+  supplied outputs, provenance limits and import-layout issue are recorded in
+  [the image prompt review](2026-09-06-image-prompt-review.md).
