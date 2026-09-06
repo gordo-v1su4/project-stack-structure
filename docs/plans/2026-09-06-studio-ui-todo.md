@@ -71,11 +71,14 @@ not a request to remove the library or its expand/collapse interaction.
   too dense and confusing with 113 cuts. Add a clear way to zoom into one song
   section, move between sections, and return to the full-song overview. Keep
   cut selection and playback position consistent across zoom levels.
-- [ ] **15 · Collapsible program monitor (later):** restore a compact drawer or
+- [ ] **15 · Collapsible program monitor (promoted to immediate fix):** restore a compact drawer or
   footer presentation when the monitor is unused, with an explicit expand/focus
   action. Its current location is acceptable, but the large empty black region
   should not occupy the workspace. Preserve playback state when minimizing and
   restoring; make idle, preparing, ready, and failed states understandable.
+  Implemented compact-by-default monitor with Show preview, Collapse preview,
+  and existing Focus/Dock controls. Player stays mounted while collapsed.
+  Production interaction verification pending.
 
 - [ ] **16 · Split → Match → Generate → Join flow (later):** review the sequence
   as one user journey. The current transitions feel awkward and the overall UI

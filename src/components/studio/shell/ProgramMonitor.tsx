@@ -1,5 +1,6 @@
 "use client";
 
+import { useId, useState } from "react";
 import { PreviewPlayer } from "../PreviewPlayerComponent";
 import type { BrowserPreviewPlayer, PreviewPlayerState, PreviewSegment } from "../previewPlayer";
 import type { ShaderEffectCue } from "../shaderEffectPlan";
@@ -46,9 +47,8 @@ type ProgramMonitorProps = {
 };
 
 /**
- * The program monitor is the hero on every act. It plays the prepared cut
- * when one exists, the rendered section asset otherwise, and carries a
- * cinematic empty state when nothing is prepared yet — never a dashed box.
+ * A compact preview drawer that opens on demand. Keep the media mounted
+ * while collapsed so minimizing never resets transport or playback position.
  */
 export function ProgramMonitor({
   previewPlayer,
@@ -66,6 +66,9 @@ export function ProgramMonitor({
   gate = null,
   children,
 }: ProgramMonitorProps) {
+  const [expanded, setExpanded] = useState(false);
+  const contentId = useId();
+  const collapsed = !expanded && !focused;
   const showBrowserPreview = browserPreviewSegments.length > 0;
   const showFfmpegPreview = !showBrowserPreview && !isBrowserPreviewActive && Boolean(previewAssetUrl);
   const assetFileName = getPreviewAssetFileName(previewAssetKey);
@@ -80,47 +83,59 @@ export function ProgramMonitor({
   return (
     <section
       aria-label="Program monitor"
-      className={`vt-monitor studio-grain relative w-full shrink-0 overflow-hidden rounded-[10px] bg-black ${
-        focused || gate ? "min-h-0 flex-1" : showBrowserPreview || showFfmpegPreview ? "aspect-video max-h-[36vh]" : "h-[clamp(140px,22vh,240px)]"
+      className={`vt-monitor studio-grain relative w-full shrink-0 overflow-hidden rounded-md bg-ink-0 ${
+        collapsed ? "h-10 border border-line" : focused || gate ? "min-h-0 flex-1" : showBrowserPreview || showFfmpegPreview ? "aspect-video max-h-[36vh]" : "h-[clamp(140px,22vh,240px)]"
       }`}
     >
-      {showBrowserPreview ? (
-        <PreviewPlayer
-          variant="monitor"
-          player={previewPlayer}
-          segments={browserPreviewSegments}
-          state={browserPreviewState}
-          effectCues={previewEffectCues}
-          audioTimeline={audioTimeline}
-          isExpanded={focused}
-          masterAudioUrl={masterAudioUrl}
-        />
-      ) : showFfmpegPreview && previewAssetUrl ? (
-        <video key={previewAssetUrl} controls preload="metadata" src={previewAssetUrl} className="absolute inset-0 h-full w-full object-contain" />
-      ) : (
-        <EmptyState empty={empty} gate={gate}>{children}</EmptyState>
-      )}
+      <div id={contentId} className={`absolute inset-0 ${collapsed ? "hidden" : ""}`}>
+        {showBrowserPreview ? (
+          <PreviewPlayer
+            variant="monitor"
+            player={previewPlayer}
+            segments={browserPreviewSegments}
+            state={browserPreviewState}
+            effectCues={previewEffectCues}
+            audioTimeline={audioTimeline}
+            isExpanded={focused}
+            masterAudioUrl={masterAudioUrl}
+          />
+        ) : showFfmpegPreview && previewAssetUrl ? (
+          <video key={previewAssetUrl} controls preload="metadata" src={previewAssetUrl} className="absolute inset-0 h-full w-full object-contain" />
+        ) : (
+          <EmptyState empty={empty} gate={gate}>{children}</EmptyState>
+        )}
+      </div>
 
-      {/* HUD: glass over video only. */}
-      {hud ? (
-        <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-2">
-          <span className="studio-hud rounded-md px-2 py-1 font-mono text-[10.5px] text-fg-1">
-            {showBrowserPreview ? "Instant preview" : "Rendered"} · {hud}
-          </span>
-          {current ? (
-            <span className="studio-hud max-w-[40vw] truncate rounded-md px-2 py-1 font-mono text-[10.5px] text-fg-2">{current.label}</span>
-          ) : null}
-        </div>
-      ) : null}
-      {showBrowserPreview ? (
+      <div className={`absolute inset-x-0 top-0 flex h-10 items-center gap-2 px-3 ${collapsed ? "bg-ink-2" : ""}`}>
+        <span className="min-w-0 flex-1 truncate rounded-md px-2 py-1 font-mono text-[10.5px] text-fg-2">
+          Preview{hud ? ` · ${hud}` : ""}
+          {browserPreviewState.status === "error" ? " · Playback error" : ""}
+        </span>
+        {!collapsed && current ? (
+          <span className="studio-hud max-w-[40%] truncate rounded-md px-2 py-1 font-mono text-[10.5px] text-fg-2">{current.label}</span>
+        ) : null}
+        {!collapsed && showBrowserPreview ? (
+          <button
+            type="button"
+            onClick={onToggleFocused}
+            className="studio-hud shrink-0 rounded-md px-2 py-1 text-[11px] text-fg-1 hover:text-fg-0 focus-visible:outline-accent"
+          >
+            {focused ? "Dock" : "Focus"}
+          </button>
+        ) : null}
         <button
           type="button"
-          onClick={onToggleFocused}
-          className="studio-hud absolute right-3 top-3 rounded-md px-2 py-1 text-[11px] text-fg-1 hover:text-fg-0"
+          aria-expanded={!collapsed}
+          aria-controls={contentId}
+          onClick={() => {
+            setExpanded(collapsed);
+            if (focused) onToggleFocused();
+          }}
+          className="studio-hud shrink-0 rounded-md px-2 py-1 text-[11px] text-fg-1 hover:text-fg-0 focus-visible:outline-accent"
         >
-          {focused ? "Dock" : "Focus"}
+          {collapsed ? "Show preview" : "Collapse preview"}
         </button>
-      ) : null}
+      </div>
     </section>
   );
 }
