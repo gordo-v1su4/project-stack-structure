@@ -1,4 +1,5 @@
 import { reviewedEvidence } from "../helpers/storyEvidence";
+import { assessStoryMatch } from "@/components/studio/storyMatchAssessment";
 import { describe, expect, test } from "bun:test";
 
 import type { MusicVideoProject, VideoMoment } from "@/components/studio/musicVideoProject";
@@ -45,6 +46,42 @@ const generated = {
     })),
   })),
 };
+
+test("parses model scalar constraints without dropping facts, exclusions, or action order", () => {
+  const treatment = structuredClone(generated.treatments[0]);
+  Object.assign(treatment.anchors[0].requirements[0], { description: "Diego walks alone through the intact club", constraints: { actions: "walking", physicalStates: "intact", excludedActions: ["dancing"], actionSequence: ["walking", "entering"] } });
+  const requirement = parseGeneratedTreatment(treatment).anchors[0].requirements![0];
+  expect(requirement.constraints).toEqual({ actions: ["walking"], physicalStates: ["intact"], excludedActions: ["dancing"], actionSequence: ["walking", "entering"] });
+  const assessment = assessStoryMatch({ requirementId: requirement.id, requirementText: requirement.description, constraints: requirement.constraints, moment: { id: "wrong-pair", caption: "Diego and Valentina dancing together in a fractured club", mediaEvidence: reviewedEvidence({ focalSubjectCount: 2, actions: ["dancing"], physicalState: ["fractured"], location: "club" }) } });
+  expect(assessment.eligibility).toBe("ineligible");
+  expect(assessment.contradicted).toContain("Focal subjects: requires 1, observes 2");
+  expect(assessment.contradicted).toContain("Forbidden action is visible: dancing");
+  expect(assessment.unknown).toContain("Action order not established: walking then entering");
+});
+
+test("rejects malformed model constraint fields rather than silently removing requirements", () => {
+  for (const constraints of [{ actions: { action: "walking" } }, { subjects: ["Diego", 1] }, { physicalStates: "" }, { focalSubjectCount: "1" }, { actionSequence: "walking then entering" }]) {
+    const treatment = structuredClone(generated.treatments[0]);
+    Object.assign(treatment.anchors[0].requirements[0], { constraints });
+    expect(() => parseGeneratedTreatment(treatment)).toThrow("Shot constraints");
+  }
+  expect(storyValidationFeedback(new Error("Shot constraints actions invalid: private-provider-detail"))).toContain("excludedActions");
+  expect(storyValidationFeedback(new Error("Shot constraints actions invalid: private-provider-detail"))).not.toContain("private-provider-detail");
+});
+
+test("parsed empty constraint arrays cannot waive the solo arrival described by the model", () => {
+  const treatment = structuredClone(generated.treatments[0]);
+  Object.assign(treatment.anchors[0].requirements[0], { description: "Diego walks alone then enters an intact club without dancing", constraints: { subjects: [], actions: [], excludedActions: [], actionSequence: [], physicalStates: [] } });
+  const requirement = parseGeneratedTreatment(treatment).anchors[0].requirements![0];
+  const assessment = assessStoryMatch({ requirementId: requirement.id, requirementText: requirement.description, constraints: requirement.constraints, moment: { id: "pair", mediaEvidence: reviewedEvidence({ focalSubjectCount: 2, actions: ["dancing"], physicalState: ["fractured"], location: "club" }) } });
+  expect(assessment.eligibility).toBe("ineligible");
+  expect(assessment.unknown).toContain("Subject: Diego");
+  expect(assessment.contradicted).toContain("Action: requires walking, observes dancing");
+  expect(assessment.contradicted).toContain("Focal subjects: requires 1, observes 2");
+  expect(assessment.contradicted).toContain("Forbidden action is visible: dancing");
+  expect(assessment.contradicted).toContain("Physical state contradicts intact");
+  expect(assessment.unknown).toContain("Action order not established: walking then entering");
+});
 
 const moments: VideoMoment[] = [
   {

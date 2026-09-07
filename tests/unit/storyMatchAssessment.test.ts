@@ -9,6 +9,28 @@ const pair = { id: "pair", sourceClipId: 0, label: "club", start: 0, end: 5, dur
 const assess = (text: string, moment = pair) => assessStoryMatch({ requirementId: "opening", requirementText: text, moment });
 
 describe("story evidence eligibility", () => {
+  test("generic subjects and shot-title adjectives do not invent character identities", () => {
+    for (const text of ["Two dancers move together through a crowded room", "Crowded dance room", "Wide dancing shot", "A couple walks together", "The woman dances alone"]) {
+      expect(deriveShotRequirementConstraints(text).subjects).toBe(undefined);
+    }
+    expect(deriveShotRequirementConstraints("Diego and Valentina dance together")).toMatchObject({ subjects: ["Diego", "Valentina"], focalSubjectCount: 2, actions: ["dancing"] });
+    expect(deriveShotRequirementConstraints("Diego walks alone")).toMatchObject({ subjects: ["Diego"], focalSubjectCount: 1, actions: ["walking"] });
+    expect(deriveShotRequirementConstraints("Two dancers dance together")).toMatchObject({ focalSubjectCount: 2, actions: ["dancing"] });
+  });
+  test("undefined and malformed explicit fields cannot erase solo walking requirements from prose", () => {
+    const requirementText = "Diego walking alone in an intact club";
+    const mediaEvidence = createMediaEvidence({ sourceId: "source", sceneId: "pair", sourceStart: 0, sourceEnd: 5, rawCaption: pair.caption,
+      input: { kind: "ordered-frames", sampleTimes: [0, 4], urls: [] }, observation: { subjects: [{ name: "Diego", role: "focal", confidence: "supported" }, { name: "Valentina", role: "focal", confidence: "supported" }], focalSubjectCount: 2, actions: ["dancing"], physicalState: ["fractured"], location: "club" } });
+    const missing = assessStoryMatch({ requirementId: "opening", requirementText, constraints: { subjects: undefined, actions: undefined, focalSubjectCount: undefined, physicalStates: undefined }, moment: { ...pair, mediaEvidence } });
+    expect(missing.eligibility).toBe("ineligible");
+    expect(missing.contradicted).toContain("Focal subjects: requires 1, observes 2");
+    expect(missing.contradicted).toContain("Action: requires walking, observes dancing");
+    expect(missing.contradicted).toContain("Physical state contradicts intact");
+    const malformed = assessStoryMatch({ requirementId: "opening", requirementText, constraints: { actions: { unexpected: true } } as never, moment: { ...pair, mediaEvidence } });
+    expect(malformed.eligibility).toBe("ineligible");
+    expect(malformed.unknown).toContain("Invalid shot constraint requires review: actions");
+    expect(malformed.contradicted).toContain("Action: requires walking, observes dancing");
+  });
   test("matching character and location names cannot rescue paired dancing for solo walking", () => {
     const assessment = assess("Diego walking alone in the Underground Latin Club");
     expect(assessment.eligibility).toBe("ineligible");

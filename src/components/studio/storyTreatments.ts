@@ -215,6 +215,7 @@ export function storyValidationFeedback(error: unknown): string | undefined {
   if (/Treatment \d+ logline must be at most 320 characters/i.test(message)) return "Keep each complete logline within 320 characters while expressing its incident, protagonist, goal, opposition, and stakes. Do not cut off the sentence or invent facts.";
   if (/loglines must be meaningfully distinct/i.test(message)) return "The previous response duplicated treatment loglines. Return three substantively different options within the user's constraints; do not copy an option and change only its title.";
   if (/narrative purpose and explicit shot requirements/i.test(message)) return "The previous response omitted narrative roles or shot requirements. Every anchor must include role and a nonempty requirements array with id, momentId, description, and constraints.";
+  if (/Shot constraints/i.test(message)) return "Use string arrays for shot constraints subjects, actions, excludedActions, actionSequence and physicalStates. Preserve forbidden actions and their required order. Use an integer for focalSubjectCount and text for setting and intent; omit unknown constraints.";
   if (/three short sentences/i.test(message)) return "The previous synopsis had the wrong sentence count. Each synopsis must have exactly three sentences: situation, complication and response, then escalation or dilemma.";
   if (/five logline elements|Logline (incident|protagonist|goal|opposition|stakes)/i.test(message)) return "Include all five nonempty loglineElements: incident, protagonist, goal, opposition, stakes. Use only facts from the chosen story.";
   if (/exactly three treatments|faithful, bold, and wildcard/i.test(message)) return "Return exactly three complete treatment objects, one each of kind faithful, bold, and wildcard.";
@@ -438,7 +439,7 @@ function parseGeneratedAnchors(rawAnchors: unknown[], treatmentIndex: number, co
         songWindow: parseSongWindow(anchor.songWindow),
       });
     } catch (error) {
-      if (context.strict) throw error;
+      if (context.strict || (error instanceof Error && /Shot constraints/.test(error.message))) throw error;
       // Ignore malformed trailing output while retaining up to fifteen valid moments.
     }
   }
@@ -649,17 +650,37 @@ function parseShotRequirements(value: unknown, momentId: string): StoryShotRequi
   return value.slice(0, 12).map((item, index) => {
     const requirement = asRecord(item, "Shot requirement must be an object.");
     const constraints = asRecord(requirement.constraints ?? {}, "Shot constraints must be an object.");
-    const list = (key: string) => Array.isArray(constraints[key]) ? (constraints[key] as unknown[]).map(value => limitedString(value, 180, "")).filter(Boolean).slice(0, 12) : undefined;
+    const list = (key: string) => {
+      const value = constraints[key];
+      if (value == null) return undefined;
+      if (key === "actionSequence" && !Array.isArray(value)) throw new Error("Shot constraints actionSequence must be an ordered array of action strings.");
+      const items = typeof value === "string" ? [value] : value;
+      if (!Array.isArray(items) || items.length > 12 || items.some(item => typeof item !== "string" || !item.trim() || item.trim().length > 180)) {
+        throw new Error(`Shot constraints ${key} must contain at most 12 nonempty strings of at most 180 characters.`);
+      }
+      return items.map(item => (item as string).trim());
+    };
+    const parsedConstraints: StoryShotRequirement["constraints"] = {};
+    for (const key of ["subjects", "actions", "excludedActions", "actionSequence", "physicalStates"] as const) {
+      const values = list(key);
+      if (values !== undefined) parsedConstraints[key] = values;
+    }
+    if (constraints.focalSubjectCount != null) {
+      if (typeof constraints.focalSubjectCount !== "number" || !Number.isInteger(constraints.focalSubjectCount) || constraints.focalSubjectCount < 0 || constraints.focalSubjectCount > 100) throw new Error("Shot constraints focalSubjectCount must be an integer from 0 to 100.");
+      parsedConstraints.focalSubjectCount = constraints.focalSubjectCount;
+    }
+    for (const key of ["setting", "intent"] as const) {
+      const value = constraints[key];
+      if (value == null) continue;
+      if (typeof value !== "string" || !value.trim() || value.trim().length > 240) throw new Error(`Shot constraints ${key} must be nonempty text of at most 240 characters.`);
+      parsedConstraints[key] = value.trim();
+    }
     return {
       id: limitedString(requirement.id, 120, `${momentId}-shot-${index + 1}`), momentId,
       description: requiredString(requirement.description, 500, "Shot visual"),
       optional: requirement.optional === true,
       durationSeconds: Number.isFinite(requirement.durationSeconds) ? clamp(Number(requirement.durationSeconds), 0.1, 3600) : undefined,
-      constraints: {
-        subjects: list("subjects"), actions: list("actions"), physicalStates: list("physicalStates"),
-        focalSubjectCount: Number.isFinite(constraints.focalSubjectCount) ? Math.round(clamp(Number(constraints.focalSubjectCount), 0, 100)) : undefined,
-        setting: optionalString(constraints.setting, 240), intent: optionalString(constraints.intent, 240),
-      },
+      constraints: parsedConstraints,
     };
   });
 }

@@ -66,6 +66,11 @@ const STATES: Record<string, RegExp> = {
   intact: /\b(intact|undamaged|before (?:the )?(?:collapse|earthquake|disaster))\b/i,
 };
 const SETTING_WORDS = /\b(jungle|forest|cave|club|street|beach|ocean|kitchen|desert|stage)\b/gi;
+const NON_CHARACTER_SUBJECTS = new Set([
+  "the", "a", "an", "they", "he", "she", "other", "camera", "one", "two", "three", "both", "each", "some", "several", "many",
+  "man", "woman", "boy", "girl", "person", "people", "dancer", "dancers", "performer", "performers", "singer", "singers", "pair", "couple", "crowd",
+  "crowded", "wide", "medium", "close", "tight", "extreme", "establishing", "interior", "exterior", "overhead", "aerial", "low", "high", "static", "slow", "dynamic", "cinematic", "solo",
+]);
 const words = (text: string) => text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
 const hasName = (text: string, name: string) => {
   const source = ` ${words(text).join(" ")} `;
@@ -81,7 +86,7 @@ export function deriveShotRequirementConstraints(text: string): ShotRequirementC
     : /\b(pair|couple|together|each other)\b/i.test(text) ? 2 : undefined;
   const intent = /\b(search(?:es|ing)? for|look(?:s|ing)? for|trying to find|reunit(?:e|es|ing)|first (?:meet|meeting))\b/i.exec(text)?.[0];
   const subjects = [...text.matchAll(/\b([A-Z][a-z]+)(?: and ([A-Z][a-z]+))?\s+(?:(?:is|are|alone|solo|quietly|slowly|quickly)\s+)*(?:walk|danc|run|enter|arriv|leav|exit|escap|jump|leap|embrac|hug|shoot|search|look|scan|stand|sit|meet|face)/g)]
-    .flatMap((match) => [match[1], match[2]]).filter((name): name is string => Boolean(name) && !["The", "A", "An", "They", "He", "She", "Other", "Camera"].includes(name!));
+    .flatMap((match) => [match[1], match[2]]).filter((name): name is string => Boolean(name) && !NON_CHARACTER_SUBJECTS.has(name!.toLowerCase()));
   const setting = /\b(jungle|forest|cave|beach|ocean|kitchen|desert)\b/i.exec(text)?.[0];
   return {
     ...(subjects.length ? { subjects: [...new Set(subjects)] } : {}),
@@ -106,13 +111,33 @@ export function assessStoryMatch(input: {
   moment: MatchEvidenceInput;
 }): MatchAssessment {
   const { moment } = input;
-  const constraints = { ...deriveShotRequirementConstraints(input.requirementText), ...input.constraints };
+  const constraints = deriveShotRequirementConstraints(input.requirementText);
+  const malformedConstraints: string[] = [];
+  // Restored drafts may contain undefined or malformed fields. Neither may erase prose requirements.
+  for (const key of ["subjects", "actions", "excludedActions", "actionSequence", "physicalStates"] as const) {
+    const value = input.constraints?.[key];
+    if (value == null) continue;
+    if (Array.isArray(value) && value.length === 0) continue;
+    if (Array.isArray(value) && value.every(item => typeof item === "string" && item.trim())) constraints[key] = value;
+    else malformedConstraints.push(`Invalid shot constraint requires review: ${key}`);
+  }
+  for (const key of ["setting", "intent"] as const) {
+    const value = input.constraints?.[key];
+    if (value == null) continue;
+    if (typeof value === "string" && value.trim()) constraints[key] = value;
+    else malformedConstraints.push(`Invalid shot constraint requires review: ${key}`);
+  }
+  const explicitCount = input.constraints?.focalSubjectCount;
+  if (explicitCount != null) {
+    if (Number.isInteger(explicitCount) && explicitCount >= 0) constraints.focalSubjectCount = explicitCount;
+    else malformedConstraints.push("Invalid shot constraint requires review: focalSubjectCount");
+  }
   const evidence = moment.mediaEvidence;
   const text = evidence
     ? [...evidence.actions, ...evidence.transitions, evidence.interaction, evidence.location, ...evidence.physicalState, ...evidence.subjects.filter((subject) => subject.confidence === "supported").map((subject) => subject.name)].filter(Boolean).join(" ")
     : [moment.caption, moment.action, moment.shotType, moment.setting, ...(moment.subjects ?? [])].filter(Boolean).join(" ");
   const satisfied: string[] = [];
-  const unknown: string[] = [];
+  const unknown: string[] = [...malformedConstraints];
   const contradicted: string[] = [];
   const requiresSubjectOrAction = Boolean(constraints.subjects?.length || constraints.actions?.length || constraints.excludedActions?.length || constraints.actionSequence?.length || constraints.focalSubjectCount !== undefined);
   if (requiresSubjectOrAction && (!evidence || evidence.provenance.origin === "legacy")) {
