@@ -1,3 +1,5 @@
+import { assessStoryMatch, type MatchAssessment, type ShotRequirementConstraints } from "./storyMatchAssessment";
+import type { MediaEvidence } from "./mediaEvidence";
 import { scoreMotionContinuity } from "./motionRanking";
 import type { MotionDescriptor } from "./types";
 
@@ -9,6 +11,7 @@ export interface SemanticSectionInput {
   end: number;
   energy?: number;
   lyricTexts?: string[];
+  requirements?: ShotRequirementConstraints;
 }
 
 export interface SemanticVideoMomentInput {
@@ -19,6 +22,7 @@ export interface SemanticVideoMomentInput {
   end: number;
   duration: number;
   caption?: string;
+  mediaEvidence?: MediaEvidence;
   subjects?: string[];
   action?: string;
   setting?: string;
@@ -41,6 +45,7 @@ export interface SemanticMomentScore {
   colorContinuityScore: number;
   repetitionPenalty: number;
   reasons: string[];
+  assessment?: MatchAssessment;
 }
 
 export interface SemanticEditAssignment extends SemanticMomentScore {
@@ -125,8 +130,8 @@ export function buildSemanticEditPlan(params: {
  * section with the most to lose (largest score margin over its next available
  * candidate); losers move on to their next-best moment. When a section runs
  * out of un-reserved candidates it falls back to its overall best moment, so
- * projects with fewer moments than sections still get full coverage (reuse is
- * handled downstream by the repetition penalty).
+ * projects can reserve eligible candidates for later review. Reservations do not
+ * grant permission to repeat footage or establish sufficient duration coverage.
  */
 export function reserveSectionMoments(params: {
   sections: SemanticSectionInput[];
@@ -202,6 +207,8 @@ export function rankMomentsForSection(params: {
   moments: SemanticVideoMomentInput[];
   previous?: SemanticVideoMomentInput | null;
   useCounts?: Map<string, number>;
+  /** Include uncertain and rejected options for inspection, never automatic placement. */
+  includeIneligible?: boolean;
 }): SemanticEditAssignment[] {
   return params.moments
     .map((moment) => scoreMomentForSection({
@@ -210,6 +217,7 @@ export function rankMomentsForSection(params: {
       previous: params.previous ?? null,
       useCount: params.useCounts?.get(moment.id) ?? 0,
     }))
+    .filter((assignment) => params.includeIneligible || assignment.assessment?.eligibility === "eligible")
     .sort((left, right) => right.score - left.score || left.moment.sourceClipId - right.moment.sourceClipId || left.moment.start - right.moment.start);
 }
 
@@ -219,6 +227,7 @@ export function scoreMomentForSection(params: {
   previous?: SemanticVideoMomentInput | null;
   useCount?: number;
 }): SemanticEditAssignment {
+  const assessment = assessStoryMatch({ requirementId: params.section.id, requirementText: params.section.prompt ?? params.section.label, constraints: params.section.requirements, moment: params.moment });
   const sectionText = buildSectionSearchText(params.section);
   const momentText = buildMomentSearchText(params.moment);
   const semanticScore = keywordSemanticScore(sectionText, momentText);
@@ -248,7 +257,8 @@ export function scoreMomentForSection(params: {
     momentId: params.moment.id,
     sectionId: params.section.id,
     moment: params.moment,
-    score,
+    score: assessment.eligibility === "ineligible" ? 0 : score,
+    assessment,
     semanticScore,
     lyricCaptionScore,
     actionIntentScore,
@@ -257,7 +267,7 @@ export function scoreMomentForSection(params: {
     motionEnergyScore,
     colorContinuityScore,
     repetitionPenalty,
-    reasons: buildReasons({ semanticScore, lyricCaptionScore, actionIntentScore, durationFitScore, motionContinuityScore, motionEnergyScore, colorContinuityScore, repetitionPenalty }),
+    reasons: [...assessment.reasons, ...buildReasons({ semanticScore, lyricCaptionScore, actionIntentScore, durationFitScore, motionContinuityScore, motionEnergyScore, colorContinuityScore, repetitionPenalty })],
   };
 }
 

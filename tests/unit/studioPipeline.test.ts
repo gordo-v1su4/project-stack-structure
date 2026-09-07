@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { buildPipelineState, type PipelineStageInput } from "@/components/studio/studioPipeline";
 import { buildStudioPipelineInput } from "@/components/studio/buildStudioPipelineInput";
 import type { GeneratedStudioAsset } from "@/components/studio/generatedAssets";
-import type { MusicVideoProject, TimelineItem } from "@/components/studio/musicVideoProject";
+import { DEFAULT_STORY_EDIT_SETTINGS, placementInputSignature, type MusicVideoProject, type TimelineItem } from "@/components/studio/musicVideoProject";
 import type { ReferenceAsset } from "@/components/studio/referenceAssets";
 
 const readyReferenceAssets: ReferenceAsset[] = [
@@ -296,8 +296,11 @@ describe("studio pipeline state", () => {
       editPlan: { id: "edit-1", timelineItems: [missingItem], createdAt: "2026-09-05T00:00:00.000Z" },
       reviewFindings: [],
     };
+    musicVideoProject.placementPlan = { version: 1, revision: 1, settings: DEFAULT_STORY_EDIT_SETTINGS, policy: "faithful", inputSignature: placementInputSignature(musicVideoProject), placements: [] };
     const approvedAsset: GeneratedStudioAsset = {
       id: "gen-approved",
+      durationSeconds: 8,
+      resultUrl: "https://media.example/generated.mp4",
       provider: "higgsfield",
       model: "Seedance 2.0",
       prompt: "Approved replacement",
@@ -307,6 +310,7 @@ describe("studio pipeline state", () => {
       reviewStatus: "approved",
       target: {
         timelineItemId: missingItem.id,
+        planSignature: musicVideoProject.placementPlan.inputSignature,
         sectionId: missingItem.sectionId,
         sectionLabel: missingItem.label,
         songStart: missingItem.start,

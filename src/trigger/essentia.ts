@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { logger, task } from "@trigger.dev/sdk";
+import { annotateMusicSections } from "@/components/studio/musicSectionProvenance";
 
 import { ESSENTIA_AUDIO_CHUNK_SIZE_BYTES, type EssentiaAudioChunkReference } from "@/lib/essentiaUpload";
 import { deleteMediaGatewayFiles, downloadMediaGatewayFile, uploadFileToMediaGateway, uploadJsonToMediaGateway } from "@/lib/mediaGateway";
@@ -195,7 +196,11 @@ function normalizeEssentiaResult(payload: Record<string, unknown>, sourceLabel: 
     onsets: numberArray(payload.onsets),
     energy,
     boundaries: numberArray(structure.boundaries),
-    sections: Array.isArray(structure.sections) ? structure.sections : [],
+    sections: annotateMusicSections(
+      (Array.isArray(structure.sections) ? structure.sections : []).filter((section): section is Record<string, unknown> & { start: number; end: number } =>
+        isRecord(section) && typeof section.start === "number" && typeof section.end === "number"),
+      numberValue(payload.duration) ?? 0, structure,
+    ),
   };
 }
 

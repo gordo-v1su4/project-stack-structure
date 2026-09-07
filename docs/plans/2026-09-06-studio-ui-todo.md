@@ -4,6 +4,10 @@ Captured from the user's nine production-browser comments on 2026-09-06.
 Finish the six-video walkthrough and technical repairs before implementing
 these changes. Keep this list open as further stages are reviewed.
 
+Story editing, narrative structure, matching, and honest coverage now have a
+separate [end-to-end restructuring plan](2026-09-06-story-authoring-continuity.md).
+That plan governs the functional work; this list retains deferred visual polish.
+
 **Preserve the expandable library upload section.** The user explicitly likes
 it. Removing the crowd references from this test is a content-selection change,
 not a request to remove the library or its expand/collapse interaction.

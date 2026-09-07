@@ -55,6 +55,8 @@ export async function uploadSceneCaptionManifestToRustFs(source: UploadedVideoSo
       duration: scene.duration,
       text: scene.caption ?? "",
       sceneData: scene.captionMeta,
+      mediaEvidence: scene.mediaEvidence,
+      captionHistory: scene.captionHistory,
       captionSource: scene.captionSource ?? "lfm-webgpu",
       captionMode: scene.captionMode ?? "fast",
       captionModel: scene.captionModel,
@@ -75,7 +77,7 @@ export async function uploadSceneCaptionManifestToRustFs(source: UploadedVideoSo
   const captionProvider = pickCaptionProvider(captions.map((caption) => caption.captionSource));
 
   const manifest = {
-    schema: "stack-structure.scene-captions.v1",
+    schema: "stack-structure.scene-captions.v2",
     generatedAt: new Date().toISOString(),
     captionProvider,
     source: {

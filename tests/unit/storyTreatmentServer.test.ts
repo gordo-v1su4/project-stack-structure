@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { STORY_TREATMENT_MODEL, type StoryTreatmentRequest } from "@/components/studio/storyTreatments";
+import { STORY_TREATMENT_MODEL, hydrateTreatmentCoverage, parseGeneratedTreatments, type StoryTreatmentRequest } from "@/components/studio/storyTreatments";
 import { generateStoryTreatments, queueStoryTreatmentGeneration } from "@/lib/storyTreatmentServer";
 
 const request: StoryTreatmentRequest = {
@@ -16,6 +16,18 @@ describe("story treatment Qwen service", () => {
       trigger: async () => ({ id: "run-story-queue" }),
     });
     expect(queued).toEqual({ runId: "run-story-queue", model: STORY_TREATMENT_MODEL });
+  });
+
+  test("queues only the selected story for targeted revision", async () => {
+    const treatment = hydrateTreatmentCoverage(parseGeneratedTreatments(buildValidPayload()), [])[0];
+    const calls: Array<{ instructions: string; input: string }> = [];
+    await queueStoryTreatmentGeneration({ ...request, revision: { treatment, instruction: "Start outside the cave, preserve the later story." } }, {
+      trigger: async payload => { calls.push(payload); return { id: "run-revise-one" }; },
+    });
+    expect(calls[0].instructions).toContain("Revise only the supplied selected treatment");
+    expect(calls[0].input).toContain("Start outside the cave");
+    expect(calls[0].input).toContain("selectedTreatment");
+    expect(calls[0].instructions).not.toContain("exactly three distinct treatments");
   });
 
   test("dispatches Trigger, waits for the run, and retries malformed output once", async () => {

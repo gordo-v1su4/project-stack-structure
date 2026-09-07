@@ -172,6 +172,7 @@ export function PreviewPlayer({
   if (variant === "monitor") {
     return (
       <div className="absolute inset-0 bg-black" data-preview-variant="monitor">
+        {currentSegment?.kind === "gap" && <div role="status" className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-ink-0 text-fg-2"><span>Missing footage</span><span className="mt-2 text-xs text-fg-3">{currentSegment.gapReason}</span></div>}
         <video
           ref={videoRef}
           crossOrigin="anonymous"
@@ -193,7 +194,7 @@ export function PreviewPlayer({
           className="pointer-events-none absolute inset-0 h-full w-full object-contain opacity-0"
         />
         <audio ref={masterAudioRef} src={masterAudioUrl ?? undefined} preload="auto" data-master-audio="true" className="hidden" />
-        {hasShaderCues ? (
+        {hasShaderCues && currentSegment?.kind !== "gap" ? (
           <>
             <canvas
               ref={shaderCanvasRef}
@@ -237,6 +238,7 @@ export function PreviewPlayer({
     <div className={isExpanded ? "space-y-2" : "space-y-1.5"}>
       <div className={isExpanded ? "grid items-start gap-2 xl:grid-cols-[minmax(0,1.45fr)_minmax(260px,0.75fr)]" : "grid grid-cols-[minmax(150px,1fr)_minmax(150px,1fr)_minmax(120px,0.62fr)] gap-2 items-start"}>
         <div className="relative min-w-0 self-start overflow-hidden bg-black">
+          {currentSegment?.kind === "gap" && <div role="status" className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-ink-0 text-fg-2"><span>Missing footage</span><span className="mt-2 text-xs text-fg-3">{currentSegment.gapReason}</span></div>}
           <video
             ref={videoRef}
             crossOrigin="anonymous"
@@ -275,7 +277,7 @@ export function PreviewPlayer({
               Comp
             </div>
           )}
-          {hasShaderCues ? (
+          {hasShaderCues && currentSegment?.kind !== "gap" ? (
             <>
               <canvas
                 ref={shaderCanvasRef}
@@ -291,7 +293,7 @@ export function PreviewPlayer({
               />
             </>
           ) : null}
-          {hasShaderCues ? (
+          {hasShaderCues && currentSegment?.kind !== "gap" ? (
             <div className={`${isExpanded ? "left-2 top-2 px-2 py-1 text-[8px]" : "right-1 top-1 max-w-[72px] px-1 py-0.5 text-[6px]"} pointer-events-none absolute rounded-[2px] border border-[#e05c0040] bg-[#050505cc] font-mono uppercase tracking-[0.1em] text-[#e05c00]`}>
               Live {shaderMode === "webgpu" ? "WebGPU" : shaderMode === "canvas2d" ? "Canvas FX" : "Shader"}
               {isExpanded && activeShaderLabel ? ` · ${activeShaderLabel}` : ""}
@@ -320,7 +322,7 @@ export function PreviewPlayer({
 
         {!isExpanded ? (
           <div className="relative min-w-0">
-            {currentSegment ? (
+            {currentSegment?.videoUrl ? (
               <video
                 key={`source-monitor-${currentSegment.videoUrl}:${currentSegment.startTime}:${state.currentIndex}`}
                 ref={sourceMonitorRef}
@@ -394,7 +396,7 @@ export function PreviewPlayer({
         {isExpanded ? (
           <div className="grid gap-2 rounded-[2px] border border-[#181818] bg-[#070707] p-2">
             <div className="relative aspect-video overflow-hidden rounded-[2px] border border-[#151515] bg-[#040404]">
-              {currentSegment ? (
+              {currentSegment?.videoUrl ? (
                 <video
                   key={`${currentSegment.videoUrl}:${currentSegment.startTime}:${state.currentIndex}`}
                   src={currentSegment.videoUrl}

@@ -1,11 +1,13 @@
 "use client";
 
+import { buildStudioSourceContextSignature } from "../studioSourceContext";
 import { startTransition, useEffect, useMemo, type Dispatch, type SetStateAction } from "react";
 import type { DeepgramTranscriptSummary } from "../deepgramUtils";
 import { fmt } from "../math";
 import {
   buildStorySections,
   createMusicVideoProject,
+  prepareApprovedPlacements,
   DEFAULT_STORY_EDIT_SETTINGS,
   getDefaultStorySectionDrafts,
   normalizeStoryEditSettings,
@@ -35,6 +37,11 @@ import type { BeatJoinAnalysis, SegmentPreview, UploadedVideoSource } from "../t
 
 export type StoryBeatDraft = StoryPlanDraft;
 
+/** Bind the approved evidence revision before placement preparation hashes its inputs. */
+export function prepareStoryTabPlacements(params: Parameters<typeof prepareApprovedPlacements>[0], sourceContextSignature?: string | null) {
+  return prepareApprovedPlacements({ ...params, project: { ...params.project, sourceContextSignature: sourceContextSignature ?? undefined } });
+}
+
 export type StoryTabState = StoryTreatmentState & {
   vocalStemName: string;
   transcriptSummary: DeepgramTranscriptSummary | null;
@@ -45,6 +52,7 @@ export type StoryTabState = StoryTreatmentState & {
 };
 
 type StoryTabProps = {
+  referenceRevision?: string;
   analysis: BeatJoinAnalysis | null;
   audioStatus: string;
   videoSources: UploadedVideoSource[];
@@ -85,9 +93,9 @@ export function createDefaultStoryTabState(): StoryTabState {
   };
 }
 
-export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews, state, onStateChange, onProjectChange }: StoryTabProps) {
+export function StoryTab({ referenceRevision, analysis, audioStatus, videoSources, segmentPreviews, state, onStateChange, onProjectChange }: StoryTabProps) {
   const { transcriptSummary, storyBeats, activeBeatId, storyGenerated } = state;
-  const editSettings = normalizeStoryEditSettings(state.editSettings);
+  const editSettings = useMemo(() => normalizeStoryEditSettings(state.editSettings), [state.editSettings]);
 
   function updateState(patch: Partial<StoryTabState>) {
     onStateChange((current) => ({ ...current, ...patch }));
@@ -122,7 +130,7 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews,
   const plannedStoryBeats = hasTimedStoryPlan ? storyBeats : detectedStoryPlan.length ? detectedStoryPlan : storyBeats;
 
   const musicVideoProject = useMemo(
-    () => applyTreatmentCoverageToProject(
+    () => prepareStoryTabPlacements({ videoSources, editSettings, project: applyTreatmentCoverageToProject(
       createMusicVideoProject({
         analysis,
         duration: totalDuration || 0,
@@ -132,15 +140,16 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews,
         segmentPreviews,
       }),
       storyGenerated ? state.confirmedTreatmentSnapshot : null,
-    ),
-    [analysis, plannedStoryBeats, segmentPreviews, state.confirmedTreatmentSnapshot, storyGenerated, totalDuration, transcriptSummary?.chunks, videoSources],
+    ) }, state.confirmedSourceContextSignature),
+    [state.confirmedSourceContextSignature, analysis, plannedStoryBeats, segmentPreviews, state.confirmedTreatmentSnapshot, storyGenerated, totalDuration, transcriptSummary?.chunks, videoSources, editSettings],
   );
 
   const storyRail = musicVideoProject.storySections;
 
   useEffect(() => {
+    if (!storyGenerated || !state.confirmedTreatmentSnapshot || !state.storyContentSignature) return;
     onProjectChange?.(musicVideoProject);
-  }, [musicVideoProject, onProjectChange]);
+  }, [musicVideoProject, onProjectChange, storyGenerated, state.confirmedTreatmentSnapshot, state.storyContentSignature]);
 
   useEffect(() => {
     if (hasTimedStoryPlan || !detectedStoryPlan.length) return;
@@ -220,12 +229,14 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews,
       confirmedTreatmentId: treatment.id,
       confirmedTreatmentSnapshot: treatment,
       storyContentSignature: buildStoryContentSignature(treatment, storyBeatsWithAnchors),
+      confirmedSourceContextSignature: buildStudioSourceContextSignature({ analysis, videoSources, referenceRevision }),
     });
   }
 
   return (
     <div className="space-y-3">
       <StoryTreatmentPlanner
+        referenceRevision={referenceRevision}
         analysis={analysis}
         transcriptSummary={transcriptSummary}
         project={musicVideoProject}
@@ -240,7 +251,7 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews,
         })}
       />
 
-      <CollapsibleSection title="Timing & Song Structure · advanced" className="rounded-[2px] border-[#1a1a1a] bg-[#090909]">
+      <CollapsibleSection title="Review song sections · rename or adjust timing" className="rounded-[2px] border-[#1a1a1a] bg-[#090909]">
         <div className="p-2">
           <StoryStructureEditor
             detectedSections={analysis?.sections ?? []}
@@ -325,7 +336,7 @@ export function StoryTab({ analysis, audioStatus, videoSources, segmentPreviews,
           {storyGenerated
             ? "Confirmed. Split and downstream stages may use this Story map."
             : state.selectedTreatmentId
-              ? "Resolve every selected anchor above, then confirm the Story plan to unlock Split."
+              ? "Read a story and choose Use this story to continue. Missing shots remain visible as gaps."
               : "Generate and select one of the three treatments above once Ingest lyrics and scene captions are ready."}
         </div>
 

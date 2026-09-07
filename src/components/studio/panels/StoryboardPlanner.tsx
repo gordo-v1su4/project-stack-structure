@@ -6,7 +6,7 @@ import type { EditPlanPreviewSegment } from "../musicVideoProject";
 import type { ReferenceAsset } from "../referenceAssets";
 import { waitForTriggerRunOutput } from "@/lib/clientTriggerRuns";
 import { fmt } from "../math";
-import { buildFreshFramePrompt, buildSequenceGridPrompt, buildStoryboardSequences, canonicalStoryboardReferences, defaultSequenceGridDirection,
+import { buildFreshFramePrompt, buildSequenceGridPrompt, buildStoryboardSequences, canonicalStoryboardReferences, resolveSequenceGridDirection,
   IMAGE_MODELS, IMAGE_PRICE_GUIDE, identifyStoryboardJob, serializeStoryboardJob, type GenerationBilling, type StoryboardImageModel,
   type StoryboardJob, type StoryboardQuote, type VideoFrameRole } from "../storyboardGeneration";
 
@@ -14,12 +14,13 @@ const button = "rounded border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs tex
 const field = "w-full rounded border border-zinc-700 bg-zinc-950 p-2 text-xs text-zinc-200";
 type ReviewBatch = { jobs: StoryboardJob[]; quotes: StoryboardQuote[]; completed: number; auto: boolean };
 
-export function StoryboardPlanner({ projectId, segments, references, assets, onAsset, onInspect, sourceFrames, sectionLabels, locked = false }: {
+export function StoryboardPlanner({ projectId, segments, references, assets, onAsset, onInspect, sourceFrames, sectionLabels, sectionDirections, locked = false }: {
   projectId: string; segments: EditPlanPreviewSegment[]; references: ReferenceAsset[];
   assets: GeneratedStudioAsset[]; onAsset: (asset: GeneratedStudioAsset) => void;
   onInspect?: (first: number, last: number) => void; locked?: boolean;
   sourceFrames?: Record<string, string | undefined>;
   sectionLabels?: Record<string, string>;
+  sectionDirections?: Record<string, string>;
 }) {
   const sequences = useMemo(() => buildStoryboardSequences(segments).map((sequence) => ({ ...sequence, label: sectionLabels?.[sequence.sectionId] ?? sequence.label })), [segments, sectionLabels]);
   const [selected, setSelected] = useState<string[]>([]);
@@ -76,12 +77,16 @@ export function StoryboardPlanner({ projectId, segments, references, assets, onA
     return { id: `${projectId}:grid:${sequence.id}:${model}`, projectId, sequenceId: sequence.id,
       sectionId: sequence.sectionId, title: `${sequence.label} · ${fmt(sequence.songStart)}–${fmt(sequence.songEnd)} storyboard`,
       songStart: sequence.songStart, songEnd: sequence.songEnd, kind: "grid", model, billing, resolution: "2k",
-      references: refs, prompt: buildSequenceGridPrompt(refs, intents[sequence.id] ?? defaultSequenceGridDirection(refs)) };
+      references: refs, prompt: buildSequenceGridPrompt(refs, resolveSequenceGridDirection(sequence.direction ?? sectionDirections?.[sequence.sectionId], intents[sequence.id])) };
   }
 
   async function review(jobs: StoryboardJob[]) {
     if (busy || !jobs.length) return;
     if (blocked) { setStatus("Attach the current uploaded canonical character sheets before reviewing generation."); return; }
+    if (jobs.some((job) => job.kind === "grid" && !resolveSequenceGridDirection(sequences.find((sequence) => sequence.id === job.sequenceId)?.direction ?? sectionDirections?.[job.sectionId], intents[job.sequenceId]))) {
+      setStatus("Add the approved story action for each selected sequence before reviewing generation.");
+      return;
+    }
     jobs = jobs.map(identifyStoryboardJob);
     if (jobs.length > 50) { setStatus("Review up to 50 jobs at a time."); return; }
     setBusy(true);
@@ -195,7 +200,7 @@ export function StoryboardPlanner({ projectId, segments, references, assets, onA
         <label className="flex gap-2 text-xs"><input type="checkbox" checked={selected.includes(sequence.id)} disabled={busy || !!batch} onChange={(event) => setSelected((current) => event.target.checked ? [...current, sequence.id] : current.filter((id) => id !== sequence.id))} />
           <span>{sequence.label} · {fmt(sequence.songStart)}–{fmt(sequence.songEnd)}</span></label>
         <p className="text-xs text-zinc-500">{sequence.cuts.length} resolved cuts · one 3×3 sequence board · suggested review scope, not a confirmed gap</p>
-        <label className="block text-xs text-zinc-400">Sequence direction<textarea aria-label={`Direction for ${sequence.id}`} className={field} rows={2} disabled={busy || !!batch} value={intents[sequence.id] ?? defaultSequenceGridDirection(canonical)} placeholder="Describe the action and mood in one sentence…" onChange={(event) => setIntents((current) => ({ ...current, [sequence.id]: event.target.value }))} /></label>
+        <label className="block text-xs text-zinc-400">Sequence direction<textarea aria-label={`Direction for ${sequence.id}`} className={field} rows={2} disabled={busy || !!batch} value={resolveSequenceGridDirection(sequence.direction ?? sectionDirections?.[sequence.sectionId], intents[sequence.id])} placeholder="Add the story action for this section…" onChange={(event) => setIntents((current) => ({ ...current, [sequence.id]: event.target.value }))} /></label>
         <div className="flex gap-2"><button className={button} disabled={blocked || busy || !!batch} onClick={() => void review([gridJob(sequence.id)])}>Review this grid</button>
           {onInspect ? <button className={button} onClick={() => onInspect(segments.indexOf(sequence.cuts[0]), segments.indexOf(sequence.cuts.at(-1)!))}>Watch sequence</button> : null}</div>
       </article>)}

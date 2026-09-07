@@ -1,3 +1,5 @@
+import { buildSceneCaptionPrompt } from "@/components/studio/sceneCaptionPrompt";
+import { normalizeServerCaptionPayload } from "@/components/studio/sceneCaptioningServer";
 import { createHash } from "node:crypto";
 import { logger, metadata, task, tasks, wait } from "@trigger.dev/sdk";
 
@@ -216,7 +218,7 @@ export const mediaVideoPipelineTask = task({
     const segments = readSegments(manifest);
     const model = process.env.QWEN_GGUF_MODEL || "Qwen/Qwen3-VL-4B-Instruct-GGUF:Q4_K_M";
     const prompt = payload.captionPrompt || process.env.SCENE_CAPTION_PROMPT ||
-      "Analyze this three-panel video scene storyboard. Describe what changes from the first frame to the middle frame to the last frame, and return JSON with caption, shotType, subjects, action, setting, lighting, timeOfDay, and weather.";
+      buildSceneCaptionPrompt({ mode: "smart" });
     const batches = chunk(segments, CAPTION_BATCH_SIZE);
     metadata
       .set("stage", "captioning")
@@ -451,6 +453,7 @@ function buildBatchCaptionContext(value: string | undefined, sampleTimes: Record
   return JSON.stringify({
     ...projectContext,
     sampleTimes,
+    input: { kind: "ordered-frames", sampleTimes: [sampleTimes.first, sampleTimes.middle, sampleTimes.last].filter((time) => typeof time === "number" && Number.isFinite(time)) },
     instruction: "Caption motion and change across the three scene panels; use character references for visual identity and the environment reference for named-location continuity.",
   });
 }
@@ -477,11 +480,13 @@ export function mergeCaptionBatchResults(
 
 export function applyCaptionResult(segment: Record<string, unknown>, result: Record<string, unknown>) {
   const text = readString(result, "text") || readString(result, "caption");
-  const parsed = parseCaptionText(text);
-  const caption = readString(parsed, "caption") || readString(parsed, "text") || text;
+  const normalized = text ? normalizeServerCaptionPayload(result) : undefined;
+  const parsed = normalized?.meta ?? parseCaptionText(text);
+  const caption = normalized?.text ?? text;
   return {
     ...segment,
     caption,
+    mediaEvidence: normalized?.mediaEvidence,
     sceneData: Object.keys(parsed).length ? parsed : undefined,
     captionSource: readString(result, "source") || readString(result, "captionSource") || "qwen3-vl-server",
     captionMode: "smart",

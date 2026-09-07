@@ -114,11 +114,11 @@ describe("story treatment contract", () => {
     expect(parsed[0].anchors[0].purpose.length).toBeGreaterThan(10);
   });
 
-  test("classifies honest coverage and requires a resolution for missing anchors", () => {
+  test("classifies honest coverage and allows a coherent story with visible gaps", () => {
     const treatment = hydrateTreatmentCoverage(parseGeneratedTreatments(generated), moments)[0];
     expect(treatment.anchors.some((anchor) => anchor.coverage === "covered")).toBe(true);
     expect(treatment.anchors.some((anchor) => anchor.coverage === "missing")).toBe(true);
-    expect(isStoryPlanConfirmable(treatment)).toBe(false);
+    expect(isStoryPlanConfirmable(treatment)).toBe(true);
     const resolved = {
       ...treatment,
       anchors: treatment.anchors.map((anchor) => anchor.resolution ? anchor : { ...anchor, resolution: "generate" as const }),

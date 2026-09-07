@@ -1,0 +1,1114 @@
+{
+  "version": 1,
+  "reviewedAt": "2026-09-06",
+  "reviewer": "Codex visual inspection",
+  "sourceProject": "ingest-complete-project.json",
+  "sceneCount": 42,
+  "frameCount": 126,
+  "limits": [
+    "Three frames per detected scene, not full temporal playback.",
+    "Question marks indicate identity needs confirmation.",
+    "Several detected scenes span edits; do not assume every observation applies to every source instant.",
+    "This audit is a test oracle; it does not overwrite user project captions."
+  ],
+  "sources": [
+    {
+      "index": 1,
+      "name": "hf_20260706_233754_e122c27f-ac04-4a1b-b555-f2ede14fceb7.mp4",
+      "sha256": "8e183a7a75ae6cceebaf391aa92934dcfe5d81a1886edc813a25159dcf81249f"
+    },
+    {
+      "index": 2,
+      "name": "hf_20260707_174354_998986ed-e6e2-4730-830a-6f97ceb6c389.mp4",
+      "sha256": "01a0abade91e47f48dca6d7f9ab2c523d6222f810dda3c6a7a2a6647b2bc9669"
+    },
+    {
+      "index": 3,
+      "name": "hf_20260708_163249_6b4ba7b1-1123-4864-b511-d051a451d4d8.mp4",
+      "sha256": "213f46edef9dfb37d908f404294ce1591cf7b97bbb8d2ac4aa90aa77f484dab9"
+    },
+    {
+      "index": 4,
+      "name": "hf_20260709_145556_8f808540-b5ab-4359-9dde-d5108f2d3cfa.mp4",
+      "sha256": "23ee1bfc532f2625d113f31ce21b86d66f8f69d51973dce273f1149849fe1e78"
+    },
+    {
+      "index": 5,
+      "name": "hf_20260712_072618_357974cc-615d-48c6-b18c-ed40cef45b5a.mp4",
+      "sha256": "dde39df1ca7b156d7cde16389899bef6d05fecb9199ebeb5608da845afb62435"
+    },
+    {
+      "index": 6,
+      "name": "hf_20260814_081045_ef3495fd-b59f-4215-9923-68e941fd72bc.mp4",
+      "sha256": "1a83a4b5c88b2344ac26097cb18894c94691ec0e48d25c5a0d249e3aa281fcdb"
+    }
+  ],
+  "scenes": [
+    {
+      "sourceIndex": 1,
+      "sourceFile": "hf_20260706_233754_e122c27f-ac04-4a1b-b555-f2ede14fceb7.mp4",
+      "sourceId": 0,
+      "sceneId": 0,
+      "sourceStart": 0,
+      "sourceEnd": 1.0833333333333333,
+      "sampleTimes": {
+        "first": 0.05,
+        "middle": 0.5416666666666666,
+        "last": 1.0333333333333332
+      },
+      "reviewMethod": "Three exact local source frames; temporal intent remains unverified unless visible changes support it.",
+      "focalSubjects": [
+        "Diego?",
+        "Valentina?"
+      ],
+      "focalSubjectCount": null,
+      "observedActions": [
+        "moving among crowd"
+      ],
+      "physicalState": "intact",
+      "reviewNotes": "Multiple people exchange places; no exterior entrance or search intent shown.",
+      "originalCaption": "Diego, wearing a red plaid shirt, stands in the Underground Latin Club's dimly lit, smoky dance floor as Valentina, in a red one-piece swimsuit, smiles and dances around him among a crowd of people.",
+      "sheet": "source-1-0.jpg"
+    },
+    {
+      "sourceIndex": 1,
+      "sourceFile": "hf_20260706_233754_e122c27f-ac04-4a1b-b555-f2ede14fceb7.mp4",
+      "sourceId": 0,
+      "sceneId": 1,
+      "sourceStart": 1.0833333333333333,
+      "sourceEnd": 2.2916666666666665,
+      "sampleTimes": {
+        "first": 1.1333333333333333,
+        "middle": 1.6875,
+        "last": 2.2416666666666667
+      },
+      "reviewMethod": "Three exact local source frames; temporal intent remains unverified unless visible changes support it.",
+      "focalSubjects": [
+        "Diego?",
+        "Valentina?",
+        "unknown male"
+      ],
+      "focalSubjectCount": null,
+      "observedActions": [
+        "facing close"
+      ],
+      "physicalState": "intact",
+      "reviewNotes": "First image red-shirt Diego; later close pair has black-clad man. Identity changes across interval; do not assume all men are Diego.",
+      "originalCaption": "Diego and Valentina face each other in a dimly lit Underground Latin Club, their expressions intense as they lean in close, surrounded by a smoky, red-hued crowd in the background.",
+      "sheet": "source-1-0.jpg"
+    },
+    {
+      "sourceIndex": 1,
+      "sourceFile": "hf_20260706_233754_e122c27f-ac04-4a1b-b555-f2ede14fceb7.mp4",
+      "sourceId": 0,
+      "sceneId": 2,
+      "sourceStart": 2.2916666666666665,
+      "sourceEnd": 3.5,
+      "sampleTimes": {
+        "first": 2.3416666666666663,
+        "middle": 2.895833333333333,
+        "last": 3.45
+      },
+      "reviewMethod": "Three exact local source frames; temporal intent remains unverified unless visible changes support it.",
+      "focalSubjects": [],
+      "focalSubjectCount": null,
+      "observedActions": [
+        "feet stepping"
+      ],
+      "physicalState": "intact",
+      "reviewNotes": "Low framing shows several boots/heels; identity not visible.",
+      "originalCaption": "Low-angle shot of numerous feet in black boots and high heels dancing on a wet, reflective floor in the Underground Latin Club under warm, smoky red lighting.",
+      "sheet": "source-1-0.jpg"
+    },
+    {
+      "sourceIndex": 1,
+      "sourceFile": "hf_20260706_233754_e122c27f-ac04-4a1b-b555-f2ede14fceb7.mp4",
+      "sourceId": 0,
+      "sceneId": 3,
+      "sourceStart": 3.5,
+      "sourceEnd": 4.833333333333333,
+      "sampleTimes": {
+        "first": 3.55,
+        "middle": 4.166666666666666,
+        "last": 4.783333333333333
+      },
+      "reviewMethod": "Three exact local source frames; temporal intent remains unverified unless visible changes support it.",
+      "focalSubjects": [
+        "unknown acrobat"
+      ],
+      "focalSubjectCount": 1,
+      "observedActions": [
+        "handstand"
+      ],
+      "physicalState": "intact",
+      "reviewNotes": "Handstand performer is black-clad; Diego and red-clad woman are background. Existing Diego handstand caption is incorrect.",
+      "originalCaption": "Diego performs a handstand on a wet dance floor in the Underground Latin Club as Valentina dances in red, surrounded by a crowd under warm amber cage lamps and red haze.",
+      "sheet": "source-1-0.jpg"
+    },
+    {
+      "sourceIndex": 1,
+      "sourceFile": "hf_20260706_233754_e122c27f-ac04-4a1b-b555-f2ede14fceb7.mp4",
+      "sourceId": 0,
+      "sceneId": 4,
+      "sourceStart": 4.833333333333333,
+      "sourceEnd": 7.541666666666667,
+      "sampleTimes": {
+        "first": 4.883333333333333,
+        "middle": 6.1875,
+        "last": 7.491666666666667
+      },
+      "reviewMethod": "Three exact local source frames; temporal intent remains unverified unless visible changes support it.",
+      "focalSubjects": [
+        "Diego",
+        "Valentina"
+      ],
+      "focalSubjectCount": null,
+      "observedActions": [
+        "moving",
+        "facing",
+        "dancing"
+      ],
+      "physicalState": "intact",
+      "reviewNotes": "Multiple edits: feet detail, pair, wide performance. A single stable focal count is not supported.",
+      "originalCaption": "Diego and Valentina move through the crowded Underground Latin Club dance floor, surrounded by a sweaty, smoky crowd under amber cage lamps and red haze, as Diego's open shirt reveals his muscular torso and Valentina's red one-piece swimsuit glints in the light.",
+      "sheet": "source-1-0.jpg"
+    },
+    {
+      "sourceIndex": 1,
+      "sourceFile": "hf_20260706_233754_e122c27f-ac04-4a1b-b555-f2ede14fceb7.mp4",
+      "sourceId": 0,
+      "sceneId": 5,
+      "sourceStart": 7.541666666666667,
+      "sourceEnd": 8.666666666666666,
+      "sampleTimes": {
+        "first": 7.591666666666667,
+        "middle": 8.104166666666666,
+        "last": 8.616666666666665
+      },
+      "reviewMethod": "Three exact local source frames; temporal intent remains unverified unless visible changes support it.",
+      "focalSubjects": [
+        "Diego",
+        "Valentina"
+      ],
+      "focalSubjectCount": 2,
+      "observedActions": [
+        "dancing"
+      ],
+      "physicalState": "intact",
+      "reviewNotes": "Pair dancing among other couples; no solo entry.",
+      "originalCaption": "Diego and Valentina dance dynamically in the Underground Latin Club's main chamber under intense red stage lights, surrounded by a crowd of dancers on a wet floor as beams of light cut through the haze.",
+      "sheet": "source-1-0.jpg"
+    },
+    {
+      "sourceIndex": 1,
+      "sourceFile": "hf_20260706_233754_e122c27f-ac04-4a1b-b555-f2ede14fceb7.mp4",
+      "sourceId": 0,
+      "sceneId": 6,
+      "sourceStart": 8.666666666666666,
+      "sourceEnd": 12.833333333333334,
+      "sampleTimes": {
+        "first": 8.716666666666667,
+        "middle": 10.75,
+        "last": 12.783333333333333
+      },
+      "reviewMethod": "Three exact local source frames; temporal intent remains unverified unless visible changes support it.",
+      "focalSubjects": [
+        "Valentina?",
+        "unknown male",
+        "unknown singer"
+      ],
+      "focalSubjectCount": null,
+      "observedActions": [
+        "dancing",
+        "singing"
+      ],
+      "physicalState": "intact",
+      "reviewNotes": "Cut from dancing pair to different singer; named pair does not occupy complete interval.",
+      "originalCaption": "Diego and Valentina dance in the Underground Latin Club, with Valentina in a red one-piece outfit and Diego in a dark shirt, surrounded by a crowd under red haze and cage lamps as smoke rises from the wet floor.",
+      "sheet": "source-1-0.jpg"
+    },
+    {
+      "sourceIndex": 1,
+      "sourceFile": "hf_20260706_233754_e122c27f-ac04-4a1b-b555-f2ede14fceb7.mp4",
+      "sourceId": 0,
+      "sceneId": 7,
+      "sourceStart": 12.833333333333334,
+      "sourceEnd": 14.041666666666666,
+      "sampleTimes": {
+        "first": 12.883333333333335,
+        "middle": 13.4375,
+        "last": 13.991666666666665
+      },
+      "reviewMethod": "Three exact local source frames; temporal intent remains unverified unless visible changes support it.",
+      "focalSubjects": [
+        "unknown singer"
+      ],
+      "focalSubjectCount": 1,
+      "observedActions": [
+        "singing into microphone"
+      ],
+      "physicalState": "intact",
+      "reviewNotes": "Singer in metallic red dress differs from Valentina reference; do not label Valentina.",
+      "originalCaption": "Valentina, in a red one-piece dress, sings into a microphone on a wet dance floor at the Underground Latin Club, her arm extended as red smoke and light shafts illuminate the crowd.",
+      "sheet": "source-1-0.jpg"
+    },
+    {
+      "sourceIndex": 2,
+      "sourceFile": "hf_20260707_174354_998986ed-e6e2-4730-830a-6f97ceb6c389.mp4",
+      "sourceId": 1,
+      "sceneId": 0,
+      "sourceStart": 0,
+      "sourceEnd": 8.916666666666666,
+      "sampleTimes": {
+        "first": 0.05,
+        "middle": 4.458333333333333,
+        "last": 8.866666666666665
+      },
+      "reviewMethod": "Three exact local source frames; temporal intent remains unverified unless visible changes support it.",
+      "focalSubjects": [
+        "Diego",
+        "Valentina"
+      ],
+      "focalSubjectCount": null,
+      "observedActions": [
+        "walking through crowd",
+        "joining pair"
+      ],
+      "physicalState": "intact",
+      "reviewNotes": "Diego moves through crowd before pair present at end. No threshold entrance visible; search intent unknown.",
+      "originalCaption": "Diego and Valentina move through the crowded Underground Latin Club, with Diego shirtless and Valentina in a red one-piece swimsuit, surrounded by dancing patrons under warm amber cage lamps and red haze.",
+      "sheet": "source-2-0.jpg"
+    },
+    {
+      "sourceIndex": 2,
+      "sourceFile": "hf_20260707_174354_998986ed-e6e2-4730-830a-6f97ceb6c389.mp4",
+      "sourceId": 1,
+      "sceneId": 1,
+      "sourceStart": 8.916666666666666,
+      "sourceEnd": 10.916666666666666,
+      "sampleTimes": {
+        "first": 8.966666666666667,
+        "middle": 9.916666666666666,
+        "last": 10.866666666666665
+      },
+      "reviewMethod": "Three exact local source frames; temporal intent remains unverified unless visible changes support it.",
+      "focalSubjects": [
+        "Diego",
+        "Valentina"
+      ],
+      "focalSubjectCount": 2,
+      "observedActions": [
+        "facing",
+        "dancing"
+      ],
+      "physicalState": "intact",
+      "reviewNotes": "Pair transitions from facing to close dance.",
+      "originalCaption": "Diego and Valentina stand in the Underground Latin Club, Diego shirtless with his red shirt open, Valentina in a red one-piece, surrounded by dancers under warm amber cage lights and red haze.",
+      "sheet": "source-2-0.jpg"
+    },
+    {
+      "sourceIndex": 2,
+      "sourceFile": "hf_20260707_174354_998986ed-e6e2-4730-830a-6f97ceb6c389.mp4",
+      "sourceId": 1,
+      "sceneId": 2,
+      "sourceStart": 10.916666666666666,
+      "sourceEnd": 15.041666666666666,
+      "sampleTimes": {
+        "first": 10.966666666666667,
+        "middle": 12.979166666666666,
+        "last": 14.991666666666665
+      },
+      "reviewMethod": "Three exact local source frames; temporal intent remains unverified unless visible changes support it.",
+      "focalSubjects": [
+        "Diego",
+        "Valentina"
+      ],
+      "focalSubjectCount": 2,
+      "observedActions": [
+        "dancing"
+      ],
+      "physicalState": "intact",
+      "reviewNotes": "Close paired performance throughout sampled interval.",
+      "originalCaption": "Diego and Valentina dance intimately under red stage lights in the Underground Latin Club, surrounded by a crowd of dancers in a smoky, energetic club atmosphere with wet floors and industrial columns.",
+      "sheet": "source-2-0.jpg"
+    },
+    {
+      "sourceIndex": 3,
+      "sourceFile": "hf_20260708_163249_6b4ba7b1-1123-4864-b511-d051a451d4d8.mp4",
+      "sourceId": 2,
+      "sceneId": 0,
+      "sourceStart": 0,
+      "sourceEnd": 1.8333333333333333,
+      "sampleTimes": {
+        "first": 0.05,
+        "middle": 0.9166666666666666,
+        "last": 1.7833333333333332
+      },
+      "reviewMethod": "Three exact local source frames; temporal intent remains unverified unless visible changes support it.",
+      "focalSubjects": [
+        "Diego?"
+      ],
+      "focalSubjectCount": 1,
+      "observedActions": [
+        "walking through crowd"
+      ],
+      "physicalState": "intact",
+      "reviewNotes": "Single focal back-facing man consistent with Diego; face not shown. Does not establish jungle arrival or searching.",
+      "originalCaption": "Diego, wearing a red shirt, walks through a crowded Underground Latin Club with his arms outstretched as dancers move around him under warm amber cage lights and red haze.",
+      "sheet": "source-3-0.jpg"
+    },
+    {
+      "sourceIndex": 3,
+      "sourceFile": "hf_20260708_163249_6b4ba7b1-1123-4864-b511-d051a451d4d8.mp4",
+      "sourceId": 2,
+      "sceneId": 1,
+      "sourceStart": 1.8333333333333333,
+      "sourceEnd": 13.916666666666666,
+      "sampleTimes": {
+        "first": 1.8833333333333333,
+        "middle": 7.874999999999999,
+        "last": 13.866666666666665
+      },
+      "reviewMethod": "Three exact local source frames; temporal intent remains unverified unless visible changes support it.",
+      "focalSubjects": [
+        "Diego",
+        "Valentina"
+      ],
+      "focalSubjectCount": null,
+      "observedActions": [
+        "approaching",
+        "dancing"
+      ],
+      "physicalState": "intact",
+      "reviewNotes": "Twelve-second detected scene spans approach then paired dance and multiple shot scales.",
+      "originalCaption": "Diego and Valentina dance intimately under a circular light shaft in the Underground Latin Club, surrounded by a crowd of dancers on a wet floor, with Valentina in a red one-piece and Diego in a maroon shirt.",
+      "sheet": "source-3-0.jpg"
+    },
+    {
+      "sourceIndex": 3,
+      "sourceFile": "hf_20260708_163249_6b4ba7b1-1123-4864-b511-d051a451d4d8.mp4",
+      "sourceId": 2,
+      "sceneId": 2,
+      "sourceStart": 13.916666666666666,
+      "sourceEnd": 15.041666666666666,
+      "sampleTimes": {
+        "first": 13.966666666666667,
+        "middle": 14.479166666666666,
+        "last": 14.991666666666665
+      },
+      "reviewMethod": "Three exact local source frames; temporal intent remains unverified unless visible changes support it.",
+      "focalSubjects": [
+        "Diego",
+        "Valentina"
+      ],
+      "focalSubjectCount": 2,
+      "observedActions": [
+        "facing closely",
+        "dancing"
+      ],
+      "physicalState": "intact",
+      "reviewNotes": "Paired close-up. Not solo arrival.",
+      "originalCaption": "Diego and Valentina dance intimately in the Underground Latin Club, their bodies close as they move through the smoky, red-lit space with other dancers in the background.",
+      "sheet": "source-3-0.jpg"
+    },
+    {
+      "sourceIndex": 4,
+      "sourceFile": "hf_20260709_145556_8f808540-b5ab-4359-9dde-d5108f2d3cfa.mp4",
+      "sourceId": 3,
+      "sceneId": 0,
+      "sourceStart": 0,
+      "sourceEnd": 1.375,
+      "sampleTimes": {
+        "first": 0.05,
+        "middle": 0.6875,
+        "last": 1.325
+      },
+      "reviewMethod": "Three exact local source frames; temporal intent remains unverified unless visible changes support it.",
+      "focalSubjects": [],
+      "focalSubjectCount": null,
+      "observedActions": [
+        "moving around fractured floor"
+      ],
+      "physicalState": "fractured",
+      "reviewNotes": "Wide floor fissure/rubble clear; legacy caption omits collapse state.",
+      "originalCaption": "Diego and Valentina move dynamically across a wet, red-hazed dance floor in the Underground Latin Club, their bodies silhouetted against glowing circular lights and industrial columns as the crowd dances around them.",
+      "sheet": "source-4-0.jpg"
+    },
+    {
+      "sourceIndex": 4,
+      "sourceFile": "hf_20260709_145556_8f808540-b5ab-4359-9dde-d5108f2d3cfa.mp4",
+      "sourceId": 3,
+      "sceneId": 1,
+      "sourceStart": 1.375,
+      "sourceEnd": 8.541666666666666,
+      "sampleTimes": {
+        "first": 1.425,
+        "middle": 4.958333333333333,
+        "last": 8.491666666666665
+      },
+      "reviewMethod": "Three exact local source frames; temporal intent remains unverified unless visible changes support it.",
+      "focalSubjects": [
+        "Diego",
+        "Valentina"
+      ],
+      "focalSubjectCount": 2,
+      "observedActions": [
+        "crossing obstacle",
+        "running",
+        "dancing"
+      ],
+      "physicalState": "fractured",
+      "reviewNotes": "Begins at concrete obstacle, pair runs amid rubble, ends dancing. Valid sub-interval needed; not intact opening.",
+      "originalCaption": "Diego and Valentina move through the Underground Latin Club's wet, smoke-filled dance floor as Diego runs toward Valentina, who leaps over a fallen concrete beam, with the crowd's energy and industrial lighting illuminating their urgent motion.",
+      "sheet": "source-4-0.jpg"
+    },
+    {
+      "sourceIndex": 4,
+      "sourceFile": "hf_20260709_145556_8f808540-b5ab-4359-9dde-d5108f2d3cfa.mp4",
+      "sourceId": 3,
+      "sceneId": 2,
+      "sourceStart": 8.541666666666666,
+      "sourceEnd": 10.5,
+      "sampleTimes": {
+        "first": 8.591666666666667,
+        "middle": 9.520833333333332,
+        "last": 10.45
+      },
+      "reviewMethod": "Three exact local source frames; temporal intent remains unverified unless visible changes support it.",
+      "focalSubjects": [
+        "unknown singer",
+        "Diego?",
+        "Valentina?"
+      ],
+      "focalSubjectCount": null,
+      "observedActions": [
+        "singing",
+        "moving"
+      ],
+      "physicalState": "fractured",
+      "reviewNotes": "Multi-shot interval: pair edge, separate singer, wide pair among rubble.",
+      "originalCaption": "A woman in a red metallic dress sings into a microphone under a bright light shaft in a smoky, red-lit Underground Latin Club, while dancers move around her on a wet floor with industrial columns and cage lamps visible.",
+      "sheet": "source-4-0.jpg"
+    },
+    {
+      "sourceIndex": 4,
+      "sourceFile": "hf_20260709_145556_8f808540-b5ab-4359-9dde-d5108f2d3cfa.mp4",
+      "sourceId": 3,
+      "sceneId": 3,
+      "sourceStart": 10.5,
+      "sourceEnd": 15.041666666666666,
+      "sampleTimes": {
+        "first": 10.55,
+        "middle": 12.770833333333332,
+        "last": 14.991666666666665
+      },
+      "reviewMethod": "Three exact local source frames; temporal intent remains unverified unless visible changes support it.",
+      "focalSubjects": [
+        "Diego",
+        "Valentina"
+      ],
+      "focalSubjectCount": 2,
+      "observedActions": [
+        "dancing",
+        "walking away"
+      ],
+      "physicalState": "fractured",
+      "reviewNotes": "Rubble/fissure persists despite performance. Default intact club opening incompatible.",
+      "originalCaption": "Diego and Valentina dance intimately in the smoky, red-lit Underground Latin Club, surrounded by a crowd under glowing cage lamps and wet floor reflections, as they move through the venue's industrial spaces.",
+      "sheet": "source-4-0.jpg"
+    },
+    {
+      "sourceIndex": 5,
+      "sourceFile": "hf_20260712_072618_357974cc-615d-48c6-b18c-ed40cef45b5a.mp4",
+      "sourceId": 4,
+      "sceneId": 0,
+      "sourceStart": 0,
+      "sourceEnd": 6,
+      "sampleTimes": {
+        "first": 0.05,
+        "middle": 3,
+        "last": 5.95
+      },
+      "reviewMethod": "Three exact local source frames; temporal intent remains unverified unless visible changes support it.",
+      "focalSubjects": [
+        "Diego",
+        "Valentina"
+      ],
+      "focalSubjectCount": 2,
+      "observedActions": [
+        "running",
+        "crossing fractured floor"
+      ],
+      "physicalState": "fractured",
+      "reviewNotes": "Visible fissure, scattered concrete and running pair.",
+      "originalCaption": "Diego and Valentina run through the Underground Latin Club's wet, smoke-filled dance floor as large concrete blocks are scattered around them under warm amber cage lamp lighting.",
+      "sheet": "source-5-0.jpg"
+    },
+    {
+      "sourceIndex": 5,
+      "sourceFile": "hf_20260712_072618_357974cc-615d-48c6-b18c-ed40cef45b5a.mp4",
+      "sourceId": 4,
+      "sceneId": 1,
+      "sourceStart": 6,
+      "sourceEnd": 8,
+      "sampleTimes": {
+        "first": 6.05,
+        "middle": 7,
+        "last": 7.95
+      },
+      "reviewMethod": "Three exact local source frames; temporal intent remains unverified unless visible changes support it.",
+      "focalSubjects": [
+        "unknown singer",
+        "Diego",
+        "Valentina"
+      ],
+      "focalSubjectCount": null,
+      "observedActions": [
+        "singing",
+        "dancing"
+      ],
+      "physicalState": "fractured",
+      "reviewNotes": "Singer differs from Valentina; pair appears later. Caption falsely merges performer identities.",
+      "originalCaption": "In the Underground Latin Club, Valentina in a red one-piece sings into a microphone as Diego in a red shirt dances with her, surrounded by a crowd, smoke, and warm amber cage lights.",
+      "sheet": "source-5-0.jpg"
+    },
+    {
+      "sourceIndex": 5,
+      "sourceFile": "hf_20260712_072618_357974cc-615d-48c6-b18c-ed40cef45b5a.mp4",
+      "sourceId": 4,
+      "sceneId": 2,
+      "sourceStart": 8,
+      "sourceEnd": 10.666666666666666,
+      "sampleTimes": {
+        "first": 8.05,
+        "middle": 9.333333333333332,
+        "last": 10.616666666666665
+      },
+      "reviewMethod": "Three exact local source frames; temporal intent remains unverified unless visible changes support it.",
+      "focalSubjects": [
+        "Diego",
+        "Valentina"
+      ],
+      "focalSubjectCount": 2,
+      "observedActions": [
+        "dancing"
+      ],
+      "physicalState": "fractured",
+      "reviewNotes": "Pair performance among visible concrete rubble.",
+      "originalCaption": "Diego and Valentina dance dynamically through the smoky, red-lit Underground Latin Club, their synchronized movements highlighted by ambient cage lamps and a glowing circular ceiling fixture as the crowd pulses around them.",
+      "sheet": "source-5-0.jpg"
+    },
+    {
+      "sourceIndex": 5,
+      "sourceFile": "hf_20260712_072618_357974cc-615d-48c6-b18c-ed40cef45b5a.mp4",
+      "sourceId": 4,
+      "sceneId": 3,
+      "sourceStart": 10.666666666666666,
+      "sourceEnd": 15.041666666666666,
+      "sampleTimes": {
+        "first": 10.716666666666667,
+        "middle": 12.854166666666666,
+        "last": 14.991666666666665
+      },
+      "reviewMethod": "Three exact local source frames; temporal intent remains unverified unless visible changes support it.",
+      "focalSubjects": [
+        "Diego",
+        "Valentina"
+      ],
+      "focalSubjectCount": 2,
+      "observedActions": [
+        "dancing",
+        "lifting partner",
+        "moving away"
+      ],
+      "physicalState": "fractured",
+      "reviewNotes": "Lift observed between handhold and move away; rubble remains.",
+      "originalCaption": "Diego and Valentina dance in the Underground Latin Club, with Diego lifting Valentina mid-air as red haze fills the smoky, circular dance floor under warm cage lamps and a glowing ring light.",
+      "sheet": "source-5-0.jpg"
+    },
+    {
+      "sourceIndex": 6,
+      "sourceFile": "hf_20260814_081045_ef3495fd-b59f-4215-9923-68e941fd72bc.mp4",
+      "sourceId": 5,
+      "sceneId": 0,
+      "sourceStart": 0,
+      "sourceEnd": 1.5833333333333333,
+      "sampleTimes": {
+        "first": 0.05,
+        "middle": 0.7916666666666666,
+        "last": 1.5333333333333332
+      },
+      "reviewMethod": "Three exact local source frames; temporal intent remains unverified unless visible changes support it.",
+      "focalSubjects": [],
+      "focalSubjectCount": null,
+      "observedActions": [
+        "boots stepping in water"
+      ],
+      "physicalState": "unknown",
+      "reviewNotes": "Feet-only identity unknown; visible tunnel detail, not confirmed master club room.",
+      "originalCaption": "Diego's black combat boots splash through a wet, smoky floor of the Underground Latin Club as he moves forward, with red haze and industrial lighting illuminating the scene.",
+      "sheet": "source-6-0.jpg"
+    },
+    {
+      "sourceIndex": 6,
+      "sourceFile": "hf_20260814_081045_ef3495fd-b59f-4215-9923-68e941fd72bc.mp4",
+      "sourceId": 5,
+      "sceneId": 1,
+      "sourceStart": 1.5833333333333333,
+      "sourceEnd": 2.6666666666666665,
+      "sampleTimes": {
+        "first": 1.6333333333333333,
+        "middle": 2.125,
+        "last": 2.6166666666666667
+      },
+      "reviewMethod": "Three exact local source frames; temporal intent remains unverified unless visible changes support it.",
+      "focalSubjects": [
+        "Diego?"
+      ],
+      "focalSubjectCount": 1,
+      "observedActions": [
+        "torso movement"
+      ],
+      "physicalState": "unknown",
+      "reviewNotes": "Chest/chain/shirt crop; no face and no established deliberate chest-muscle action.",
+      "originalCaption": "Diego, wearing a maroon shirt open to reveal his chest and a gold chain, is shown in a close-up as he moves his chest muscles under warm, smoky club lighting in the Underground Latin Club.",
+      "sheet": "source-6-0.jpg"
+    },
+    {
+      "sourceIndex": 6,
+      "sourceFile": "hf_20260814_081045_ef3495fd-b59f-4215-9923-68e941fd72bc.mp4",
+      "sourceId": 5,
+      "sceneId": 2,
+      "sourceStart": 2.6666666666666665,
+      "sourceEnd": 4.416666666666667,
+      "sampleTimes": {
+        "first": 2.7166666666666663,
+        "middle": 3.541666666666667,
+        "last": 4.366666666666667
+      },
+      "reviewMethod": "Three exact local source frames; temporal intent remains unverified unless visible changes support it.",
+      "focalSubjects": [
+        "Valentina?"
+      ],
+      "focalSubjectCount": 1,
+      "observedActions": [
+        "heels stepping in water"
+      ],
+      "physicalState": "unknown",
+      "reviewNotes": "Heels consistent with reference but face absent; location is wet brick tunnel, not established club dance floor.",
+      "originalCaption": "Valentina's tan strappy heels splashing through wet, reflective floor in the Underground Latin Club's red haze corridor, illuminated by distant amber cage lamps and industrial columns.",
+      "sheet": "source-6-0.jpg"
+    },
+    {
+      "sourceIndex": 6,
+      "sourceFile": "hf_20260814_081045_ef3495fd-b59f-4215-9923-68e941fd72bc.mp4",
+      "sourceId": 5,
+      "sceneId": 3,
+      "sourceStart": 4.416666666666667,
+      "sourceEnd": 7.625,
+      "sampleTimes": {
+        "first": 4.466666666666667,
+        "middle": 6.020833333333334,
+        "last": 7.575
+      },
+      "reviewMethod": "Three exact local source frames; temporal intent remains unverified unless visible changes support it.",
+      "focalSubjects": [
+        "Diego"
+      ],
+      "focalSubjectCount": null,
+      "observedActions": [
+        "moving in tunnel"
+      ],
+      "physicalState": "intact",
+      "reviewNotes": "Starts with wall/pipes then Diego face. No club crowd or exterior arrival.",
+      "originalCaption": "Diego, shirt open revealing his muscular torso, stands in a dimly lit, wet underground corridor with industrial pipes and brick walls, his expression intense as he moves through the smoky, red-hazed club environment.",
+      "sheet": "source-6-0.jpg"
+    },
+    {
+      "sourceIndex": 6,
+      "sourceFile": "hf_20260814_081045_ef3495fd-b59f-4215-9923-68e941fd72bc.mp4",
+      "sourceId": 5,
+      "sceneId": 4,
+      "sourceStart": 7.625,
+      "sourceEnd": 9.166666666666666,
+      "sampleTimes": {
+        "first": 7.675,
+        "middle": 8.395833333333332,
+        "last": 9.116666666666665
+      },
+      "reviewMethod": "Three exact local source frames; temporal intent remains unverified unless visible changes support it.",
+      "focalSubjects": [
+        "Valentina"
+      ],
+      "focalSubjectCount": 1,
+      "observedActions": [
+        "turning head"
+      ],
+      "physicalState": "intact",
+      "reviewNotes": "Close face/hair turn visible; running cannot be proved from these samples alone.",
+      "originalCaption": "Valentina, in a red one-piece swimsuit, moves through a smoky, dimly lit underground corridor with her dark hair flying as she runs forward, illuminated by warm cage lamps and red haze.",
+      "sheet": "source-6-0.jpg"
+    },
+    {
+      "sourceIndex": 6,
+      "sourceFile": "hf_20260814_081045_ef3495fd-b59f-4215-9923-68e941fd72bc.mp4",
+      "sourceId": 5,
+      "sceneId": 5,
+      "sourceStart": 9.166666666666666,
+      "sourceEnd": 10.458333333333334,
+      "sampleTimes": {
+        "first": 9.216666666666667,
+        "middle": 9.8125,
+        "last": 10.408333333333333
+      },
+      "reviewMethod": "Three exact local source frames; temporal intent remains unverified unless visible changes support it.",
+      "focalSubjects": [],
+      "focalSubjectCount": 1,
+      "observedActions": [
+        "running legs"
+      ],
+      "physicalState": "intact",
+      "reviewNotes": "Low angle excludes face; person identity unknown.",
+      "originalCaption": "Diego runs through a smoky, wet underground tunnel with reflective floors and industrial brick walls, illuminated by warm, distant cage lamps and red haze, creating a moody, urgent atmosphere.",
+      "sheet": "source-6-0.jpg"
+    },
+    {
+      "sourceIndex": 6,
+      "sourceFile": "hf_20260814_081045_ef3495fd-b59f-4215-9923-68e941fd72bc.mp4",
+      "sourceId": 5,
+      "sceneId": 6,
+      "sourceStart": 10.458333333333334,
+      "sourceEnd": 11.541666666666666,
+      "sampleTimes": {
+        "first": 10.508333333333335,
+        "middle": 11,
+        "last": 11.491666666666665
+      },
+      "reviewMethod": "Three exact local source frames; temporal intent remains unverified unless visible changes support it.",
+      "focalSubjects": [],
+      "focalSubjectCount": null,
+      "observedActions": [
+        "moving toward door"
+      ],
+      "physicalState": "intact",
+      "reviewNotes": "Legs then red door; endpoint and temporal cuts need inspection.",
+      "originalCaption": "A shadowy figure in dark pants walks through a smoky, brick-walled tunnel with wet floor, illuminated by a single red vertical light beam piercing the haze, leading toward a red door at the end of the corridor.",
+      "sheet": "source-6-0.jpg"
+    },
+    {
+      "sourceIndex": 6,
+      "sourceFile": "hf_20260814_081045_ef3495fd-b59f-4215-9923-68e941fd72bc.mp4",
+      "sourceId": 5,
+      "sceneId": 7,
+      "sourceStart": 11.541666666666666,
+      "sourceEnd": 12.625,
+      "sampleTimes": {
+        "first": 11.591666666666667,
+        "middle": 12.083333333333332,
+        "last": 12.575
+      },
+      "reviewMethod": "Three exact local source frames; temporal intent remains unverified unless visible changes support it.",
+      "focalSubjects": [],
+      "focalSubjectCount": 0,
+      "observedActions": [
+        "red door light seam"
+      ],
+      "physicalState": "intact",
+      "reviewNotes": "Object detail; no character in frame.",
+      "originalCaption": "A close-up of a dark red, riveted metal door with two vertical beams of intense red light cutting through the haze in an Underground Latin Club.",
+      "sheet": "source-6-0.jpg"
+    },
+    {
+      "sourceIndex": 6,
+      "sourceFile": "hf_20260814_081045_ef3495fd-b59f-4215-9923-68e941fd72bc.mp4",
+      "sourceId": 5,
+      "sceneId": 8,
+      "sourceStart": 12.625,
+      "sourceEnd": 13.708333333333334,
+      "sampleTimes": {
+        "first": 12.675,
+        "middle": 13.166666666666668,
+        "last": 13.658333333333333
+      },
+      "reviewMethod": "Three exact local source frames; temporal intent remains unverified unless visible changes support it.",
+      "focalSubjects": [
+        "Diego"
+      ],
+      "focalSubjectCount": 1,
+      "observedActions": [
+        "striking red door"
+      ],
+      "physicalState": "intact",
+      "reviewNotes": "Arm swings into red door; looks like impact, not room entry.",
+      "originalCaption": "Diego, shirt unbuttoned, punches a red metal wall in the Underground Latin Club, his muscular torso illuminated by warm ambient light as he moves through a smoky, industrial space.",
+      "sheet": "source-6-0.jpg"
+    },
+    {
+      "sourceIndex": 6,
+      "sourceFile": "hf_20260814_081045_ef3495fd-b59f-4215-9923-68e941fd72bc.mp4",
+      "sourceId": 5,
+      "sceneId": 9,
+      "sourceStart": 13.708333333333334,
+      "sourceEnd": 14.666666666666666,
+      "sampleTimes": {
+        "first": 13.758333333333335,
+        "middle": 14.1875,
+        "last": 14.616666666666665
+      },
+      "reviewMethod": "Three exact local source frames; temporal intent remains unverified unless visible changes support it.",
+      "focalSubjects": [
+        "Diego"
+      ],
+      "focalSubjectCount": 1,
+      "observedActions": [
+        "striking red door"
+      ],
+      "physicalState": "intact",
+      "reviewNotes": "Fist against door; existing pushes open claim is not established by sampled frames.",
+      "originalCaption": "Diego, in a maroon shirt, forcefully pushes open a heavy red metal door in the Underground Latin Club, his muscular arm straining against the industrial door frame under warm, smoky club lighting.",
+      "sheet": "source-6-0.jpg"
+    },
+    {
+      "sourceIndex": 6,
+      "sourceFile": "hf_20260814_081045_ef3495fd-b59f-4215-9923-68e941fd72bc.mp4",
+      "sourceId": 5,
+      "sceneId": 10,
+      "sourceStart": 14.666666666666666,
+      "sourceEnd": 15.666666666666666,
+      "sampleTimes": {
+        "first": 14.716666666666667,
+        "middle": 15.166666666666666,
+        "last": 15.616666666666665
+      },
+      "reviewMethod": "Three exact local source frames; temporal intent remains unverified unless visible changes support it.",
+      "focalSubjects": [
+        "Diego"
+      ],
+      "focalSubjectCount": 1,
+      "observedActions": [
+        "pushing red door"
+      ],
+      "physicalState": "intact",
+      "reviewNotes": "Open palm against door, sustained forward force; final opening not shown here.",
+      "originalCaption": "Diego, an athletic man with a scarred left eyebrow, presses his palm against a heavy red metal door in the Underground Latin Club, his muscular arm glistening under warm amber light as he prepares to push it open.",
+      "sheet": "source-6-10.jpg"
+    },
+    {
+      "sourceIndex": 6,
+      "sourceFile": "hf_20260814_081045_ef3495fd-b59f-4215-9923-68e941fd72bc.mp4",
+      "sourceId": 5,
+      "sceneId": 11,
+      "sourceStart": 15.666666666666666,
+      "sourceEnd": 16.75,
+      "sampleTimes": {
+        "first": 15.716666666666667,
+        "middle": 16.208333333333332,
+        "last": 16.7
+      },
+      "reviewMethod": "Three exact local source frames; temporal intent remains unverified unless visible changes support it.",
+      "focalSubjects": [],
+      "focalSubjectCount": 0,
+      "observedActions": [
+        "door light seam widens"
+      ],
+      "physicalState": "intact",
+      "reviewNotes": "Red riveted door seam grows brighter/wider. Caption concrete wall is inaccurate.",
+      "originalCaption": "A narrow vertical beam of warm red light cuts through a dark, industrial concrete wall with evenly spaced rivets and a smoky haze drifting near the illuminated shaft.",
+      "sheet": "source-6-10.jpg"
+    },
+    {
+      "sourceIndex": 6,
+      "sourceFile": "hf_20260814_081045_ef3495fd-b59f-4215-9923-68e941fd72bc.mp4",
+      "sourceId": 5,
+      "sceneId": 12,
+      "sourceStart": 16.75,
+      "sourceEnd": 17.666666666666668,
+      "sampleTimes": {
+        "first": 16.8,
+        "middle": 17.208333333333336,
+        "last": 17.616666666666667
+      },
+      "reviewMethod": "Three exact local source frames; temporal intent remains unverified unless visible changes support it.",
+      "focalSubjects": [],
+      "focalSubjectCount": 1,
+      "observedActions": [
+        "shoulder movement"
+      ],
+      "physicalState": "unknown",
+      "reviewNotes": "Shoulder, hair, ear/chain detail. Face/identity and dancing cannot be established. Not clearly Valentina back.",
+      "originalCaption": "Close-up of Valentina's sweaty, glistening back as she dances in the Underground Latin Club, with blurred crowd lights and haze in the background.",
+      "sheet": "source-6-10.jpg"
+    },
+    {
+      "sourceIndex": 6,
+      "sourceFile": "hf_20260814_081045_ef3495fd-b59f-4215-9923-68e941fd72bc.mp4",
+      "sourceId": 5,
+      "sceneId": 13,
+      "sourceStart": 17.666666666666668,
+      "sourceEnd": 19.666666666666668,
+      "sampleTimes": {
+        "first": 17.71666666666667,
+        "middle": 18.666666666666668,
+        "last": 19.616666666666667
+      },
+      "reviewMethod": "Three exact local source frames; temporal intent remains unverified unless visible changes support it.",
+      "focalSubjects": [],
+      "focalSubjectCount": 1,
+      "observedActions": [
+        "running legs"
+      ],
+      "physicalState": "intact",
+      "reviewNotes": "Low angle legs on wet tunnel floor; no name evidence.",
+      "originalCaption": "A lone figure in dark pants walks through a wet, smoky tunnel with brick walls and distant lights, their boots splashing through mist as they move toward an unseen destination.",
+      "sheet": "source-6-10.jpg"
+    },
+    {
+      "sourceIndex": 6,
+      "sourceFile": "hf_20260814_081045_ef3495fd-b59f-4215-9923-68e941fd72bc.mp4",
+      "sourceId": 5,
+      "sceneId": 14,
+      "sourceStart": 19.666666666666668,
+      "sourceEnd": 21,
+      "sampleTimes": {
+        "first": 19.71666666666667,
+        "middle": 20.333333333333336,
+        "last": 20.95
+      },
+      "reviewMethod": "Three exact local source frames; temporal intent remains unverified unless visible changes support it.",
+      "focalSubjects": [
+        "Diego"
+      ],
+      "focalSubjectCount": 1,
+      "observedActions": [
+        "looking forward"
+      ],
+      "physicalState": "intact",
+      "reviewNotes": "Diego face close-up; intense look does not establish search intent.",
+      "originalCaption": "Diego, wearing a red plaid shirt open to reveal his muscular torso and gold chain, stares intensely forward with sweat on his forehead in a dimly lit underground Latin Club corridor, illuminated by warm amber cage lamps and red haze.",
+      "sheet": "source-6-10.jpg"
+    },
+    {
+      "sourceIndex": 6,
+      "sourceFile": "hf_20260814_081045_ef3495fd-b59f-4215-9923-68e941fd72bc.mp4",
+      "sourceId": 5,
+      "sceneId": 15,
+      "sourceStart": 21,
+      "sourceEnd": 22.916666666666668,
+      "sampleTimes": {
+        "first": 21.05,
+        "middle": 21.958333333333336,
+        "last": 22.866666666666667
+      },
+      "reviewMethod": "Three exact local source frames; temporal intent remains unverified unless visible changes support it.",
+      "focalSubjects": [],
+      "focalSubjectCount": null,
+      "observedActions": [
+        "running legs",
+        "jewelry detail"
+      ],
+      "physicalState": "unknown",
+      "reviewNotes": "Cut from legs to extreme jewelry macro; cannot treat whole interval as Diego running.",
+      "originalCaption": "Diego runs through a wet, smoke-filled tunnel in the Underground Latin Club, his boots splashing on the damp floor as warm amber cage lights flicker in the background.",
+      "sheet": "source-6-10.jpg"
+    },
+    {
+      "sourceIndex": 6,
+      "sourceFile": "hf_20260814_081045_ef3495fd-b59f-4215-9923-68e941fd72bc.mp4",
+      "sourceId": 5,
+      "sceneId": 16,
+      "sourceStart": 22.916666666666668,
+      "sourceEnd": 24.833333333333332,
+      "sampleTimes": {
+        "first": 22.96666666666667,
+        "middle": 23.875,
+        "last": 24.78333333333333
+      },
+      "reviewMethod": "Three exact local source frames; temporal intent remains unverified unless visible changes support it.",
+      "focalSubjects": [],
+      "focalSubjectCount": null,
+      "observedActions": [
+        "jewelry detail",
+        "crowd moving"
+      ],
+      "physicalState": "unknown",
+      "reviewNotes": "Macro jewelry transitions to crowd; floating earring over crowd is not one continuous observed shot.",
+      "originalCaption": "A golden hoop earring floats in the air above a crowd of silhouetted dancers in an Underground Latin Club, illuminated by intense red haze and warm amber cage lamps, as people raise their arms to the music.",
+      "sheet": "source-6-10.jpg"
+    },
+    {
+      "sourceIndex": 6,
+      "sourceFile": "hf_20260814_081045_ef3495fd-b59f-4215-9923-68e941fd72bc.mp4",
+      "sourceId": 5,
+      "sceneId": 17,
+      "sourceStart": 24.833333333333332,
+      "sourceEnd": 26.583333333333332,
+      "sampleTimes": {
+        "first": 24.883333333333333,
+        "middle": 25.395833333333332,
+        "last": 25.90833333333333
+      },
+      "reviewMethod": "Three exact local source frames; temporal intent remains unverified unless visible changes support it.",
+      "focalSubjects": [
+        "Diego?",
+        "Valentina?"
+      ],
+      "focalSubjectCount": 2,
+      "observedActions": [
+        "running together"
+      ],
+      "physicalState": "intact",
+      "reviewNotes": "Backlit pair through doorway; identities partly silhouetted, strong costume/context continuity.",
+      "originalCaption": "Diego and Valentina sprint through a smoky red-lit corridor in the Underground Latin Club, their silhouettes moving dynamically against a bright backlight as they run together through the haze.",
+      "sheet": "source-6-10.jpg"
+    },
+    {
+      "sourceIndex": 6,
+      "sourceFile": "hf_20260814_081045_ef3495fd-b59f-4215-9923-68e941fd72bc.mp4",
+      "sourceId": 5,
+      "sceneId": 19,
+      "sourceStart": 26.583333333333332,
+      "sourceEnd": 28.25,
+      "sampleTimes": {
+        "first": 26.633333333333333,
+        "middle": 27.416666666666664,
+        "last": 28.2
+      },
+      "reviewMethod": "Three exact local source frames; temporal intent remains unverified unless visible changes support it.",
+      "focalSubjects": [
+        "Diego?",
+        "Valentina?"
+      ],
+      "focalSubjectCount": 2,
+      "observedActions": [
+        "running together"
+      ],
+      "physicalState": "intact",
+      "reviewNotes": "Paired silhouettes in bright doorway; timeline role depends on chosen story.",
+      "originalCaption": "Diego and Valentina run through a smoky, red-lit corridor in the Underground Latin Club, their silhouettes moving dynamically against a glowing orange backlight as they propel forward in unison.",
+      "sheet": "source-6-10.jpg"
+    },
+    {
+      "sourceIndex": 6,
+      "sourceFile": "hf_20260814_081045_ef3495fd-b59f-4215-9923-68e941fd72bc.mp4",
+      "sourceId": 5,
+      "sceneId": 20,
+      "sourceStart": 28.25,
+      "sourceEnd": 30.041666666666668,
+      "sampleTimes": {
+        "first": 28.3,
+        "middle": 29.145833333333336,
+        "last": 29.991666666666667
+      },
+      "reviewMethod": "Three exact local source frames; temporal intent remains unverified unless visible changes support it.",
+      "focalSubjects": [],
+      "focalSubjectCount": null,
+      "observedActions": [
+        "crowd dancing"
+      ],
+      "physicalState": "intact",
+      "reviewNotes": "Wide crowd/atmosphere; no two focal identifiable characters, no jungle exterior.",
+      "originalCaption": "In the Underground Latin Club, silhouetted dancers move through a smoky, red-hazed dance floor illuminated by warm amber cage lamps casting dramatic light shafts across the crowd.",
+      "sheet": "source-6-10.jpg"
+    }
+  ]
+}

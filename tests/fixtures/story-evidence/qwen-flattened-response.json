@@ -1,0 +1,104 @@
+{
+  "ok": true,
+  "text": "Diego and Valentina move through a wet, red-lit underground Latin Club, dancing on a reflective floor beneath a circular light as crowds dance around them.",
+  "caption": "Diego and Valentina move through a wet, red-lit underground Latin Club, dancing on a reflective floor beneath a circular light as crowds dance around them.",
+  "meta": {
+    "caption": "Diego and Valentina move through a wet, red-lit underground Latin Club, dancing on a reflective floor beneath a circular light as crowds dance around them.",
+    "shotType": "Three-panel wide establishing shot",
+    "subjects": [
+      "Diego",
+      "Valentina"
+    ],
+    "action": null,
+    "setting": null,
+    "lighting": null,
+    "timeOfDay": null,
+    "weather": null,
+    "evidence": {
+      "subjects": [
+        {
+          "name": "Diego",
+          "confidence": "supported",
+          "role": "focal"
+        },
+        {
+          "name": "Valentina",
+          "confidence": "supported",
+          "role": "focal"
+        }
+      ],
+      "focalSubjectCount": 2,
+      "actions": [
+        "dancing",
+        "moving"
+      ],
+      "transitions": [
+        "from left to right across the scene"
+      ],
+      "interaction": "pair",
+      "shotScale": "wide",
+      "location": "Underground Latin Club",
+      "physicalState": [
+        "wet floor",
+        "reflective surface"
+      ],
+      "unknowns": [
+        "time of day",
+        "weather",
+        "lighting source details",
+        "crowd composition"
+      ]
+    }
+  },
+  "sceneData": {
+    "caption": "Diego and Valentina move through a wet, red-lit underground Latin Club, dancing on a reflective floor beneath a circular light as crowds dance around them.",
+    "shotType": "Three-panel wide establishing shot",
+    "subjects": [
+      "Diego",
+      "Valentina"
+    ],
+    "action": null,
+    "setting": null,
+    "lighting": null,
+    "timeOfDay": null,
+    "weather": null,
+    "evidence": {
+      "subjects": [
+        {
+          "name": "Diego",
+          "confidence": "supported",
+          "role": "focal"
+        },
+        {
+          "name": "Valentina",
+          "confidence": "supported",
+          "role": "focal"
+        }
+      ],
+      "focalSubjectCount": 2,
+      "actions": [
+        "dancing",
+        "moving"
+      ],
+      "transitions": [
+        "from left to right across the scene"
+      ],
+      "interaction": "pair",
+      "shotScale": "wide",
+      "location": "Underground Latin Club",
+      "physicalState": [
+        "wet floor",
+        "reflective surface"
+      ],
+      "unknowns": [
+        "time of day",
+        "weather",
+        "lighting source details",
+        "crowd composition"
+      ]
+    }
+  },
+  "source": "qwen3-vl-server",
+  "model": "Qwen/Qwen3-VL-4B-Instruct-GGUF:Q4_K_M",
+  "rawOutput": "{\n  \"caption\": \"Diego and Valentina move through a wet, red-lit underground Latin Club, dancing on a reflective floor beneath a circular light as crowds dance around them.\",\n  \"shotType\": \"Three-panel wide establishing shot\",\n  \"subjects\": [\n    {\n      \"name\": \"Diego\",\n      \"confidence\": \"supported\",\n      \"role\": \"focal\"\n    },\n    {\n      \"name\": \"Valentina\",\n      \"confidence\": \"supported\",\n      \"role\": \"focal\"\n    }\n  ],\n  \"focalSubjectCount\": 2,\n  \"actions\": [\n    \"dancing\",\n    \"moving\"\n  ],\n  \"transitions\": [\n    \"from left to right across the scene\"\n  ],\n  \"interaction\": \"pair\",\n  \"shotScale\": \"wide\",\n  \"location\": \"Underground Latin Club\",\n  \"physicalState\": [\n    \"wet floor\",\n    \"reflective surface\"\n  ],\n  \"unknowns\": [\n    \"time of day\",\n    \"weather\",\n    \"lighting source details\",\n    \"crowd composition\"\n  ]\n}"
+}

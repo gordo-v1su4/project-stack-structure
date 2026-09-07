@@ -1,4 +1,6 @@
 export interface PreviewSegment {
+  kind?: "source" | "gap";
+  gapReason?: string;
   videoUrl: string;
   startTime: number;
   endTime: number;
@@ -70,6 +72,8 @@ export class BrowserPreviewPlayer {
   private progressRafId: number | null = null;
   private progressFrameCallbackId: number | null = null;
   private playbackToken = 0;
+  private gapOffset = 0;
+  private gapStartedAt: number | null = null;
   private elementOwnerTokens = new WeakMap<HTMLVideoElement, number>();
   private warmElements = new Map<string, HTMLVideoElement>();
   private audioElement: HTMLAudioElement | null = null;
@@ -139,7 +143,7 @@ export class BrowserPreviewPlayer {
     if (!this.videoElement) return 0;
     const currentSegment = this.segments[this.currentIndex];
     if (!currentSegment) return 0;
-    return getMasterAudioTimeForPosition(this.segments, this.currentIndex, this.videoElement.currentTime);
+    return getMasterAudioTimeForPosition(this.segments, this.currentIndex, currentSegment.kind === "gap" ? this.currentGapOffset() : this.videoElement.currentTime);
   }
 
   private startMasterAudio() {
@@ -174,14 +178,14 @@ export class BrowserPreviewPlayer {
 
   private applyElementVisibility() {
     this.elements.forEach((element, index) => {
-      if (element) element.style.opacity = index === this.activeElementIndex ? "1" : "0";
+      if (element) element.style.opacity = this.segments[this.currentIndex]?.kind !== "gap" && index === this.activeElementIndex ? "1" : "0";
     });
   }
 
   load(segments: PreviewSegment[]) {
     this.stop();
     this.segments = segments.filter(
-      (segment) => segment.videoUrl && segment.endTime > segment.startTime
+      (segment) => (segment.kind === "gap" || segment.videoUrl) && segment.endTime > segment.startTime
     );
     this.totalDuration = this.segments.reduce(
       (sum, segment) => sum + (segment.endTime - segment.startTime),
@@ -214,6 +218,7 @@ export class BrowserPreviewPlayer {
 
   pause() {
     if (!this.videoElement) return;
+    if (this.segments[this.currentIndex]?.kind === "gap") { this.gapOffset = this.currentGapOffset(); this.gapStartedAt = null; }
     this.videoElement.pause();
     this.pauseMasterAudio();
     this.playbackToken++;
@@ -224,6 +229,11 @@ export class BrowserPreviewPlayer {
 
   resume() {
     if (!this.videoElement) return;
+    if (this.segments[this.currentIndex]?.kind === "gap") {
+      const token = ++this.playbackToken;
+      void this.playGap(this.segments[this.currentIndex]!, token).then(() => this.advanceToNext(token));
+      return;
+    }
 
     if (this.currentSegmentEndTime !== null && this.status === "paused") {
       const token = ++this.playbackToken;
@@ -270,6 +280,8 @@ export class BrowserPreviewPlayer {
   }
 
   stop() {
+    this.gapOffset = 0;
+    this.gapStartedAt = null;
     this.playbackToken++;
     this.stopProgressLoop();
     this.pauseMasterAudio();
@@ -355,6 +367,14 @@ export class BrowserPreviewPlayer {
 
     this.currentIndex = index;
     this.warmSourcesAround(index);
+    this.applyElementVisibility();
+    if (segment.kind === "gap") {
+      this.gapOffset = 0;
+      this.nextSegmentIsLive = false;
+      await this.playGap(segment, token);
+      await this.advanceToNext(token);
+      return;
+    }
 
     if (this.nextSegmentIsLive) {
       // This segment was staged on the standby element and swapped in at the
@@ -379,7 +399,7 @@ export class BrowserPreviewPlayer {
     const nextSegment = this.segments[index + 1];
     const standby = this.standbyElement;
     let standbyReady = false;
-    if (standby && nextSegment) {
+    if (standby && nextSegment && nextSegment.kind !== "gap") {
       void this.prepareVisibleVideo(standby, nextSegment, token)
         .then(() => {
           if (token === this.playbackToken) standbyReady = true;
@@ -421,6 +441,35 @@ export class BrowserPreviewPlayer {
     }
 
     await this.advanceToNext(token);
+  }
+
+  private currentGapOffset() {
+    return this.gapOffset + (this.gapStartedAt === null ? 0 : (performance.now() - this.gapStartedAt) / 1000);
+  }
+
+  private async playGap(segment: PreviewSegment, token: number) {
+    for (const element of this.elements) element?.pause();
+    this.stopProgressLoop();
+    this.applyElementVisibility();
+    this.gapStartedAt = performance.now();
+    this.status = "playing";
+    this.currentSegmentEndTime = segment.endTime;
+    this.startMasterAudio();
+    await new Promise<void>((resolve) => {
+      const tick = () => {
+        if (token !== this.playbackToken || this.status !== "playing") { resolve(); return; }
+        this.correctMasterAudioDrift();
+        this.emit();
+        if (this.currentGapOffset() >= segment.endTime - segment.startTime) {
+          this.gapOffset = segment.endTime - segment.startTime;
+          this.gapStartedAt = null;
+          resolve();
+          return;
+        }
+        requestAnimationFrame(tick);
+      };
+      tick();
+    });
   }
 
   private async prepareVisibleVideo(video: HTMLVideoElement, segment: PreviewSegment, token: number) {
@@ -572,7 +621,7 @@ export class BrowserPreviewPlayer {
 
     const currentSegment = this.segments[this.currentIndex];
     if (currentSegment) {
-      elapsed += Math.max(0, this.videoElement.currentTime - currentSegment.startTime);
+      elapsed += currentSegment.kind === "gap" ? Math.min(currentSegment.endTime - currentSegment.startTime, this.currentGapOffset()) : Math.max(0, this.videoElement.currentTime - currentSegment.startTime);
     }
 
     return Math.min(elapsed, this.totalDuration);

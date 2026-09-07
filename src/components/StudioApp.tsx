@@ -1,6 +1,6 @@
 "use client";
 
-import { startTransition, useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { extractWaveformData, fetchEssentiaAnalysis, getEssentiaStorageFromPayload, parseEssentiaPayload } from "./studio/audioAnalysis";
 import type { DeepgramTranscriptSummary } from "./studio/deepgramUtils";
@@ -8,7 +8,9 @@ import { GATE_HEADLINE, NAV, resolveCaptionMode } from "./studio/constants";
 import { mergeUploadedVideoSourceUpdate, needsSceneDetectionRetry, prepareVideoSources, reconcileSourceCaptionStatus, rerunSourceSceneAnalysis, revokePreparedVideoSources, selectSceneRetrySources, captionDeferredSources, isStudioCaptionContextReady } from "./studio/mediaUpload";
 import { uploadFileInChunks } from "./studio/chunkedUploadClient";
 import type { VideoSceneUpdate } from "./studio/mediaUpload";
-import { buildEditPlanPreviewSegments, normalizeStoryEditSettings, type EditPlanPreviewSegment, type MusicVideoProject } from "./studio/musicVideoProject";
+import { buildCaptionRevisionKey, createCaptionRevisionGuard } from "./studio/mediaEvidence";
+import { buildStudioSourceContextSignature } from "./studio/studioSourceContext";
+import { isPlacementPlanCurrent, storyProjectInputSignature, prepareApprovedPlacements, buildEditPlanPreviewSegments, normalizeStoryEditSettings, type EditPlanPreviewSegment, type MusicVideoProject } from "./studio/musicVideoProject";
 import { selectStorySectionCandidate } from "./studio/musicVideoProjectSelection";
 import { buildAutoShaderCues, describeMusicVideoShaderPreset, MUSIC_VIDEO_SHADER_PRESETS, type ShaderAccentKinds, type ShaderEffectCue } from "./studio/shaderEffectPlan";
 import {
@@ -106,6 +108,7 @@ type PendingStudioAutosave = {
 export default function StudioApp() {
   const videoSourcesRef = useRef<UploadedVideoSource[]>([]);
   const referenceAssetsRef = useRef<ReferenceAsset[]>([]);
+  const captionSettingsRef = useRef<ReturnType<typeof buildSceneCaptionSettings> | null>(null);
   const [tab, setTab] = useState<Tab>("review");
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isShortcutSheetOpen, setIsShortcutSheetOpen] = useState(false);
@@ -157,7 +160,7 @@ export default function StudioApp() {
   const [previewState, setPreviewState] = useState(createSectionRecomputeState);
   const [committedBeatSplit, setCommittedBeatSplit] = useState<PersistedCommittedSplit | null>(null);
   const [storyState, setStoryState] = useState(createDefaultStoryTabState);
-  const [musicVideoProject, setMusicVideoProject] = useState<MusicVideoProject | null>(null);
+  const [storedMusicVideoProject, setMusicVideoProject] = useState<MusicVideoProject | null>(null);
   const [captionMode, setCaptionMode] = useState<SceneCaptionMode>("smart");
   const [referenceAssets, setReferenceAssets] = useState<ReferenceAsset[]>([]);
   const [generatedAssets, setGeneratedAssets] = useState<GeneratedStudioAsset[]>([]);
@@ -233,6 +236,20 @@ export default function StudioApp() {
   useEffect(() => {
     videoSourcesRef.current = videoSources;
   }, [videoSources]);
+
+  useEffect(() => {
+    captionSettingsRef.current = buildSceneCaptionSettings(captionMode, beatJoinAnalysis, storyState, referenceAssets);
+  }, [captionMode, beatJoinAnalysis, storyState, referenceAssets]);
+
+  const referenceRevision = useMemo(() => JSON.stringify(referenceAssets), [referenceAssets]);
+  const sourceContextSignature = useMemo(() => buildStudioSourceContextSignature({ analysis: beatJoinAnalysis, videoSources, referenceAssets }), [beatJoinAnalysis, videoSources, referenceAssets]);
+  const musicVideoProject = useMemo(() => {
+    if (!storedMusicVideoProject || storedMusicVideoProject.sourceContextSignature === sourceContextSignature) return storedMusicVideoProject;
+    // Retain the old decisions for review; current inputs cannot bless them for playback or export.
+    return { ...storedMusicVideoProject, placementPlan: storedMusicVideoProject.placementPlan
+      ? { ...storedMusicVideoProject.placementPlan, inputSignature: `stale-source:${sourceContextSignature}` }
+      : undefined };
+  }, [storedMusicVideoProject, sourceContextSignature]);
 
   useEffect(() => {
     let cancelled = false;
@@ -888,7 +905,12 @@ export default function StudioApp() {
         await Promise.all(
           Array.from({ length: Math.min(1, queue.length) }, async () => {
             for (let source = queue.shift(); source; source = queue.shift()) {
-              await rerunSourceSceneAnalysis(source, captionSettings, applySceneUpdate, { captionContextReady }).catch(() => undefined);
+              const guard = createCaptionRevisionGuard(source, captionSettings,
+                () => videoSourcesRef.current.find((candidate) => candidate.id === source.id),
+                () => captionSettingsRef.current);
+              await rerunSourceSceneAnalysis(source, captionSettings, (update) => {
+                if (guard.acceptUpdate(update.source)) applySceneUpdate(update);
+              }, { captionContextReady, isCurrent: guard.isCurrent }).catch(() => undefined);
             }
           }),
         );
@@ -1210,6 +1232,11 @@ export default function StudioApp() {
       return;
     }
 
+    if (storyPreviewSegments.some((segment) => segment.kind === "gap" || !segment.videoUrl)) {
+      setFinalExportError("Missing footage remains. Resolve the gaps in Match or approve generated replacements before export.");
+      return;
+    }
+
     const requestKey = `final-export-${Date.now()}`;
     setIsFinalExporting(true);
     setDone(false);
@@ -1286,16 +1313,14 @@ export default function StudioApp() {
       setProgress(20);
       setPreviewState((current) => updateSectionRecomputeProgress(current, { requestKey, progress: 20 }));
 
-      const timelineItemsBySectionId = new Map(musicVideoProject.editPlan.timelineItems.map((item) => [item.sectionId, item]));
       const segments = storyPreviewSegments.map((segment) => {
-        const item = timelineItemsBySectionId.get(segment.sectionId);
         return {
           sourceIndex: videoUrlIndex.get(segment.videoUrl) ?? 0,
           startTime: segment.startTime,
           endTime: segment.endTime,
           musicStart: segment.musicStart,
           musicEnd: segment.musicEnd,
-          label: item?.label ?? segment.label,
+          label: segment.label,
         };
       });
 
@@ -1477,6 +1502,11 @@ export default function StudioApp() {
     }
     if (!storyState.storyGenerated || storyPreviewSegments.length === 0 || !musicVideoProject) {
       setFinalExportError("Generate the Story layout and preview segments before WebGPU export.");
+      return;
+    }
+
+    if (storyPreviewSegments.some((segment) => segment.kind === "gap" || !segment.videoUrl)) {
+      setFinalExportError("Missing footage remains. Resolve the gaps in Match or approve generated replacements before export.");
       return;
     }
 
@@ -1784,10 +1814,21 @@ export default function StudioApp() {
     setProgress(100);
   }
 
-  function handleSelectSemanticCandidate(sectionId: string, momentId: string) {
+  const handleStoryProjectChange = useCallback((next: MusicVideoProject) => {
+    setMusicVideoProject((current) => current && storyProjectInputSignature(current) === storyProjectInputSignature(next) ? current : next);
+  }, []);
+
+  function handleCoveragePolicyChange(policy: "faithful" | "best-effort") {
+    if (!musicVideoProject || !isPlacementPlanCurrent(musicVideoProject)) return;
+    setMusicVideoProject((current) => current ? prepareApprovedPlacements({ project: current, videoSources, editSettings: storyState.editSettings, policy }) : current);
+    setDone(false);
+  }
+
+  function handleSelectSemanticCandidate(sectionId: string, momentId: string, timelineItemId?: string) {
+    if (!musicVideoProject || !isPlacementPlanCurrent(musicVideoProject)) return;
     setMusicVideoProject((currentProject) => {
       if (!currentProject) return currentProject;
-      return selectStorySectionCandidate(currentProject, { sectionId, momentId });
+      return prepareApprovedPlacements({ project: selectStorySectionCandidate(currentProject, { sectionId, momentId, timelineItemId }), videoSources, editSettings: storyState.editSettings, origin: "manual-match" });
     });
     setDone(false);
   }
@@ -2035,7 +2076,10 @@ export default function StudioApp() {
       });
     };
 
-    void captionDeferredSources(pending, captionSettings, applySceneUpdate)
+    void captionDeferredSources(pending, captionSettings, applySceneUpdate, (source) => {
+      const current = videoSourcesRef.current.find((candidate) => buildVideoSourceKey(candidate) === buildVideoSourceKey(source));
+      return Boolean(current && captionSettingsRef.current && buildCaptionRevisionKey(current, captionSettingsRef.current) === buildCaptionRevisionKey(source, captionSettings));
+    })
       .catch(() => undefined)
       .finally(() => {
         captionResumeInFlightRef.current = false;
@@ -2064,7 +2108,8 @@ export default function StudioApp() {
     storyAnchorsResolved: isStoryPlanConfirmable(activeStoryTreatment),
     storyPlanConfirmed: storyState.storyGenerated
       && Boolean(storyState.confirmedTreatmentId)
-      && Boolean(storyState.storyContentSignature),
+      && Boolean(storyState.storyContentSignature)
+      && Boolean(musicVideoProject && isPlacementPlanCurrent(musicVideoProject)),
     musicVideoProject,
     generatedAssets,
     storySegmentCount: storyPreviewSegments.length,
@@ -2076,9 +2121,7 @@ export default function StudioApp() {
     beatJoinAnalysis,
     storyState.storyGenerated,
     storyState.selectedTreatmentId,
-    storyState.treatments,
     storyState.confirmedTreatmentId,
-    storyState.confirmedTreatmentSnapshot,
     activeStoryTreatment,
     storyState.storyContentSignature,
     storyState.transcriptSummary,
@@ -2510,9 +2553,10 @@ export default function StudioApp() {
                 audioStatus={audioStatus}
                 videoSources={videoSources}
                 segmentPreviews={segmentPreviews}
+                referenceRevision={referenceRevision}
                 state={storyState}
                 onStateChange={setStoryState}
-                onProjectChange={setMusicVideoProject}
+                onProjectChange={handleStoryProjectChange}
               />
             )}
 
@@ -2559,6 +2603,7 @@ export default function StudioApp() {
                 onSelectStory={() => handleSelectTab("story")}
                 onSelectSplit={() => handleSelectTab("split")}
                 onSelectCandidate={handleSelectSemanticCandidate}
+                onCoveragePolicyChange={handleCoveragePolicyChange}
               />
             )}
 

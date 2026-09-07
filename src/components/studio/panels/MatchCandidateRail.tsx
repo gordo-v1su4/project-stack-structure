@@ -24,8 +24,8 @@ export function MatchCandidateRail({
     <div className="mt-2 rounded-[2px] border border-[#171717] bg-[#050505] p-2">
       <div className="mb-2 flex items-center justify-between gap-2">
         <div>
-          <div className="text-[8px] uppercase tracking-[0.14em] text-[#555]">Semantic contact sheet</div>
-          <div className="mt-1 text-[9px] leading-4 text-[#747474]">Ranked visual backups prove the match instead of hiding the shuffle.</div>
+          <div className="text-[8px] uppercase tracking-[0.14em] text-[#555]">Candidate evidence</div>
+          <div className="mt-1 text-[9px] leading-4 text-[#747474]">Inspect why each source supports this visual or leaves a gap.</div>
         </div>
         <div className="font-mono text-[8px] uppercase tracking-[0.1em] text-[#666]">{backupCount} backups</div>
       </div>
@@ -39,10 +39,13 @@ export function MatchCandidateRail({
 }
 
 function CandidateMiniCard({ candidate, mode, onSelectCandidate }: { candidate: MatchCandidateRailItem; mode: MatchMode; onSelectCandidate?: (momentId: string) => void }) {
+  const eligible = candidate.match.assessment?.eligibility === "eligible";
   return (
     <button
       type="button"
       aria-pressed={candidate.selected}
+      disabled={!eligible || !onSelectCandidate}
+      title={candidate.match.assessment?.reasons.join(" · ") ?? "Evidence has not been reviewed"}
       aria-label={`${candidate.selected ? "Selected" : "Select"} candidate ${candidate.rank}: ${candidate.caption}`}
       onClick={() => onSelectCandidate?.(candidate.match.momentId)}
       className={`overflow-hidden rounded-[2px] border text-left transition-colors ${candidate.selected ? "border-[#e05c00] bg-[#100905]" : "border-[#1d1d1d] bg-[#060606] hover:border-[#6a3218]"} ${onSelectCandidate ? "cursor-pointer" : "cursor-default"}`}>
@@ -53,7 +56,7 @@ function CandidateMiniCard({ candidate, mode, onSelectCandidate }: { candidate: 
         ) : <div className="h-full w-full bg-[#101010]" />}
         <div className="absolute left-1 top-1 rounded-[1px] bg-[#000000b8] px-1 py-[1px] font-mono text-[7px] uppercase tracking-[0.1em] text-[#d0d0d0]">#{candidate.rank}</div>
         <div className={`absolute right-1 top-1 rounded-[1px] border bg-[#000000b8] px-1 py-[1px] font-mono text-[7px] ${candidate.selected ? "border-[#e05c00] text-[#e05c00]" : "border-[#245c2c] text-[#79c779]"}`}>
-          {candidate.scorePercent}%
+          {eligible ? "Supported" : candidate.match.assessment?.eligibility === "ineligible" ? "Contradiction" : "Uncertain"}
         </div>
         {candidate.selected ? <div className="absolute bottom-1 left-1 rounded-[1px] bg-[#e05c00] px-1 py-[1px] text-[7px] uppercase tracking-[0.1em] text-white">selected</div> : null}
       </div>

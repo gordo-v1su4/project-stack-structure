@@ -51,3 +51,14 @@ Use the local fixture lane to generate a canonical probe manifest:
 ```bash
 bun run probe:media
 ```
+
+### Six-video story reconstruction lane
+
+Set `STACK_STRUCTURE_E2E_FIXTURE_MODE=studio-six` to select the exact six reviewed
+source filenames and SHA-256 values from `tests/fixtures/story-evidence/six-video-review.json`.
+This lane loads Character 1, Character 2 and Environment only. It ignores
+`STACK_STRUCTURE_E2E_VIDEO_LIMIT`; the other source videos and crowd sheets are not uploaded.
+The harness preserves faithful gaps and writes `faithful-plan-with-gaps.json` before
+blocking export; it does not repeat sources to manufacture full coverage. For the
+interactive story-authoring acceptance use the saved six-clip project, so existing
+analysis can be reviewed without dispatching all 42 captions again.

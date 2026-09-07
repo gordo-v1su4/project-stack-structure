@@ -1,3 +1,4 @@
+import { assessStoryMatch } from "./storyMatchAssessment";
 import { promoteReservedMoment, rankMomentsForSection, reserveSectionMoments, type SemanticEditAssignment, type SemanticSectionInput, type SemanticVideoMomentInput } from "./semanticEditPlanner";
 import type { SrtChunk } from "./srtUtils";
 import type { BeatJoinAnalysis, BeatJoinSection, DetectedSceneSegment, SceneVisualAnalysis, SegmentPreview, UploadedVideoSource } from "./types";
@@ -25,6 +26,8 @@ export interface StorySection extends BeatJoinSection {
   videoMomentIds: string[];
   semanticMatch?: SemanticClipMatch;
   candidateMatches?: SemanticClipMatch[];
+  /** Explicit reviewed source (one moment) or generation gap (empty). */
+  approvedMomentIds?: string[];
 }
 
 export interface LyricChunk extends SrtChunk {
@@ -49,6 +52,7 @@ export interface VideoMoment {
   sourceRefLabel?: string;
   caption?: string;
   captionMeta?: DetectedSceneSegment["captionMeta"];
+  mediaEvidence?: DetectedSceneSegment["mediaEvidence"];
   motionDescriptor?: SegmentPreview["motionDescriptor"];
   visualAnalysis?: SceneVisualAnalysis;
   contentHash?: string;
@@ -68,10 +72,18 @@ export interface SemanticClipMatch {
   colorContinuityScore?: number;
   repetitionPenalty: number;
   reasons: string[];
+  assessment?: import("./storyMatchAssessment").MatchAssessment;
 }
 
 export interface EditPlanPreviewSegment {
+  planSignature?: string;
+  timelineItemId?: string;
+  narrativeMomentId?: string;
+  requirementId?: string;
+  storyDirection?: string;
   videoUrl: string;
+  kind?: "source" | "gap";
+  gapReason?: string;
   startTime: number;
   endTime: number;
   label: string;
@@ -85,6 +97,11 @@ export interface EditPlanPreviewSegment {
 }
 
 export interface TimelineItem {
+  candidateMatches?: SemanticClipMatch[];
+  requirements?: import("./storyMatchAssessment").ShotRequirementConstraints;
+  narrativeMomentId?: string;
+  requirementId?: string;
+  eligibleMomentIds?: string[];
   id: string;
   sectionId: string;
   lyricChunkIds: string[];
@@ -118,6 +135,21 @@ const MIN_READABLE_PREVIEW_CUT_SECONDS = 1.5;
 const MAX_PREVIEW_MOMENT_USES_BEFORE_EXHAUSTION = 2;
 const MAX_PREVIEW_SHOT_FAMILY_USES_BEFORE_EXHAUSTION = 3;
 
+export interface ApprovedPlacement {
+  id: string;
+  sectionId: string;
+  timelineItemId: string;
+  momentId: string | null;
+  sourceStart: number;
+  sourceEnd: number;
+  songStart: number;
+  songEnd: number;
+  label: string;
+  kind: "source" | "gap";
+  reason?: string;
+  origin: "story-match" | "manual-match";
+}
+
 export interface EditPlan {
   id: string;
   timelineItems: TimelineItem[];
@@ -136,6 +168,7 @@ export interface ReviewFinding {
 
 export interface MusicVideoProject {
   id: string;
+  sourceContextSignature?: string;
   song: BeatJoinAnalysis | null;
   duration: number;
   lyricChunks: LyricChunk[];
@@ -143,6 +176,9 @@ export interface MusicVideoProject {
   videoMoments: VideoMoment[];
   editPlan: EditPlan;
   reviewFindings: ReviewFinding[];
+  storyMusicPlacements?: import("./storyMusicPlacement").StoryMusicPlacement[];
+  faithfulPlacementPlan?: NonNullable<MusicVideoProject["placementPlan"]>;
+  placementPlan?: { version: 1; inputSignature: string; settings: StoryEditSettings; revision: number; policy: "faithful" | "best-effort"; placements: ApprovedPlacement[] };
 }
 
 const DEFAULT_SECTION_DRAFTS: StoryPlanDraft[] = [
@@ -371,6 +407,7 @@ export function buildVideoMomentsFromStudioSources(params: {
         sourceRefLabel: `S${source.id + 1} · ${scene.label}`,
         caption: scene.captionMeta?.caption ?? extractCaptionText(scene.caption),
         captionMeta: scene.captionMeta,
+        mediaEvidence: scene.mediaEvidence,
         motionDescriptor: scene.motionDescriptor ?? scene.visualAnalysis?.motion ?? undefined,
         visualAnalysis: scene.visualAnalysis,
         contentHash: scene.contentHash ?? scene.visualAnalysis?.contentHash,
@@ -442,6 +479,7 @@ export function mapVideoMomentsToStorySections(sections: StorySection[], moments
       end: moment.end,
       duration: moment.duration,
       caption: moment.caption,
+      mediaEvidence: moment.mediaEvidence,
       subjects: moment.captionMeta?.subjects,
       action: moment.captionMeta?.action,
       setting: moment.captionMeta?.setting,
@@ -457,7 +495,6 @@ export function mapVideoMomentsToStorySections(sections: StorySection[], moments
   return sections.map((section) => {
     const ranked = rankedBySection.get(section.id) ?? [];
     const assigned = ranked[0];
-    const overlapping = moments.filter((moment) => overlaps(section.start, section.end, moment.start, moment.end));
     const rankedMomentIds = pickDiverseSectionMomentIds(ranked, section.end - section.start, {
       momentUseCounts: sectionMomentUseCounts,
       familyUseCounts: sectionFamilyUseCounts,
@@ -477,7 +514,7 @@ export function mapVideoMomentsToStorySections(sections: StorySection[], moments
     const candidateMatches = ranked.slice(0, MAX_SECTION_CANDIDATE_MATCHES).map(toSemanticClipMatch);
     return {
       ...section,
-      videoMomentIds: rankedMomentIds.length ? rankedMomentIds : overlapping.map((moment) => moment.id),
+      videoMomentIds: rankedMomentIds,
       semanticMatch: assigned ? toSemanticClipMatch(assigned) : undefined,
       candidateMatches,
     };
@@ -556,35 +593,126 @@ export function createMusicVideoProject(params: {
 }
 
 
+export function storyProjectInputSignature(project: MusicVideoProject): string {
+  return JSON.stringify({
+    sourceContextSignature: project.sourceContextSignature,
+    sections: project.storySections.map(({ id, label, prompt, start, end }) => ({ id, label, prompt, start, end })),
+    requirements: project.editPlan.timelineItems.map(({ id, prompt, start, end, requirements }) => ({ id, prompt, start, end, requirements })),
+    moments: project.videoMoments.map(({ id, start, end, caption, captionMeta, mediaEvidence }) => ({ id, start, end, caption, captionMeta, mediaEvidence })),
+    song: project.song && { sourceLabel: project.song.sourceLabel, beats: project.song.beats, onsets: project.song.onsets, energy: project.song.energy, duration: project.duration },
+    settings: project.placementPlan?.settings,
+  });
+}
+
+export function placementInputSignature(project: MusicVideoProject, editSettings?: Partial<StoryEditSettings>): string {
+  const input = JSON.stringify({
+    sourceContextSignature: project.sourceContextSignature,
+    sections: project.storySections,
+    items: project.editPlan.timelineItems,
+    moments: project.videoMoments.map(({ id, sourceClipId, start, end, caption, captionMeta, mediaEvidence }) => ({ id, sourceClipId, start, end, caption, captionMeta, mediaEvidence })),
+    music: project.song && { duration: project.song.duration, sections: project.song.sections, beats: project.song.beats, onsets: project.song.onsets, energy: project.song.energy },
+    settings: normalizeStoryEditSettings(editSettings ?? project.placementPlan?.settings),
+  });
+  let hash = 2166136261;
+  for (let index = 0; index < input.length; index++) hash = Math.imul(hash ^ input.charCodeAt(index), 16777619);
+  return `placements-v1-${(hash >>> 0).toString(16)}`;
+}
+
+export function isPlacementPlanCurrent(project: MusicVideoProject): boolean {
+  return Boolean(project.placementPlan && project.placementPlan.inputSignature === placementInputSignature(project, project.placementPlan.settings));
+}
+
+export function prepareApprovedPlacements(params: {
+  project: MusicVideoProject;
+  videoSources: UploadedVideoSource[];
+  editSettings?: Partial<StoryEditSettings>;
+  policy?: "faithful" | "best-effort";
+  origin?: ApprovedPlacement["origin"];
+}): MusicVideoProject {
+  const { project } = params;
+  const policy = params.policy ?? project.placementPlan?.policy ?? "faithful";
+  const inputSignature = placementInputSignature(project, params.editSettings);
+  if (project.placementPlan?.inputSignature === inputSignature && project.placementPlan.policy === policy) return project;
+  const faithfulPlacementPlan = project.placementPlan?.policy === "faithful" && project.placementPlan.inputSignature === inputSignature
+    ? project.placementPlan
+    : project.faithfulPlacementPlan?.inputSignature === inputSignature ? project.faithfulPlacementPlan : undefined;
+  if (policy === "faithful" && faithfulPlacementPlan) return { ...project, placementPlan: faithfulPlacementPlan, faithfulPlacementPlan };
+  const segments = arrangeEditPlanSegments({ ...params, allowReuse: policy === "best-effort" });
+  const placements: ApprovedPlacement[] = [];
+  for (const item of project.editPlan.timelineItems) {
+    let cursor = item.start;
+    const cuts = segments.filter((segment) => segment.sectionId === item.sectionId && segment.musicStart >= item.start && segment.musicEnd <= item.end);
+    const addGap = (end: number) => {
+      if (end <= cursor + 0.025) return;
+      placements.push({ id: `${item.id}:gap:${cursor.toFixed(3)}`, timelineItemId: item.id, sectionId: item.sectionId, momentId: null,
+        sourceStart: 0, sourceEnd: roundTime(end - cursor), songStart: cursor, songEnd: end, label: item.label,
+        kind: "gap", reason: item.videoMomentId ? "Insufficient unused footage for this story moment" : "Missing or uncertain story footage", origin: params.origin ?? "story-match" });
+      cursor = end;
+    };
+    for (const cut of cuts) {
+      addGap(cut.musicStart);
+      placements.push({ id: `${item.id}:cut:${cut.musicStart.toFixed(3)}`, timelineItemId: item.id, sectionId: item.sectionId,
+        momentId: cut.momentId ?? null, sourceStart: cut.startTime, sourceEnd: cut.endTime,
+        songStart: cut.musicStart, songEnd: cut.musicEnd, label: cut.label, kind: "source", origin: params.origin ?? "story-match" });
+      cursor = cut.musicEnd;
+    }
+    addGap(item.end);
+  }
+  return { ...project, faithfulPlacementPlan, placementPlan: { version: 1, revision: (project.placementPlan?.revision ?? 0) + 1, inputSignature, settings: normalizeStoryEditSettings(params.editSettings ?? project.placementPlan?.settings), policy, placements } };
+}
+
 export function buildEditPlanPreviewSegments(params: {
   project: MusicVideoProject | null;
   videoSources: UploadedVideoSource[];
   editSettings?: Partial<StoryEditSettings>;
 }): EditPlanPreviewSegment[] {
-  if (!params.project) return [];
+  const project = params.project;
+  if (!project) return [];
+  const current = project.placementPlan?.inputSignature === placementInputSignature(project, params.editSettings);
+  // Legacy/stale plans stay readable but may not secretly make new edit decisions on playback.
+  const placements = current ? project.placementPlan!.placements : project.editPlan.timelineItems.map((item): ApprovedPlacement => ({
+    id: `${item.id}:stale`, timelineItemId: item.id, sectionId: item.sectionId, momentId: null,
+    sourceStart: 0, sourceEnd: item.end - item.start, songStart: item.start, songEnd: item.end,
+    label: item.label, kind: "gap", reason: "Review Match to prepare this story revision", origin: "story-match",
+  }));
+  return placements.map((placement) => {
+    const moment = project.videoMoments.find((candidate) => candidate.id === placement.momentId);
+    const source = params.videoSources.find((candidate) => candidate.id === moment?.sourceClipId);
+    const isGap = placement.kind === "gap" || !source?.videoUrl;
+    return {
+      videoUrl: isGap ? "" : source!.videoUrl,
+      kind: isGap ? "gap" : "source",
+      gapReason: isGap ? placement.reason ?? "Source media is unavailable" : undefined,
+      startTime: isGap ? 0 : placement.sourceStart,
+      endTime: isGap ? placement.songEnd - placement.songStart : placement.sourceEnd,
+      musicStart: placement.songStart, musicEnd: placement.songEnd,
+      planSignature: current ? project.placementPlan!.inputSignature : undefined,
+      timelineItemId: placement.timelineItemId,
+      narrativeMomentId: project.editPlan.timelineItems.find((item) => item.id === placement.timelineItemId)?.narrativeMomentId,
+      requirementId: project.editPlan.timelineItems.find((item) => item.id === placement.timelineItemId)?.requirementId,
+      storyDirection: project.editPlan.timelineItems.find((item) => item.id === placement.timelineItemId)?.prompt.replace(/^\[(?:GENERATE GAP|OMITTED MOMENT)\]\s*/, ""),
+      sectionId: placement.sectionId, label: isGap ? `Missing footage · ${placement.label}` : placement.label,
+      momentId: isGap ? undefined : moment?.id, sourceClipId: isGap ? undefined : moment?.sourceClipId,
+      sourceRefLabel: isGap ? undefined : moment?.sourceRefLabel,
+      thumbnailUrl: isGap ? undefined : moment?.firstFrameUrl ?? moment?.thumbnailUrl ?? source?.thumbnailUrl,
+    };
+  });
+}
 
+/** Arrange once when story or Match changes. Playback only reads the saved placements. */
+function arrangeEditPlanSegments(params: {
+  project: MusicVideoProject;
+  videoSources: UploadedVideoSource[];
+  editSettings?: Partial<StoryEditSettings>;
+  allowReuse?: boolean;
+}): EditPlanPreviewSegment[] {
   const project = params.project;
   const editSettings = normalizeStoryEditSettings(params.editSettings);
   const momentsById = new Map(project.videoMoments.map((moment) => [moment.id, moment]));
-  // Saved projects can carry a narrow candidate list produced by an older
-  // planner. Refresh the semantic alternatives at playback time while keeping
-  // persisted/promoted choices first, so existing projects gain new visual
-  // vocabulary without discarding a user's explicit Match decision.
-  const refreshedSectionsById = new Map(
-    mapVideoMomentsToStorySections(project.storySections, project.videoMoments, project.lyricChunks)
-      .map((section) => [section.id, section]),
-  );
-  const sectionsById = new Map(project.storySections.map((section) => {
-    const refreshed = refreshedSectionsById.get(section.id);
-    return [section.id, {
-      ...(refreshed ?? section),
-      videoMomentIds: uniqueStrings([
-        ...section.videoMomentIds,
-        ...(refreshed?.videoMomentIds ?? []),
-      ]),
-    } satisfies StorySection];
-  }));
+  const sectionsById = new Map(project.storySections.map((section) => [section.id, section]));
   const continuity: PreviewSequenceContinuity = {
+    consumedSourceIntervals: new Map(),
+    allowReuse: params.allowReuse ?? false,
     momentUseCounts: new Map(),
     sourceUseCounts: new Map(),
     shotFamilyUseCounts: new Map(),
@@ -599,8 +727,8 @@ export function buildEditPlanPreviewSegments(params: {
   for (const item of project.editPlan.timelineItems) {
     const section = sectionsById.get(item.sectionId);
     const candidateIds = uniqueStrings([
-      ...(section?.videoMomentIds ?? []),
       ...(item.videoMomentId ? [item.videoMomentId] : []),
+      ...(item.videoMomentId ? item.eligibleMomentIds ?? section?.approvedMomentIds ?? section?.videoMomentIds ?? [] : []),
     ]);
     const candidates = candidateIds
       .map((momentId) => {
@@ -608,6 +736,9 @@ export function buildEditPlanPreviewSegments(params: {
         if (!moment) return null;
         const source = params.videoSources.find((candidate) => candidate.id === moment.sourceClipId);
         if (!source?.videoUrl) return null;
+        const assessment = assessStoryMatch({ requirementId: item.requirementId ?? item.id, requirementText: item.prompt,
+          constraints: item.requirements, moment: { ...moment, subjects: moment.captionMeta?.subjects, action: moment.captionMeta?.action, setting: moment.captionMeta?.setting } });
+        if (assessment.eligibility !== "eligible") return null;
         return { moment, source };
       })
       .filter((candidate): candidate is { moment: VideoMoment; source: UploadedVideoSource } => candidate !== null);
@@ -704,6 +835,7 @@ function toSemanticClipMatch(assignment: SemanticEditAssignment): SemanticClipMa
     colorContinuityScore: assignment.colorContinuityScore,
     repetitionPenalty: assignment.repetitionPenalty,
     reasons: assignment.reasons,
+    assessment: assignment.assessment,
   };
 }
 
@@ -972,7 +1104,18 @@ function expandMomentsToSectionPreviewSegments(params: {
 
     while (musicCursor < window.end - 0.025 && localLoopCount < maxSegmentsPerWindow) {
       const remaining = window.end - musicCursor;
-      const candidate = pickPreviewCandidate({ candidates, remaining, continuity: params.continuity });
+      const available = params.continuity.allowReuse ? candidates : candidates.flatMap((candidate) => {
+        // Source intervals, rather than moment IDs: overlapping scene records must not reuse the same frames.
+        const consumed = params.continuity.consumedSourceIntervals.get(candidate.moment.sourceClipId) ?? [];
+        let unused = [{ start: candidate.momentStart, end: candidate.momentEnd }];
+        for (const used of consumed) unused = unused.flatMap((span) => {
+          if (used.end <= span.start || used.start >= span.end) return [span];
+          return [{ start: span.start, end: Math.min(span.end, used.start) }, { start: Math.max(span.start, used.end), end: span.end }].filter((part) => part.end - part.start > 0.05);
+        });
+        return unused.map((span) => ({ ...candidate, momentStart: span.start, momentEnd: span.end, momentDuration: span.end - span.start }));
+      });
+      if (!available.length) break;
+      const candidate = pickPreviewCandidate({ candidates: available, remaining, continuity: params.continuity });
       const sliceDuration = roundTime(Math.min(candidate.momentDuration, remaining));
       const startTime = candidate.momentStart;
       const endTime = roundTime(Math.min(candidate.momentEnd, startTime + sliceDuration));
@@ -982,6 +1125,8 @@ function expandMomentsToSectionPreviewSegments(params: {
       const musicEnd = roundTime(Math.min(window.end, musicStart + (endTime - startTime)));
       if (musicEnd <= musicStart) break;
 
+      const usedIntervals = params.continuity.consumedSourceIntervals.get(candidate.moment.sourceClipId) ?? [];
+      params.continuity.consumedSourceIntervals.set(candidate.moment.sourceClipId, [...usedIntervals, { start: startTime, end: endTime }]);
       const useCount = (params.continuity.momentUseCounts.get(candidate.moment.id) ?? 0) + 1;
       params.continuity.momentUseCounts.set(candidate.moment.id, useCount);
       params.continuity.sourceUseCounts.set(
@@ -1041,6 +1186,8 @@ interface PreparedPreviewCandidate {
 }
 
 interface PreviewSequenceContinuity {
+  consumedSourceIntervals: Map<number, Array<{ start: number; end: number }>>;
+  allowReuse: boolean;
   momentUseCounts: Map<string, number>;
   sourceUseCounts: Map<number, number>;
   shotFamilyUseCounts: Map<string, number>;

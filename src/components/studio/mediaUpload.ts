@@ -232,8 +232,11 @@ export async function rerunSourceSceneAnalysis(
   source: UploadedVideoSource,
   captionSettings: SceneCaptionSettings,
   onUpdate: (update: VideoSceneUpdate) => void,
-  options: { captionContextReady?: boolean } = {},
+  options: { captionContextReady?: boolean; isCurrent?: () => boolean } = {},
 ): Promise<void> {
+  const notify = onUpdate;
+  onUpdate = (update) => { if (!options.isCurrent || options.isCurrent()) notify(update); };
+  if (options.isCurrent && !options.isCurrent()) return;
   const key = buildPreparedSourceKey(source);
 
   if (!source.storageBucket || !source.storagePath) {
@@ -307,7 +310,7 @@ export async function rerunSourceSceneAnalysis(
 
   // A fresh pipeline result already includes captions for this context. Only
   // force a new pass when the caller is refreshing existing scene captions.
-  const captionedSource = await captionAndPersistSourceScenes(workingSource, key, captionSettings, onUpdate, { force: !needsDetection });
+  const captionedSource = await captionAndPersistSourceScenes(workingSource, key, captionSettings, onUpdate, { force: !needsDetection, isCurrent: options.isCurrent });
   onUpdate({ key, source: captionedSource });
 }
 
@@ -335,16 +338,20 @@ export async function captionDeferredSources(
   sources: UploadedVideoSource[],
   captionSettings: SceneCaptionSettings,
   onUpdate: (update: VideoSceneUpdate) => void,
+  isSourceCurrent?: (source: UploadedVideoSource) => boolean,
 ): Promise<void> {
   const pending = sources.filter(
     (source) => source.captionStatus === "waiting" && (source.scenes?.length ?? 0) > 0 && source.storageBucket && source.storagePath,
   );
   for (const source of pending) {
+    const isCurrent = () => !isSourceCurrent || isSourceCurrent(source);
+    if (!isCurrent()) continue;
+    const guardedUpdate = (update: VideoSceneUpdate) => { if (isCurrent()) onUpdate(update); };
     const key = buildPreparedSourceKey(source);
     const workingSource = { ...source, captionStatus: "captioning" as const, captionError: null };
-    onUpdate({ key, source: workingSource });
-    const captionedSource = await captionAndPersistSourceScenes(workingSource, key, captionSettings, onUpdate, { force: true });
-    onUpdate({ key, source: captionedSource });
+    guardedUpdate({ key, source: workingSource });
+    const captionedSource = await captionAndPersistSourceScenes(workingSource, key, captionSettings, guardedUpdate, { force: true, isCurrent });
+    guardedUpdate({ key, source: captionedSource });
   }
 }
 
@@ -376,6 +383,7 @@ async function captionAndPersistSourceScenes(
         },
       });
     }, captionOptions);
+    if (captionOptions.isCurrent && !captionOptions.isCurrent()) return source;
     const finalizedScenes = finalizeCaptionedScenes(captionedScenes, captionSettings.mode);
     const caption = deriveSourceCaptionStatus(finalizedScenes, captionSettings.mode);
     let captionedSource: UploadedVideoSource = {
@@ -387,6 +395,7 @@ async function captionAndPersistSourceScenes(
 
     if (source.storageProvider === "rustfs" && source.storageBucket && source.storagePath) {
       try {
+        if (captionOptions.isCurrent && !captionOptions.isCurrent()) return source;
         captionedSource = {
           ...captionedSource,
           ...(await uploadSceneCaptionManifestToRustFs(captionedSource)),

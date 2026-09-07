@@ -6,8 +6,7 @@ import { getDisplayCaption } from "./matchCaptions";
 import { getMatchModeLabel, getMatchModeScore, type MatchMode } from "./matchModes";
 
 export function ThumbMatchCard({ label, start, end, match, moment, mode }: { label: string; start: number; end: number; match?: SemanticClipMatch; moment?: VideoMoment; mode: MatchMode }) {
-  const score = match ? Math.round(match.score * 100) : 0;
-  const hole = !moment || score < 35;
+  const hole = !moment || match?.assessment?.eligibility !== "eligible";
   const direction = inferMotionDirection(moment);
   const palette = buildPalette(moment, mode);
   const frameUrl = moment?.firstFrameUrl ?? moment?.thumbnailUrl;
@@ -20,7 +19,7 @@ export function ThumbMatchCard({ label, start, end, match, moment, mode }: { lab
           <img src={frameUrl} alt={label} className="h-full w-full object-cover" loading="lazy" decoding="async" />
         ) : null}
         <div className="absolute left-2 top-2 rounded-[2px] bg-[#000000b8] px-2 py-1 text-[8px] uppercase tracking-[0.12em] text-[#d0d0d0]">{label}</div>
-        <div className={`absolute right-2 top-2 rounded-[2px] border px-2 py-1 font-mono text-[8px] ${hole ? "border-[#7a241e] text-[#d24b3f]" : "border-[#245c2c] text-[#79c779]"}`}>{hole ? "HOLE" : `${score}%`}</div>
+        <div className={`absolute right-2 top-2 rounded-[2px] border px-2 py-1 font-mono text-[8px] ${hole ? "border-[#7a241e] text-[#d24b3f]" : "border-[#245c2c] text-[#79c779]"}`}>{hole ? "Needs evidence" : "Supported"}</div>
         <div className="absolute bottom-2 left-2 rounded-[2px] bg-[#000000b8] px-2 py-1 font-mono text-[8px] text-[#e05c00]">{direction.label}</div>
         <div className="absolute bottom-2 right-2 rounded-[2px] bg-[#000000b8] px-2 py-1 font-mono text-[8px] text-[#aaa]">{fmt(start)}–{fmt(end)}</div>
       </div>
@@ -61,8 +60,7 @@ export function MatchCard({
   momentsById: Map<string, VideoMoment>;
   onSelectCandidate?: (momentId: string) => void;
 }) {
-  const score = match ? Math.round(match.score * 100) : 0;
-  const ready = Boolean(moment?.caption && score >= 45);
+  const ready = Boolean(moment && match?.assessment?.eligibility === "eligible");
   const modeScore = getMatchModeScore(mode, match);
   const caption = getDisplayCaption(moment);
   const palette = buildPalette(moment, mode);
@@ -78,7 +76,7 @@ export function MatchCard({
               <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#d0d0d0]">{label}</div>
               <div className="mt-1 font-mono text-[9px] text-[#777]">{fmt(start)}–{fmt(end)}</div>
             </div>
-            <div className={`rounded-[2px] border px-2 py-1 font-mono text-[9px] ${ready ? "border-[#245c2c] text-[#79c779]" : "border-[#7a241e] text-[#d24b3f]"}`}>{ready ? `${score}% match` : "needs match"}</div>
+            <div className={`rounded-[2px] border px-2 py-1 font-mono text-[9px] ${ready ? "border-[#245c2c] text-[#79c779]" : "border-[#7a241e] text-[#d24b3f]"}`}>{ready ? "Supported" : "Needs evidence"}</div>
           </div>
           <div className="rounded-[2px] border border-[#171717] bg-[#050505] p-2 text-[10px] leading-4 text-[#9a9a9a]">
             <span className="text-[#e05c00]">Story:</span> {prompt}
@@ -87,7 +85,7 @@ export function MatchCard({
             <div className="mb-1 text-[8px] uppercase tracking-[0.14em] text-[#555]">Candidate caption / semantic meaning</div>
             {moment ? caption : <span className="text-[#d24b3f]">No video moment selected yet.</span>}
             {moment ? <div className="mt-2 font-mono text-[8px] text-[#666]">{moment.sourceRefLabel ?? `S${moment.sourceClipId + 1}`} · {fmt(moment.start)}–{fmt(moment.end)}</div> : null}
-            {match?.reasons.length ? <div className="mt-2 text-[8px] uppercase tracking-[0.12em] text-[#606060]">{match.reasons.slice(0, 3).join(" · ")}</div> : null}
+            {match?.reasons.length ? <div className="mt-2 text-[8px] uppercase tracking-[0.12em] text-[#606060]">{match.reasons.join(" · ")}</div> : null}
           </div>
           <MatchCandidateRail candidateMatches={candidateMatches} selectedMomentId={moment?.id ?? match?.momentId ?? null} momentsById={momentsById} mode={mode} onSelectCandidate={onSelectCandidate} />
           <div className="mt-2 grid gap-2 md:grid-cols-[1fr_170px]">

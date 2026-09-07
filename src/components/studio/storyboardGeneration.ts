@@ -14,6 +14,7 @@ export type StoryboardReference = { url: string; label: string; role: string };
 export type StoryboardSequence = {
   id: string; sectionId: string; label: string; songStart: number; songEnd: number;
   cuts: EditPlanPreviewSegment[];
+  requirementId?: string; narrativeMomentId?: string; direction?: string;
 };
 export type StoryboardJob = {
   id: string; projectId: string; sequenceId: string; sectionId: string; title: string;
@@ -41,10 +42,10 @@ export function buildStoryboardSequences(segments: EditPlanPreviewSegment[]): St
   for (const cut of segments) {
     if (!(cut.musicEnd > cut.musicStart)) continue;
     let sequence = result[result.length - 1];
-    if (!sequence || sequence.sectionId !== cut.sectionId || sequence.cuts.length === 9
+    if (!sequence || sequence.sectionId !== cut.sectionId || sequence.requirementId !== cut.requirementId || sequence.cuts[0]?.kind !== cut.kind || sequence.cuts.length === 9
       || Math.abs(sequence.songEnd - cut.musicStart) > 0.05) {
       sequence = { id: `${cut.sectionId}:${cut.musicStart.toFixed(3)}`, sectionId: cut.sectionId,
-        label: cut.sectionId, songStart: cut.musicStart, songEnd: cut.musicEnd, cuts: [] };
+        label: cut.sectionId, requirementId: cut.requirementId, narrativeMomentId: cut.narrativeMomentId, direction: cut.storyDirection, songStart: cut.musicStart, songEnd: cut.musicEnd, cuts: [] };
       result.push(sequence);
     }
     sequence.cuts.push(cut);
@@ -72,6 +73,12 @@ export function referenceContract(references: StoryboardReference[]) {
     if (reference.role === "style" || reference.role === "atmosphere") return `${image} is the style and atmosphere reference.`;
     return `${image} is the reference for ${reference.label}.`;
   }).join("\n");
+}
+
+/** Keep the approved section action distinct from optional user direction edits. */
+export function resolveSequenceGridDirection(storyIntent?: string, override?: string) {
+  const direction = (override ?? storyIntent ?? "").trim();
+  return direction === "Describe the visual idea for this song section" ? "" : direction;
 }
 
 export function defaultSequenceGridDirection(references: StoryboardReference[]) {

@@ -2,10 +2,11 @@ import type { BeatJoinAnalysis, BeatJoinSection } from "./types";
 import { waitForTriggerRunOutput } from "@/lib/clientTriggerRuns";
 import { ESSENTIA_MAX_AUDIO_SIZE_BYTES } from "@/lib/essentiaUpload";
 import { uploadFileDirectlyToRustFs } from "./directUploadClient";
+import { annotateMusicSections, normalizeMusicSectionProvenance } from "./musicSectionProvenance";
 
 export { buildAudioChunkRanges } from "@/lib/essentiaUpload";
 
-const DEFAULT_EMPTY_SECTIONS: BeatJoinSection[] = [{ label: "Intro", start: 0, end: 1 }];
+const DEFAULT_EMPTY_SECTIONS: BeatJoinSection[] = [{ label: "Section", start: 0, end: 1, provenance: { status: "estimated", method: "missing-analysis", reason: "No song sections were returned. Set the section names and boundaries." } }];
 
 interface EssentiaRequestTarget {
   headers?: HeadersInit;
@@ -194,7 +195,8 @@ export function parseEssentiaPayload(params: {
     lastValue(beats) ??
     getLastSectionEnd(rawSections);
   const duration = Math.max(analysisDuration, waveformDuration, 0);
-  const sections = normalizeSections(rawSections, duration);
+  const sections = annotateMusicSections(normalizeSections(rawSections, duration), duration,
+    findValue(source, [["structure"], ["analysis", "structure"]]));
 
   if (!duration || (!energy.length && !beats.length && !onsets.length && !sections.length && !waveform.length)) return null;
 
@@ -263,6 +265,7 @@ function normalizeSections(value: unknown, duration: number): BeatJoinSection[] 
       start: clamp(start, 0, duration),
       end: clamp(end, 0, duration),
       energy: getNumericValue(section.energy) ?? undefined,
+      provenance: normalizeMusicSectionProvenance(section.provenance),
     });
   }
 

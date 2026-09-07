@@ -13,6 +13,7 @@ import {
 import type { BeatJoinAnalysis, ColorPaletteSwatch, MotionDescriptor } from "../types";
 import {
   buildGeneratedAssetContextPreview,
+  approvedGeneratedAssetsCoverPreviewSegment,
   generatedAssetMatchesPreviewSegment,
   resolveGeneratedAssetTrimFrameControl,
   resolveGeneratedAssetTrimWindow,
@@ -258,7 +259,10 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
           trimStart: 0,
           reviewStatus: "pending",
           target: {
-            timelineItemId: selectedReturnSlot?.item.id ?? `resolved-cut-${selectedPreviewRange!.startIndex + 1}`,
+            timelineItemId: selectedReturnSegment.timelineItemId ?? selectedReturnSlot?.item.id ?? `resolved-cut-${selectedPreviewRange!.startIndex + 1}`,
+            planSignature: selectedReturnSegment.planSignature,
+            requirementId: selectedReturnSegment.requirementId,
+            narrativeMomentId: selectedReturnSegment.narrativeMomentId,
             sectionId: selectedReturnSegment.sectionId,
             sectionLabel: selectedReturnSlot?.item.label ?? selectedReturnSegment.label,
             parentMomentId: selectedReturnSegment.momentId,
@@ -366,6 +370,7 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
         assets={persistedGeneratedAssets} onAsset={onGeneratedAsset} locked={!hasRequiredInputs}
         sourceFrames={Object.fromEntries((project?.videoMoments ?? []).map((moment) => [moment.id, moment.firstFrameUrl ?? moment.thumbnailUrl]))}
         sectionLabels={Object.fromEntries((project?.storySections ?? []).map((section) => [section.id, section.label]))}
+        sectionDirections={Object.fromEntries((project?.storySections ?? []).map((section) => [section.id, section.prompt]))}
         onInspect={(startIndex, endIndex) => onAuditionPreviewRange({ startIndex, endIndex })} />
 
       {!hasRequiredInputs ? (
@@ -1139,12 +1144,7 @@ function FrameExtensionPanel({
     [persistedGeneratedAssets, selectedSegment, selectedTimelineItemId],
   );
   const approvedForJoin = useMemo(
-    () => persistedGeneratedAssets.some((asset) =>
-      asset.mediaKind === "video"
-      && asset.reviewStatus === "approved"
-      && selectedSegment
-      && generatedAssetMatchesPreviewSegment(asset, selectedSegment, selectedTimelineItemId),
-    ),
+    () => Boolean(selectedSegment && approvedGeneratedAssetsCoverPreviewSegment(persistedGeneratedAssets, selectedSegment, selectedTimelineItemId)),
     [persistedGeneratedAssets, selectedSegment, selectedTimelineItemId],
   );
   const [seedanceCopyStatus, setSeedanceCopyStatus] = useState("Ready to copy the operator packet.");
@@ -1625,7 +1625,7 @@ function GeneratedShotCard({
 
             <div className="mt-2 rounded-[2px] border border-[#1b1b1b] bg-[#050505] p-2">
               <div className="flex items-center justify-between gap-2 uppercase tracking-[0.1em] text-[#666]">
-                <span>Source window · fixed to song slot</span>
+                <span>Source window · up to song duration</span>
                 <span>{sourceDuration.toFixed(2)}s source</span>
               </div>
               <div className="mt-2 flex items-center gap-2">
@@ -1689,7 +1689,7 @@ function GeneratedShotCard({
               <div className="flex gap-1">
                 {context.segments.map((segment, contextIndex) => {
                   const absoluteIndex = context.startIndex + contextIndex;
-                  const isTarget = absoluteIndex === context.targetIndex;
+                  const isTarget = segment.sourceRefLabel?.startsWith("PREVIEW GEN ·") ?? false;
                   return (
                     <div key={`${segment.musicStart}-${absoluteIndex}`} className={`min-w-0 flex-1 rounded-[1px] border px-1 py-1 text-center font-mono text-[7px] ${isTarget ? "border-[#55c5e5] bg-[#0a1d23] text-[#9bddeb]" : "border-[#202020] bg-[#090909] text-[#666]"}`}>
                       <div>{isTarget ? "GEN" : `CUT ${String(absoluteIndex + 1).padStart(3, "0")}`}</div>
@@ -1701,6 +1701,8 @@ function GeneratedShotCard({
             </div>
           ) : null}
 
+          {!context && <p className="mt-2 text-[11px] text-[var(--warning)]">This return is not bound to the current story window, or its video duration is unavailable. Review the current target and import the return again before approving.</p>}
+          {context && sourceDuration < requiredDuration && <p className="mt-2 text-[11px] text-[var(--warning)]">This clip covers {sourceDuration.toFixed(2)}s. The remaining {(requiredDuration - sourceDuration).toFixed(2)}s keeps its existing footage or gap.</p>}
           <textarea
             value={note}
             onChange={(event) => setNote(event.target.value)}
@@ -1709,7 +1711,7 @@ function GeneratedShotCard({
             className="mt-2 w-full resize-y rounded-[1px] border border-[#202020] bg-[#040404] px-2 py-1 font-mono text-[8px] leading-4 text-[#aaa] outline-none placeholder:text-[#444] focus:border-[#e05c00]"
           />
           <div className="mt-2 flex gap-1.5">
-            <button type="button" disabled={!videoUrl} onClick={() => onUpdate({ ...asset, reviewStatus: "approved", reviewNotes: note })} className="flex-1 rounded-[2px] border border-[#245c2c] px-2 py-1 text-[8px] uppercase tracking-[0.1em] text-[#78c878] disabled:cursor-not-allowed disabled:opacity-40">Approve into Join</button>
+            <button type="button" disabled={!videoUrl || !context} onClick={() => onUpdate({ ...asset, reviewStatus: "approved", reviewNotes: note })} className="flex-1 rounded-[2px] border border-[#245c2c] px-2 py-1 text-[8px] uppercase tracking-[0.1em] text-[#78c878] disabled:cursor-not-allowed disabled:opacity-40">Approve into Join</button>
             <button type="button" onClick={() => onUpdate({ ...asset, reviewStatus: "rejected", reviewNotes: note })} className="flex-1 rounded-[2px] border border-[#743029] px-2 py-1 text-[8px] uppercase tracking-[0.1em] text-[#dc6257]">Reject</button>
             <button type="button" onClick={() => onUpdate({ ...asset, reviewStatus: "pending", reviewNotes: note })} className="rounded-[2px] border border-[#303030] px-2 py-1 text-[8px] uppercase tracking-[0.1em] text-[#777]">Reopen</button>
           </div>

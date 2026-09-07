@@ -1,3 +1,5 @@
+import { createMediaEvidence } from "@/components/studio/mediaEvidence";
+import { normalizeServerCaptionPayload } from "@/components/studio/sceneCaptioningServer";
 import { createHash } from "node:crypto";
 import { logger, task, wait } from "@trigger.dev/sdk";
 
@@ -97,7 +99,7 @@ export const sceneCaptionBatchTask = task({
       },
       fileName: durableFileName(
         `caption-batch-${payload.batchIndex}`,
-        `${payload.sourceContentHash}:${payload.model}:${payload.batchIndex}`,
+        `${payload.sourceContentHash}:${payload.model}:${payload.batchIndex}:${payload.prompt}:${JSON.stringify(payload.scenes.map((scene) => [scene.captionContext, scene.captionReferences]))}`,
         "qwen-caption-batch",
       ),
       folder: "media-uploads/analysis/v2/qwen-caption-batches",
@@ -167,9 +169,24 @@ async function runSmartSceneCaption(payload: SmartSceneCaptionPayload, triggerRu
       throw new Error(readString(result, "error") || readString(result, "detail") || `Caption gateway failed (${response.status})`);
     }
 
+    const normalized = normalizeServerCaptionPayload(result);
+    let context: Record<string, unknown> = {};
+    try { context = JSON.parse(payload.captionContext || "{}"); } catch { /* Unstructured legacy context. */ }
+    const start = Number(payload.sceneStart);
+    const end = Number(payload.sceneEnd);
+    const input = context.input as { kind?: string; sampleTimes?: unknown[] } | undefined;
+    const sampleTimes = (input?.sampleTimes ?? []).filter((time): time is number => typeof time === "number" && Number.isFinite(time) && time >= start && time <= end);
+    const mediaEvidence = createMediaEvidence({ observation: normalized.observation,
+      sourceId: typeof context.sourceId === "string" ? context.sourceId : payload.sourceName ?? "unknown",
+      sceneId: payload.sceneId ?? "unknown", sourceStart: Number.isFinite(start) ? start : 0, sourceEnd: Number.isFinite(end) ? end : 0,
+      input: { kind: input?.kind === "ordered-frames" && sampleTimes.length >= 2 ? "ordered-frames" : input?.kind === "single-frame" ? "single-frame" : "unknown", sampleTimes, urls: [], storage: { bucket: payload.bucket, objectKey: payload.objectKey } },
+      model: normalized.model ?? payload.model, rawCaption: normalized.text,
+      referenceKeys: payload.captionReferences?.map((reference) => reference.objectKey),
+    });
+    const enrichedResult = { ...result, text: normalized.text, meta: { ...normalized.meta, evidence: normalized.observation }, mediaEvidence };
     const captionStorage = await uploadJsonToMediaGateway({
       data: {
-        schema: "stack-structure.scene-caption-result.v1",
+        schema: "stack-structure.scene-caption-result.v2",
         generatedAt: new Date().toISOString(),
         source: {
           bucket: payload.bucket,
@@ -179,11 +196,11 @@ async function runSmartSceneCaption(payload: SmartSceneCaptionPayload, triggerRu
           sourceName: payload.sourceName,
           sampleTime: payload.sampleTime,
         },
-        result,
+        result: enrichedResult,
       },
       fileName: durableFileName(
         payload.fileName,
-        `${payload.bucket}:${payload.objectKey}:${payload.sceneId ?? ""}:${payload.sampleTime ?? ""}`,
+        `${payload.bucket}:${payload.objectKey}:${payload.sceneId ?? ""}:${payload.sampleTime ?? ""}:${payload.prompt}:${payload.model}:${payload.captionContext ?? ""}:${JSON.stringify(payload.captionReferences ?? [])}`,
         "qwen-caption",
       ),
       folder: "media-uploads/analysis/v2/qwen-captions",
@@ -195,7 +212,7 @@ async function runSmartSceneCaption(payload: SmartSceneCaptionPayload, triggerRu
       sourceName: payload.sourceName,
       captionObjectKey: captionStorage.objectKey,
     });
-    return { ...result, captionStorage };
+    return { ...enrichedResult, captionStorage };
 }
 
 function safeFileName(value: string) {

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import { LFM_SCENE_CAPTION_PROMPT } from "@/review/lib/analysis/scene-caption-format";
+import { buildSceneCaptionPrompt } from "@/components/studio/sceneCaptionPrompt";
 import type { SceneCaptionMode, SceneCaptionSource } from "@/components/studio/types";
 import { parseDurableCaptionReferences } from "@/lib/captionReferences";
 import { getMediaGatewayConfig, uploadFileToMediaGateway } from "@/lib/mediaGateway";
@@ -70,6 +70,8 @@ function getCaptionGatewayConfig(
 }
 
 export async function GET() {
+  const user = await getSessionUser();
+  if (!user) return unauthorizedResponse("Sign in with GitHub to inspect server captions.");
   const fastServer = getCaptionGatewayConfig("fast");
   const smart = getCaptionGatewayConfig("smart");
   const [fastHealth, smartHealth] = await Promise.all([
@@ -161,7 +163,7 @@ export async function POST(request: Request) {
       bucket: uploaded.bucket,
       objectKey: uploaded.objectKey,
       fileName: image.name || "scene-frame.jpg",
-      prompt: stringOrDefault(formData.get("prompt"), LFM_SCENE_CAPTION_PROMPT),
+      prompt: stringOrDefault(formData.get("prompt"), buildSceneCaptionPrompt({ mode: "smart" })),
       model: stringOrDefault(formData.get("model"), config.model),
       sceneId: readFormString(formData, "sceneId"),
       sourceName: readFormString(formData, "sourceName"),

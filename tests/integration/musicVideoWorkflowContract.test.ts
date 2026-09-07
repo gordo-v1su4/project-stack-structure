@@ -4,7 +4,7 @@ import { buildAutoShaderCues } from "@/components/studio/shaderEffectPlan";
 import {
   buildEditPlanPreviewSegments,
   createMusicVideoProject,
-  getDefaultStorySectionDrafts,
+  prepareApprovedPlacements,
   validateMusicVideoProject,
 } from "@/components/studio/musicVideoProject";
 import type { BeatJoinAnalysis, UploadedVideoSource } from "@/components/studio/types";
@@ -165,33 +165,34 @@ function makeCaptionedUploadedVideos(): UploadedVideoSource[] {
 }
 
 describe("clean music-video ingest contract", () => {
-  test("turns master upload, vocal-stem SRT, and captioned hf videos into an export-ready shader timeline", () => {
+  test("preserves music timing and honest story gaps from master audio, lyrics, and captioned footage", () => {
     const analysis = makeCleanUploadAnalysis();
     const videoSources = makeCaptionedUploadedVideos();
-    const project = createMusicVideoProject({
+    const created = createMusicVideoProject({
       analysis,
       duration: analysis.duration,
       lyricChunks: makeDeepgramVocalStemChunks(),
-      storyDrafts: getDefaultStorySectionDrafts().slice(0, 6),
+      storyDrafts: analysis.sections!.map((section, index) => ({ ...section, id: `story-${index}`, prompt: [
+        "Wide establishing view of a jungle cave entrance",
+        "A couple walks through the city at night holding hands",
+        "A singer in blue neon light holding the microphone",
+        "Dancers move together through rain on a night street",
+        "A quiet street after rain near morning",
+        "A romantic last kiss under bright city lights",
+      ][index] })),
       videoSources,
       createdAt: "2026-06-18T00:00:00.000Z",
     });
 
-    expect(validateMusicVideoProject(project).filter((finding) => finding.severity === "error")).toEqual([]);
+    const project = prepareApprovedPlacements({ project: created, videoSources, editSettings: { cutDensity: 1, preferOnsets: true } });
+    expect(validateMusicVideoProject(project).some((finding) => finding.code === "section-has-no-video-moment")).toBe(true);
     expect(project.song?.sourceLabel).toContain("Love me tonight");
     expect(project.lyricChunks).toHaveLength(5);
     expect(project.videoMoments).toHaveLength(6);
     expect(project.storySections).toHaveLength(6);
     expect(project.editPlan.timelineItems).toHaveLength(6);
-    expect(project.storySections.every((section) => section.semanticMatch)).toBe(true);
-
-    const chorus = project.storySections.find((section) => section.id === "chorus-1");
-    expect(chorus?.semanticMatch?.momentId).toBe("scene-moment-1-0");
-    expect(chorus?.semanticMatch?.score).toBeGreaterThan(0.4);
-    expect(chorus?.semanticMatch?.reasons.length).toBeGreaterThan(0);
-
-    const outro = project.storySections.find((section) => section.label === "Outro");
-    expect(outro?.semanticMatch?.momentId).toBe("scene-moment-2-1");
+    expect(project.storySections[0]?.videoMomentIds).toEqual([]);
+    expect(project.storySections.some((section) => section.semanticMatch?.assessment?.eligibility === "eligible")).toBe(true);
 
     const previewSegments = buildEditPlanPreviewSegments({
       project,
@@ -202,18 +203,23 @@ describe("clean music-video ingest contract", () => {
 
     expect(previewSegments.length).toBeGreaterThan(project.editPlan.timelineItems.length);
     expect(coveredDuration).toBeCloseTo(analysis.duration, 5);
-    expect(new Set(previewSegments.map((segment) => segment.videoUrl))).toEqual(new Set(videoSources.map((source) => source.videoUrl)));
+    expect(previewSegments[0]).toMatchObject({ kind: "gap", musicStart: 0, videoUrl: "" });
+    const sourceSegments = previewSegments.filter((segment) => segment.kind === "source");
+    const gapDuration = previewSegments.filter((segment) => segment.kind === "gap").reduce((sum, segment) => sum + segment.musicEnd - segment.musicStart, 0);
+    expect(gapDuration).toBeGreaterThanOrEqual(4);
+    expect(sourceSegments.length).toBeGreaterThan(0);
+    expect(sourceSegments.every((segment) => videoSources.some((source) => source.videoUrl === segment.videoUrl))).toBe(true);
     expect(previewSegments.some((segment) => segment.label.includes("Dancers move together through rain"))).toBe(true);
     expect(previewSegments.some((segment) => segment.label.includes("romantic last kiss"))).toBe(true);
 
     const effectCues = buildAutoShaderCues({
-      segments: previewSegments,
+      segments: sourceSegments,
       beats: analysis.beats,
       lyricChunks: project.lyricChunks,
       presetId: "high-energy-glitch",
     });
 
-    expect(effectCues.length).toBeGreaterThan(previewSegments.length);
+    expect(effectCues.length).toBeGreaterThan(sourceSegments.length);
     expect(effectCues.some((cue) => cue.sync === "beat" && cue.shaderId)).toBe(true);
     expect(effectCues.some((cue) => cue.sync === "lyric" && cue.label?.toLowerCase().includes("love me tonight"))).toBe(true);
     expect(effectCues.every((cue) => cue.end > cue.start)).toBe(true);

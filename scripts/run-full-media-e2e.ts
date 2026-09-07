@@ -1,8 +1,10 @@
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { promisify } from "node:util";
 import path from "node:path";
 import sharp from "sharp";
+import sixVideoReview from "../tests/fixtures/story-evidence/six-video-review.json";
 
 import {
   buildSrtChunksFromDeepgram,
@@ -13,6 +15,7 @@ import { parseEssentiaPayload } from "../src/components/studio/audioAnalysis";
 import { listMediaFixtures } from "../src/components/studio/mediaProbe";
 import {
   buildEditPlanPreviewSegments,
+  prepareApprovedPlacements,
   createMusicVideoProject,
   DEFAULT_STORY_EDIT_SETTINGS,
   getDefaultStorySectionDrafts,
@@ -34,7 +37,7 @@ import { generateMusicVideoExport } from "../src/components/studio/exportGenerat
 import type { BeatJoinAnalysis, UploadedVideoSource } from "../src/components/studio/types";
 
 type JsonRecord = Record<string, unknown>;
-type FixtureMode = "studio" | "trigger-smoke";
+type FixtureMode = "studio" | "studio-six" | "trigger-smoke";
 type StudioReferenceFixtureKey = "character-1" | "character-2" | "environment" | "crowd-1" | "crowd-2" | "crowd-3";
 
 const execFileAsync = promisify(execFile);
@@ -66,7 +69,7 @@ type FixtureLane = {
 
 const EXPECTED_STUDIO_VIDEO_COUNT = 21;
 const studioVideoLimit = Number(process.env.STACK_STRUCTURE_E2E_VIDEO_LIMIT || "0");
-const expectedStudioVideoCount = studioVideoLimit > 0
+const expectedStudioVideoCount = process.env.STACK_STRUCTURE_E2E_FIXTURE_MODE === "studio-six" ? 6 : studioVideoLimit > 0
   ? Math.min(studioVideoLimit, EXPECTED_STUDIO_VIDEO_COUNT)
   : EXPECTED_STUDIO_VIDEO_COUNT;
 const TERMINAL_TRIGGER_FAILURES = new Set([
@@ -93,7 +96,7 @@ const STUDIO_REFERENCE_FIXTURES: ReadonlyArray<{
 
 const baseUrl = (process.env.STACK_STRUCTURE_E2E_URL || "http://127.0.0.1:3000").replace(/\/+$/, "");
 const runKey = process.env.STACK_STRUCTURE_E2E_RUN_KEY || `full-media-e2e-${new Date().toISOString().replace(/[:.]/g, "-")}`;
-const fixtureMode: FixtureMode = process.env.STACK_STRUCTURE_E2E_FIXTURE_MODE === "trigger-smoke" ? "trigger-smoke" : "studio";
+const fixtureMode: FixtureMode = process.env.STACK_STRUCTURE_E2E_FIXTURE_MODE === "trigger-smoke" ? "trigger-smoke" : process.env.STACK_STRUCTURE_E2E_FIXTURE_MODE === "studio-six" ? "studio-six" : "studio";
 const includeExport = process.env.STACK_STRUCTURE_E2E_INCLUDE_EXPORT === "true"
   || (fixtureMode === "trigger-smoke" && process.env.STACK_STRUCTURE_E2E_INCLUDE_EXPORT !== "false");
 const includeGeneration = process.env.STACK_STRUCTURE_E2E_INCLUDE_GENERATION === "true";
@@ -124,8 +127,8 @@ const previewOutputPath = path.join(workspace, `${runKey}-preview.mp4`);
 const generatedImagePath = path.join(workspace, `${runKey}-swarm-anchor.png`);
 const generatedVideoPath = path.join(workspace, `${runKey}-minimax-extension.mp4`);
 const analysisCheckpointPath = path.join(workspace, "analysis-checkpoint.json");
-const essentiaTimeoutMs = fixtureMode === "studio" ? 20 * 60_000 : 12 * 60_000;
-const deepgramTimeoutMs = fixtureMode === "studio" ? 25 * 60_000 : 12 * 60_000;
+const essentiaTimeoutMs = fixtureMode !== "trigger-smoke" ? 20 * 60_000 : 12 * 60_000;
+const deepgramTimeoutMs = fixtureMode !== "trigger-smoke" ? 25 * 60_000 : 12 * 60_000;
 
 await mkdir(workspace, { recursive: true });
 
@@ -245,10 +248,10 @@ if (resumeAnalysis) {
 }
 
 let referenceAssets: ReferenceAsset[] = [];
-if (fixtureMode === "studio") {
+if (fixtureMode !== "trigger-smoke") {
   console.info("[e2e] uploading canonical reference sheets (Diego, Valentina, environment, three crowds)");
   referenceAssets = await Promise.all(
-    STUDIO_REFERENCE_FIXTURES.map(async ({ key, role, displayName }) => {
+    STUDIO_REFERENCE_FIXTURES.filter(({ role }) => fixtureMode !== "studio-six" || role !== "crowd").map(async ({ key, role, displayName }) => {
       const sheetPath = referenceSheetPaths[key];
       const mime = imageMimeForPath(sheetPath);
       const file = await fileFromPath(sheetPath, mime);
@@ -319,7 +322,7 @@ applyAudioStorage(analysis, essentiaSourceStorage);
 const deepgram = requireRecord(deepgramOutput, "Deepgram output");
 const lyricChunks = buildSrtChunksFromDeepgram(deepgram, { duration: analysis.duration, chunkDuration: 3 });
 const transcriptSummary = summarizeDeepgramResponse(deepgram, { duration: analysis.duration });
-const storyBeats = fixtureMode === "studio"
+const storyBeats = fixtureMode !== "trigger-smoke"
   ? getDefaultStorySectionDrafts().map((draft, index) => ({
     id: draft.id ?? `section-${index + 1}`,
     label: draft.label,
@@ -335,7 +338,7 @@ const storyBeats = fixtureMode === "studio"
   });
 
 console.info("[e2e] building semantic match plan");
-const project = createMusicVideoProject({
+const project = prepareApprovedPlacements({ videoSources: sources, project: createMusicVideoProject({
   id: runKey,
   analysis,
   duration: analysis.duration,
@@ -343,7 +346,7 @@ const project = createMusicVideoProject({
   storyDrafts: storyBeats,
   videoSources: sources,
   createdAt: new Date().toISOString(),
-});
+}) });
 const projectErrors = project.reviewFindings.filter((finding) => finding.severity === "error");
 if (projectErrors.length) {
   throw new Error(`Music-video project validation failed: ${projectErrors.map((finding) => finding.message).join(" | ")}`);
@@ -351,6 +354,10 @@ if (projectErrors.length) {
 
 const previewSegments = buildEditPlanPreviewSegments({ project, videoSources: sources });
 if (previewSegments.length < 2) throw new Error("Semantic edit plan did not produce a multi-segment join.");
+if (previewSegments.some((segment) => segment.kind === "gap")) {
+  await writeFile(path.join(workspace, "faithful-plan-with-gaps.json"), JSON.stringify({ project, previewSegments }, null, 2));
+  throw new Error("Faithful edit has missing footage. Plan saved for Story/Match review; no export or generation was dispatched.");
+}
 const exportSegments = previewSegments.map((segment) => {
   const sourceIndex = sources.findIndex((source) => source.videoUrl === segment.videoUrl);
   if (sourceIndex < 0) throw new Error(`Unable to map preview segment ${segment.label} to a source video.`);
@@ -587,7 +594,7 @@ if (includeExport) {
   console.info("[e2e] ingest + match complete (preview/export skipped for studio lane; set STACK_STRUCTURE_E2E_INCLUDE_EXPORT=true to run export)");
 }
 
-if (fixtureMode === "studio") {
+if (fixtureMode !== "trigger-smoke") {
   const draft = createPersistableStudioProjectDraft({
     analysis,
     videoSources: sources,
@@ -737,7 +744,7 @@ const report = {
     storage: exportOutput.storage,
     videoUrl: exportOutput.videoUrl,
   } : null,
-  studioDraft: fixtureMode === "studio" ? { endpoint: `${baseUrl}/api/studio/draft` } : null,
+  studioDraft: fixtureMode !== "trigger-smoke" ? { endpoint: `${baseUrl}/api/studio/draft` } : null,
 };
 
 await writeFile(reportPath, JSON.stringify(report, null, 2), "utf8");
@@ -792,7 +799,7 @@ async function resolveFixtureLane(mode: FixtureMode, workDir: string): Promise<F
   const videoPaths = listMediaFixtures(studioVideoDir).video
     .filter((filePath) => path.dirname(filePath) === studioVideoDir)
     .sort();
-  if (studioVideoLimit <= 0 && videoPaths.length !== EXPECTED_STUDIO_VIDEO_COUNT) {
+  if (mode !== "studio-six" && studioVideoLimit <= 0 && videoPaths.length !== EXPECTED_STUDIO_VIDEO_COUNT) {
     throw new Error(
       `Expected exactly ${EXPECTED_STUDIO_VIDEO_COUNT} studio source videos under ${studioVideoDir}, found ${videoPaths.length}. Restore the canonical 2026-08-30 fixture bundle before running the E2E.`,
     );
@@ -803,9 +810,20 @@ async function resolveFixtureLane(mode: FixtureMode, workDir: string): Promise<F
     );
   }
 
-  const selectedVideoPaths = studioVideoLimit > 0
-    ? videoPaths.slice(0, expectedStudioVideoCount)
-    : videoPaths;
+  const selectedVideoPaths = mode === "studio-six"
+    ? sixVideoReview.sources.map(({ name }) => {
+      const found = videoPaths.find((filePath) => path.basename(filePath) === name);
+      if (!found) throw new Error(`Missing selected six-video fixture: ${name}`);
+      return found;
+    })
+    : studioVideoLimit > 0 ? videoPaths.slice(0, expectedStudioVideoCount) : videoPaths;
+  if (mode === "studio-six") {
+    for (const [index, filePath] of selectedVideoPaths.entries()) {
+      const checksum = createHash("sha256").update(await readFile(filePath)).digest("hex");
+      if (checksum !== sixVideoReview.sources[index]!.sha256) throw new Error(`Six-video fixture changed: ${path.basename(filePath)}`);
+    }
+    console.info("[e2e] using the six reviewed source videos and three canonical references; crowd omitted");
+  }
   if (studioVideoLimit > 0) {
     console.info(`[e2e] using ${selectedVideoPaths.length}/${videoPaths.length} studio videos (STACK_STRUCTURE_E2E_VIDEO_LIMIT=${studioVideoLimit})`);
   }
@@ -820,9 +838,9 @@ async function resolveFixtureLane(mode: FixtureMode, workDir: string): Promise<F
     "character-1": await resolveReferenceSheetPath("character-1"),
     "character-2": await resolveReferenceSheetPath("character-2"),
     environment: await resolveReferenceSheetPath("environment"),
-    "crowd-1": await resolveReferenceSheetPath("crowd-1"),
-    "crowd-2": await resolveReferenceSheetPath("crowd-2"),
-    "crowd-3": await resolveReferenceSheetPath("crowd-3"),
+    "crowd-1": mode === "studio-six" ? "" : await resolveReferenceSheetPath("crowd-1"),
+    "crowd-2": mode === "studio-six" ? "" : await resolveReferenceSheetPath("crowd-2"),
+    "crowd-3": mode === "studio-six" ? "" : await resolveReferenceSheetPath("crowd-3"),
   };
 
   return {

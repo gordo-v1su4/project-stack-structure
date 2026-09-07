@@ -5,7 +5,10 @@ import { ParamSlider } from "../ParamSlider";
 import { CollapsibleSection } from "../ui";
 import type { BeatJoinAnalysis, UploadedVideoSource } from "../types";
 import { buildAdaptiveCueMap } from "../adaptiveCueMap";
-import type { MusicVideoProject } from "../musicVideoProject";
+import { placementInputSignature, type MusicVideoProject } from "../musicVideoProject";
+import { rankMomentsForSection } from "../semanticEditPlanner";
+import { proposeBestEffortCoverage } from "../musicVideoProjectSelection";
+import { analyzeEditPlanCoverage } from "../editPlanCoverage";
 import { buildTrackLaneStack } from "../trackLaneStack";
 import { TrackLaneStackBoard } from "./TrackLaneStackBoard";
 import { MatchCard, ThumbMatchCard } from "./MatchCards";
@@ -27,7 +30,8 @@ type MatchTabProps = {
   onLyricMergeWindow: (value: number) => void;
   onSelectStory: () => void;
   onSelectSplit: () => void;
-  onSelectCandidate: (sectionId: string, momentId: string) => void;
+  onSelectCandidate: (sectionId: string, momentId: string, timelineItemId?: string) => void;
+  onCoveragePolicyChange?: (policy: "faithful" | "best-effort") => void;
 };
 
 export function MatchTab({
@@ -44,14 +48,15 @@ export function MatchTab({
   onSelectStory,
   onSelectSplit,
   onSelectCandidate,
+  onCoveragePolicyChange,
 }: MatchTabProps) {
   const matchMode: MatchMode = "balanced";
+  const [policyReview, setPolicyReview] = useState<{ signature: string; proposal: ReturnType<typeof proposeBestEffortCoverage> } | null>(null);
   const [boardView, setBoardView] = useState<"detail" | "thumbs">("detail");
   const hasLyrics = Boolean(project?.lyricChunks.length);
   const hasCaptions = Boolean(project?.videoMoments.some((moment) => moment.caption));
-  const ready = storyGenerated && hasLyrics && hasCaptions;
+  const ready = storyGenerated && hasCaptions;
   const momentsById = new Map((project?.videoMoments ?? []).map((moment) => [moment.id, moment]));
-  const sectionsById = new Map((project?.storySections ?? []).map((section) => [section.id, section]));
   const sourceNameByClipId = useMemo(() => new Map(videoSources.map((source) => [source.id, source.name])), [videoSources]);
   const laneStack = useMemo(() => buildTrackLaneStack({ project, sourceNameByClipId }), [project, sourceNameByClipId]);
   const cueMap = useMemo(() => buildAdaptiveCueMap({
@@ -63,7 +68,12 @@ export function MatchTab({
   }), [analysis, lyricCueBlend, lyricMergeWindow, onsetDensity, project]);
   const matchedItems = project?.editPlan.timelineItems ?? [];
   const weakCount = matchedItems.filter((item) => (item.semanticMatch?.score ?? 0) < 0.45).length;
-  const holeCount = matchedItems.filter((item) => !item.videoMomentId).length;
+  const coverage = analyzeEditPlanCoverage(project);
+  const holeCount = coverage.summary.blockingGapCount;
+  const policy = project?.placementPlan?.policy ?? "faithful";
+  const reviewCurrent = project && policyReview?.signature === placementInputSignature(project, project.placementPlan?.settings);
+  const sectionCounts = new Map<string, number>();
+  for (const item of matchedItems) sectionCounts.set(item.sectionId, (sectionCounts.get(item.sectionId) ?? 0) + 1);
 
   return (
     <div className="space-y-3">
@@ -111,9 +121,9 @@ export function MatchTab({
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Balanced multi-signal match</div>
-            <div className="mt-1 text-[11px] text-[#6d6d6d]">There is no strategy mode to choose. Every candidate is ranked using the complete edit context, then Join validates the resolved sequence edge-to-edge.</div>
+            <div className="mt-1 text-[11px] text-[#6d6d6d]">Visible subjects, actions, and setting determine eligibility first. Music, duration, motion, and color rank supported footage. Unsupported requirements stay empty.</div>
           </div>
-          <div className="font-mono text-[10px] uppercase text-[#777]">One combined score · automatic</div>
+          <div className="font-mono text-[10px] uppercase text-[#777]">Evidence before ranking</div>
         </div>
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
           {["Lyrics + captions", "Story intent", "Motion edges", "Music energy", "Duration fit", "Color continuity", "Repeat control"].map((signal) => (
@@ -124,13 +134,36 @@ export function MatchTab({
         </div>
       </section>
 
-      <TrackLaneStackBoard stack={laneStack} onSelectCandidate={onSelectCandidate} />
+      <section className="rounded-md border border-line bg-ink-2 p-4" aria-label="Coverage policy">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm text-fg-0">{policy === "faithful" ? "Faithful draft" : "Best-effort edit"}</h3>
+            <p className="mt-1 text-xs text-fg-2">{coverage.summary.semanticGapDuration.toFixed(1)}s need story evidence · {coverage.summary.durationGapDuration.toFixed(1)}s need more footage</p>
+          </div>
+          {onCoveragePolicyChange && project ? policy === "best-effort" ? (
+            <button type="button" className="rounded-md border border-line px-3 py-2 text-xs text-fg-1" onClick={() => { onCoveragePolicyChange("faithful"); setPolicyReview(null); }}>Restore faithful draft</button>
+          ) : (
+            <button type="button" className="rounded-md border border-line px-3 py-2 text-xs text-fg-1" onClick={() => setPolicyReview({ signature: placementInputSignature(project, project.placementPlan?.settings), proposal: proposeBestEffortCoverage(project, videoSources) })}>Review best-effort option</button>
+          ) : null}
+        </div>
+        {policyReview ? <div className="mt-3 rounded-md border border-line bg-ink-1 p-3" aria-label="Best-effort proposal">
+          <p className="text-sm text-fg-1">Repeat {policyReview.proposal.repeatedSeconds.toFixed(1)}s across {policyReview.proposal.repeatedCuts} cuts. {policyReview.proposal.remainingGapSeconds.toFixed(1)}s remain uncovered.</p>
+          <p className="mt-2 text-xs text-fg-2">Only footage supporting each requested visual can repeat. No story moments are silently omitted. Your faithful draft is retained.</p>
+          {!reviewCurrent ? <p className="mt-2 text-xs text-danger">The story or media changed. Cancel and review an updated proposal.</p> : null}
+          <div className="mt-3 flex gap-2">
+            <button type="button" className="rounded-md bg-accent px-3 py-2 text-xs text-white disabled:opacity-40" disabled={!reviewCurrent} onClick={() => { if (reviewCurrent) onCoveragePolicyChange?.("best-effort"); setPolicyReview(null); }}>Apply reviewed reuse</button>
+            <button type="button" className="rounded-md border border-line px-3 py-2 text-xs text-fg-1" onClick={() => setPolicyReview(null)}>Cancel</button>
+          </div>
+        </div> : null}
+      </section>
+
+      {[...sectionCounts.values()].every((count) => count === 1) ? <CollapsibleSection title="Source lane overview" defaultOpen={false}><TrackLaneStackBoard stack={laneStack} onSelectCandidate={onSelectCandidate} /></CollapsibleSection> : null}
 
       {!ready ? (
         <section className="rounded-[2px] border border-dashed border-[#252525] bg-[#080808] p-6 text-center">
           <div className="text-[10px] uppercase tracking-[0.18em] text-[#d24b3f]">Match is locked</div>
           <div className="mt-3 text-[11px] leading-5 text-[#777]">
-            Complete Story generation and video scene captions first. You can inspect the music cue map now, but matching actions stay locked until lyric SRT chunks and video captions are both ready.
+            Choose a story and review video evidence first. Missing footage remains visible as story gaps. Lyrics can help timing when a vocal stem is available.
           </div>
         </section>
       ) : null}
@@ -138,7 +171,7 @@ export function MatchTab({
       <section className="rounded-[2px] border border-[#1a1a1a] bg-[#0b0b0b] p-3">
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
-            <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Section match board</div>
+            <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Story requirement matches</div>
             <div className="mt-1 text-[11px] text-[#6d6d6d]">Cards show the chosen candidate, first/middle/last frames, clip-edge labels, and the weighted reasons behind the match.</div>
           </div>
           <div className="flex items-center gap-2">
@@ -162,8 +195,9 @@ export function MatchTab({
           <div className={boardView === "thumbs" ? "grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5" : "grid gap-2 xl:grid-cols-2"}>
             {matchedItems.map((item) => {
               const moment = item.videoMomentId ? momentsById.get(item.videoMomentId) : undefined;
-              const section = sectionsById.get(item.sectionId);
-              const candidateMatches = section?.candidateMatches?.length ? section.candidateMatches : item.semanticMatch ? [item.semanticMatch] : [];
+              const candidateMatches = rankMomentsForSection({ section: { ...item, requirements: item.requirements },
+                moments: (project?.videoMoments ?? []).map((source) => ({ ...source, subjects: source.captionMeta?.subjects,
+                  action: source.captionMeta?.action, setting: source.captionMeta?.setting, shotType: source.captionMeta?.shotType })), includeIneligible: true });
               return boardView === "thumbs"
                 ? <ThumbMatchCard key={item.id} label={item.label} start={item.start} end={item.end} match={item.semanticMatch} moment={moment} mode={matchMode} />
                 : (
@@ -178,7 +212,7 @@ export function MatchTab({
                     mode={matchMode}
                     candidateMatches={candidateMatches}
                     momentsById={momentsById}
-                    onSelectCandidate={(momentId) => onSelectCandidate(item.sectionId, momentId)}
+                    onSelectCandidate={(momentId) => onSelectCandidate(item.sectionId, momentId, item.id)}
                   />
                 );
             })}

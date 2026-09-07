@@ -55,3 +55,36 @@ describe("caption recovery", () => {
     }
   });
 });
+
+
+describe("stale queued captions", () => {
+  test("discards a delayed response after the source/reference revision changes", async () => {
+    const originalFetch = globalThis.fetch;
+    const originalBitmap = globalThis.createImageBitmap;
+    const originalCanvas = globalThis.OffscreenCanvas;
+    let current = true;
+    let updates = 0;
+    try {
+      globalThis.createImageBitmap = (async () => ({ width: 32, height: 32, close() {} })) as unknown as typeof createImageBitmap;
+      globalThis.OffscreenCanvas = class {
+        getContext() { return { drawImage() {} }; }
+        async convertToBlob() { return new Blob(["frame"], { type: "image/jpeg" }); }
+      } as unknown as typeof OffscreenCanvas;
+      globalThis.fetch = (async (url, init) => {
+        if (url === scene.storyboardUrl) return new Response(new Blob(["storyboard"]));
+        if (init?.method === "POST") {
+          current = false; // Reference changed while the submitted request was in flight.
+          return Response.json({ text: "Old result that must not apply.", captionSource: "qwen3-vl-server" });
+        }
+        return Response.json({ configured: true, reachable: true });
+      }) as typeof fetch;
+      const result = await captionDetectedScenes(source, [scene], { mode: "smart" }, () => { updates += 1; }, { force: true, isCurrent: () => current });
+      expect(result).toEqual([scene]);
+      expect(updates).toBe(0);
+    } finally {
+      globalThis.fetch = originalFetch;
+      globalThis.createImageBitmap = originalBitmap;
+      globalThis.OffscreenCanvas = originalCanvas;
+    }
+  });
+});

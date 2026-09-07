@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { runStoryboardChecks } from "@/components/studio/storyboardChecks";
-import { buildSequenceGridPrompt, buildFreshFramePrompt, referenceContract, type StoryboardReference } from "@/components/studio/storyboardGeneration";
+import { buildStoryboardSequences, buildSequenceGridPrompt, buildFreshFramePrompt, referenceContract, resolveSequenceGridDirection, type StoryboardReference } from "@/components/studio/storyboardGeneration";
 
 const references: StoryboardReference[] = [
   { url: "https://fixture.invalid/diego.png", label: "Diego", role: "character-1" },
@@ -42,4 +42,39 @@ describe("storyboard review and whole-shot replacement contracts", () => {
   for (const result of runStoryboardChecks()) {
     test(result.label, () => expect(result.passed).toBe(true));
   }
+});
+
+
+describe("section story directions", () => {
+  test("distinct story actions survive into the image prompt", () => {
+    const intro = "Diego and Valentina face each other in the club, leaning close.";
+    const chorus = "Diego and Valentina sprint through the red-lit corridor.";
+    const introPrompt = buildSequenceGridPrompt(references, resolveSequenceGridDirection(intro));
+    const chorusPrompt = buildSequenceGridPrompt(references, resolveSequenceGridDirection(chorus));
+    expect(introPrompt).toContain(intro);
+    expect(chorusPrompt).toContain(chorus);
+    expect(chorusPrompt).not.toContain(intro);
+  });
+  test("manual direction edits take precedence and clearing stays empty for validation", () => {
+    expect(resolveSequenceGridDirection("Run through the corridor.", "Dance near the doorway.")).toBe("Dance near the doorway.");
+    expect(resolveSequenceGridDirection("Run through the corridor.", " ")).toBe("");
+  });
+  test("missing story action remains missing instead of inventing generic direction", () => {
+    expect(resolveSequenceGridDirection()).toBe("");
+    expect(resolveSequenceGridDirection("Describe the visual idea for this song section")).toBe("");
+  });
+});
+
+
+describe("story requirement sequence boundaries", () => {
+  test("two different story moments in one music section retain separate generation directions", () => {
+    const cuts = [
+      { sectionId: "intro", videoUrl: "", kind: "gap", musicStart: 0, musicEnd: 3, startTime: 0, endTime: 3, label: "Opening", requirementId: "establish", storyDirection: "Wide jungle cave exterior" },
+      { sectionId: "intro", videoUrl: "clip.mp4", kind: "source", musicStart: 3, musicEnd: 8, startTime: 0, endTime: 5, label: "Arrival", requirementId: "arrival", storyDirection: "Diego enters alone" },
+    ] as import("@/components/studio/musicVideoProject").EditPlanPreviewSegment[];
+    const groups = buildStoryboardSequences(cuts);
+    expect(groups.length).toBe(2);
+    expect(groups[0]!.direction).toBe("Wide jungle cave exterior");
+    expect(groups[1]!.direction).toBe("Diego enters alone");
+  });
 });

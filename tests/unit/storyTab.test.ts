@@ -2,9 +2,18 @@ import { describe, expect, test } from "bun:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { createDefaultStoryTabState, StoryTab } from "@/components/studio/panels/StoryTab";
+import { createDefaultStoryTabState, prepareStoryTabPlacements, StoryTab } from "@/components/studio/panels/StoryTab";
+
+import { createMusicVideoProject, isPlacementPlanCurrent } from "@/components/studio/musicVideoProject";
 
 describe("StoryTab section map", () => {
+  test("binds confirmed evidence before hashing placements, and later evidence changes invalidate them", () => {
+    const project = createMusicVideoProject({ analysis: null, duration: 8, lyricChunks: [], storyDrafts: [{ id: "opening", label: "Opening", prompt: "Establish the jungle entrance", start: 0, end: 8 }], videoSources: [], segmentPreviews: [] });
+    const prepared = prepareStoryTabPlacements({ project, videoSources: [] }, "approved-reference-revision");
+    expect(prepared.sourceContextSignature).toBe("approved-reference-revision");
+    expect(isPlacementPlanCurrent(prepared)).toBe(true);
+    expect(isPlacementPlanCurrent({ ...prepared, sourceContextSignature: "recaptioned-revision" })).toBe(false);
+  });
   test("renders one compact aligned table instead of oversized placeholder cards", () => {
     const state = {
       ...createDefaultStoryTabState(),
@@ -46,7 +55,7 @@ describe("StoryTab section map", () => {
     expect(markup).toContain("Story intent");
     expect(markup).toContain("Matched source");
     expect(markup).toContain("No matched source");
-    expect(markup).toContain("Timing &amp; Song Structure · advanced");
+    expect(markup).toContain("Review song sections · rename or adjust timing");
     expect(markup).not.toContain('role="slider"');
     expect(markup).not.toContain("Image prompt");
     expect(markup).not.toContain("Stitch slot");
@@ -55,7 +64,7 @@ describe("StoryTab section map", () => {
     expect(markup).not.toContain("aspect-video");
   });
 
-  test("renders three treatment choices and the required anchor review", () => {
+  test("renders three inspectable story choices with truthful footage gaps", () => {
     const base = createDefaultStoryTabState();
     const treatments = (["faithful", "bold", "wildcard"] as const).map((kind, treatmentIndex) => ({
       id: `${kind}-test`,
@@ -89,11 +98,12 @@ describe("StoryTab section map", () => {
     }));
 
     expect(markup).toContain("Faithful");
-    expect(markup).toContain("Architecture as antagonist");
-    expect(markup).toContain("Late reversal");
-    expect(markup).toContain("Anchor review");
-    expect(markup).toContain("Plan generation");
-    expect(markup).toContain("Confirm story plan");
-    expect(markup).toContain("Timing &amp; Song Structure");
+    expect(markup).toContain("Bold");
+    expect(markup).toContain("Wildcard");
+    expect(markup).toContain("Read story: faithful maze");
+    expect(markup).toContain("4 moments need footage");
+    expect(markup).not.toContain("auto-resolved");
+    expect(markup).not.toContain("75%");
+    expect(markup).toContain("Missing shots remain visible as gaps");
   });
 });

@@ -1,3 +1,4 @@
+import { normalizeMediaEvidence } from "./mediaEvidence";
 import { buildSceneCaptionPrompt, serializeSceneCaptionContext, serializeSceneCaptionReferences } from "./sceneCaptionPrompt";
 import type { ColorPaletteSwatch, DetectedSceneSegment, MotionDescriptor, SceneCaptionSettings, SceneColorAnalysis, SceneVisualAnalysis } from "./types";
 
@@ -119,6 +120,8 @@ export function normalizeSplitterManifest(
       detector: "pyscenedetect-adaptive",
       confidence: null,
       caption,
+      mediaEvidence: normalizeMediaEvidence(record.mediaEvidence),
+      captionHistory: Array.isArray(record.captionHistory) ? record.captionHistory.filter((entry): entry is NonNullable<DetectedSceneSegment["captionHistory"]>[number] => Boolean(entry) && typeof entry === "object" && typeof entry.caption === "string") : undefined,
       captionMeta: sceneData ? {
         caption: readString(sceneData.caption),
         shotType: readString(sceneData.shotType) ?? readString(sceneData.shot_type),

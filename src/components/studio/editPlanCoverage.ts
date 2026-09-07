@@ -1,10 +1,10 @@
-import { resolveFitPolicy } from "./fitPolicy";
+import { assessStoryMatch, type MatchAssessment } from "./storyMatchAssessment";
 import type { GeneratedStudioAsset } from "./generatedAssets";
-import { generatedAssetMatchesTimelineItem, listApprovedGeneratedVideoAssets } from "./generatedAssets";
-import type { MusicVideoProject, TimelineItem, VideoMoment } from "./musicVideoProject";
+import { generatedAssetWindow, listApprovedGeneratedVideoAssets } from "./generatedAssets";
+import { isPlacementPlanCurrent, type MusicVideoProject, type TimelineItem, type VideoMoment } from "./musicVideoProject";
 
 export const COVERAGE_WEAK_SCORE_THRESHOLD = 0.45;
-export const COVERAGE_SHORT_DURATION_EPSILON = 0.5;
+export const COVERAGE_SHORT_DURATION_EPSILON = 0.05;
 
 export type SlotStatus = "filled" | "weak" | "short" | "missing";
 export type GenerationNeed = "b-roll" | "alt-angle" | "extend-start" | "extend-end" | "bridge" | "reroll-match";
@@ -28,6 +28,9 @@ export type CoverageSlot = {
   score: number;
   status: SlotStatus;
   needs: GenerationNeed[];
+  semanticStatus?: "supported" | "uncertain" | "missing";
+  gapKind?: "semantic" | "duration";
+  assessment?: MatchAssessment;
 };
 
 export type CoverageIssueGroup = {
@@ -55,11 +58,13 @@ export type CoverageSummary = {
   coveragePct: number;
   strongMatchPct: number;
   duration: number;
-  /** True holes (missing primary match) — blocks Join */
+  semanticGapDuration: number;
+  durationGapDuration: number;
+  /** Unresolved semantic or duration holes — blocks final readiness */
   blockingGapCount: number;
-  /** Uncovered duration for missing slots only — drives red blocking metrics */
+  /** All uncovered required duration */
   blockingGapDuration: number;
-  /** Purple short-source slots — optional review */
+  /** Insufficient usable source duration */
   shortReviewCount: number;
   /** @deprecated Use blockingGapCount — kept for gradual UI migration */
   requiredNeedCount: number;
@@ -78,31 +83,11 @@ export type EditPlanCoverageAnalysis = {
 };
 
 function classifySlotStatus(params: {
-  moment: VideoMoment | undefined;
-  requiredDuration: number;
-  assignedDuration: number;
-  availableDuration: number;
-  score: number;
+  supported: boolean; requiredDuration: number; assignedDuration: number; score: number;
 }): SlotStatus {
-  const { moment, requiredDuration, assignedDuration, availableDuration, score } = params;
-  if (!moment) return "missing";
-
-  const missingDuration = Math.max(0, requiredDuration - assignedDuration);
-  if (missingDuration <= COVERAGE_SHORT_DURATION_EPSILON) {
-    return score < COVERAGE_WEAK_SCORE_THRESHOLD ? "weak" : "filled";
-  }
-
-  const fit = resolveFitPolicy({
-    sourceDuration: availableDuration,
-    targetDuration: requiredDuration,
-    allowOverlap: false,
-  });
-
-  if (availableDuration < requiredDuration - COVERAGE_SHORT_DURATION_EPSILON && fit.decision === "reject") {
-    return "short";
-  }
-
-  return score < COVERAGE_WEAK_SCORE_THRESHOLD ? "weak" : "filled";
+  if (!params.supported) return "missing";
+  if (params.requiredDuration - params.assignedDuration > COVERAGE_SHORT_DURATION_EPSILON) return "short";
+  return params.score < COVERAGE_WEAK_SCORE_THRESHOLD ? "weak" : "filled";
 }
 
 function deriveGenerationNeeds(status: SlotStatus, requiredDuration: number, availableDuration: number): GenerationNeed[] {
@@ -127,58 +112,76 @@ export function buildCoverageSlots(
   const approvedVideos = listApprovedGeneratedVideoAssets(approvedReplacements);
 
   const momentsById = new Map(project.videoMoments.map((moment) => [moment.id, moment]));
-  const itemsBySection = new Map(project.editPlan.timelineItems.map((item) => [item.sectionId, item]));
+  const originalItemIds = new Map<string, string>();
   const sourceItems = chunks.length
-    ? chunks.map((chunk, index) => {
-        const base = itemsBySection.get(chunk.sectionId)
-          ?? project.editPlan.timelineItems.find((item) => item.start <= chunk.start && item.end >= chunk.end)
-          ?? project.editPlan.timelineItems[0];
-        return {
-          ...(base ?? {
-            id: `chunk-${chunk.id}`,
-            sectionId: chunk.sectionId,
-            lyricChunkIds: [],
-            videoMomentId: null,
-            start: chunk.start,
-            end: chunk.end,
-            label: chunk.sectionLabel,
-            prompt: "No story prompt is attached to this adaptive chunk.",
-          }),
-          id: `chunk-${chunk.id}`,
-          sectionId: chunk.sectionId,
-          start: chunk.start,
-          end: chunk.end,
-          label: `${chunk.sectionLabel} · C${String(index + 1).padStart(2, "0")}`,
-        } satisfies TimelineItem;
-      })
+    ? chunks.flatMap((chunk, index) => {
+      const overlaps = project.editPlan.timelineItems.filter((item) => item.sectionId === chunk.sectionId && item.start < chunk.end && item.end > chunk.start);
+      if (!overlaps.length) return [{ id: `chunk-${chunk.id}`, sectionId: chunk.sectionId, lyricChunkIds: [], videoMomentId: null,
+        start: chunk.start, end: chunk.end, label: chunk.sectionLabel, prompt: "No story requirement is attached to this music window." } satisfies TimelineItem];
+      return overlaps.map((base) => {
+        const id = `chunk-${chunk.id}:${base.id}`;
+        originalItemIds.set(id, base.id);
+        return { ...base, id,
+        start: Math.max(chunk.start, base.start), end: Math.min(chunk.end, base.end),
+        label: `${base.label} · C${String(index + 1).padStart(2, "0")}` } satisfies TimelineItem; });
+    })
     : project.editPlan.timelineItems;
 
+  const consumed = new Map<string, number>();
   return sourceItems.map((item) => {
     const moment = item.videoMomentId ? momentsById.get(item.videoMomentId) : undefined;
     const requiredDuration = Math.max(0, item.end - item.start);
-    const approvedReplacement = approvedVideos.find((asset) => generatedAssetMatchesTimelineItem(asset, item));
+    const assess = (source: VideoMoment) => assessStoryMatch({
+      requirementId: item.requirementId ?? item.id, requirementText: item.prompt, constraints: item.requirements,
+      moment: { ...source, subjects: source.captionMeta?.subjects, action: source.captionMeta?.action,
+        setting: source.captionMeta?.setting, shotType: source.captionMeta?.shotType },
+    });
+    const assessment = moment ? assess(moment) : undefined;
+    let score = item.semanticMatch?.score ?? 0;
+    const stalePlacements = project.placementPlan && !isPlacementPlanCurrent(project);
+    const placements = stalePlacements ? [] : project.placementPlan?.placements.filter((placement) =>
+      placement.timelineItemId === (originalItemIds.get(item.id) ?? item.id) && placement.sectionId === item.sectionId && placement.songStart < item.end && placement.songEnd > item.start);
+    let supported = !stalePlacements && assessment?.eligibility === "eligible";
+    let assignedDuration = 0;
+    const intervals: Array<[number, number]> = [];
+    if (placements) {
+      for (const placement of placements) {
+        if (placement.kind !== "source" || !placement.momentId) continue;
+        const source = momentsById.get(placement.momentId);
+        if (!source || assess(source).eligibility !== "eligible") continue;
+        supported = true;
+        intervals.push([Math.max(item.start, placement.songStart), Math.min(item.end, placement.songEnd)]);
+      }
 
-    if (!moment && approvedReplacement) {
-      return {
-        item,
-        moment: undefined,
-        requiredDuration,
-        assignedDuration: requiredDuration,
-        missingDuration: 0,
-        score: 1,
-        status: "filled" as const,
-        needs: [] as GenerationNeed[],
-      };
+    } else if (moment && supported) {
+      const available = Math.max(0, moment.duration - (consumed.get(moment.id) ?? 0));
+      assignedDuration = Math.min(requiredDuration, available);
+      consumed.set(moment.id, (consumed.get(moment.id) ?? 0) + assignedDuration);
+      intervals.push([item.start, item.start + assignedDuration]);
     }
-
-    const score = item.semanticMatch?.score ?? 0;
-    const availableDuration = moment?.duration ?? 0;
-    const assignedDuration = moment ? Math.min(requiredDuration, availableDuration) : 0;
+    const planSignature = project.placementPlan && !stalePlacements ? project.placementPlan.inputSignature : undefined;
+    for (const asset of approvedVideos) {
+      const window = generatedAssetWindow(asset, { planSignature, requirementId: item.requirementId,
+        timelineItemId: originalItemIds.get(item.id) ?? item.id, sectionId: item.sectionId,
+        songStart: item.start, songEnd: item.end });
+      if (!window) continue;
+      intervals.push([window.songStart, window.songEnd]);
+      supported = true;
+      score = Math.max(score, 1);
+    }
+    // Source and generated windows can overlap; coverage counts each song second once.
+    assignedDuration = 0;
+    let coveredEnd = item.start;
+    for (const [start, end] of intervals.sort((a, b) => a[0] - b[0])) {
+      assignedDuration += Math.max(0, end - Math.max(start, coveredEnd));
+      coveredEnd = Math.max(coveredEnd, end);
+    }
     const missingDuration = Math.max(0, requiredDuration - assignedDuration);
-    const status = classifySlotStatus({ moment, requiredDuration, assignedDuration, availableDuration, score });
-    const needs = deriveGenerationNeeds(status, requiredDuration, availableDuration);
-
-    return { item, moment, requiredDuration, assignedDuration, missingDuration, score, status, needs };
+    const status = classifySlotStatus({ supported, requiredDuration, assignedDuration, score });
+    const needs = deriveGenerationNeeds(status, requiredDuration, assignedDuration);
+    return { item, moment, requiredDuration, assignedDuration, missingDuration, score, status, needs, assessment,
+      semanticStatus: supported ? "supported" as const : assessment?.eligibility === "uncertain" ? "uncertain" as const : "missing" as const,
+      gapKind: status === "missing" ? "semantic" as const : status === "short" ? "duration" as const : undefined };
   });
 }
 
@@ -191,9 +194,9 @@ export function summarizeCoverage(slots: CoverageSlot[], cueDuration = 0): Cover
   const coveragePct = requiredDuration > 0 ? Math.round((assignedDuration / requiredDuration) * 100) : 0;
   const strongMatchPct = requiredDuration > 0 ? Math.round((strongMatchDuration / requiredDuration) * 100) : 0;
   const duration = Math.max(cueDuration, slots[slots.length - 1]?.item.end ?? 0, requiredDuration, 1);
-  const blockingGapCount = slots.filter((slot) => slot.status === "missing").length;
+  const blockingGapCount = slots.filter((slot) => slot.status === "missing" || slot.status === "short").length;
   const blockingGapDuration = slots
-    .filter((slot) => slot.status === "missing")
+    .filter((slot) => slot.status === "missing" || slot.status === "short")
     .reduce((total, slot) => total + slot.missingDuration, 0);
   const shortReviewCount = slots.filter((slot) => slot.status === "short").length;
   const reviewCount = slots.filter((slot) => slot.status === "weak").length;
@@ -202,6 +205,8 @@ export function summarizeCoverage(slots: CoverageSlot[], cueDuration = 0): Cover
   return {
     requiredDuration,
     assignedDuration,
+    semanticGapDuration: slots.filter((slot) => slot.status === "missing").reduce((total, slot) => total + slot.missingDuration, 0),
+    durationGapDuration: slots.filter((slot) => slot.status === "short").reduce((total, slot) => total + slot.missingDuration, 0),
     trueGapDuration,
     strongMatchDuration,
     weakMatchDuration,
@@ -265,12 +270,12 @@ export function buildCoverageIssueGroups(slots: CoverageSlot[]): CoverageIssueGr
 
 export function describeCoverageIssue(issue: CoverageIssueGroup) {
   if (issue.status === "missing") {
-    return `No source scene is assigned from ${formatCoverageTime(issue.start)} to ${formatCoverageTime(issue.end)}. This is a true gap and must be filled before Join.`;
+    return `No supported source scene covers ${formatCoverageTime(issue.start)} to ${formatCoverageTime(issue.end)}. Review the required visual and its evidence, or plan generation. This gap remains in the draft.`;
   }
   if (issue.status === "short") {
-    return `The assigned source covers ${formatCoverageTime(issue.assignedDuration)} of ${formatCoverageTime(issue.requiredDuration)}, leaving ${formatCoverageTime(issue.missingDuration)} uncovered. Inspect the resolved edit and, if needed, regenerate the whole shot with handles.`;
+    return `The assigned source covers ${formatCoverageTime(issue.assignedDuration)} of ${formatCoverageTime(issue.requiredDuration)}, leaving ${formatCoverageTime(issue.missingDuration)} uncovered. The faithful draft retains this duration gap. Add eligible footage or explicitly review reuse before final export.`;
   }
-  return `This Story section's selected match scores ${Math.round(issue.score * 100)}%, below the 45% review threshold. All ${issue.slots.length} chunks contain real footage, so generation is optional.`;
+  return `The required visual is supported, but this match is weaker in editorial ranking. Review the evidence and composition; the score is a ranking signal, not a calibrated probability.`;
 }
 
 export function analyzeEditPlanCoverage(
@@ -281,17 +286,13 @@ export function analyzeEditPlanCoverage(
   const slots = buildCoverageSlots(project, chunks, approvedReplacements);
   const summary = summarizeCoverage(slots, chunks[chunks.length - 1]?.end ?? 0);
   const timelineItems = project?.editPlan.timelineItems ?? [];
-  const approvedVideos = listApprovedGeneratedVideoAssets(approvedReplacements);
-
   return {
     slots,
     summary,
     trueGapCount: summary.blockingGapCount,
     shortReviewCount: summary.shortReviewCount,
     weakReviewCount: summary.reviewCount,
-    matchedSlotCount: timelineItems.filter((item) =>
-      Boolean(item.videoMomentId) || approvedVideos.some((asset) => generatedAssetMatchesTimelineItem(asset, item)),
-    ).length,
+    matchedSlotCount: slots.filter((slot) => slot.semanticStatus === "supported").length,
     editSlotCount: timelineItems.length,
   };
 }

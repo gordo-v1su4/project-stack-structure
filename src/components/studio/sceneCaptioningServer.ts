@@ -1,3 +1,5 @@
+import { normalizeMediaObservation, normalizeMediaEvidence, type MediaObservation, type MediaEvidence } from "./mediaEvidence";
+
 import type { SceneCaptionData, SceneCaptionSource } from "./types";
 
 export type ServerCaptionAvailability = {
@@ -12,6 +14,8 @@ export type ServerCaptionAvailability = {
 export type ServerCaptionResult = {
   text: string;
   meta?: SceneCaptionData;
+  observation?: MediaObservation;
+  mediaEvidence?: MediaEvidence;
   captionSource: SceneCaptionSource;
   model?: string;
 };
@@ -20,19 +24,20 @@ export function normalizeServerCaptionPayload(payload: unknown): ServerCaptionRe
   if (!isRecord(payload)) throw new Error("Server caption response was not an object.");
   if (payload.ok === false) throw new Error(readString(payload.error) || "Server captioning failed.");
 
-  const text = readString(payload.text) || readString(payload.caption);
+  const rawText = readString(payload.text) || readString(payload.caption);
+  const parsed = parseCaptionJson(rawText);
+  const record = isRecord(payload.meta) ? payload.meta : isRecord(payload.sceneData) ? payload.sceneData : parsed;
+  const text = readString(record?.caption) || rawText;
   if (!text) throw new Error("Server caption response did not include caption text.");
 
-  const meta = isRecord(payload.meta)
-    ? normalizeSceneCaptionData(payload.meta)
-    : isRecord(payload.sceneData)
-      ? normalizeSceneCaptionData(payload.sceneData)
-      : undefined;
+  const meta = record ? normalizeSceneCaptionData(record) : undefined;
 
   return {
     text,
     meta,
-    captionSource: readCaptionSource(payload.captionSource) ?? "qwen3-vl-server",
+    observation: normalizeMediaObservation(record?.evidence ?? payload.evidence),
+    mediaEvidence: normalizeMediaEvidence(payload.mediaEvidence),
+    captionSource: readCaptionSource(payload.captionSource ?? payload.source) ?? "qwen3-vl-server",
     model: readString(payload.model),
   };
 }
@@ -44,7 +49,7 @@ export function normalizeServerCaptionAvailability(payload: unknown): ServerCapt
     reachable: payload.reachable === true,
     provider: readString(payload.provider),
     model: readString(payload.model),
-    captionSource: readCaptionSource(payload.captionSource),
+    captionSource: readCaptionSource(payload.captionSource ?? payload.source),
     error: readString(payload.error),
   };
 }
@@ -80,4 +85,12 @@ function readString(value: unknown) {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+export function parseCaptionJson(text: string | undefined): Record<string, unknown> | undefined {
+  if (!text) return undefined;
+  try {
+    const parsed = JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, "").trim()) as unknown;
+    return isRecord(parsed) ? parsed : undefined;
+  } catch { return undefined; }
 }

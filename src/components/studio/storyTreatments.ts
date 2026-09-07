@@ -1,4 +1,5 @@
-import type { MusicVideoProject, SemanticClipMatch, StoryPlanDraft, VideoMoment } from "./musicVideoProject";
+import { assessStoryMatch, type MatchAssessment } from "./storyMatchAssessment";
+import type { StoryPlanDraft, VideoMoment } from "./musicVideoProject";
 
 export const STORY_TREATMENT_MODEL = "Qwen/Qwen3-VL-4B-Instruct-GGUF:Q4_K_M";
 export const STORY_TREATMENT_KINDS = ["faithful", "bold", "wildcard"] as const;
@@ -21,6 +22,29 @@ export type StoryAnchorCandidate = {
   end: number;
   score: number;
   reason: string;
+  assessment?: MatchAssessment;
+};
+
+export type StoryLoglineElements = {
+  incident: string;
+  protagonist: string;
+  goal: string;
+  opposition: string;
+  stakes: string;
+};
+
+export type StoryShotRequirement = {
+  id: string;
+  momentId: string;
+  description: string;
+  optional?: boolean;
+  durationSeconds?: number;
+  constraints: import("./storyMatchAssessment").ShotRequirementConstraints;
+  /** Undefined inherits a legacy moment decision; explicit null is an unresolved gap. */
+  resolution?: CoverageResolution;
+  selectedCandidateId?: string | null;
+  coverage?: StoryCoverageState;
+  candidates?: StoryAnchorCandidate[];
 };
 
 export type StoryAnchor = {
@@ -29,6 +53,11 @@ export type StoryAnchor = {
   description: string;
   purpose: string;
   generationPrompt: string;
+  role?: string;
+  causalDependencies?: string[];
+  optional?: boolean;
+  requirements?: StoryShotRequirement[];
+  songWindow?: { start: number; end: number };
   coverage: StoryCoverageState;
   candidates: StoryAnchorCandidate[];
   selectedCandidateId: string | null;
@@ -46,6 +75,12 @@ export type StoryTreatment = {
   expectedReusePercent: number;
   expectedGenerationPercent: number;
   anchors: StoryAnchor[];
+  revision?: number;
+  loglineElements?: StoryLoglineElements;
+  structure?: "visual-arc" | "performance" | "concept";
+  reconciliation?: { status: "current" | "pending" | "legacy"; note?: string };
+  /** Optional editorial overrides; missing entries use the suggested distribution. */
+  sectionAnchorIds?: Record<string, string>;
 };
 
 export type StoryGenerationMeta = {
@@ -63,6 +98,7 @@ export type StoryTreatmentState = {
   confirmedTreatmentSnapshot: StoryTreatment | null;
   generationMeta: StoryGenerationMeta | null;
   storyContentSignature: string | null;
+  confirmedSourceContextSignature?: string | null;
 };
 
 export type StoryTreatmentGenerationResult = {
@@ -90,6 +126,7 @@ export type StoryTreatmentRequest = {
   constraints?: string[];
   /** Internal retry hint when Qwen returns schema-invalid JSON. */
   validationAttempt?: number;
+  revision?: { treatment: StoryTreatment; instruction: string };
 };
 
 export const STORY_TREATMENTS_JSON_SCHEMA = {
@@ -109,6 +146,8 @@ export const STORY_TREATMENTS_JSON_SCHEMA = {
           "kind",
           "title",
           "logline",
+          "loglineElements",
+          "structure",
           "synopsis",
           "visualThesis",
           "endingHook",
@@ -121,6 +160,8 @@ export const STORY_TREATMENTS_JSON_SCHEMA = {
           kind: { type: "string", enum: [...STORY_TREATMENT_KINDS] },
           title: { type: "string", minLength: 2, maxLength: 100 },
           logline: { type: "string", minLength: 20, maxLength: 320 },
+          loglineElements: { type: "object", additionalProperties: false, required: ["incident", "protagonist", "goal", "opposition", "stakes"], properties: Object.fromEntries(["incident", "protagonist", "goal", "opposition", "stakes"].map(key => [key, { type: "string", minLength: 1, maxLength: 240 }])) },
+          structure: { type: "string", enum: ["visual-arc", "performance", "concept"] },
           synopsis: { type: "string", minLength: 60, maxLength: 900 },
           visualThesis: { type: "string", minLength: 20, maxLength: 400 },
           endingHook: { type: "string", minLength: 10, maxLength: 320 },
@@ -128,18 +169,30 @@ export const STORY_TREATMENTS_JSON_SCHEMA = {
           expectedGenerationPercent: { type: "number", minimum: 0, maximum: 100 },
           anchors: {
             type: "array",
-            minItems: 4,
-            maxItems: 6,
+            minItems: 2,
+            maxItems: 15,
             items: {
               type: "object",
               additionalProperties: false,
-              required: ["id", "title", "description", "purpose", "generationPrompt"],
+              required: ["id", "title", "description", "purpose", "generationPrompt", "role", "causalDependencies", "optional", "requirements"],
               properties: {
                 id: { type: "string", minLength: 1, maxLength: 80 },
                 title: { type: "string", minLength: 2, maxLength: 100 },
                 description: { type: "string", minLength: 20, maxLength: 500 },
                 purpose: { type: "string", minLength: 10, maxLength: 240 },
                 generationPrompt: { type: "string", minLength: 20, maxLength: 600 },
+                role: { type: "string", minLength: 1, maxLength: 100 },
+                causalDependencies: { type: "array", items: { type: "string" } },
+                optional: { type: "boolean" },
+                requirements: { type: "array", minItems: 1, maxItems: 12, items: {
+                  type: "object", required: ["id", "momentId", "description", "constraints"], properties: {
+                    id: { type: "string" }, momentId: { type: "string" }, description: { type: "string", minLength: 1 }, optional: { type: "boolean" }, durationSeconds: { type: "number", minimum: 0.1 },
+                    constraints: { type: "object", properties: {
+                      subjects: { type: "array", items: { type: "string" } }, actions: { type: "array", items: { type: "string" } }, physicalStates: { type: "array", items: { type: "string" } }, focalSubjectCount: { type: "integer", minimum: 0 }, setting: { type: "string" }, intent: { type: "string" },
+                    } },
+                  },
+                } },
+                songWindow: { type: "object", required: ["start", "end"], properties: { start: { type: "number", minimum: 0 }, end: { type: "number", minimum: 0 } } },
               },
             },
           },
@@ -201,6 +254,7 @@ export function parseStoryTreatmentRequest(value: unknown): StoryTreatmentReques
     constraints: Array.isArray(record.constraints)
       ? record.constraints.map((item) => limitedString(item, 300, "")).filter(Boolean).slice(0, 20)
       : undefined,
+    revision: record.revision ? parseRevisionRequest(record.revision) : undefined,
     validationAttempt: Number.isFinite(record.validationAttempt)
       ? Math.round(clamp(Number(record.validationAttempt), 0, 1))
       : undefined,
@@ -229,12 +283,12 @@ export function parseGeneratedTreatments(value: unknown): GeneratedTreatment[] {
 export function hydrateTreatmentCoverage(treatments: GeneratedTreatment[] | StoryTreatment[], moments: VideoMoment[]): StoryTreatment[] {
   return treatments.map((treatment) => ({
     ...treatment,
-    anchors: treatment.anchors.map((anchor) => rankAnchorCoverage(anchor, moments)),
+    anchors: treatment.anchors.map((anchor) => rankStoryMomentCoverage(anchor, moments)),
   }));
 }
 
 export function rerankAnchorCoverage(anchor: StoryAnchor, moments: VideoMoment[]): StoryAnchor {
-  const ranked = rankAnchorCoverage(anchor, moments);
+  const ranked = rankStoryMomentCoverage(anchor, moments);
   if (anchor.resolution === "generate" || anchor.resolution === "omit") {
     return { ...ranked, resolution: anchor.resolution, selectedCandidateId: null };
   }
@@ -242,9 +296,12 @@ export function rerankAnchorCoverage(anchor: StoryAnchor, moments: VideoMoment[]
 }
 
 export function isStoryPlanConfirmable(treatment: StoryTreatment | null | undefined) {
-  return Boolean(treatment?.anchors.length && treatment.anchors.every((anchor) => {
-    if (anchor.resolution === "source") return Boolean(anchor.selectedCandidateId);
-    return anchor.resolution === "generate" || anchor.resolution === "omit";
+  return Boolean(treatment?.reconciliation?.status !== "pending" && treatment?.anchors.length && treatment.anchors.every((anchor) => {
+    if (!anchor.title.trim() || !anchor.description.trim()) return false;
+    const requirementsWithDecisions = anchor.requirements?.filter(requirement => requirement.resolution !== undefined) ?? [];
+    if (requirementsWithDecisions.length) return requirementsWithDecisions.every(requirement => requirement.resolution !== "source" || Boolean(requirement.selectedCandidateId && requirement.candidates?.some(candidate => candidate.momentId === requirement.selectedCandidateId && candidate.assessment?.eligibility === "eligible")));
+    if (anchor.resolution === "source") return Boolean(anchor.selectedCandidateId && anchor.candidates.some(candidate => candidate.momentId === anchor.selectedCandidateId && candidate.assessment?.eligibility !== "ineligible" && candidate.assessment?.eligibility !== "uncertain"));
+    return anchor.resolution === null || anchor.resolution === "generate" || anchor.resolution === "omit";
   }));
 }
 
@@ -255,10 +312,19 @@ export function buildStoryContentSignature(treatment: StoryTreatment, storyBeats
       title: treatment.title,
       logline: treatment.logline,
       synopsis: treatment.synopsis,
+      revision: treatment.revision,
+      loglineElements: treatment.loglineElements,
+      reconciliation: treatment.reconciliation,
+      sectionAnchorIds: treatment.sectionAnchorIds,
       anchors: treatment.anchors.map((anchor) => ({
         id: anchor.id,
         title: anchor.title,
         description: anchor.description,
+        requirements: anchor.requirements,
+        songWindow: anchor.songWindow,
+        role: anchor.role,
+        causalDependencies: anchor.causalDependencies,
+        optional: anchor.optional,
         resolution: anchor.resolution,
         selectedCandidateId: anchor.selectedCandidateId,
       })),
@@ -273,75 +339,13 @@ export function buildStoryContentSignature(treatment: StoryTreatment, storyBeats
   return `story-v2-${(hash >>> 0).toString(16).padStart(8, "0")}`;
 }
 
-export function applyTreatmentAnchorsToStoryBeats(storyBeats: StoryPlanDraft[], treatment: StoryTreatment): StoryPlanDraft[] {
-  if (!storyBeats.length || !treatment.anchors.length) return storyBeats;
-  let previousAnchorIndex = -1;
-  return storyBeats.map((beat, index) => {
-    const anchorIndex = Math.min(
-      treatment.anchors.length - 1,
-      Math.floor((index * treatment.anchors.length) / storyBeats.length),
-    );
-    const anchor = treatment.anchors[anchorIndex];
-    const isAnchorEntry = anchorIndex !== previousAnchorIndex;
-    previousAnchorIndex = anchorIndex;
-    const prefix = anchor.resolution === "generate" && isAnchorEntry
-      ? "[GENERATE GAP] "
-      : anchor.resolution === "omit"
-        ? "[PERFORMANCE BRIDGE] "
-        : "";
-    return { ...beat, prompt: `${prefix}${anchor.title}: ${anchor.description}` };
-  });
+export function anchorForStorySection(treatment: StoryTreatment, sectionId: string, index: number, sectionCount: number): StoryAnchor | undefined {
+  const explicit = treatment.sectionAnchorIds?.[sectionId];
+  return treatment.anchors.find((anchor) => anchor.id === explicit)
+    ?? treatment.anchors[Math.min(treatment.anchors.length - 1, Math.floor(index * treatment.anchors.length / Math.max(1, sectionCount)))];
 }
 
-export function applyTreatmentCoverageToProject(project: MusicVideoProject, treatment: StoryTreatment | null | undefined): MusicVideoProject {
-  if (!treatment?.anchors.length || !project.storySections.length) return project;
-  const momentIds = new Set(project.videoMoments.map((moment) => moment.id));
-  let previousAnchorIndex = -1;
-  const decisions = new Map(project.storySections.map((section, index) => {
-    const anchorIndex = Math.min(
-      treatment.anchors.length - 1,
-      Math.floor((index * treatment.anchors.length) / project.storySections.length),
-    );
-    const isAnchorEntry = anchorIndex !== previousAnchorIndex;
-    previousAnchorIndex = anchorIndex;
-    return [section.id, isAnchorEntry ? treatment.anchors[anchorIndex] : null] as const;
-  }));
-  const storySections = project.storySections.map((section) => {
-    const anchor = decisions.get(section.id);
-    if (!anchor) return section;
-    if (anchor.resolution === "generate") {
-      return { ...section, videoMomentIds: [], semanticMatch: undefined };
-    }
-    if (anchor.resolution === "source" && anchor.selectedCandidateId && momentIds.has(anchor.selectedCandidateId)) {
-      const candidate = anchor.candidates.find((item) => item.momentId === anchor.selectedCandidateId);
-      const semanticMatch = candidate ? candidateToSemanticMatch(candidate) : section.semanticMatch;
-      return {
-        ...section,
-        videoMomentIds: [anchor.selectedCandidateId, ...section.videoMomentIds.filter((id) => id !== anchor.selectedCandidateId)],
-        semanticMatch,
-      };
-    }
-    return section;
-  });
-  const sectionById = new Map(storySections.map((section) => [section.id, section]));
-  return {
-    ...project,
-    storySections,
-    editPlan: {
-      ...project.editPlan,
-      timelineItems: project.editPlan.timelineItems.map((item) => {
-        const section = sectionById.get(item.sectionId);
-        if (!section) return item;
-        return {
-          ...item,
-          prompt: section.prompt,
-          videoMomentId: section.videoMomentIds[0] ?? null,
-          semanticMatch: section.semanticMatch,
-        };
-      }),
-    },
-  };
-}
+export { applyStoryDirectionToMusic as applyTreatmentAnchorsToStoryBeats, applyStoryCoverage as applyTreatmentCoverageToProject } from "./storyMusicPlacement";
 
 export function selectedTreatment(
   treatments: StoryTreatment[],
@@ -350,14 +354,14 @@ export function selectedTreatment(
   return treatments.find((treatment) => treatment.id === treatmentId) ?? null;
 }
 
-function parseGeneratedTreatment(value: unknown, index: number): GeneratedTreatment {
+export function parseGeneratedTreatment(value: unknown, index: number = 0): GeneratedTreatment {
   const record = asRecord(value, `Treatment ${index + 1} is invalid.`);
   const kind = normalizeTreatmentKind(record.kind);
   if (!kind) {
     throw new Error(`Treatment ${index + 1} has an invalid kind.`);
   }
-  if (!Array.isArray(record.anchors) || record.anchors.length < 4) {
-    throw new Error(`Treatment ${index + 1} must contain at least four anchors.`);
+  if (!Array.isArray(record.anchors) || record.anchors.length < 2) {
+    throw new Error(`Treatment ${index + 1} must contain at least two story moments.`);
   }
   const expectedReusePercent = normalizeCoveragePercent(record.expectedReusePercent, 80);
   const expectedGenerationPercent = 100 - expectedReusePercent;
@@ -371,49 +375,68 @@ function parseGeneratedTreatment(value: unknown, index: number): GeneratedTreatm
     endingHook: requiredString(record.endingHook, 320, `Treatment ${index + 1} ending hook`),
     expectedReusePercent,
     expectedGenerationPercent,
+    revision: Math.max(1, Math.round(finiteNumber(record.revision, 1))),
+    loglineElements: parseLoglineElements(record.loglineElements),
+    structure: record.structure === "performance" || record.structure === "concept" ? record.structure : "visual-arc",
+    reconciliation: { status: record.loglineElements ? "current" : "legacy" },
     anchors: parseGeneratedAnchors(record.anchors, index, {
       kind,
       title: requiredString(record.title, 100, `Treatment ${index + 1} title`),
       synopsis: requiredString(record.synopsis, 900, `Treatment ${index + 1} synopsis`),
       visualThesis: requiredString(record.visualThesis, 400, `Treatment ${index + 1} visual thesis`),
+      strict: record.loglineElements !== undefined,
     }),
   };
 }
 
 type AnchorParseContext = {
+  strict?: boolean;
   kind: StoryTreatmentKind;
   title: string;
   synopsis: string;
   visualThesis: string;
 };
 
-const DEFAULT_ANCHOR_TITLES = [
-  "Tunnel arrival",
-  "Crowded dance room",
-  "Search through the maze",
-  "Collapsing arena",
-] as const;
-
 function parseGeneratedAnchors(rawAnchors: unknown[], treatmentIndex: number, context: AnchorParseContext): GeneratedAnchor[] {
   const parsed: GeneratedAnchor[] = [];
-  for (let anchorIndex = 0; anchorIndex < rawAnchors.length && parsed.length < 4; anchorIndex += 1) {
+  for (let anchorIndex = 0; anchorIndex < rawAnchors.length && parsed.length < 15; anchorIndex += 1) {
     try {
       const anchor = coerceAnchorRecord(rawAnchors[anchorIndex], parsed.length, context);
-      if (!anchor) continue;
+      if (!anchor) { if (context.strict) throw new Error("Every generated story moment must be a valid object."); continue; }
       parsed.push({
         id: limitedString(anchor.id, 80, `${context.kind}-anchor-${parsed.length + 1}`),
         title: requiredString(anchor.title, 100, `Anchor ${parsed.length + 1} title`),
         description: requiredString(anchor.description, 500, `Anchor ${parsed.length + 1} description`),
         purpose: requiredString(anchor.purpose, 240, `Anchor ${parsed.length + 1} purpose`),
         generationPrompt: requiredString(anchor.generationPrompt, 600, `Anchor ${parsed.length + 1} generation prompt`),
+        role: optionalString(anchor.role, 100),
+        optional: anchor.optional === true,
+        causalDependencies: Array.isArray(anchor.causalDependencies) ? anchor.causalDependencies.map(String).slice(0, 15) : [],
+        requirements: parseShotRequirements(anchor.requirements, limitedString(anchor.id, 80, `${context.kind}-anchor-${parsed.length + 1}`)),
+        songWindow: parseSongWindow(anchor.songWindow),
       });
-    } catch {
-      // Qwen occasionally emits a trailing malformed anchor; keep the first four valid ones.
+    } catch (error) {
+      if (context.strict) throw error;
+      // Ignore malformed trailing output while retaining up to fifteen valid moments.
     }
   }
-  if (parsed.length < 4) {
-    throw new Error(`Treatment ${treatmentIndex + 1} must contain at least four valid anchors.`);
+  if (context.strict && parsed.length !== rawAnchors.length) throw new Error("Story response exceeded the supported fifteen moments; none may be silently discarded.");
+  if (parsed.length < 2) {
+    throw new Error(`Treatment ${treatmentIndex + 1} must contain at least two valid story moments.`);
   }
+  if (new Set(parsed.map(anchor => anchor.id)).size !== parsed.length) throw new Error("Story moment IDs must be unique.");
+  const ids = new Set(parsed.map(anchor => anchor.id));
+  if (parsed.some(anchor => anchor.causalDependencies?.some(id => id === anchor.id || !ids.has(id)))) throw new Error("Story dependencies must reference another moment in this treatment.");
+  const visited = new Set<string>();
+  const visiting = new Set<string>();
+  const visit = (id: string) => {
+    if (visiting.has(id)) throw new Error("Story causal dependencies cannot contain a cycle.");
+    if (visited.has(id)) return;
+    visiting.add(id);
+    parsed.find(anchor => anchor.id === id)?.causalDependencies?.forEach(visit);
+    visiting.delete(id); visited.add(id);
+  };
+  parsed.forEach(anchor => visit(anchor.id));
   return parsed;
 }
 
@@ -436,7 +459,7 @@ function coerceAnchorRecord(value: unknown, anchorIndex: number, context: Anchor
 function inferAnchorTitle(description: string, anchorIndex: number) {
   const clause = description.split(/[,.]/)[0]?.trim() ?? "";
   if (clause.length >= 8 && clause.length <= 100) return clause;
-  return DEFAULT_ANCHOR_TITLES[anchorIndex] ?? `Anchor ${anchorIndex + 1}`;
+  return `Story moment ${anchorIndex + 1}`;
 }
 
 function normalizeTreatmentKind(value: unknown): StoryTreatmentKind | null {
@@ -454,51 +477,46 @@ function normalizeCoveragePercent(value: unknown, fallback: number) {
   return parsed;
 }
 
+export function rankStoryRequirementCoverage(requirement: StoryShotRequirement, moments: VideoMoment[]): StoryShotRequirement {
+  const ranked = rankAnchorCoverage({ id: requirement.id, title: requirement.description, description: requirement.description, purpose: "", generationPrompt: "", requirements: [requirement], coverage: requirement.coverage ?? "missing", candidates: requirement.candidates ?? [], selectedCandidateId: requirement.selectedCandidateId ?? null, resolution: requirement.resolution ?? null }, moments);
+  const explicitGap = requirement.resolution === null;
+  return { ...requirement, coverage: ranked.coverage, candidates: ranked.candidates,
+    resolution: requirement.resolution !== undefined ? requirement.resolution : ranked.resolution,
+    selectedCandidateId: explicitGap ? null : requirement.resolution === "source" ? requirement.selectedCandidateId ?? null : ranked.selectedCandidateId,
+  };
+}
+
+function rankStoryMomentCoverage(anchor: GeneratedAnchor | StoryAnchor, moments: VideoMoment[]): StoryAnchor {
+  const ranked = rankAnchorCoverage(anchor, moments);
+  const requirements = anchor.requirements?.map(requirement => rankStoryRequirementCoverage(requirement, moments));
+  if (!requirements?.length) return ranked;
+  const required = requirements.filter(requirement => !requirement.optional);
+  const coverage: StoryCoverageState = required.every(requirement => requirement.coverage === "covered") ? "covered" : required.some(requirement => requirement.coverage === "weak" || requirement.coverage === "covered") ? "weak" : "missing";
+  return { ...ranked, requirements, coverage };
+}
+
 function rankAnchorCoverage(anchor: GeneratedAnchor | StoryAnchor, moments: VideoMoment[]): StoryAnchor {
   const query = `${anchor.title} ${anchor.description}`;
-  const candidates = moments
-    .map((moment) => ({ moment, score: scoreTextSimilarity(query, momentText(moment)) }))
-    .sort((left, right) => right.score - left.score)
-    .slice(0, 3)
-    .map(({ moment, score }) => ({
-      momentId: moment.id,
-      label: moment.label,
-      sourceClipId: moment.sourceClipId,
-      start: moment.start,
-      end: moment.end,
-      score,
-      reason: score >= COVERAGE_STRONG_THRESHOLD
-        ? "Caption and action strongly overlap this anchor."
-        : score >= COVERAGE_WEAK_THRESHOLD
-          ? "Related visual material, but the narrative action is incomplete."
-          : "Only a loose visual connection.",
+  const candidates = moments.map(moment => {
+    const requirements = anchor.requirements?.filter(requirement => !requirement.optional) ?? [];
+    const assessments = (requirements.length ? requirements : [{ id: anchor.id, description: query, constraints: undefined }]).map(requirement => assessStoryMatch({
+      requirementId: requirement.id, requirementText: requirement.description, constraints: requirement.constraints,
+      moment: { ...moment, caption: moment.captionMeta?.caption || moment.caption, subjects: moment.captionMeta?.subjects, action: moment.captionMeta?.action, setting: moment.captionMeta?.setting, shotType: moment.captionMeta?.shotType },
     }));
-  const topScore = candidates[0]?.score ?? 0;
-  const coverage: StoryCoverageState = topScore >= COVERAGE_STRONG_THRESHOLD
-    ? "covered"
-    : topScore >= COVERAGE_WEAK_THRESHOLD
-      ? "weak"
-      : "missing";
+    const worst = assessments.find(item => item.eligibility === "ineligible") ?? assessments.find(item => item.eligibility === "uncertain") ?? assessments[0];
+    const assessment = { ...worst, satisfied: assessments.flatMap(item => item.satisfied), unknown: assessments.flatMap(item => item.unknown), contradicted: assessments.flatMap(item => item.contradicted), reasons: assessments.flatMap(item => item.reasons) };
+    return { moment, assessment, score: assessment.eligibility === "ineligible" ? 0 : scoreTextSimilarity(query, momentText(moment)) };
+  }).filter(item => item.assessment.eligibility !== "ineligible")
+    .sort((left, right) => Number(right.assessment.eligibility === "eligible") - Number(left.assessment.eligibility === "eligible") || right.score - left.score)
+    .slice(0, 3)
+    .map(({ moment, score, assessment }) => ({ momentId: moment.id, label: moment.label, sourceClipId: moment.sourceClipId, start: moment.start, end: moment.end, score, assessment, reason: assessment.reasons.join(" ") || "Visible requirements are supported." }));
+  const supported = candidates.find(candidate => candidate.assessment.eligibility === "eligible");
+  const coverage: StoryCoverageState = supported ? "covered" : candidates.some(candidate => candidate.score >= COVERAGE_WEAK_THRESHOLD) ? "weak" : "missing";
   const previous = "coverage" in anchor ? anchor : null;
-  const priorCandidateStillExists = previous?.selectedCandidateId
-    ? candidates.some((candidate) => candidate.momentId === previous.selectedCandidateId)
-    : false;
-  const selectedCandidateId = priorCandidateStillExists
-    ? previous?.selectedCandidateId ?? null
-    : coverage === "missing"
-      ? null
-      : candidates[0]?.momentId ?? null;
-  return {
-    ...anchor,
-    coverage,
-    candidates,
-    selectedCandidateId,
-    resolution: previous?.resolution === "generate" || previous?.resolution === "omit"
-      ? previous.resolution
-      : selectedCandidateId
-        ? "source"
-        : null,
-  };
+  const previousSupported = candidates.find(candidate => candidate.momentId === previous?.selectedCandidateId && candidate.assessment.eligibility === "eligible");
+  const selectedCandidateId = previousSupported?.momentId ?? supported?.momentId ?? null;
+  const resolution = previous?.resolution === "generate" || previous?.resolution === "omit" ? previous.resolution : selectedCandidateId ? "source" : null;
+  return { ...anchor, coverage, candidates, selectedCandidateId: resolution === "source" ? selectedCandidateId : null, resolution };
 }
 
 function scoreTextSimilarity(left: string, right: string) {
@@ -521,21 +539,6 @@ function scoreTextSimilarity(left: string, right: string) {
     ? Math.min(COVERAGE_WEAK_THRESHOLD - 0.01, raw + actionBonus)
     : raw + actionBonus + distinctiveBonus;
   return Math.round(clamp(score, 0, 1) * 100) / 100;
-}
-
-function candidateToSemanticMatch(candidate: StoryAnchorCandidate): SemanticClipMatch {
-  return {
-    momentId: candidate.momentId,
-    score: candidate.score,
-    semanticScore: candidate.score,
-    lyricCaptionScore: candidate.score,
-    actionIntentScore: candidate.score,
-    durationFitScore: 0.5,
-    motionContinuityScore: 0.5,
-    motionEnergyScore: 0.5,
-    repetitionPenalty: 0,
-    reasons: [candidate.reason, "Selected during Story anchor review."],
-  };
 }
 
 function momentText(moment: VideoMoment) {
@@ -594,4 +597,55 @@ function clamp(value: number, minimum: number, maximum: number) {
 
 function normalizeForComparison(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function parseLoglineElements(value: unknown): StoryLoglineElements | undefined {
+  if (value === undefined) return undefined;
+  const record = asRecord(value, "Logline elements must be an object.");
+  return Object.fromEntries(["incident", "protagonist", "goal", "opposition", "stakes"].map(key => [key, requiredString(record[key], 240, `Logline ${key}`)])) as StoryLoglineElements;
+}
+
+function parseSongWindow(value: unknown): StoryAnchor["songWindow"] {
+  if (!value) return undefined;
+  const record = asRecord(value, "Story timing must be an object.");
+  const start = finiteNumber(record.start, -1);
+  const end = finiteNumber(record.end, -1);
+  if (start < 0 || end <= start) throw new Error("Story timing must end after it starts.");
+  return { start, end };
+}
+
+function parseShotRequirements(value: unknown, momentId: string): StoryShotRequirement[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return value.slice(0, 12).map((item, index) => {
+    const requirement = asRecord(item, "Shot requirement must be an object.");
+    const constraints = asRecord(requirement.constraints ?? {}, "Shot constraints must be an object.");
+    const list = (key: string) => Array.isArray(constraints[key]) ? (constraints[key] as unknown[]).map(value => limitedString(value, 180, "")).filter(Boolean).slice(0, 12) : undefined;
+    return {
+      id: limitedString(requirement.id, 120, `${momentId}-shot-${index + 1}`), momentId,
+      description: requiredString(requirement.description, 500, "Shot visual"),
+      optional: requirement.optional === true,
+      durationSeconds: Number.isFinite(requirement.durationSeconds) ? clamp(Number(requirement.durationSeconds), 0.1, 3600) : undefined,
+      constraints: {
+        subjects: list("subjects"), actions: list("actions"), physicalStates: list("physicalStates"),
+        focalSubjectCount: Number.isFinite(constraints.focalSubjectCount) ? Math.round(clamp(Number(constraints.focalSubjectCount), 0, 100)) : undefined,
+        setting: optionalString(constraints.setting, 240), intent: optionalString(constraints.intent, 240),
+      },
+    };
+  });
+}
+
+function parseRevisionRequest(value: unknown): NonNullable<StoryTreatmentRequest["revision"]> {
+  const record = asRecord(value, "Revision must include a treatment and instruction.");
+  const draft = asRecord(record.treatment, "Revision must include a story draft.");
+  const anchors = Array.isArray(draft.anchors) ? draft.anchors.map((value, index) => {
+    const anchor = asRecord(value, `Story moment ${index + 1} is invalid.`);
+    const description = requiredString(anchor.description, 500, `Describe story moment ${index + 1} before requesting a revision`);
+    return { ...anchor, description, purpose: limitedString(anchor.purpose, 240, "Develop this proposed story moment."), generationPrompt: limitedString(anchor.generationPrompt, 600, description) };
+  }) : [];
+  const generated = parseGeneratedTreatment({ ...draft, anchors });
+  return {
+    instruction: requiredString(record.instruction, 2000, "Revision instruction"),
+    // Only authoring fields are sent to the model. Coverage is recomputed locally.
+    treatment: hydrateTreatmentCoverage([generated], [])[0],
+  };
 }

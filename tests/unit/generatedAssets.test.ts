@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
-import { applyApprovedGeneratedAssets, buildGeneratedAssetContextPreview, buildGeneratedAssetPlaybackUrl, resolveGeneratedAssetTrimFrameControl, resolveGeneratedAssetTrimWindow, type GeneratedStudioAsset } from "@/components/studio/generatedAssets";
-import type { EditPlanPreviewSegment } from "@/components/studio/musicVideoProject";
+import { approvedGeneratedAssetsCoverPreviewSegment, applyApprovedGeneratedAssets, buildGeneratedAssetContextPreview, buildGeneratedAssetPlaybackUrl, resolveGeneratedAssetTrimFrameControl, resolveGeneratedAssetTrimWindow, type GeneratedStudioAsset } from "@/components/studio/generatedAssets";
+import { buildEditPlanPreviewSegments, isPlacementPlanCurrent, prepareApprovedPlacements, type MusicVideoProject, type EditPlanPreviewSegment } from "@/components/studio/musicVideoProject";
 
 const sourceSegments: EditPlanPreviewSegment[] = [
   {
@@ -10,6 +10,8 @@ const sourceSegments: EditPlanPreviewSegment[] = [
     endTime: 13,
     label: "Hallway pass 1",
     sectionId: "chorus-3",
+    planSignature: "plan-v1",
+    timelineItemId: "chorus-3-item",
     musicStart: 200,
     musicEnd: 203,
     momentId: "hallway-scene",
@@ -22,6 +24,8 @@ const sourceSegments: EditPlanPreviewSegment[] = [
     endTime: 15.9,
     label: "Hallway pass 2",
     sectionId: "chorus-3",
+    planSignature: "plan-v1",
+    timelineItemId: "chorus-3-item",
     musicStart: 212.06,
     musicEnd: 214.99,
     momentId: "hallway-scene",
@@ -44,6 +48,7 @@ function generatedAsset(overrides: Partial<GeneratedStudioAsset>): GeneratedStud
     resultUrl: "https://media.example/seedance-2.5.mp4",
     target: {
       timelineItemId: "chorus-3-item",
+      planSignature: "plan-v1",
       sectionId: "chorus-3",
       sectionLabel: "Chorus 3",
       parentMomentId: "hallway-scene",
@@ -152,6 +157,55 @@ describe("generated clip approval", () => {
     expect(preview?.segments).toHaveLength(1);
     expect(preview?.segments[0]?.startTime).toBeCloseTo(12.11, 5);
     expect(preview?.segments[0]?.endTime).toBeCloseTo(15.04, 5);
+  });
+
+  test("retains legacy or stale returns without applying them to a different story", () => {
+    const asset = generatedAsset({});
+    for (const planSignature of [undefined, "older-plan"]) {
+      const stale = { ...asset, target: { ...asset.target!, planSignature } };
+      expect(applyApprovedGeneratedAssets(sourceSegments, [stale])).toEqual(sourceSegments);
+      expect(buildGeneratedAssetContextPreview(sourceSegments, stale)).toBeNull();
+      expect(approvedGeneratedAssetsCoverPreviewSegment([stale], sourceSegments[1]!)).toBe(false);
+    }
+    const bound = sourceSegments.map((segment) => ({ ...segment, requirementId: "opening" }));
+    expect(applyApprovedGeneratedAssets(bound, [{ ...asset, target: { ...asset.target!, requirementId: "escape" } }])).toEqual(bound);
+  });
+
+  test("reconfirming changed reference context cannot revive a return from the old plan", () => {
+    const project: MusicVideoProject = { id: "context-project", sourceContextSignature: "refs-v1", song: null, duration: 10,
+      lyricChunks: [], storySections: [], videoMoments: [], reviewFindings: [],
+      editPlan: { id: "edit", createdAt: "fixed", timelineItems: [{ id: "opening", requirementId: "establish", sectionId: "intro", start: 0, end: 10,
+        label: "Opening", prompt: "Jungle cave entrance", lyricChunkIds: [], videoMomentId: null }] } };
+    const first = prepareApprovedPlacements({ project, videoSources: [] });
+    const asset = generatedAsset({ durationSeconds: 10, target: { planSignature: first.placementPlan!.inputSignature,
+      timelineItemId: "opening", requirementId: "establish", sectionId: "intro", sectionLabel: "Intro", songStart: 0, songEnd: 10 } });
+    const firstCuts = buildEditPlanPreviewSegments({ project: first, videoSources: [] });
+    expect(applyApprovedGeneratedAssets(firstCuts, [asset]).every((segment) => segment.kind === "source")).toBe(true);
+    const changed = { ...first, sourceContextSignature: "refs-v2" };
+    expect(isPlacementPlanCurrent(changed)).toBe(false);
+    const reconfirmed = prepareApprovedPlacements({ project: changed, videoSources: [] });
+    expect(isPlacementPlanCurrent(reconfirmed)).toBe(true);
+    expect(reconfirmed.placementPlan!.inputSignature).not.toBe(first.placementPlan!.inputSignature);
+    const currentCuts = buildEditPlanPreviewSegments({ project: reconfirmed, videoSources: [] });
+    expect(applyApprovedGeneratedAssets(currentCuts, [asset])).toEqual(currentCuts);
+    expect(buildGeneratedAssetContextPreview(currentCuts, asset)).toBeNull();
+  });
+
+  test("a short return fills only its measured subwindow and preserves both remaining gaps", () => {
+    const gap: EditPlanPreviewSegment = { ...sourceSegments[0]!, kind: "gap", videoUrl: "", startTime: 0, endTime: 10,
+      musicStart: 0, musicEnd: 10, requirementId: "opening" };
+    const asset = generatedAsset({ durationSeconds: 2, target: { ...generatedAsset({}).target!, requirementId: "opening", songStart: 3, songEnd: 7 } });
+    const resolved = applyApprovedGeneratedAssets([gap], [asset]);
+    expect(resolved.map((segment) => [segment.kind, segment.musicStart, segment.musicEnd])).toEqual([
+      ["gap", 0, 3], ["source", 3, 5], ["gap", 5, 10],
+    ]);
+    expect(resolved[1]).toMatchObject({ startTime: 0, endTime: 2 });
+    expect(approvedGeneratedAssetsCoverPreviewSegment([asset], gap)).toBe(false);
+    expect(approvedGeneratedAssetsCoverPreviewSegment([{ ...asset, durationSeconds: 10, target: { ...asset.target!, songStart: 0, songEnd: 10 } }], gap)).toBe(true);
+    expect(resolved.reduce((total, segment) => total + segment.musicEnd - segment.musicStart, 0)).toBe(10);
+    expect(resolveGeneratedAssetTrimWindow({ sourceDuration: 2, requiredDuration: 4 }).sourceDuration).toBe(2);
+    expect(applyApprovedGeneratedAssets([gap], [{ ...asset, durationSeconds: undefined }])).toEqual([gap]);
+    expect(applyApprovedGeneratedAssets([gap], [{ ...asset, status: "failed" }])).toEqual([gap]);
   });
 
   test("uses the authenticated same-origin media stream for durable generated clips", () => {

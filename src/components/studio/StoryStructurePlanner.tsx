@@ -4,6 +4,7 @@ import { useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { fmt } from "./math";
 import type { StorySection, StorySectionDraft } from "./musicVideoProject";
 import type { BeatJoinSection } from "./types";
+import { annotateMusicSections } from "./musicSectionProvenance";
 
 type StoryStructureEditorProps = {
   detectedSections: BeatJoinSection[];
@@ -34,6 +35,7 @@ export function StoryStructureEditor({
   const draggingBoundaryRef = useRef<number | null>(null);
   const [draggingBoundary, setDraggingBoundary] = useState<number | null>(null);
   const activeSection = plannedSections.find((section) => section.id === activeSectionId) ?? plannedSections[0] ?? null;
+  const estimatedSections = annotateMusicSections(detectedSections, duration).filter((section) => section.provenance.status !== "detected");
 
   function pointerTime(clientX: number) {
     const rect = railRef.current?.getBoundingClientRect();
@@ -72,10 +74,11 @@ export function StoryStructureEditor({
       <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Song sections</div>
+          {estimatedSections.length > 0 ? <div className="mt-1 text-[11px] text-[#b99573]" title={estimatedSections[0].provenance.reason}>Estimated song structure · review names and timing</div> : null}
           <div className="mt-1 text-[11px] text-[#6d6d6d]">Drag an orange divider to resize two neighboring sections. Click a section to rename, split, or remove it.</div>
         </div>
         <button type="button" onClick={onResetFromDetection} disabled={!detectedSections.length} className="rounded-[2px] border border-[#2a2a2a] px-3 py-1.5 text-[8px] uppercase tracking-[0.12em] text-[#888] hover:border-[#555] hover:text-[#bbb] disabled:cursor-not-allowed disabled:opacity-40">
-          Reset to detection
+          Reset to analysis
         </button>
       </div>
 

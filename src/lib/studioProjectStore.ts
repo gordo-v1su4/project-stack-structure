@@ -226,5 +226,5 @@ function isSavedStudioProject(value: unknown, ownerId: string, projectId: string
   return saved.version === 1
     && saved.project?.ownerId === ownerId
     && saved.project.id === projectId
-    && (saved.draft?.version === 1 || saved.draft?.version === 2);
+    && (saved.draft?.version === 1 || saved.draft?.version === 2 || saved.draft?.version === 3);
 }

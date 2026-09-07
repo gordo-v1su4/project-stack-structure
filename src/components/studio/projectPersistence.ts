@@ -28,6 +28,7 @@ export type PersistedStoryState = {
   confirmedTreatmentSnapshot?: StoryTreatment | null;
   generationMeta?: StoryGenerationMeta | null;
   storyContentSignature?: string | null;
+  confirmedSourceContextSignature?: string | null;
 };
 
 export type PersistedVideoSource = Omit<UploadedVideoSource, "videoUrl"> & {
@@ -68,7 +69,7 @@ export type PersistedCommittedSplit = {
 };
 
 export interface PersistedStudioProjectDraft {
-  version: 1 | 2;
+  version: 1 | 2 | 3;
   savedAt: string;
   analysis: PersistedBeatJoinAnalysis | null;
   videoSources: PersistedVideoSource[];
@@ -103,7 +104,7 @@ export function createPersistableStudioProjectDraft(params: {
   savedAt?: string;
 }): PersistedStudioProjectDraft {
   return {
-    version: 2,
+    version: 3,
     savedAt: params.savedAt ?? new Date().toISOString(),
     analysis: params.analysis
       ? {
@@ -203,7 +204,7 @@ export function hydrateStudioProjectDraft(params: {
           ?? resolvePersistedPlaybackUrl(source.storageUrl, source.storageBucket, source.storagePath),
       }))
       .filter((source) => source.videoUrl),
-    storyState: normalizePersistedStoryState(params.draft.storyState, params.draft.version === 1),
+    storyState: normalizePersistedStoryState(params.draft.storyState, params.draft.version < 3),
     musicVideoProject: params.draft.musicVideoProject,
     referenceAssets: hydrateReferenceAssets(params.draft.referenceAssets ?? []),
     generatedAssets: hydrateGeneratedStudioAssets(params.draft.generatedAssets ?? []),
@@ -433,7 +434,7 @@ function stripRuntimeUrl(value: string | undefined) {
 function parsePersistedDraft(raw: string): PersistedStudioProjectDraft | null {
   try {
     const parsed = JSON.parse(raw) as PersistedStudioProjectDraft;
-    if ((parsed?.version !== 1 && parsed?.version !== 2) || !parsed.storyState || !Array.isArray(parsed.videoSources)) return null;
+    if ((parsed?.version !== 1 && parsed?.version !== 2 && parsed?.version !== 3) || !parsed.storyState || !Array.isArray(parsed.videoSources)) return null;
     return parsed;
   } catch {
     return null;
@@ -441,7 +442,8 @@ function parsePersistedDraft(raw: string): PersistedStudioProjectDraft | null {
 }
 
 export function normalizePersistedStoryState(state: PersistedStoryState, legacy: boolean): PersistedStoryState {
-  const treatments = Array.isArray(state.treatments) ? state.treatments : [];
+  const originalTreatments = Array.isArray(state.treatments) ? state.treatments : [];
+  const treatments = originalTreatments.map(treatment => legacy ? { ...treatment, reconciliation: { status: "legacy" as const, note: "Saved before story-to-edit reconstruction. Review the story moments and source evidence before using this plan." } } : treatment);
   const confirmedTreatmentSnapshot = isPersistedTreatment(state.confirmedTreatmentSnapshot)
     ? state.confirmedTreatmentSnapshot
     : null;
@@ -451,21 +453,26 @@ export function normalizePersistedStoryState(state: PersistedStoryState, legacy:
   const storyContentSignature = typeof state.storyContentSignature === "string" && state.storyContentSignature.trim()
     ? state.storyContentSignature
     : null;
-  const hasConfirmedV2Plan = !legacy
+  if (legacy && confirmedTreatmentSnapshot && !treatments.some(treatment => treatment.id === confirmedTreatmentSnapshot.id)) {
+    treatments.push({ ...confirmedTreatmentSnapshot, reconciliation: { status: "legacy", note: "Previous confirmed story, retained for review." } });
+  }
+  const hasConfirmedPlan = !legacy
     && Boolean(state.storyGenerated)
     && Boolean(confirmedTreatmentSnapshot)
     && confirmedTreatmentId === confirmedTreatmentSnapshot?.id
-    && Boolean(storyContentSignature);
+    && Boolean(storyContentSignature)
+    && confirmedTreatmentSnapshot?.reconciliation?.status !== "pending";
   return {
     ...state,
-    storyGenerated: hasConfirmedV2Plan,
+    storyGenerated: hasConfirmedPlan,
     brief: { text: typeof state.brief?.text === "string" ? state.brief.text.slice(0, 4_000) : "" },
     treatments,
     selectedTreatmentId: typeof state.selectedTreatmentId === "string" ? state.selectedTreatmentId : null,
-    confirmedTreatmentId: hasConfirmedV2Plan ? confirmedTreatmentId : null,
-    confirmedTreatmentSnapshot: hasConfirmedV2Plan ? confirmedTreatmentSnapshot : null,
+    confirmedTreatmentId: hasConfirmedPlan ? confirmedTreatmentId : null,
+    confirmedTreatmentSnapshot: hasConfirmedPlan ? confirmedTreatmentSnapshot : null,
     generationMeta: isGenerationMeta(state.generationMeta) ? state.generationMeta : null,
-    storyContentSignature: hasConfirmedV2Plan ? storyContentSignature : null,
+    storyContentSignature: hasConfirmedPlan ? storyContentSignature : null,
+    confirmedSourceContextSignature: hasConfirmedPlan ? state.confirmedSourceContextSignature ?? null : null,
   };
 }
 
@@ -475,8 +482,8 @@ function isPersistedTreatment(value: unknown): value is StoryTreatment {
   return typeof treatment.id === "string"
     && typeof treatment.logline === "string"
     && Array.isArray(treatment.anchors)
-    && treatment.anchors.length >= 4
-    && treatment.anchors.length <= 6;
+    && treatment.anchors.length > 0
+    && treatment.anchors.every(anchor => anchor && typeof anchor.id === "string" && typeof anchor.title === "string" && typeof anchor.description === "string");
 }
 
 function isGenerationMeta(value: unknown): value is StoryGenerationMeta {

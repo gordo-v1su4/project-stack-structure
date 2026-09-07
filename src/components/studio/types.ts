@@ -172,6 +172,8 @@ export interface DetectedSceneSegment {
   confidence?: number | null;
   caption?: string;
   captionMeta?: SceneCaptionData;
+  mediaEvidence?: import("./mediaEvidence").MediaEvidence;
+  captionHistory?: { caption: string; model?: string; source?: SceneCaptionSource; evidence?: import("./mediaEvidence").MediaEvidence }[];
   captionSource?: SceneCaptionSource;
   captionMode?: SceneCaptionMode;
   captionModel?: string;
@@ -227,6 +229,7 @@ export interface BeatJoinSection {
   start: number;
   end: number;
   energy?: number;
+  provenance?: import("./musicSectionProvenance").MusicSectionProvenance;
 }
 
 export interface BeatJoinAnalysis {

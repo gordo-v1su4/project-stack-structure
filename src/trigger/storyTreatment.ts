@@ -5,6 +5,7 @@ import { vm100HeavyQueue } from "./queues";
 import { markWorkCompleted, markWorkRunning } from "./workMetadata";
 
 export type StoryTreatmentPayload = {
+  operation?: "generate" | "revise";
   instructions: string;
   input: string;
   model: string;
@@ -36,7 +37,7 @@ export const storyTreatmentTask = task({
   run: async (payload: StoryTreatmentPayload, { ctx }) => {
     markWorkRunning("preparing", "Preparing story model", { progressMode: "indeterminate" });
     const result = await runStoryTreatmentGateway(payload, ctx.run.id);
-    markWorkCompleted("Story treatments ready");
+    markWorkCompleted(payload.operation === "revise" ? "Story revision ready for review" : "Story treatments ready");
     logger.info("Story treatment completed", {
       triggerRunId: ctx.run.id,
       model: result.model,
@@ -53,7 +54,7 @@ async function runStoryTreatmentGateway(payload: StoryTreatmentPayload, triggerR
 
   await ensureQwenBackend(gatewayUrl, token ? headers : undefined, triggerRunId);
 
-  markWorkRunning("generating", "Generating three story treatments");
+  markWorkRunning("generating", payload.operation === "revise" ? "Reconciling selected story and moments" : "Generating three story treatments");
   const response = await fetch(`${gatewayUrl}${endpoint}`, {
     method: "POST",
     headers,

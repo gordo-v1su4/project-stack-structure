@@ -3,6 +3,7 @@
 import { waitForTriggerRunOutput } from "@/lib/clientTriggerRuns";
 import { captionFrame as captionFrameWithLfm } from "@/review/lib/analysis/caption-client";
 import { createAnalysisVideo, grabBitmap } from "@/review/lib/video/frame-grab";
+import { createMediaEvidence, sceneEvidenceInput } from "./mediaEvidence";
 import { buildSceneCaptionPrompt, serializeSceneCaptionContext, serializeSceneCaptionReferences } from "./sceneCaptionPrompt";
 import { normalizeServerCaptionAvailability, normalizeServerCaptionPayload } from "./sceneCaptioningServer";
 import type { DetectedSceneSegment, SceneCaptionSettings, UploadedVideoSource } from "./types";
@@ -22,6 +23,8 @@ export type SceneCaptionOptions = {
    * never loses data.
    */
   force?: boolean;
+  /** Read current source/reference revision before dispatch, persistence, and applying results. */
+  isCurrent?: () => boolean;
 };
 
 let serverCaptionAvailablePromise: Promise<boolean> | null = null;
@@ -114,6 +117,7 @@ export async function captionDetectedScenes(
 
   try {
     for (let index = 0; index < captioned.length; index += 1) {
+      if (options.isCurrent && !options.isCurrent()) return scenes;
       const scene = captioned[index]!;
       const skipExisting = !options.force && sceneCaptionMatchesMode(scene, settings.mode);
       if (skipExisting) {
@@ -128,8 +132,15 @@ export async function captionDetectedScenes(
 
       try {
         const result = await captionSceneFrame(source, scene, sampleTime, settings, getVideo);
+        if (options.isCurrent && !options.isCurrent()) return scenes;
         captioned[index] = {
           ...scene,
+          captionHistory: scene.caption ? [...(scene.captionHistory ?? []), { caption: scene.caption, source: scene.captionSource, model: scene.captionModel, evidence: scene.mediaEvidence }] : scene.captionHistory,
+          mediaEvidence: createMediaEvidence({ observation: "observation" in result ? result.observation : undefined,
+            sourceId: String(source.id), sceneId: String(scene.id), sourceStart: scene.start, sourceEnd: scene.end,
+            input: "input" in result ? result.input : { kind: "unknown", sampleTimes: [sampleTime], urls: [] },
+            model: result.model, rawCaption: result.text, referenceKeys: settings.referenceImages?.map((reference) => reference.objectKey),
+          }),
           caption: result.text,
           captionMeta: result.meta,
           captionSource: result.captionSource,
@@ -138,6 +149,7 @@ export async function captionDetectedScenes(
           captionError: null,
         };
       } catch (error) {
+        if (options.isCurrent && !options.isCurrent()) return scenes;
         captioned[index] = {
           ...scene,
           captionError: error instanceof Error ? error.message : "Scene captioning failed",
@@ -226,7 +238,20 @@ async function captionSceneFrameViaServer(
   settings: SceneCaptionSettings,
   getVideo: () => Promise<HTMLVideoElement>,
 ) {
-  const bitmap = await loadSceneCaptionBitmap(getVideo, scene, sampleTime);
+  let input = sceneEvidenceInput(scene, sampleTime);
+  let bitmap: ImageBitmap;
+  if (scene.storyboardUrl) {
+    try {
+      const response = await fetch(scene.storyboardUrl, { cache: "no-store" });
+      if (!response.ok) throw new Error("Prepared scene strip unavailable");
+      bitmap = await createImageBitmap(await response.blob());
+    } catch {
+      bitmap = await grabBitmap(await getVideo(), sampleTime);
+      input = { kind: "single-frame", sampleTimes: [sampleTime], urls: [] };
+    }
+  } else {
+    bitmap = await grabBitmap(await getVideo(), sampleTime);
+  }
   try {
     const image = await bitmapToJpegBlob(bitmap);
     const form = new FormData();
@@ -239,7 +264,7 @@ async function captionSceneFrameViaServer(
     form.set("sceneStart", scene.start.toFixed(3));
     form.set("sceneEnd", scene.end.toFixed(3));
     form.set("sceneDuration", scene.duration.toFixed(3));
-    const context = buildCaptionContextPayload(source, scene, settings);
+    const context = buildCaptionContextPayload(source, scene, settings, input);
     if (context) form.set("captionContext", context);
     if (settings.referenceImages?.length) {
       form.set("captionReferences", serializeSceneCaptionReferences(settings));
@@ -260,14 +285,16 @@ async function captionSceneFrameViaServer(
     const payload = response.status === 202 && runId
       ? await waitForTriggerRunOutput(runId, { timeoutMs: 420_000, pollIntervalMs: 2_000 })
       : initialPayload;
-    return normalizeServerCaptionPayload(payload);
+    return { ...normalizeServerCaptionPayload(payload), input };
   } finally {
     bitmap.close();
   }
 }
 
-function buildCaptionContextPayload(source: UploadedVideoSource, scene: DetectedSceneSegment, settings: SceneCaptionSettings) {
+function buildCaptionContextPayload(source: UploadedVideoSource, scene: DetectedSceneSegment, settings: SceneCaptionSettings, input: ReturnType<typeof sceneEvidenceInput>) {
   return serializeSceneCaptionContext(settings, {
+    sourceId: String(source.id),
+    input,
     sourceName: source.name,
     sourceDuration: source.duration,
     sceneId: scene.id,

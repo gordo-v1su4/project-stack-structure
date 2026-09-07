@@ -180,7 +180,7 @@ describe("projectPersistence", () => {
     expect(JSON.stringify(draft)).not.toContain("blob:audio");
     expect(JSON.stringify(draft)).not.toContain("blob:project-audio");
     expect(JSON.stringify(draft)).not.toContain("data:image/jpeg");
-    expect(draft.version).toBe(2);
+    expect(draft.version).toBe(3);
     expect(draft.videoSources[0].thumbnailUrl).toBe("");
     expect(draft.videoSources[0].storageProvider).toBe("rustfs");
     expect(draft.videoSources[0].storageBucket).toBe("stack-structure");
@@ -487,4 +487,58 @@ describe("projectPersistence", () => {
     }
   });
 
+});
+
+describe("story reconstruction persistence v3", () => {
+  test("migrates a v2 confirmed edit as readable legacy without changing its decisions or timeline", () => {
+    const draft = createPersistableStudioProjectDraft({ analysis: null, videoSources: [source], storyState, musicVideoProject });
+    const legacyDraft = { ...draft, version: 2 as const, storyState: { ...draft.storyState, treatments: [] } };
+    const before = JSON.stringify(legacyDraft.musicVideoProject);
+    const restored = hydrateStudioProjectDraft({ draft: legacyDraft });
+    expect(restored.storyState.storyGenerated).toBe(false);
+    expect(restored.storyState.confirmedTreatmentSnapshot).toBeNull();
+    expect(restored.storyState.storyContentSignature).toBeNull();
+    expect(restored.storyState.treatments?.[0].id).toBe(confirmedTreatment.id);
+    expect(restored.storyState.treatments?.[0].synopsis).toBe(confirmedTreatment.synopsis);
+    expect(restored.storyState.treatments?.[0].anchors).toEqual(confirmedTreatment.anchors);
+    expect(restored.storyState.treatments?.[0].reconciliation?.status).toBe("legacy");
+    expect(JSON.stringify(restored.musicVideoProject)).toBe(before);
+  });
+
+  test("retains seven moments, requirements, precise placements, and faithful gaps after reload", () => {
+    const treatment: StoryTreatment = { ...confirmedTreatment, revision: 4, reconciliation: { status: "current" }, anchors: Array.from({ length: 7 }, (_, index) => ({ ...confirmedTreatment.anchors[index % 4], id: `moment-${index}`, requirements: [{ id: `requirement-${index}`, momentId: `moment-${index}`, description: "Establish jungle geography.", constraints: { setting: "jungle" }, resolution: index === 0 ? null : "generate", selectedCandidateId: null }], songWindow: { start: index * 10, end: (index + 1) * 10 } })) };
+    const exactProject: MusicVideoProject = { ...musicVideoProject, placementPlan: { version: 1, inputSignature: "exact-approved-input", settings: { cutDensity: 0.65, preferOnsets: true }, revision: 8, policy: "faithful", placements: [
+      { id: "opening-hole", sectionId: "intro", timelineItemId: "item-intro", momentId: null, sourceStart: 0, sourceEnd: 0, songStart: 0, songEnd: 10, label: "Missing jungle opening", kind: "gap", reason: "No jungle exterior", origin: "story-match" },
+      { id: "selected-source", sectionId: "verse", timelineItemId: "item-verse", momentId: "moment", sourceStart: 0.25, sourceEnd: 0.75, songStart: 10, songEnd: 10.5, label: "User-selected source", kind: "source", origin: "manual-match" },
+    ] } };
+    const state = { ...storyState, treatments: [treatment], confirmedTreatmentSnapshot: treatment, confirmedSourceContextSignature: "approved-input-revision" };
+    const draft = createPersistableStudioProjectDraft({ analysis: null, videoSources: [], storyState: state, musicVideoProject: exactProject });
+    const restored = hydrateStudioProjectDraft({ draft: JSON.parse(JSON.stringify(draft)) });
+    expect(restored.storyState.storyGenerated).toBe(true);
+    expect(restored.storyState.confirmedTreatmentSnapshot?.anchors).toHaveLength(7);
+    expect(restored.storyState.confirmedSourceContextSignature).toBe("approved-input-revision");
+    expect(restored.storyState.confirmedTreatmentSnapshot?.anchors[6].requirements?.[0].id).toBe("requirement-6");
+    expect(restored.storyState.confirmedTreatmentSnapshot?.anchors[0].requirements?.[0].resolution).toBeNull();
+    expect(restored.storyState.confirmedTreatmentSnapshot?.anchors[6].requirements?.[0].resolution).toBe("generate");
+    expect(restored.musicVideoProject?.placementPlan).toEqual(exactProject.placementPlan);
+    expect(restored.musicVideoProject?.placementPlan?.placements[0].kind).toBe("gap");
+  });
+
+  test("pending prose reconciliation cannot regain confirmation through save and reload", () => {
+    const pending: StoryTreatment = { ...confirmedTreatment, reconciliation: { status: "pending" }, synopsis: "A changed beginning awaiting moment reconciliation." };
+    const draft = createPersistableStudioProjectDraft({ analysis: null, videoSources: [], storyState: { ...storyState, treatments: [pending], confirmedTreatmentSnapshot: pending }, musicVideoProject });
+    const restored = hydrateStudioProjectDraft({ draft });
+    expect(restored.storyState.storyGenerated).toBe(false);
+    expect(restored.storyState.confirmedTreatmentId).toBeNull();
+    expect(restored.storyState.treatments?.[0].synopsis).toBe(pending.synopsis);
+  });
+});
+
+
+test("section analysis provenance survives persistence with manual story timing", () => {
+  const analysis = { ...musicVideoProject.song!, sections: [{ start: 0, end: 2, label: "Section 1", provenance: { status: "estimated" as const, method: "service-fallback", reason: "Review these boundaries." } }] };
+  const draft = createPersistableStudioProjectDraft({ analysis, videoSources: [], storyState: { ...storyState, storyBeats: [{ id: "opening", label: "Opening", prompt: "Exterior", start: 0, end: 2, timingSource: "manual" }] }, musicVideoProject });
+  const restored = hydrateStudioProjectDraft({ draft });
+  expect(restored.analysis?.sections).toEqual(analysis.sections);
+  expect(restored.storyState.storyBeats[0].timingSource).toBe("manual");
 });
