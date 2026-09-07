@@ -30,4 +30,17 @@ describe("music section provenance", () => {
     expect(result?.sections[0].label).toBe("Section");
     expect(result?.sections[0].provenance?.method).toBe("missing-analysis");
   });
+  test("a reported fallback overrides contradictory detected provenance", () => {
+    const detected = { status: "detected", method: "allin1:dinat" };
+    const result = annotateMusicSections(sections.map((section) => ({ ...section, provenance: detected })), duration,
+      { source: "allin1", used_fallback: true, provenance: detected });
+    expect(result.every((section) => section.provenance.status === "estimated")).toBe(true);
+    expect(result[0].provenance.method).toBe("service-fallback");
+    expect(result.map(({ label, start, end }) => ({ label, start, end }))).toEqual(sections);
+  });
+  test("verified All-In-One sections are not downgraded for coinciding with old fallback spacing", () => {
+    const result = annotateMusicSections(sections, duration,
+      { source: "allin1", provenance: { status: "detected", method: "allin1:dinat", device: "cuda" } });
+    expect(result[0].provenance).toMatchObject({ status: "detected", method: "allin1:dinat" });
+  });
 });

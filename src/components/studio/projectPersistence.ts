@@ -109,6 +109,7 @@ export function createPersistableStudioProjectDraft(params: {
     analysis: params.analysis
       ? {
           sourceLabel: params.analysis.sourceLabel,
+          bpm: positiveFiniteBpm(params.analysis.bpm),
           waveform: params.analysis.waveform,
           energy: params.analysis.energy,
           beats: params.analysis.beats,
@@ -174,6 +175,7 @@ export function hydrateStudioProjectDraft(params: {
     analysis: params.draft.analysis
       ? {
           sourceLabel: params.draft.analysis.sourceLabel,
+          bpm: positiveFiniteBpm(params.draft.analysis.bpm),
           audioUrl: params.audioUrl
             ?? resolvePersistedPlaybackUrl(
               params.draft.analysis.storageUrl,
@@ -670,4 +672,8 @@ function transactStore<T>(
     request.onerror = () => reject(request.error ?? new Error("Studio media database request failed."));
     transaction.onerror = () => reject(transaction.error ?? new Error("Studio media database transaction failed."));
   });
+}
+
+function positiveFiniteBpm(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
 }

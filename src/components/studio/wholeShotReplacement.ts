@@ -36,13 +36,13 @@ export function getReplacementWorkflowState(params: {
   canImport: boolean;
 } {
   const hasCut = Boolean(params.selectedSegment);
-  const hasStoryboard = params.storyboardFrameCount >= 4;
-  const hasPacket = params.packetErrorCount === 0 && params.audioReferenceReady;
+  const hasStoryboard = params.storyboardFrameCount >= 1;
+  const hasPacket = hasCut && hasStoryboard && params.packetErrorCount === 0 && params.audioReferenceReady;
   const hasImport = params.importedAssetCount > 0;
 
   const blockers: string[] = [];
   if (!hasCut) blockers.push("Select exactly one resolved cut in the preview queue.");
-  if (hasCut && !hasStoryboard) blockers.push("Generate or approve a 2×2 storyboard frame grid for this section.");
+  if (hasCut && !hasStoryboard) blockers.push("Approve a fresh standalone 2K frame for this placement; a 3×3 grid is composition exploration only.");
   if (hasCut && hasStoryboard && !params.audioReferenceReady) blockers.push("Prepare Video_1 timing reference for this cut.");
   if (hasCut && params.packetErrorCount > 0) blockers.push("Resolve Seedance packet validation errors before copying.");
 
@@ -79,11 +79,11 @@ export function getReplacementWorkflowState(params: {
     },
     {
       id: "storyboard-frames",
-      label: "2×2 storyboard frames",
+      label: "Approved fresh 2K frame",
       complete: stepComplete["storyboard-frames"],
       active: currentStep === "storyboard-frames",
       blocked: !hasCut,
-      detail: hasStoryboard ? `${params.storyboardFrameCount} frames ready` : "Plan Nano Banana boards in Storyboard planner",
+      detail: hasStoryboard ? `${params.storyboardFrameCount} frames ready` : "Review a 3×3 composition, then return and approve a fresh standalone frame",
     },
     {
       id: "prepare-video1",
@@ -98,7 +98,7 @@ export function getReplacementWorkflowState(params: {
       label: "Copy Seedance packet",
       complete: stepComplete["copy-packet"],
       active: currentStep === "copy-packet",
-      blocked: !params.audioReferenceReady || params.packetErrorCount > 0,
+      blocked: !hasCut || !hasStoryboard || !params.audioReferenceReady || params.packetErrorCount > 0,
       detail: params.packetErrorCount > 0 ? `${params.packetErrorCount} validation error(s)` : "Copy prompt + reference order",
     },
     {
@@ -129,20 +129,44 @@ export function getReplacementWorkflowState(params: {
   };
 }
 
+export function isStandalone2kStoryboardFrame(asset: GeneratedStudioAsset) {
+  const job = asset.storyboard;
+  const url = asset.fullStorage?.mediaUrl ?? asset.fullStorage?.publicUrl ?? asset.resultUrl;
+  return asset.status === "completed" && asset.mediaKind === "image" && job?.kind === "fresh-frame"
+    && job.resolution === "2k" && Boolean(job.sourceGridId)
+    && Number.isInteger(job.panelIndex) && job.panelIndex! >= 0 && job.panelIndex! < 9
+    && typeof asset.width === "number" && asset.width >= 2000
+    && typeof asset.height === "number" && asset.height >= 1000
+    && Math.abs(asset.width / asset.height - 16 / 9) <= 0.08
+    && !asset.split?.panels?.length
+    && typeof url === "string" && url.startsWith("https://");
+}
+
+/** Only accepted standalone results can condition video; grid crops never qualify. */
+export function approvedFreshFramesForPlacement(
+  assets: GeneratedStudioAsset[],
+  placement: { sectionId: string; songStart: number; songEnd: number; projectId?: string; planSignature?: string; requirementId?: string },
+) {
+  return assets.filter((asset) => {
+    const job = asset.storyboard;
+    return isStandalone2kStoryboardFrame(asset) && asset.reviewStatus === "approved" && job
+      && (!placement.projectId || job.projectId === placement.projectId)
+      && Boolean(placement.planSignature) && job.planSignature === placement.planSignature
+      && job.requirementId === placement.requirementId
+      && job.sectionId === placement.sectionId
+      && job.songStart <= placement.songStart && job.songEnd >= placement.songEnd
+      && placement.songEnd > placement.songStart;
+  });
+}
+
 export function countStoryboardFramesForSegment(
   assets: GeneratedStudioAsset[],
   segment?: EditPlanPreviewSegment,
+  projectId?: string,
 ) {
   if (!segment) return 0;
-  let count = 0;
-  for (const asset of assets) {
-    if (asset.reviewStatus === "rejected") continue;
-    if (asset.target?.sectionId !== segment.sectionId) continue;
-    if (asset.split?.panels?.length) {
-      count += asset.split.panels.length;
-    } else if (asset.mediaKind === "image" && asset.resultUrl) {
-      count += 1;
-    }
-  }
-  return count;
+  return approvedFreshFramesForPlacement(assets, {
+    sectionId: segment.sectionId, songStart: segment.musicStart, songEnd: segment.musicEnd, projectId,
+    planSignature: segment.planSignature, requirementId: segment.requirementId,
+  }).length;
 }

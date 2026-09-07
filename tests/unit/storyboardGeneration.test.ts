@@ -1,6 +1,7 @@
+import { acceptedFreshFrame } from "../helpers/storyboardFrame";
 import { describe, expect, test } from "bun:test";
 import { runStoryboardChecks } from "@/components/studio/storyboardChecks";
-import { buildStoryboardSequences, buildSequenceGridPrompt, buildFreshFramePrompt, referenceContract, resolveSequenceGridDirection, type StoryboardReference } from "@/components/studio/storyboardGeneration";
+import { bindStoryboardJobToSequence, storyboardJobMatchesSequence, storyboardSequenceReviewKey, storyboardSequenceSourceFrame, buildStoryboardSequences, buildSequenceGridPrompt, buildFreshFramePrompt, referenceContract, resolveSequenceGridDirection, type StoryboardReference } from "@/components/studio/storyboardGeneration";
 
 const references: StoryboardReference[] = [
   { url: "https://fixture.invalid/diego.png", label: "Diego", role: "character-1" },
@@ -76,5 +77,35 @@ describe("story requirement sequence boundaries", () => {
     expect(groups.length).toBe(2);
     expect(groups[0]!.direction).toBe("Wide jungle cave exterior");
     expect(groups[1]!.direction).toBe("Diego enters alone");
+  });
+});
+
+
+describe("storyboard placement revision binding", () => {
+  test("a same-window story edit invalidates direction overrides and review selections", () => {
+    const sequence = buildStoryboardSequences([{ sectionId: "verse", videoUrl: "", kind: "gap", musicStart: 20, musicEnd: 30, startTime: 0, endTime: 10, label: "Dance", planSignature: "old-story", requirementId: "dance", storyDirection: "Diego and Valentina dance together" }])[0]!;
+    const overrides = { [storyboardSequenceReviewKey(sequence)]: "Dance beside the cracked floor" };
+    const edited = { ...sequence, planSignature: "new-story", requirementId: "arrival", direction: "Diego enters alone" };
+    expect(storyboardSequenceReviewKey(edited)).not.toBe(storyboardSequenceReviewKey(sequence));
+    expect(resolveSequenceGridDirection(edited.direction, overrides[storyboardSequenceReviewKey(edited)])).toBe("Diego enters alone");
+  });
+  test("a gap cannot use a stale moment id as its grid composition", () => {
+    const sequence = buildStoryboardSequences([{ sectionId: "verse", videoUrl: "", kind: "gap", momentId: "crisis", musicStart: 20, musicEnd: 30, startTime: 0, endTime: 10, label: "Arrival" }])[0]!;
+    const sources = { crisis: "https://media.example/crisis.png" };
+    expect(storyboardSequenceSourceFrame(sequence, sources)).toBe(undefined);
+    expect(storyboardSequenceSourceFrame({ ...sequence, cuts: [{ ...sequence.cuts[0]!, kind: "source" }] }, sources)).toBe(sources.crisis);
+  });
+  test("same-window changed story and legacy frames need explicit review before becoming current", () => {
+    const job = acceptedFreshFrame().storyboard!;
+    const sequence = buildStoryboardSequences([{ sectionId: "verse", videoUrl: "", kind: "gap", musicStart: 20, musicEnd: 30, startTime: 0, endTime: 10, label: "Solo arrival", planSignature: "edited-story", requirementId: "arrival", storyDirection: "Diego enters alone" }])[0]!;
+    expect(storyboardJobMatchesSequence(job, sequence)).toBe(false);
+    const legacy = { ...job, planSignature: undefined, requirementId: undefined };
+    expect(storyboardJobMatchesSequence(legacy, sequence)).toBe(false);
+    const explicitlyReviewed = bindStoryboardJobToSequence(legacy, sequence);
+    expect(storyboardJobMatchesSequence(explicitlyReviewed, sequence)).toBe(true);
+    expect(explicitlyReviewed.requirementId).toBe("arrival");
+    expect(legacy.planSignature).toBe(undefined);
+    expect(explicitlyReviewed.sourceGridId).toBe(job.sourceGridId);
+    expect(() => bindStoryboardJobToSequence(job, { ...sequence, planSignature: undefined })).toThrow("Confirm the current story");
   });
 });

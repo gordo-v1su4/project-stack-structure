@@ -6,8 +6,9 @@ import type { EditPlanPreviewSegment } from "../musicVideoProject";
 import type { ReferenceAsset } from "../referenceAssets";
 import { waitForTriggerRunOutput } from "@/lib/clientTriggerRuns";
 import { fmt } from "../math";
+import { isStandalone2kStoryboardFrame } from "../wholeShotReplacement";
 import { buildFreshFramePrompt, buildSequenceGridPrompt, buildStoryboardSequences, canonicalStoryboardReferences, resolveSequenceGridDirection,
-  IMAGE_MODELS, IMAGE_PRICE_GUIDE, identifyStoryboardJob, serializeStoryboardJob, type GenerationBilling, type StoryboardImageModel,
+  bindStoryboardJobToSequence, storyboardJobMatchesSequence, storyboardSequenceReviewKey, storyboardSequenceSourceFrame, IMAGE_MODELS, IMAGE_PRICE_GUIDE, identifyStoryboardJob, serializeStoryboardJob, type GenerationBilling, type StoryboardImageModel,
   type StoryboardJob, type StoryboardQuote, type VideoFrameRole } from "../storyboardGeneration";
 
 const button = "rounded border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs text-zinc-200 hover:border-orange-600 disabled:opacity-40 disabled:cursor-not-allowed";
@@ -26,6 +27,7 @@ export function StoryboardPlanner({ projectId, segments, references, assets, onA
   const [selected, setSelected] = useState<string[]>([]);
   const [model, setModel] = useState<StoryboardImageModel>("nano_banana_pro");
   const [billing, setBilling] = useState<GenerationBilling>("subscription-manual");
+  const [reviewPlacements, setReviewPlacements] = useState<Record<string, string>>({});
   const [intents, setIntents] = useState<Record<string, string>>({});
   const [batch, setBatch] = useState<ReviewBatch | null>(null);
   const [busy, setBusy] = useState(false);
@@ -71,19 +73,25 @@ export function StoryboardPlanner({ projectId, segments, references, assets, onA
 
   function gridJob(sequenceId: string): StoryboardJob {
     const sequence = sequences.find((candidate) => candidate.id === sequenceId)!;
-    const sourceFrame = sourceFrames?.[sequence.cuts[0]?.momentId ?? ""];
+    const sourceFrame = storyboardSequenceSourceFrame(sequence, sourceFrames);
     const refs = sourceFrame?.startsWith("https://")
       ? [...canonical, { url: sourceFrame, label: "Source opening composition", role: "composition" }] : canonical;
     return { id: `${projectId}:grid:${sequence.id}:${model}`, projectId, sequenceId: sequence.id,
-      sectionId: sequence.sectionId, title: `${sequence.label} · ${fmt(sequence.songStart)}–${fmt(sequence.songEnd)} storyboard`,
+      sectionId: sequence.sectionId, planSignature: sequence.planSignature, requirementId: sequence.requirementId, narrativeMomentId: sequence.narrativeMomentId, title: `${sequence.label} · ${fmt(sequence.songStart)}–${fmt(sequence.songEnd)} storyboard`,
       songStart: sequence.songStart, songEnd: sequence.songEnd, kind: "grid", model, billing, resolution: "2k",
-      references: refs, prompt: buildSequenceGridPrompt(refs, resolveSequenceGridDirection(sequence.direction ?? sectionDirections?.[sequence.sectionId], intents[sequence.id])) };
+      references: refs, prompt: buildSequenceGridPrompt(refs, resolveSequenceGridDirection(sequence.direction ?? sectionDirections?.[sequence.sectionId], intents[storyboardSequenceReviewKey(sequence)])) };
   }
 
   async function review(jobs: StoryboardJob[]) {
     if (busy || !jobs.length) return;
+    if (jobs.some((job) => !sequences.some((sequence) => storyboardJobMatchesSequence(job, sequence)))) {
+      setStatus("Review this image against a current confirmed story placement first."); return;
+    }
     if (blocked) { setStatus("Attach the current uploaded canonical character sheets before reviewing generation."); return; }
-    if (jobs.some((job) => job.kind === "grid" && !resolveSequenceGridDirection(sequences.find((sequence) => sequence.id === job.sequenceId)?.direction ?? sectionDirections?.[job.sectionId], intents[job.sequenceId]))) {
+    if (jobs.some((job) => {
+      const sequence = sequences.find((candidate) => candidate.id === job.sequenceId);
+      return job.kind === "grid" && !resolveSequenceGridDirection(sequence?.direction ?? sectionDirections?.[job.sectionId], sequence ? intents[storyboardSequenceReviewKey(sequence)] : undefined);
+    })) {
       setStatus("Add the approved story action for each selected sequence before reviewing generation.");
       return;
     }
@@ -109,6 +117,10 @@ export function StoryboardPlanner({ projectId, segments, references, assets, onA
 
   async function approve() {
     if (!batch || submitLock.current) return;
+    if (blocked || batch.jobs.slice(batch.completed).some((job) => !sequences.some((sequence) => storyboardJobMatchesSequence(job, sequence)))) {
+      setStatus("The story changed after review. Review the current placements before approving this handoff.");
+      setBatch(null); return;
+    }
     submitLock.current = true;
     setBusy(true);
     stop.current = false;
@@ -148,13 +160,26 @@ export function StoryboardPlanner({ projectId, segments, references, assets, onA
     } finally { submitLock.current = false; setBusy(false); }
   }
 
+  function reviewSequence(asset: GeneratedStudioAsset) {
+    const chosen = reviewPlacements[asset.id];
+    if (chosen !== undefined) return sequences.find((sequence) => storyboardSequenceReviewKey(sequence) === chosen && sequence.planSignature);
+    return sequences.find((sequence) => asset.storyboard && storyboardJobMatchesSequence(asset.storyboard, sequence));
+  }
+  function approveFreshFrame(asset: GeneratedStudioAsset) {
+    const sequence = reviewSequence(asset);
+    if (!asset.storyboard || !sequence || blocked || !isStandalone2kStoryboardFrame(asset)) return;
+    onAsset({ ...asset, storyboard: bindStoryboardJobToSequence({ ...asset.storyboard, projectId }, sequence),
+      reviewStatus: "approved", approvedAt: new Date().toISOString() });
+  }
+
   function freshJob(asset: GeneratedStudioAsset, index: number): StoryboardJob | null {
     const grid = asset.storyboard;
     const panel = asset.split?.panels.find((item) => item.index === index);
-    if (!grid || !panel) return null;
+    const sequence = reviewSequence(asset);
+    if (!grid || !panel || !sequence) { setStatus("Choose the current story placement and review this composition first."); return null; }
     const refs = [...canonical, {
       url: panel.storage?.mediaUrl || panel.storage?.publicUrl || panel.url, label: panel.label, role: "composition" }];
-    return { ...grid, id: `${asset.id}:panel:${index}:${model}`, sourceGridId: asset.id, panelIndex: index,
+    return { ...bindStoryboardJobToSequence({ ...grid, projectId }, sequence), id: `${asset.id}:panel:${index}:${model}`, sourceGridId: asset.id, panelIndex: index,
       title: `${grid.title} · ${panel.label} fresh frame`, kind: "fresh-frame", model, billing,
       references: refs, prompt: buildFreshFramePrompt(refs) };
   }
@@ -200,7 +225,7 @@ export function StoryboardPlanner({ projectId, segments, references, assets, onA
         <label className="flex gap-2 text-xs"><input type="checkbox" checked={selected.includes(sequence.id)} disabled={busy || !!batch} onChange={(event) => setSelected((current) => event.target.checked ? [...current, sequence.id] : current.filter((id) => id !== sequence.id))} />
           <span>{sequence.label} · {fmt(sequence.songStart)}–{fmt(sequence.songEnd)}</span></label>
         <p className="text-xs text-zinc-500">{sequence.cuts.length} resolved cuts · one 3×3 sequence board · suggested review scope, not a confirmed gap</p>
-        <label className="block text-xs text-zinc-400">Sequence direction<textarea aria-label={`Direction for ${sequence.id}`} className={field} rows={2} disabled={busy || !!batch} value={resolveSequenceGridDirection(sequence.direction ?? sectionDirections?.[sequence.sectionId], intents[sequence.id])} placeholder="Add the story action for this section…" onChange={(event) => setIntents((current) => ({ ...current, [sequence.id]: event.target.value }))} /></label>
+        <label className="block text-xs text-zinc-400">Sequence direction<textarea aria-label={`Direction for ${sequence.id}`} className={field} rows={2} disabled={busy || !!batch} value={resolveSequenceGridDirection(sequence.direction ?? sectionDirections?.[sequence.sectionId], intents[storyboardSequenceReviewKey(sequence)])} placeholder="Add the story action for this section…" onChange={(event) => setIntents((current) => ({ ...current, [storyboardSequenceReviewKey(sequence)]: event.target.value }))} /></label>
         <div className="flex gap-2"><button className={button} disabled={blocked || busy || !!batch} onClick={() => void review([gridJob(sequence.id)])}>Review this grid</button>
           {onInspect ? <button className={button} onClick={() => onInspect(segments.indexOf(sequence.cuts[0]), segments.indexOf(sequence.cuts.at(-1)!))}>Watch sequence</button> : null}</div>
       </article>)}
@@ -210,6 +235,14 @@ export function StoryboardPlanner({ projectId, segments, references, assets, onA
     <div className="space-y-4">
       {assets.filter((asset) => asset.storyboard && asset.status === "completed").map((asset) => <article key={asset.id} className="space-y-3 rounded border border-zinc-700 p-3">
         <h3 className="text-sm">{asset.title}</h3>
+        <label className="block text-xs">Review against current story placement
+          <select aria-label={`Story placement for ${asset.title}`} className={field} value={reviewSequence(asset) ? storyboardSequenceReviewKey(reviewSequence(asset)!) : ""} disabled={blocked || busy || !!batch}
+            onChange={(event) => setReviewPlacements((current) => ({ ...current, [asset.id]: event.target.value }))}>
+            <option value="">Legacy or changed story — choose a placement to review</option>
+            {sequences.filter((sequence) => sequence.planSignature).map((sequence) => <option key={sequence.id} value={storyboardSequenceReviewKey(sequence)}>{sequence.label} · {fmt(sequence.songStart)}–{fmt(sequence.songEnd)} · {sequence.direction}</option>)}
+          </select>
+        </label>
+        {reviewSequence(asset) ? <p className="text-xs text-zinc-400">Review the image against this action before approval: {reviewSequence(asset)?.direction ?? sectionDirections?.[reviewSequence(asset)!.sectionId]}</p> : <p className="text-xs text-amber-400">Previous approval does not cover the current story. This image remains available for explicit review.</p>}
         {asset.storyboard?.kind === "grid" ? <>
           <p className="text-xs text-zinc-400">Approve panel compositions for fresh generation. Selecting a panel spends nothing.</p>
           <div className="grid grid-cols-3 gap-2">{asset.split?.panels.map((panel) => <div key={panel.index} className="space-y-2 rounded border border-zinc-800 p-2">
@@ -223,7 +256,8 @@ export function StoryboardPlanner({ projectId, segments, references, assets, onA
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={asset.fullStorage?.mediaUrl || asset.fullStorage?.publicUrl || asset.resultUrl} alt={`${asset.title} fresh standalone 2K`} className="aspect-video w-full object-contain" />
           <div className="space-y-2 text-xs"><p>Fresh standalone image · {asset.reviewStatus ?? "pending"}. No automatic entry into Join.</p>
-            <div className="flex gap-2"><button className={button} onClick={() => onAsset({ ...asset, reviewStatus: "approved" })}>Approve frame for video</button><button className={button} onClick={() => onAsset({ ...asset, reviewStatus: "rejected" })}>Reject frame</button></div>
+            {!isStandalone2kStoryboardFrame(asset) ? <p className="text-warn">Return a full standalone 2K image with its source panel recorded before approving it for video.</p> : null}
+            <div className="flex gap-2"><button className={button} disabled={blocked || busy || !!batch || !reviewSequence(asset) || !isStandalone2kStoryboardFrame(asset)} onClick={() => approveFreshFrame(asset)}>Approve frame for current story</button><button className={button} onClick={() => onAsset({ ...asset, reviewStatus: "rejected" })}>Reject frame</button></div>
             <label className="block">Video conditioning role<select aria-label={`Video role for ${asset.title}`} className={field} value={asset.frameRole ?? "composition-reference"} onChange={(event) => onAsset({ ...asset, frameRole: event.target.value as VideoFrameRole })}>
               <option value="composition-reference">Composition reference · default, free edit handles</option><option value="start-frame">Exact start frame · no pre-roll before this frame</option><option value="end-frame">End frame · only in a supported video mode</option></select></label>
             <p className="text-zinc-400">Select this sequence&apos;s cut in the replacement lab below to prepare its Seedance packet.</p>

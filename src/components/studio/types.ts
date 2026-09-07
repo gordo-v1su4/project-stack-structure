@@ -226,6 +226,8 @@ export interface SegmentPreview {
 
 export interface BeatJoinSection {
   label: string;
+  /** Unmodified model label, including neutral start/end margins. */
+  originalLabel?: string;
   start: number;
   end: number;
   energy?: number;
@@ -233,6 +235,8 @@ export interface BeatJoinSection {
 }
 
 export interface BeatJoinAnalysis {
+  /** Verified service tempo when available; legacy projects derive it from beats. */
+  bpm?: number;
   sourceLabel: string;
   audioUrl: string;
   waveform: number[];

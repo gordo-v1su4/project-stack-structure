@@ -1,3 +1,5 @@
+import { deriveDisplayBpm } from "../../src/components/studio/math";
+import { normalizeStudioAudio } from "../../src/lib/essentiaStudio";
 import { describe, expect, test } from "bun:test";
 import {
   buildAudioChunkRanges,
@@ -47,6 +49,21 @@ describe("audioAnalysis.parseEssentiaPayload", () => {
 
     expect(parsed).toBeNull();
   });
+  test("restores the dedicated energy time domain despite a longer browser decode", () => {
+    const raw = { schema_version: "studio-audio-v1", duration: 4, bpm: 133, beats: [0, 1, 2, 3], onsets: [2],
+      energy: { curve: [0, 0, 1, 0, 0], start_time_s: 0, sample_rate_hz: 1 },
+      structure: { source: "allin1", analyzed_duration_s: 4,
+        provenance: { status: "detected", method: "allin1:dinat", device: "cuda" },
+        sections: [{ label: "verse", start: 0, end: 4 }] } };
+    const saved = JSON.parse(JSON.stringify({ ...normalizeStudioAudio(raw, "master.wav"), rawAnalysis: raw }));
+    const parsed = parseEssentiaPayload({ payload: saved, fileName: "master.wav", waveform: [0, 1], waveformDuration: 5, audioUrl: "song" });
+    expect(parsed?.duration).toBe(4);
+    expect(parsed?.bpm).toBe(133);
+    expect(parsed?.energy[Math.floor(2 / parsed.duration * (parsed.energy.length - 1))]).toBe(1);
+    expect(parsed?.sections[0].provenance).toMatchObject({ status: "detected", method: "allin1:dinat" });
+    const legacy = parseEssentiaPayload({ payload: { duration: 4, energy: [0, 1, 0] }, fileName: "legacy.wav", waveform: [0, 1], waveformDuration: 5, audioUrl: "song" });
+    expect(legacy?.duration).toBe(5);
+  });
 });
 
 describe("audioAnalysis.resolveEssentiaRequestTarget", () => {
@@ -59,7 +76,7 @@ describe("audioAnalysis.resolveEssentiaRequestTarget", () => {
 
     try {
       expect(resolveEssentiaRequestTarget()).toEqual({
-        url: "/api/essentia/full?mode=fast",
+        url: "/api/essentia/full",
         transport: "proxy",
       });
     } finally {
@@ -77,7 +94,7 @@ describe("audioAnalysis.resolveEssentiaRequestTarget", () => {
 
     try {
       expect(resolveEssentiaRequestTarget()).toEqual({
-        url: "/api/essentia/full?mode=fast",
+        url: "/api/essentia/full",
         transport: "proxy",
       });
     } finally {
@@ -151,3 +168,22 @@ function restoreEnvValue(key: string, value: string | undefined) {
 
   process.env[key] = value;
 }
+
+
+describe("verified service BPM", () => {
+  test("preserves service tempo rather than displaying a half-time beat estimate", () => {
+    const parsed = parseEssentiaPayload({ payload: { duration: 4, bpm: 133, beats: [0, 0.902, 1.804, 2.706] }, fileName: "song.wav", waveform: [], waveformDuration: 4, audioUrl: "song" });
+    expect(parsed?.bpm).toBe(133);
+    expect(deriveDisplayBpm(parsed!.beats, 130, parsed?.bpm)).toBe(133);
+    const nested = parseEssentiaPayload({ payload: { analysis: { duration: 4, bpm: 127.5, beats: [0, 1] } }, fileName: "song.wav", waveform: [], waveformDuration: 4, audioUrl: "song" });
+    expect(nested?.bpm).toBe(127.5);
+  });
+  test("invalid or absent service BPM retains the beat and sparse-grid fallbacks", () => {
+    for (const bpm of [undefined, 0, -1, NaN, Infinity]) {
+      const parsed = parseEssentiaPayload({ payload: { duration: 4, bpm, beats: [0, 0.5, 1] }, fileName: "song.wav", waveform: [], waveformDuration: 4, audioUrl: "song" });
+      expect(parsed?.bpm).toBe(undefined);
+      expect(deriveDisplayBpm(parsed!.beats, 130, bpm)).toBe(120);
+      expect(deriveDisplayBpm([], 130, bpm)).toBe(130);
+    }
+  });
+});

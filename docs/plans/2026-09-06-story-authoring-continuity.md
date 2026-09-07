@@ -545,3 +545,107 @@ Before/after responses and the visual comparison are saved under
 `.tmp/story-caption-rerun-s3-audit/`; `.tmp/story-caption-rerun-s3-factual.json`
 contains the second run's response and provenance. The first authoring attempt
 on worker `20260907.2` is `run_cmtqvx8r000mo3is0efydiy2c`; its acceptance is pending.
+
+### September 7 live authoring and constraint follow-up
+
+Worker `20260907.2` completed authoring plus semantic review in one attempt
+for `run_cmtqvx8r000mo3is0efydiy2c` (321.2 seconds), verifying the fix past
+the former five-minute disconnect. Its reply and one corrective reply duplicated
+treatment pitches, so the browser correctly rejected them. They were not
+accepted as three distinct stories.
+
+Web `411d94b` is deployed with 609 passing tests, typecheck passing, and no
+lint errors (seven existing warnings). Shot constraints now retain excluded
+actions and ordered actions. Empty or undefined model fields cannot erase
+requirements derived from the requested visual. Scalar list entries are
+normalized without inventing facts; malformed constraints remain review errors.
+Generic phrases such as “Two dancers” no longer invent a character named Two.
+
+Gateway `46f8ae8` was deployed with a verified source hash and 35 passing tests.
+It requests each treatment separately with prior-option contrast, bounded
+tokens/time, and rejects duplicate pitches. This generation path still needs
+visible browser acceptance. The focused revision `run_cmtqwwyz600n03is0nv4gy6z7`
+failed preflight because its authoring object was incomplete. Its corrective
+reply reached independent review but failed exact goal-quote validation. Neither
+was accepted. The edited Faithful pitch and hook remain saved and unconfirmed.
+
+The live llama.cpp build `b9445-af6528e6d` passed a small contradictory-prompt
+probe using `response_format: {type: "json_object", schema: ...}`. Required
+JSON structure and a bounded reviewer-only formatting correction are being
+implemented; semantic rejection must remain fail-closed. The authoritative
+syntax is in the [pinned server source](https://github.com/ggml-org/llama.cpp/blob/af6528e6d/tools/server/server-common.cpp#L945).
+
+The six supplied clips and three canonical references remain the only media
+used. No new image or video generation has been submitted. The existing dance
+3×3 grid must be attached to a dance requirement, never the jungle establishing
+shot or solo arrival. Manual return/split/review and the video-creation boundary
+remain unverified.
+
+### User steering — additional crisis footage, September 7
+
+Story work is paused while the additive Essentia endpoint is repaired in the
+existing API repository/deployment. The user supplied four additional candidate
+clips under `.local-fixtures/media/videos-to-test-with/earthquake-begins-clips/`:
+
+- `hf_20260613_193547_b6f7603e-a4da-41de-9e16-04ccaafe4b39.mp4`
+- `hf_20260613_193743_2854e5a3-cc1e-4cbd-83ed-1a47dcd70fcc.mp4`
+- `hf_20260613_193857_b2ce10c8-1aaa-4ad1-9f3d-e9a2203154d7.mp4`
+- `hf_20260613_193901_2b014bc5-eada-45e5-90c7-1f90077e6b37.mp4`
+
+These are authorized for the later earthquake/crisis portion when story work
+resumes, subject to actual visual inspection and captions. Inventory only so
+far: no upload, captioning, or claimed coverage. The user will supply establishing
+shots separately. Keep the opening explicitly uncovered until those arrive;
+never place earthquake footage there to conceal the gap. The intended progression
+is setup, developing connection, crisis, and resolution. The earlier six-video
+E2E remains its own recorded baseline; additional footage does not retroactively
+change that evidence.
+
+### Deferred follow-up — consistent loglines across all three cards
+
+- [ ] After the user supplies the establishing shots and story work resumes, update and verify **all three** treatment cards (Faithful, Bold, Wildcard) against the agreed logline formula. The current saved Faithful pitch was edited; Bold and Wildcard still contain legacy summaries and are marked "Earlier summary · logline needs updating." Updating generation rules did not retroactively rewrite those saved alternatives. The last replacement generation was not accepted, so this is unfinished work, not a completed three-card correction.
+- [ ] Preserve each option's distinct story, supply its own concise three-sentence hook, and verify the saved/reloaded cards and full-story dialog. Review the five logline elements for semantic fit with the treatment, not just field presence. Reassess story/footage coverage after edits; do not treat an edited pitch alone as a reconciled story.
+- [ ] Keep this deferred while establishing footage is pending. Do not regenerate or rewrite the current saved options during the pause.
+
+### Resumed execution — opening supplied, September 7
+
+The pause is lifted. The user supplied `hf_20260907_101523_b52d3e72-430f-4b9f-8e48-aa81337c129c.mp4`
+and accepts it as a placeholder establishing shot. The original in Downloads was
+preserved; a 17,309,561-byte copy is in the canonical checkout's ignored
+`.local-fixtures/media/videos-to-test-with/opening-establishing/`. Both SHA256s
+are `e274351c9fa3fdfb5622807b036ae1891441ffe308fa380ddad52b4705d053b5`.
+Actual sampled frames show a jungle approach, red-lit cave entrance and interior
+passage with patrons. They do not establish the named protagonist arriving alone.
+
+The authorized current lane is the original six clips plus this opening and the
+four crisis clips listed above, with the same three canonical references and no
+crowd sheet. The earlier six-clip evidence remains historical. The crisis samples
+show performance, floor fractures, crowd movement, corridor running and a broken
+walkway; those observations do not independently prove every requested action or
+identity. All five additions were submitted with the visible Add Videos picker.
+The opening completed with four scenes/captions; crisis processing is in progress.
+
+The saved `Story continuity validation · six clips · 2026-09-06` project restored
+in the new task's production browser. Its manually edited Faithful prose and
+legacy Bold/Wildcard options are retained pending real three-treatment generation.
+The current music map still uses nine legacy estimated sections; the new analysis
+has not yet been applied. The original backup project remains separate.
+
+Recovered pending source was hash-checked before integration. Follow-up review
+fixes persist the Essentia job ID for retry polling, retain CUDA/raw-label
+provenance through save/reload, invalidate stale direction/placement reviews and
+exclude gap source frames. Manual grid returns remain available, with standalone
+2K approval required before video conditioning. Local `bun run check` passed
+616 tests with 21 fixture-dependent skips, no errors and seven existing lint
+warnings; production build passed. These are source checks, not browser acceptance.
+
+The gateway's constrained author/reviewer repair `cdcdfcf` is already deployed:
+live/local source SHA256 `892aaa8b07bf1d1d386e6ffcc01fe148b36fcb411ae1ceae07c1a6a4bd077ff9`.
+Its last four recorded story failures predate the 03:34 EDT restart. The current
+source still needs real authoring acceptance, not another speculative rollout.
+
+The user expanded final acceptance: after solid story authoring, continue through
+in-app section previews, final effects/transitions and export, then circle back
+to the documented UI/UX fixes. Use existing generated images/videos; no new image
+or video generation is required. Full walkthrough and export remain open.
+Current local evidence lives in the canonical `.tmp/studio-resume-20260907/`.

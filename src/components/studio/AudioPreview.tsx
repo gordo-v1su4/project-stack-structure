@@ -32,7 +32,7 @@ export function AudioPreview({
   const [showGrid, setShowGrid] = useState(true);
   const duration = Math.max(analysis.duration, 0.001);
   const playhead = clamp(audioTime / duration, 0, 1);
-  const displayBpm = Math.round(deriveDisplayBpm(analysis.beats, bpmFallback));
+  const displayBpm = Math.round(deriveDisplayBpm(analysis.beats, bpmFallback, analysis.bpm));
 
   function syncAudioTime(nextTime: number) {
     const clampedTime = clamp(nextTime, 0, duration);

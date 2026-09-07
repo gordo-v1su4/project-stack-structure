@@ -15,11 +15,11 @@ export function runStoryboardChecks() {
   check("Ten resolved cuts become two review boards, not ten required generations", sequences.length === 2 && sequences[0].cuts.length === 9);
   const refs: ReferenceAsset[] = [{ id: "diego", role: "character-1", kind: "character", displayName: "Diego", fileName: "diego.png", previewUrl: "https://fixture.invalid/diego.png", storageUrl: "https://fixture.invalid/diego.png", storageStatus: "uploaded", promptHint: "", createdAt: "2026-08-30" }];
   const refInputs = [{ url: refs[0].storageUrl!, label: "Diego", role: "character-1" }];
-  const job: StoryboardJob = { id: "fixture", projectId: "fixture", sequenceId: "verse:0.000", sectionId: "verse", title: "Fixture", songStart: 0, songEnd: 10, kind: "grid", model: "nano_banana_pro", billing: "subscription-manual", resolution: "2k", references: refInputs, prompt: buildSequenceGridPrompt(refInputs, "Walk to the club") };
+  const job: StoryboardJob = { id: "fixture", projectId: "fixture", planSignature: "fixture-current-plan", sequenceId: "verse:0.000", sectionId: "verse", title: "Fixture", songStart: 0, songEnd: 10, kind: "grid", model: "nano_banana_pro", billing: "subscription-manual", resolution: "2k", references: refInputs, prompt: buildSequenceGridPrompt(refInputs, "Walk to the club") };
   check("Grid includes canonical identity and 3×3 contract", job.prompt.includes("exact identity and wardrobe lock") && job.prompt.includes("3x3"));
   const freshPrompt = buildFreshFramePrompt( [...refInputs, { url: "https://fixture.invalid/panel.png", label: "Panel", role: "composition" }]);
   check("Fresh-frame prompt creates a new image, never an upscale", freshPrompt.includes("one new cinematic anamorphic photograph") && freshPrompt.includes("Do not upscale"));
-  const base = { projectId: "fixture", sectionId: "verse", sectionLabel: "Verse", storyIntent: "Walk to club", songStart: 0, songEnd: 10,
+  const base = { projectId: "fixture", planSignature: "fixture-current-plan", sectionId: "verse", sectionLabel: "Verse", storyIntent: "Walk to club", songStart: 0, songEnd: 10,
     moment: { id: "moment", sourceClipId: 1, label: "Walk", start: 0, end: 5, duration: 5, firstFrameUrl: "https://fixture.invalid/first.png", lastFrameUrl: "https://fixture.invalid/last.png" }, referenceAssets: refs, referenceSelection: { character1Id: "diego" } };
   const packet = buildSeedanceContinuationPacket(base);
   check("5-second source for 10-second coverage becomes a 12-second whole replacement", packet.durationSeconds === 12 && packet.continuationType === "whole-shot-replacement");
@@ -28,9 +28,9 @@ export function runStoryboardChecks() {
   check("Seedance 2.0 rejects over-length replacement instead of silently shortening", buildSeedanceContinuationPacket({ ...base, songEnd: 16 }).errors.some((error) => error.includes("at most 15s")));
   check("Seedance 2.5 accepts longer whole replacement", buildSeedanceContinuationPacket({ ...base, songEnd: 16, model: "Seedance 2.5" }).durationSeconds === 18);
   const frame = { id: "frame", provider: "higgsfield" as const, model: "nano_banana_pro", createdAt: "2026-08-30", prompt: freshPrompt, status: "completed" as const, reviewStatus: "approved" as const,
-    resultUrl: "https://fixture.invalid/fresh.png", storyboard: { ...job, kind: "fresh-frame" as const, sourceGridId: "grid", panelIndex: 1 }, frameRole: "composition-reference" as const, panelReviews: { "1": "approved" as const }, triggerRunId: "fixture-run" };
+    mediaKind: "image" as const, width: 2752, height: 1536, resultUrl: "https://fixture.invalid/fresh.png", storyboard: { ...job, kind: "fresh-frame" as const, sourceGridId: "grid", panelIndex: 1 }, frameRole: "composition-reference" as const, panelReviews: { "1": "approved" as const }, triggerRunId: "fixture-run" };
   const restored = JSON.parse(JSON.stringify(sanitizeGeneratedStudioAssetForStorage(frame)));
-  check("Persistence round-trip retains parent panel, review, conditioning role and run ID", restored.storyboard.panelIndex === 1 && restored.frameRole === "composition-reference" && restored.triggerRunId === "fixture-run" && restored.reviewStatus === "approved");
+  check("Persistence round-trip retains parent panel, review, conditioning role and run ID", restored.storyboard.panelIndex === 1 && restored.frameRole === "composition-reference" && restored.triggerRunId === "fixture-run" && restored.reviewStatus === "approved" && restored.storyboard.planSignature === job.planSignature);
   check("Unapproved fresh images never become video references", !buildSeedanceContinuationPacket({ ...base, approvedFrames: [{ ...frame, reviewStatus: "pending" }] }).references.some((ref) => ref.url.endsWith("fresh.png")));
   check("Approved standalone frame guides composition", buildSeedanceContinuationPacket({ ...base, approvedFrames: [frame] }).references.some((ref) => ref.url.endsWith("fresh.png") && ref.role === "composition-reference"));
   check("Exact start conflicts with leading handles", buildSeedanceContinuationPacket({ ...base, approvedFrames: [{ ...frame, frameRole: "start-frame" }] }).errors.some((error) => error.includes("conflicts")));

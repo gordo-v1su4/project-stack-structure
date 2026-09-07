@@ -895,13 +895,12 @@ export function resolveGenerationFrameMoment(args: {
   focusSlot?: CoverageSlot;
   selectedSegment?: EditPlanPreviewSegment;
 }) {
-  if (args.selectedSegment?.momentId) {
-    const selectedMoment = args.videoMoments.find((moment) => moment.id === args.selectedSegment?.momentId);
-    if (selectedMoment) return selectedMoment;
+  // A gap has no source. Never borrow another scene's composition or action.
+  if (args.selectedSegment) {
+    if (args.selectedSegment.kind === "gap") return undefined;
+    return args.videoMoments.find((moment) => moment.id === args.selectedSegment?.momentId);
   }
-
-  return args.focusSlot?.moment
-    ?? args.videoMoments.find((moment) => moment.firstFrameUrl || moment.thumbnailUrl);
+  return args.focusSlot?.moment;
 }
 
 function IssueGroupSection({
@@ -1106,13 +1105,15 @@ function FrameExtensionPanel({
     projectId,
     sectionId: selectedSegment?.sectionId ?? slot?.item.sectionId ?? "unassigned-section",
     sectionLabel: slot?.item.label ?? "Current section",
-    storyIntent: slot?.item.prompt ?? "advance the current music-video section",
+    storyIntent: selectedSegment?.storyDirection ?? slot?.item.prompt ?? "advance the current music-video section",
     songStart,
     songEnd,
     moment,
     referenceAssets,
     referenceSelection,
     approvedFrames: persistedGeneratedAssets,
+    planSignature: selectedSegment?.planSignature,
+    requirementId: selectedSegment?.requirementId,
     model: seedanceModel,
     resolution: seedanceResolution,
     handleSeconds,
@@ -1130,8 +1131,8 @@ function FrameExtensionPanel({
     } : undefined,
   });
   const storyboardFrameCount = useMemo(
-    () => countStoryboardFramesForSegment(persistedGeneratedAssets, selectedSegment),
-    [persistedGeneratedAssets, selectedSegment],
+    () => countStoryboardFramesForSegment(persistedGeneratedAssets, selectedSegment, projectId),
+    [persistedGeneratedAssets, selectedSegment, projectId],
   );
   const selectedTimelineItemId = slot?.item.id;
   const importedForSegmentCount = useMemo(
@@ -1149,6 +1150,10 @@ function FrameExtensionPanel({
   );
   const [seedanceCopyStatus, setSeedanceCopyStatus] = useState("Ready to copy the operator packet.");
   const prepareSeedanceSubmission = async () => {
+    if (!selectedSegment || storyboardFrameCount < 1) {
+      setSeedanceAudioStatus("Select one placement and approve its fresh standalone 2K frame first.");
+      return;
+    }
     if (!masterAudioRef || !placementKey || songEnd <= songStart) {
       setSeedanceAudioStatus("The selected cut needs durable master audio and a valid song range first.");
       return;
@@ -1201,6 +1206,7 @@ function FrameExtensionPanel({
     }
   };
   const copySeedancePacket = async () => {
+    if (!selectedSegment || storyboardFrameCount < 1 || !activeAudioReference || seedancePacket.errors.length) return;
     try {
       await navigator.clipboard.writeText(serializeSeedanceContinuationPacket(seedancePacket));
       setSeedanceCopyStatus("Copied prompt, exact reference order, and verified test settings.");
@@ -1282,7 +1288,7 @@ function FrameExtensionPanel({
           <label>Handles per side<select aria-label="Replacement handles" value={handleSeconds} onChange={(event) => setHandleSeconds(Number(event.target.value))} className="w-full bg-[#111] p-2"><option value={0}>0s</option><option value={1}>1s</option><option value={2}>2s</option><option value={3}>3s</option></select></label>
         </div>
         <div className="mt-2 rounded-[2px] border border-[#14283d] bg-[#03070c] p-2 font-mono text-[8px] leading-4 text-[#72879a]">
-          <div>{seedancePacket.references.length} ordered image references · @Image_1 is opening composition only · @Video_1 is audio/rhythm/lip-sync timing only. Verify provider subscription and mode before submitting; no video is submitted by this page.</div>
+          <div>{seedancePacket.references.length} ordered image references · Image roles are listed below · @Video_1 is audio/rhythm/lip-sync timing only. Verify provider subscription and mode before submitting; no video is submitted by this page.</div>
           <div className={`mt-1 ${activeAudioReference ? "text-[#78c878]" : "text-[#d3a236]"}`}>{activeAudioReference ? `@Video_1 · ${activeAudioReference.videoUrl}` : "@Video_1 · not prepared for this placement"}</div>
           {seedancePacket.references.map((reference) => (
             <div key={`${reference.tag}-${reference.url}`} className="mt-1 truncate" title={reference.url}>{reference.tag} · {reference.role} · {reference.label} · {reference.url}</div>
@@ -1299,8 +1305,8 @@ function FrameExtensionPanel({
         </label>
         <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_auto_auto]">
           <div className="rounded-[2px] border border-[#14283d] bg-[#03070c] p-2 font-mono text-[8px] leading-4 text-[#72879a]">{activeAudioReference ? seedanceCopyStatus : visibleAudioStatus}</div>
-          <button type="button" disabled={isPreparingAudioReference || seedancePacket.errors.length > 0 || !masterAudioRef || !placementKey} onClick={() => void prepareSeedanceSubmission()} className="rounded-[2px] border border-[#695019] bg-[#120e04] px-3 py-2 text-[8px] uppercase tracking-[0.12em] text-[#d3a236] disabled:cursor-not-allowed disabled:opacity-45">{isPreparingAudioReference ? "Rendering Video_1..." : activeAudioReference ? "Re-render Video_1" : "Prepare Video_1"}</button>
-          <button type="button" disabled={seedancePacket.errors.length > 0 || !activeAudioReference} onClick={copySeedancePacket} className="rounded-[2px] border border-[#24476f] bg-[#07111e] px-3 py-2 text-[8px] uppercase tracking-[0.12em] text-[#6ca6d2] disabled:cursor-not-allowed disabled:opacity-45">Copy submission packet</button>
+          <button type="button" disabled={isPreparingAudioReference || !selectedSegment || storyboardFrameCount < 1 || seedancePacket.errors.length > 0 || !masterAudioRef || !placementKey} onClick={() => void prepareSeedanceSubmission()} className="rounded-[2px] border border-[#695019] bg-[#120e04] px-3 py-2 text-[8px] uppercase tracking-[0.12em] text-[#d3a236] disabled:cursor-not-allowed disabled:opacity-45">{isPreparingAudioReference ? "Rendering Video_1..." : activeAudioReference ? "Re-render Video_1" : "Prepare Video_1"}</button>
+          <button type="button" disabled={!selectedSegment || storyboardFrameCount < 1 || seedancePacket.errors.length > 0 || !activeAudioReference} onClick={copySeedancePacket} className="rounded-[2px] border border-[#24476f] bg-[#07111e] px-3 py-2 text-[8px] uppercase tracking-[0.12em] text-[#6ca6d2] disabled:cursor-not-allowed disabled:opacity-45">Copy submission packet</button>
         </div>
       </div>
 

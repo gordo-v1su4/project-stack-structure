@@ -41,7 +41,7 @@ export async function fetchEssentiaAnalysis(file: File) {
     const runId = readStringField(initialPayload, "runId");
     const payload = response.status === 202 && runId
       ? mergeOrchestrationResult(
-          await waitForTriggerRunOutput(runId, { timeoutMs: 600_000, pollIntervalMs: 2_000 }),
+          await waitForTriggerRunOutput(runId, { timeoutMs: 1_800_000, pollIntervalMs: 2_000 }),
           initialPayload,
           runId,
         )
@@ -98,7 +98,7 @@ export function getEssentiaStorageFromPayload(payload: unknown) {
 
 export function resolveEssentiaRequestTarget(): EssentiaRequestTarget {
   return {
-    url: "/api/essentia/full?mode=fast",
+    url: "/api/essentia/full",
     transport: "proxy",
   };
 }
@@ -194,13 +194,19 @@ export function parseEssentiaPayload(params: {
     lastValue(onsets) ??
     lastValue(beats) ??
     getLastSectionEnd(rawSections);
-  const duration = Math.max(analysisDuration, waveformDuration, 0);
+  // Dedicated results already put energy on the verified master-duration grid.
+  // Expanding that domain to a browser decoder's duration would move every peak.
+  const duration = source.schemaVersion === "studio-audio-v1" && analysisDuration !== null && analysisDuration > 0
+    ? analysisDuration
+    : Math.max(analysisDuration, waveformDuration, 0);
   const sections = annotateMusicSections(normalizeSections(rawSections, duration), duration,
     findValue(source, [["structure"], ["analysis", "structure"]]));
 
   if (!duration || (!energy.length && !beats.length && !onsets.length && !sections.length && !waveform.length)) return null;
 
+  const bpm = getNumericValue(findValue(source, [["bpm"], ["analysis", "bpm"]]));
   const parsedAnalysis = {
+    ...(bpm !== null && bpm > 0 ? { bpm } : {}),
     sourceLabel: fileName,
     audioUrl,
     waveform: waveform.length ? waveform : energy,
@@ -262,6 +268,8 @@ function normalizeSections(value: unknown, duration: number): BeatJoinSection[] 
 
     sections.push({
       label: String(section.label ?? section.name ?? "Section"),
+      ...(typeof section.original_label === "string" ? { originalLabel: section.original_label }
+        : typeof section.originalLabel === "string" ? { originalLabel: section.originalLabel } : {}),
       start: clamp(start, 0, duration),
       end: clamp(end, 0, duration),
       energy: getNumericValue(section.energy) ?? undefined,
