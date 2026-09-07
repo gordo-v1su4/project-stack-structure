@@ -106,7 +106,8 @@ function isRecord(value: unknown): value is Record<string, unknown> { return Boo
 export function buildCaptionRevisionKey(source: UploadedVideoSource, settings: SceneCaptionSettings): string {
   return JSON.stringify({
     source: [source.id, source.storageBucket, source.storagePath, source.name, source.size, source.duration],
-    scenes: source.scenes?.map((scene) => [scene.id, scene.start, scene.end, scene.contentHash, scene.captionSource === "manual" ? scene.caption : null]),
+    scenes: source.scenes?.map((scene) => [scene.id, scene.start, scene.end, scene.contentHash,
+      scene.captionSource === "manual" ? [scene.caption, scene.mediaEvidence] : null]),
     mode: settings.mode, characters: settings.context?.characters, locations: settings.context?.locations,
     references: settings.referenceImages, promptVersion: SCENE_EVIDENCE_PROMPT_VERSION,
   });

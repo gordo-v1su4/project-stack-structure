@@ -14,6 +14,8 @@ import type { DeepgramTranscriptSummary } from "../deepgramUtils";
 import { REFERENCE_ASSET_SLOT_DETAILS, REFERENCE_ASSET_SLOT_LABELS, type ReferenceAsset, type ReferenceAssetKind, type ReferenceAssetLibraryRole, type ReferenceAssetRole } from "../referenceAssets";
 import type { BeatJoinAnalysis, DetectedSceneSegment, SceneCaptionMode, UploadedVideoSource } from "../types";
 import { FAST_CAPTIONS_ENABLED } from "../constants";
+import { SceneEvidenceDialog } from "../SceneEvidenceDialog";
+import type { SceneEvidenceReview } from "../sceneEvidenceReview";
 
 type IngestTabProps = {
   analysis: BeatJoinAnalysis | null;
@@ -37,6 +39,8 @@ type IngestTabProps = {
   onRerunSceneAnalysis: (scope: "failed" | "all") => void;
   onRerunVideoCaptions: (sourceId: number) => void;
   onMergeScene: (sourceId: number, sceneId: number) => void;
+  onReviewScene: (sourceId: number, sceneId: number, review: SceneEvidenceReview) => void;
+  reviewDisabledReason?: string | null;
   referenceAssets: ReferenceAsset[];
   onReferenceAssetUpload: (role: ReferenceAssetLibraryRole, files: File[]) => void | Promise<void>;
   onReferenceAssetUpdate: (assetId: string, patch: Partial<Pick<ReferenceAsset, "displayName" | "promptHint" | "kind">>) => void;
@@ -87,6 +91,8 @@ export function IngestTab({
   onRerunSceneAnalysis,
   onRerunVideoCaptions,
   onMergeScene,
+  onReviewScene,
+  reviewDisabledReason,
   referenceAssets,
   onReferenceAssetUpload,
   onReferenceAssetUpdate,
@@ -96,6 +102,7 @@ export function IngestTab({
   onVocalStemTranscriptFailed,
 }: IngestTabProps) {
   const [captionSearch, setCaptionSearch] = useState("");
+  const [reviewTarget, setReviewTarget] = useState<{ source: UploadedVideoSource; scene: DetectedSceneSegment } | null>(null);
   const stats = buildVideoStats(videoSources, captionMode);
   const lanes = useMemo(() => deriveIngestLanes({
     hasAudioAnalysis: analysis !== null,
@@ -374,6 +381,8 @@ export function IngestTab({
                         sourceName={source.name}
                         scene={scene}
                         fallbackThumbnail={source.thumbnailUrl}
+                        onReview={() => setReviewTarget({ source, scene })}
+                        reviewDisabledReason={reviewDisabledReason}
                         onMergeLeft={allCuts.findIndex((candidate) => candidate.id === scene.id) > 0 ? () => onMergeScene(source.id, scene.id) : undefined}
                       />
                     ))}
@@ -394,6 +403,9 @@ export function IngestTab({
           </div>
         )}
       </IngestStep>
+      {reviewTarget ? <SceneEvidenceDialog source={reviewTarget.source} scene={reviewTarget.scene}
+        onClose={() => setReviewTarget(null)}
+        onSave={review => { onReviewScene(reviewTarget.source.id, reviewTarget.scene.id, review); setReviewTarget(null); }} /> : null}
     </div>
   );
 }
@@ -690,7 +702,7 @@ function ReferenceSlotCard({
   );
 }
 
-function CutCaptionCard({ sourceName, scene, fallbackThumbnail, onMergeLeft }: { sourceName: string; scene: DetectedSceneSegment; fallbackThumbnail?: string; onMergeLeft?: () => void }) {
+function CutCaptionCard({ sourceName, scene, fallbackThumbnail, onMergeLeft, onReview, reviewDisabledReason }: { sourceName: string; scene: DetectedSceneSegment; fallbackThumbnail?: string; onMergeLeft?: () => void; onReview: () => void; reviewDisabledReason?: string | null }) {
   const hasCaption = Boolean(scene.caption);
   const failed = Boolean(scene.captionError);
   const tone: ReadinessTone = failed ? "failed" : hasCaption ? "ready" : "waiting";
@@ -708,17 +720,17 @@ function CutCaptionCard({ sourceName, scene, fallbackThumbnail, onMergeLeft }: {
           // eslint-disable-next-line @next/next/no-img-element
           <img src={scene.firstFrameUrl ?? scene.thumbnailUrl ?? fallbackThumbnail} alt="" className="absolute inset-0 h-full w-full object-cover" loading="lazy" decoding="async" />
         ) : null}
-        <div className="absolute left-[6px] top-[6px] rounded-[2px] bg-[#00000099] px-1 py-[2px] font-mono text-[8px] text-[#e05c00]">CUT {scene.id + 1}</div>
-        <div className="absolute bottom-[6px] right-[6px] rounded-[2px] bg-[#00000099] px-1 py-[2px] font-mono text-[8px] text-[#d0d0d0]">{fmt(scene.start)}–{fmt(scene.end)}</div>
+        <div className="absolute left-[6px] top-[6px] rounded-[2px] bg-ink-0/80 px-1 py-[2px] font-mono text-[8px] text-accent">CUT {scene.id + 1}</div>
+        <div className="absolute bottom-[6px] right-[6px] rounded-[2px] bg-ink-0/80 px-1 py-[2px] font-mono text-[8px] text-fg-1">{fmt(scene.start)}–{fmt(scene.end)}</div>
       </div>
-      <div className="space-y-1 border-t border-[#141414] p-2">
+      <div className="space-y-1 border-t border-line p-2">
         {frameStrip.length > 1 ? (
           <div className="grid grid-cols-3 gap-1">
             {frameStrip.map(([label, url]) => (
-              <div key={label} className="relative aspect-video overflow-hidden rounded-[2px] border border-[#181818] bg-black">
+              <div key={label} className="relative aspect-video overflow-hidden rounded-[2px] border border-line bg-ink-0">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={url} alt={`${label} frame`} className="h-full w-full object-cover" loading="lazy" decoding="async" />
-                <span className="absolute bottom-0 left-0 bg-[#000000aa] px-1 py-[1px] font-mono text-[7px] uppercase tracking-[0.1em] text-[#b0b0b0]">{label}</span>
+                <span className="absolute bottom-0 left-0 bg-ink-0/80 px-1 py-[1px] font-mono text-[7px] uppercase tracking-[0.1em] text-fg-2">{label}</span>
               </div>
             ))}
           </div>
@@ -740,16 +752,17 @@ function CutCaptionCard({ sourceName, scene, fallbackThumbnail, onMergeLeft }: {
         <div className="line-clamp-3 min-h-12 text-[9px] leading-4 text-fg-2" title={displayCaption}>
           {displayCaption}
         </div>
-        <div className="mt-2 flex flex-wrap items-center gap-1 font-mono text-[8px] uppercase tracking-[0.1em] text-[#555]">
-          {scene.captionMode ? <span className="rounded-[2px] border border-[#1c1c1c] px-1 py-[1px]">{scene.captionMode}</span> : null}
-          {scene.captionSource ? <span className="rounded-[2px] border border-[#1c1c1c] px-1 py-[1px]">{scene.captionSource}</span> : null}
-          {scene.captionModel ? <span className="max-w-full truncate rounded-[2px] border border-[#1c1c1c] px-1 py-[1px]" title={scene.captionModel}>{scene.captionModel}</span> : null}
+        <Button type="button" size="sm" onClick={onReview} disabled={Boolean(reviewDisabledReason)} reason={reviewDisabledReason} showReason>Review observations</Button>
+        <div className="mt-2 flex flex-wrap items-center gap-1 font-mono text-[8px] uppercase tracking-[0.1em] text-fg-3">
+          {scene.captionMode ? <span className="rounded-[2px] border border-line px-1 py-[1px]">{scene.captionMode}</span> : null}
+          {scene.captionSource ? <span className="rounded-[2px] border border-line px-1 py-[1px]">{scene.captionSource}</span> : null}
+          {scene.captionModel ? <span className="max-w-full truncate rounded-[2px] border border-line px-1 py-[1px]" title={scene.captionModel}>{scene.captionModel}</span> : null}
           {onMergeLeft ? (
             <button
               type="button"
               onClick={onMergeLeft}
               title="Not a real cut? Merge this cut into the previous one."
-              className="ml-auto rounded-[2px] border border-[#242424] px-1.5 py-[1px] uppercase tracking-[0.1em] text-[#777] hover:border-[#e05c00] hover:text-[#e05c00]"
+              className="ml-auto rounded-[2px] border border-line-2 px-1.5 py-[1px] uppercase tracking-[0.1em] text-fg-3 hover:border-accent hover:text-accent"
             >
               ← Merge
             </button>

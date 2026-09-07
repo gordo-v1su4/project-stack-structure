@@ -9,6 +9,7 @@ import { mergeUploadedVideoSourceUpdate, needsSceneDetectionRetry, prepareVideoS
 import { uploadFileInChunks } from "./studio/chunkedUploadClient";
 import type { VideoSceneUpdate } from "./studio/mediaUpload";
 import { buildCaptionRevisionKey, createCaptionRevisionGuard } from "./studio/mediaEvidence";
+import { applySceneEvidenceReview, type SceneEvidenceReview } from "./studio/sceneEvidenceReview";
 import { buildStudioSourceContextSignature } from "./studio/studioSourceContext";
 import { isPlacementPlanCurrent, storyProjectInputSignature, prepareApprovedPlacements, buildEditPlanPreviewSegments, normalizeStoryEditSettings, type EditPlanPreviewSegment, type MusicVideoProject } from "./studio/musicVideoProject";
 import { selectStorySectionCandidate } from "./studio/musicVideoProjectSelection";
@@ -843,6 +844,41 @@ export default function StudioApp() {
         return { ...source, scenes: nextScenes };
       }),
     );
+  }
+
+  function handleReviewScene(sourceId: number, sceneId: number, review: SceneEvidenceReview) {
+    const sources = videoSourcesRef.current;
+    if (!sources.some(source => source.id === sourceId && source.scenes?.some(scene => scene.id === sceneId))) return;
+    const updateSources = (currentSources: UploadedVideoSource[]) => currentSources.map(source => source.id !== sourceId ? source : reconcileSourceCaptionStatus({
+      ...source, scenes: source.scenes?.map(scene => scene.id === sceneId ? applySceneEvidenceReview(scene, review) : scene),
+    }, captionMode));
+    const nextSources = updateSources(sources);
+    // Publish synchronously for in-flight caption guards, before React commits the edited state.
+    videoSourcesRef.current = nextSources;
+    setVideoSources(currentSources => {
+      // Keep unrelated uploads or caption updates that were already queued by React.
+      const next = currentSources === sources ? nextSources : updateSources(currentSources);
+      videoSourcesRef.current = next;
+      return next;
+    });
+    setIngestAutosaveTick(current => current + 1);
+    // The source-context signature retains old decisions but invalidates their placement plan.
+    setStoryState(current => ({ ...current, storyGenerated: false }));
+    setCommittedBeatSplit(null);
+    setJoinClipStates({});
+    setRetainedBrowserPreviewSegments([]);
+    setRetainedPreviewEffectCues([]);
+    lastPreviewEffectCuesRef.current = [];
+    setGeneratedAuditionSegments(null);
+    setGeneratePreviewRange(null);
+    previewPlayerRef.current.load([]);
+    resetPreparedPreview();
+    setFinalExportUrl(null);
+    setFinalExportName(null);
+    setFinalExportError(null);
+    setFinalExportStatus("");
+    setFinalExportCueCount(0);
+    setVideoStatus("Scene observations saved. Review the story and footage choices before preparing a new preview.");
   }
 
   async function handleRerunSceneAnalysis(scope: "failed" | "all", sourceId?: number) {
@@ -2518,6 +2554,8 @@ export default function StudioApp() {
                 onRerunSceneAnalysis={(scope) => void handleRerunSceneAnalysis(scope)}
                 onRerunVideoCaptions={(sourceId) => void handleRerunSceneAnalysis("all", sourceId)}
                 onMergeScene={handleMergeSceneIntoPrevious}
+                onReviewScene={handleReviewScene}
+                reviewDisabledReason={isFinalExporting || isShaderCaptureExporting || previewState.activeRequestKey ? "Wait for the current preview or export to finish before changing its evidence." : null}
                 referenceAssets={referenceAssets}
                 onReferenceAssetUpload={(role, files) => void handleReferenceAssetUpload(role, files)}
                 onReferenceAssetUpdate={handleReferenceAssetUpdate}

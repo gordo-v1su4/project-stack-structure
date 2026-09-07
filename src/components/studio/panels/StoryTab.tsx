@@ -34,6 +34,7 @@ import {
 } from "../storyStructure";
 import { CollapsibleSection } from "../ui";
 import { formatVocalStemTranscriptStatus } from "../vocalStemTranscription";
+import { reconcileDetectedStorySongMap } from "../storySongMap";
 import type { BeatJoinAnalysis, SegmentPreview, UploadedVideoSource } from "../types";
 
 export type StoryBeatDraft = StoryPlanDraft;
@@ -119,16 +120,13 @@ export function StoryTab({ referenceRevision, analysis, audioStatus, videoSource
   const transcriptDuration = transcriptSummary?.duration && transcriptSummary.duration > 0 ? transcriptSummary.duration : null;
   const analysisDuration = analysis?.duration && analysis.duration > 0 ? analysis.duration : null;
   const videoDuration = videoSources.reduce((sum, source) => sum + source.duration, 0);
-  const totalDuration = transcriptDuration ?? analysisDuration ?? videoDuration;
+  const totalDuration = analysisDuration ?? transcriptDuration ?? videoDuration;
   const srtChunkCount = transcriptSummary?.chunks.length ?? 0;
-  const hasTimedStoryPlan = storyBeats.every(hasStoryTiming);
-  const detectedStoryPlan = useMemo(
-    () => analysis?.sections.length && totalDuration > 0
-      ? toTimedStoryDrafts(buildStorySections({ analysis, duration: totalDuration, drafts: storyBeats }))
-      : [],
+  const plannedStoryBeats = useMemo(
+    () => reconcileDetectedStorySongMap(storyBeats, analysis, totalDuration),
     [analysis, storyBeats, totalDuration],
   );
-  const plannedStoryBeats = hasTimedStoryPlan ? storyBeats : detectedStoryPlan.length ? detectedStoryPlan : storyBeats;
+  const songMapNeedsReconciliation = plannedStoryBeats !== storyBeats;
 
   const musicVideoProject = useMemo(
     () => prepareStoryTabPlacements({ videoSources, editSettings, project: applyTreatmentCoverageToProject(
@@ -140,35 +138,39 @@ export function StoryTab({ referenceRevision, analysis, audioStatus, videoSource
         videoSources,
         segmentPreviews,
       }),
-      storyGenerated ? state.confirmedTreatmentSnapshot : null,
+      storyGenerated && !songMapNeedsReconciliation ? state.confirmedTreatmentSnapshot : null,
     ) }, state.confirmedSourceContextSignature),
-    [state.confirmedSourceContextSignature, analysis, plannedStoryBeats, segmentPreviews, state.confirmedTreatmentSnapshot, storyGenerated, totalDuration, transcriptSummary?.chunks, videoSources, editSettings],
+    [state.confirmedSourceContextSignature, analysis, plannedStoryBeats, segmentPreviews, state.confirmedTreatmentSnapshot, songMapNeedsReconciliation, storyGenerated, totalDuration, transcriptSummary?.chunks, videoSources, editSettings],
   );
 
   const storyRail = musicVideoProject.storySections;
   const liveSourceContextSignature = buildStudioSourceContextSignature({ analysis, videoSources, referenceRevision });
-  const hasCurrentStoryPlan = Boolean(storyGenerated && state.confirmedTreatmentSnapshot && state.storyContentSignature
+  const hasCurrentStoryPlan = Boolean(!songMapNeedsReconciliation && storyGenerated && state.confirmedTreatmentSnapshot && state.storyContentSignature
     && state.confirmedSourceContextSignature === liveSourceContextSignature && isPlacementPlanCurrent(musicVideoProject));
 
   useEffect(() => {
-    if (!storyGenerated || !state.confirmedTreatmentSnapshot || !state.storyContentSignature) return;
+    if (songMapNeedsReconciliation || !storyGenerated || !state.confirmedTreatmentSnapshot || !state.storyContentSignature) return;
     onProjectChange?.(musicVideoProject);
-  }, [musicVideoProject, onProjectChange, storyGenerated, state.confirmedTreatmentSnapshot, state.storyContentSignature]);
+  }, [musicVideoProject, onProjectChange, songMapNeedsReconciliation, storyGenerated, state.confirmedTreatmentSnapshot, state.storyContentSignature]);
 
   useEffect(() => {
-    if (hasTimedStoryPlan || !detectedStoryPlan.length) return;
-    onStateChange((current) => ({
-      ...current,
-      storyBeats: detectedStoryPlan.map((draft) => ({ ...draft })),
-      activeBeatId: detectedStoryPlan.some((draft) => draft.id === current.activeBeatId)
-        ? current.activeBeatId
-        : detectedStoryPlan[0]?.id ?? current.activeBeatId,
-      storyGenerated: false,
-      confirmedTreatmentId: null,
-      confirmedTreatmentSnapshot: null,
-      storyContentSignature: null,
-    }));
-  }, [detectedStoryPlan, hasTimedStoryPlan, onStateChange]);
+    if (!songMapNeedsReconciliation) return;
+    onStateChange((current) => {
+      const next = reconcileDetectedStorySongMap(current.storyBeats, analysis, totalDuration);
+      if (next === current.storyBeats) return current;
+      return {
+        ...current,
+        storyBeats: next,
+        activeBeatId: next.some((draft) => draft.id === current.activeBeatId)
+          ? current.activeBeatId
+          : next[0]?.id ?? current.activeBeatId,
+        storyGenerated: false,
+        confirmedTreatmentId: null,
+        confirmedTreatmentSnapshot: null,
+        storyContentSignature: null,
+      };
+    });
+  }, [analysis, totalDuration, songMapNeedsReconciliation, onStateChange]);
 
   function updatePlannedStoryBeats(next: StoryPlanDraft[], nextActiveBeatId = activeBeatId) {
     updateState({
@@ -182,7 +184,9 @@ export function StoryTab({ referenceRevision, analysis, audioStatus, videoSource
   }
 
   function updateStoryBeat(id: string, patch: Partial<StorySectionDraft>) {
-    updatePlannedStoryBeats(plannedStoryBeats.map((beat) => (beat.id === id ? { ...beat, ...patch } : beat)));
+    updatePlannedStoryBeats(plannedStoryBeats.map((beat) => (beat.id === id
+      ? { ...beat, ...patch, ...(patch.label !== undefined ? { timingSource: "manual" as const } : {}) }
+      : beat)));
   }
 
   function removeStoryBeat(id: string) {
@@ -426,10 +430,6 @@ export function StoryTab({ referenceRevision, analysis, audioStatus, videoSource
       </section>
     </div>
   );
-}
-
-function hasStoryTiming(draft: StorySectionDraft) {
-  return Number.isFinite(draft.start) && Number.isFinite(draft.end) && (draft.end ?? 0) > (draft.start ?? 0);
 }
 
 function getStoryBoundaryCues(analysis: BeatJoinAnalysis | null, transcriptSummary: DeepgramTranscriptSummary | null) {
