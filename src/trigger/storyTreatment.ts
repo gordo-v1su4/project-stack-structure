@@ -2,7 +2,7 @@ import { AbortTaskRunError, logger, task, wait } from "@trigger.dev/sdk";
 
 import { formatSceneCaptionGatewayError, resolveSceneCaptionGatewayAuth } from "@/lib/sceneCaptionGateway";
 import { vm100HeavyQueue } from "./queues";
-import { assertStoryLoglineReview, STORY_LOGLINE_REVIEW_REQUIRED } from "@/lib/storyLoglineReview";
+import { assertStoryLoglineReview, safeStoryReviewFailureMessage, STORY_LOGLINE_REVIEW_REQUIRED } from "@/lib/storyLoglineReview";
 import { markWorkCompleted, markWorkRunning } from "./workMetadata";
 
 export type StoryTreatmentPayload = {
@@ -77,10 +77,11 @@ async function runStoryTreatmentGateway(payload: StoryTreatmentPayload, triggerR
   const response = await fetch(`${gatewayUrl}${endpoint}`, requestOptions);
   const result = await readJson(response);
   if (!response.ok || readBoolean(result, "ok") === false) {
-    if (readString(result, "detail")?.startsWith("Story logline review failed:")) {
+    const reviewDetail = readString(result, "detail");
+    if (reviewDetail?.startsWith("Story logline review failed:")) {
       // Only the authoring caller may retry with a corrected prompt. Repeating
       // this identical task would multiply generation and review calls.
-      throw new AbortTaskRunError("Story logline review failed: the pitch needs a supported incident, protagonist, goal, opposition and stakes, without revealing the resolution.");
+      throw new AbortTaskRunError(safeStoryReviewFailureMessage(reviewDetail));
     }
     throw new Error(formatSceneCaptionGatewayError(response.status, result, endpoint));
   }

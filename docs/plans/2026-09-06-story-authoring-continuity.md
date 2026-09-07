@@ -649,3 +649,42 @@ in-app section previews, final effects/transitions and export, then circle back
 to the documented UI/UX fixes. Use existing generated images/videos; no new image
 or video generation is required. Full walkthrough and export remain open.
 Current local evidence lives in the canonical `.tmp/studio-resume-20260907/`.
+
+### September 7 deployed audio acceptance and CPU investigation
+
+Web SHA `349d5e489d7a144acd1bd7960fe667943990b6ec` completed its Git-triggered
+Vercel production deployment. Trigger worker `20260907.3` deployed with 17 tasks
+from the same source in an isolated VM100 checkout; its registry image digest is
+`sha256:517dd8b73c0a730cab21e0f931a332386830b541673110bfa9c648710047f146`.
+All eleven videos finished and saved with 57 captioned scenes. Caption completion
+is not factual acceptance: the opening's first caption calls the cave glow an
+orb, and another opening interval attaches unsupported lead-character badges.
+
+The visible Replace song picker submitted the same complete master WAV. Run
+`run_cmtr4d0q100pa3is0rg17bnb7` completed on worker `20260907.3` in 30 seconds;
+metadata retained Studio job ID `e298c4c9dd3f46e1aae66ce4dab80bc7`. The saved
+project has 246.69995464852607 seconds, BPM 131.94125366210938, 525 beats and
+16 model intervals with CUDA provenance and original labels. The entire saved
+story state was identical as parsed JSON before/after the audio
+replacement. Actual GPU samples reached 85% utilization during audio analysis.
+
+The user's report of roughly 700% CPU was reproduced during the subsequent
+real story request: Qwen container samples reached 737–787% CPU while the RTX
+4090 mostly reported 0–10% GPU utilization. Live arguments retain
+`--n-gpu-layers 24`; Qwen allocates 4,662 MiB of GPU memory and uses eight CPU
+threads. This is partial CPU/GPU model execution, not proof of efficient CUDA
+inference. The sibling gateway runbook records a historical image-encoder OOM
+with full offload and requires a proven image-caption smoke test before changing
+that limit. No shared GPU settings were changed during this diagnosis. CPU/GPU
+samples are saved beside the project snapshots. Performance remains open.
+
+The browser retained the manually edited prose, and its seed now describes the
+eleven-video scope while retaining solo-arrival and post-escape gaps where visual
+evidence is absent. Current three-treatment request
+`run_cmtr4ff8r00pd3is0jp5bka3e` failed after 174 seconds because Bold repeated
+an earlier pitch. The worker obscured that known diagnosis behind generic
+five-element advice, and the browser started its one corrective attempt with
+the wrong guidance. A narrow fixed-message mapping now preserves that specific
+duplicate-pitch rejection for the UI and corrective prompt, while unknown or
+extended provider text remains redacted. Its 29 affected tests, focused lint and
+typecheck passed. The corrective run and deployed acceptance remain pending.

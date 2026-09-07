@@ -1,4 +1,5 @@
 import { assessStoryMatch, type MatchAssessment } from "./storyMatchAssessment";
+import { STORY_DUPLICATE_PITCH_REVIEW_FAILED } from "@/lib/storyLoglineReview";
 import type { StoryPlanDraft, VideoMoment } from "./musicVideoProject";
 
 export const STORY_TREATMENT_MODEL = "Qwen/Qwen3-VL-4B-Instruct-GGUF:Q4_K_M";
@@ -211,6 +212,7 @@ export const STORY_LYRIC_EXCERPT_MAX_CHARS = 1_200;
 /** Fixed corrective messages prevent provider errors or credentials entering retry prompts. */
 export function storyValidationFeedback(error: unknown): string | undefined {
   const message = error instanceof Error ? error.message : "";
+  if (message === STORY_DUPLICATE_PITCH_REVIEW_FAILED) return "The previous response duplicated treatment pitches. Return three substantively different loglines, three-sentence synopses and visual approaches within the user's chronology and constraints; do not copy an option and change only its title.";
   if (/Story logline review failed/i.test(message)) return "Rewrite the logline sentence so it expresses the inciting incident, specific protagonist, concrete goal, central opposition, and stakes, all supported by the story. Do not reveal the resolution, include spoilers, or invent facts.";
   if (/Treatment \d+ logline must be at most 320 characters/i.test(message)) return "Keep each complete logline within 320 characters while expressing its incident, protagonist, goal, opposition, and stakes. Do not cut off the sentence or invent facts.";
   if (/loglines must be meaningfully distinct/i.test(message)) return "The previous response duplicated treatment loglines. Return three substantively different options within the user's constraints; do not copy an option and change only its title.";
