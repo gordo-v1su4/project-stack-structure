@@ -28,10 +28,50 @@ export function serializeSceneCaptionContext(
   settings: SceneCaptionSettings,
   sceneContext: Record<string, unknown> = {},
 ) {
-  return JSON.stringify({
+  return serializeFactualSceneCaptionContext({
     ...sceneContext,
     projectContext: settings.context ?? {},
   });
+}
+
+/** Keep authored story interpretation out of the visual-observation request. */
+export function serializeFactualSceneCaptionContext(value: unknown) {
+  let parsed = value;
+  if (typeof value === "string") {
+    try { parsed = JSON.parse(value); } catch { parsed = {}; }
+  }
+  const source = contextRecord(parsed);
+  const project = contextRecord(source.projectContext ?? source);
+  const factual: Record<string, unknown> = {};
+  for (const key of ["sourceId", "sourceName", "sourceDuration", "sceneId", "sceneLabel", "sceneStart", "sceneEnd", "sceneDuration"]) {
+    const field = source[key];
+    if (typeof field === "string" || (typeof field === "number" && Number.isFinite(field))) factual[key] = field;
+  }
+  const input = contextRecord(source.input);
+  if (Object.keys(input).length) {
+    factual.input = {
+      kind: input.kind === "ordered-frames" || input.kind === "single-frame" ? input.kind : "unknown",
+      sampleTimes: Array.isArray(input.sampleTimes) ? input.sampleTimes.filter((time) => typeof time === "number" && Number.isFinite(time)) : [],
+      urls: Array.isArray(input.urls) ? input.urls.filter((url) => typeof url === "string") : [],
+    };
+  }
+  factual.projectContext = {
+    ...(project.captionStyle === "detailed-cinematic" ? { captionStyle: project.captionStyle } : {}),
+    characters: (Array.isArray(project.characters) ? project.characters : []).flatMap((item) => {
+      const character = contextRecord(item);
+      return typeof character.name === "string" && (character.role === "primary" || character.role === "secondary")
+        ? [{ name: character.name, role: character.role }] : [];
+    }),
+    locations: (Array.isArray(project.locations) ? project.locations : []).flatMap((item) => {
+      const location = contextRecord(item);
+      return typeof location.name === "string" ? [{ name: location.name }] : [];
+    }),
+  };
+  return JSON.stringify(factual);
+}
+
+function contextRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
 export function serializeSceneCaptionReferences(settings: SceneCaptionSettings) {

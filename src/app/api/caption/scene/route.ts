@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import { buildSceneCaptionPrompt } from "@/components/studio/sceneCaptionPrompt";
+import { buildSceneCaptionPrompt, serializeFactualSceneCaptionContext } from "@/components/studio/sceneCaptionPrompt";
 import type { SceneCaptionMode, SceneCaptionSource } from "@/components/studio/types";
 import { parseDurableCaptionReferences } from "@/lib/captionReferences";
 import { getMediaGatewayConfig, uploadFileToMediaGateway } from "@/lib/mediaGateway";
@@ -171,7 +171,7 @@ export async function POST(request: Request) {
       sceneStart: readFormString(formData, "sceneStart"),
       sceneEnd: readFormString(formData, "sceneEnd"),
       sceneDuration: readFormString(formData, "sceneDuration"),
-      captionContext: readFormString(formData, "captionContext"),
+      captionContext: serializeFactualSceneCaptionContext(readFormString(formData, "captionContext")),
       captionReferences,
     }, imageDigest);
     return Response.json({

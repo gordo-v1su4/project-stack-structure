@@ -4,6 +4,7 @@ import {
   buildSceneCaptionPrompt,
   serializeSceneCaptionContext,
   serializeSceneCaptionReferences,
+  serializeFactualSceneCaptionContext,
 } from "@/components/studio/sceneCaptionPrompt";
 import type { SceneCaptionSettings } from "@/components/studio/types";
 
@@ -55,5 +56,17 @@ describe("detailed Qwen scene caption profile", () => {
       },
     });
     expect(JSON.parse(serializeSceneCaptionReferences(settings))).toEqual(settings.referenceImages);
+  });
+
+  test("story and lyric edits cannot alter factual caption context or leak through legacy fields", () => {
+    const scene = { sourceId: "2", sceneId: 0, sceneStart: 0, sceneEnd: 1.833, input: { kind: "ordered-frames", sampleTimes: [0.05, 0.916, 1.783], urls: ["https://media.example/strip.jpg"] } };
+    const narrative = { storySummary: "The club collapses", storyPrompts: ["Diego and Valentina dance together"], lyricExcerpt: "Run away", projectIntent: "Escape ending", songTitle: "Escape", vocalStemName: "Run" };
+    const clean = serializeSceneCaptionContext(settings, scene);
+    const contaminated = serializeSceneCaptionContext({ ...settings, context: { ...settings.context, ...narrative } }, { ...scene, ...narrative });
+    expect(contaminated).toBe(clean);
+    expect(JSON.parse(contaminated)).toMatchObject({ ...scene, projectContext: { characters: settings.context!.characters, locations: settings.context!.locations } });
+    expect(serializeFactualSceneCaptionContext(JSON.stringify({ ...scene, ...narrative, projectContext: { ...settings.context, ...narrative } }))).toBe(clean);
+    expect(serializeFactualSceneCaptionContext("Diego must escape in the intro")).not.toContain("escape");
+    for (const field of ["storySummary", "storyPrompts", "lyricExcerpt", "projectIntent", "songTitle", "vocalStemName"]) expect(contaminated).not.toContain(field);
   });
 });

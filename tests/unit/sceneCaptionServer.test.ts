@@ -219,7 +219,7 @@ describe("scene caption server seam", () => {
       const form = new FormData();
       form.set("image", new File([new Uint8Array([4, 5, 6])], "frame.jpg", { type: "image/jpeg" }));
       form.set("mode", "smart");
-      form.set("captionContext", JSON.stringify({ lyricExcerpt: "love me tonight", projectIntent: "music video" }));
+      form.set("captionContext", JSON.stringify({ lyricExcerpt: "love me tonight", storySummary: "Escape", storyPrompts: ["Dance together"], input: { kind: "ordered-frames", sampleTimes: [1.5, 2, 2.5] }, projectContext: { characters: [{ name: "Diego", role: "primary" }], locations: [{ name: "Club" }], storySummary: "Escape", storyPrompts: ["Dance together"], lyricExcerpt: "love me tonight" } }));
       form.set("sceneStart", "1.5");
 
       const response = await POST(new Request("http://localhost/api/caption/scene", { method: "POST", body: form }));
@@ -238,9 +238,9 @@ describe("scene caption server seam", () => {
       expect(triggerCalls[0]?.[0]).toMatchObject({
         bucket: "stack-structure",
         objectKey: "media-uploads/caption-frames/caption-frame.jpg",
-        captionContext: JSON.stringify({ lyricExcerpt: "love me tonight", projectIntent: "music video" }),
         sceneStart: "1.5",
       });
+      expect(JSON.parse(String(triggerCalls[0]?.[0].captionContext))).toEqual({ input: { kind: "ordered-frames", sampleTimes: [1.5, 2, 2.5], urls: [] }, projectContext: { characters: [{ name: "Diego", role: "primary" }], locations: [{ name: "Club" }] } });
     } finally {
       restoreGlobals();
     }

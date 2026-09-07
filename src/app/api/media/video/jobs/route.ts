@@ -1,4 +1,5 @@
 import { validateOrderedChunkManifest } from "@/lib/chunkedMediaUpload";
+import { serializeFactualSceneCaptionContext } from "@/components/studio/sceneCaptionPrompt";
 import { parseDurableCaptionReferences } from "@/lib/captionReferences";
 import { essentiaUploadOwnerSegment } from "@/lib/essentiaUpload";
 import { getMediaGatewayConfig, normalizeMediaPath } from "@/lib/mediaGateway";
@@ -67,7 +68,7 @@ export async function POST(request: Request) {
       profile: payload.profile,
       metadata: payload.metadata,
       captionPrompt: readBoundedString(payload.captionPrompt, 12_000),
-      captionContext: readBoundedString(payload.captionContext, 16_000),
+      captionContext: serializeFactualSceneCaptionContext(readBoundedString(payload.captionContext, 16_000)),
       captionReferences: parseDurableCaptionReferences(payload.captionReferences, config?.bucket ?? bucket),
       uploadChunks,
     });

@@ -362,7 +362,7 @@ describe("Next route Trigger.dev dispatch boundary", () => {
         bucket: "stack-structure",
         objectKey: "media-uploads/source.mp4",
         captionPrompt: "  detailed cinematic prompt  ",
-        captionContext: JSON.stringify({ projectContext: { characters: [{ name: "Diego" }] } }),
+        captionContext: JSON.stringify({ storySummary: "Escape", lyricExcerpt: "Run away", storyPrompts: ["Dance together"], projectContext: { characters: [{ name: "Diego", role: "primary" }], locations: [{ name: "Club" }], storySummary: "Escape", lyricExcerpt: "Run away", storyPrompts: ["Dance together"] } }),
         captionReferences: [{
           name: "Diego",
           role: "primary",
@@ -386,6 +386,7 @@ describe("Next route Trigger.dev dispatch boundary", () => {
         fileName: "diego.png",
       }],
     });
+    expect(JSON.parse(String(dispatches[0]?.[0].captionContext))).toEqual({ projectContext: { characters: [{ name: "Diego", role: "primary" }], locations: [{ name: "Club" }] } });
   });
 
   test("queues media scene detection from authenticated video chunk references", async () => {

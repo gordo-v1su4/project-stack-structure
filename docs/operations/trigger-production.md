@@ -41,13 +41,13 @@ GPU locking still protects shared hardware. Paid Higgsfield work is independentl
 serialized and uses one attempt so automatic retries cannot duplicate spend.
 
 Verified through the production worker API on 2026-09-07: worker
-`20260907.1` (`worker_cmtquleg000m13is0w2exouyv`) uses SDK/CLI `4.5.16`
-and exposes exactly the 17 local task IDs above. Deployment `eec48qaq` was built
-on Linux from detached source commit `5108b564b9aadaf34aaceced4110a403fb1b4588`
+`20260907.2` (`worker_cmtqvhk7x00me3is05myhu6b6`) uses SDK/CLI `4.5.16`
+and exposes exactly the 17 local task IDs above. Deployment `pqu9v2i8` was built
+on Linux from detached source commit `a07cd1ea24f30ad856db0e00cfae651ea2684ddc`
 and published to the VM100 registry with image digest
-`sha256:729e0bea2369fc644bc27cd3dc9135d01b50b08b0e1bea0c9be18eabd7031011`.
+`sha256:c2fd98ff0c3cb044f7a60ace5a019f9603d76e6d84377dcb9f8aad30c92b941c`.
 The canonical VM checkout remains clean on `fix/caption-gateway-three-references`
-at `50a62f82`; deployment used `/home/gordo/.cache/project-stack-structure-trigger/5108b56`.
+at `50a62f82`; deployment used `/home/gordo/.cache/project-stack-structure-trigger/a07cd1e`.
 Inventory and build provenance are verified; real story authoring/revision and
 persisted caption evidence require their separate browser acceptance checks.
 
