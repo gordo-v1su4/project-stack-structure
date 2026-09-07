@@ -59,6 +59,7 @@ async function runStoryTreatmentGateway(payload: StoryTreatmentPayload, triggerR
     method: "POST",
     headers,
     body: JSON.stringify({
+      operation: payload.operation ?? "generate",
       model: payload.model,
       instructions: payload.instructions,
       input: payload.input,

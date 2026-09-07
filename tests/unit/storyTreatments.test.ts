@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 
 import type { MusicVideoProject, VideoMoment } from "@/components/studio/musicVideoProject";
 import {
+  buildStoryCaptionClusters,
+  storyValidationFeedback,
   applyTreatmentCoverageToProject,
   buildStoryContentSignature,
   hydrateTreatmentCoverage,
@@ -72,6 +74,18 @@ describe("story treatment contract", () => {
       treatment.logline = "The exact same story follows two dancers through a collapsing underground room.";
     });
     expect(() => parseGeneratedTreatments(duplicate)).toThrow(/distinct/i);
+  });
+
+  test("rejects duplicate developed options even when their titles differ", () => {
+    const duplicate = structuredClone(generated);
+    duplicate.treatments[2] = { ...structuredClone(duplicate.treatments[1]), id: "wildcard-story", kind: "wildcard", title: "A different title" };
+    expect(() => parseGeneratedTreatments(duplicate)).toThrow(/distinct/i);
+  });
+
+  test("allows the same requested ending across distinct treatment pitches", () => {
+    const sharedEnding = structuredClone(generated);
+    sharedEnding.treatments.forEach(treatment => { treatment.endingHook = "Diego and Valentina escape together and remain together."; });
+    expect(parseGeneratedTreatments(sharedEnding)).toHaveLength(3);
   });
 
   test("validates and bounds derived request context", () => {
@@ -187,3 +201,18 @@ function projectFixture(): MusicVideoProject {
     reviewFindings: [],
   };
 }
+
+
+test("bounds retry feedback and excludes raw provider error text", () => {
+  const parsed = parseStoryTreatmentRequest({ brief: "", song: { sections: [] }, footage: {}, validationFeedback: "x".repeat(900) });
+  expect(parsed.validationFeedback?.length).toBe(500);
+  expect(storyValidationFeedback(new Error("Each story moment needs a narrative purpose and explicit shot requirements."))).toContain("nonempty requirements array");
+  expect(storyValidationFeedback(new Error("Provider credentials: secret-value"))).toBe(undefined);
+  expect(storyValidationFeedback(new Error("Story treatment loglines must be meaningfully distinct. secret-value"))).not.toContain("secret-value");
+});
+
+test("caption context deduplicates exact repeated fields without rewriting footage text", () => {
+  const caption = "Diego walks alone through the red corridor.";
+  const clusters = buildStoryCaptionClusters([{ id: "scene", sourceClipId: 0, label: "Scene 1", start: 0, end: 4, duration: 4, caption, captionMeta: { caption, action: "walking", subjects: ["Diego", "Diego"] } }]);
+  expect(clusters).toEqual([`Scene 1 · ${caption} · walking · Diego`]);
+});

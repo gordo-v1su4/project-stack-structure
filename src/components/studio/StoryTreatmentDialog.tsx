@@ -38,6 +38,7 @@ export function StoryTreatmentDialog({ treatment, moments, sections, cues, durat
   }, []);
   const preview = proposal ?? draft;
   const pending = draft.reconciliation?.status === "pending";
+  const assessmentNeedsReview = preview.reconciliation?.status === "legacy" || preview.reconciliation?.status === "pending";
   const timingError = getStoryTimingError(preview, sections, duration, cues);
   const update = (patch: Partial<StoryTreatment>) => {
     requests.current.invalidate();
@@ -83,7 +84,7 @@ export function StoryTreatmentDialog({ treatment, moments, sections, cues, durat
       </> : <><p className="text-base leading-7 text-fg-0">{preview.logline}</p><p className="whitespace-pre-wrap text-sm leading-6 text-fg-2">{preview.synopsis}</p></>}
       <div className="flex flex-wrap items-center gap-2">
         <button type="button" className={secondary} disabled={busy || Boolean(proposal)} onClick={() => setEditing(!editing)}>{editing ? "Finish editing" : "Edit story"}</button>
-        <span className="text-xs text-fg-3">{preview.anchors.length} story moments · {preview.anchors.filter(a => a.coverage === "missing").length} missing footage</span>
+        <span className="text-xs text-fg-3">{preview.anchors.length} story moments · {assessmentNeedsReview ? "Assessment needs review" : `${preview.anchors.filter(a => a.coverage === "missing").length} missing footage`}</span>
       </div>
       {preview.reconciliation?.status === "legacy" ? <p className="rounded-md border border-line p-3 text-sm text-fg-3">This saved story uses an older assessment. Review its moments and footage; refining it will update the structured story without replacing the other options.</p> : null}
       {pending && !proposal ? <p role="status" className="rounded-md border border-accent-lo bg-accent-tint p-3 text-sm text-fg-1">Story edits need reconciliation. Request an updated moment plan below, then review the changes before using this story.</p> : null}
@@ -96,7 +97,7 @@ export function StoryTreatmentDialog({ treatment, moments, sections, cues, durat
         {preview.anchors.map((anchor, index) => {
           const selected = moments.find(moment => moment.id === (evidencePreview[anchor.id] ?? anchor.selectedCandidateId ?? anchor.candidates[0]?.momentId));
           return <li key={anchor.id} className="rounded-md border border-line bg-ink-1 p-3">
-            <div className="flex items-start justify-between gap-3"><h3 className="text-sm font-medium">{index + 1}. {anchor.title}</h3><span className="shrink-0 text-xs text-fg-3">{anchor.resolution === "generate" ? "Planned generation" : anchor.resolution === "omit" ? "Omitted" : anchor.coverage === "covered" ? "Footage found" : anchor.coverage === "weak" ? "Uncertain match" : "Missing footage"}</span></div>
+            <div className="flex items-start justify-between gap-3"><h3 className="text-sm font-medium">{index + 1}. {anchor.title}</h3><span className="shrink-0 text-xs text-fg-3">{anchor.resolution === "generate" ? "Planned generation" : anchor.resolution === "omit" ? "Omitted" : assessmentNeedsReview ? "Assessment needs review" : anchor.coverage === "covered" ? "Footage found" : anchor.coverage === "weak" ? "Uncertain match" : "Missing footage"}</span></div>
             <p className="mt-1 text-xs text-fg-3">{anchor.role || anchor.purpose}</p>
             {editing && !proposal ? <>
               <label className="mt-2 block text-xs text-fg-2">Moment title<input value={anchor.title} className={field} maxLength={100} onChange={e => updateAnchor(anchor.id, { title: e.target.value })} /></label>

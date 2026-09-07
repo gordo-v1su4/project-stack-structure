@@ -5,7 +5,7 @@ import { waitForTriggerRunOutput } from "@/lib/clientTriggerRuns";
 import type { StoryTreatmentTriggerResult } from "@/lib/triggerOrchestration";
 import type { DeepgramTranscriptSummary } from "./deepgramUtils";
 import type { MusicVideoProject } from "./musicVideoProject";
-import { hydrateTreatmentCoverage, parseGeneratedTreatments, type StoryGenerationMeta, type StoryTreatment, type StoryTreatmentRequest, type StoryTreatmentState } from "./storyTreatments";
+import { buildStoryCaptionClusters, storyValidationFeedback, hydrateTreatmentCoverage, parseGeneratedTreatments, type StoryGenerationMeta, type StoryTreatment, type StoryTreatmentRequest, type StoryTreatmentState } from "./storyTreatments";
 import { buildStoryDraftCommit, createStoryRequestGuard, mergeStoryRevision, storyAuthoringInputSignature, validateStoryAuthoring } from "./storyAuthoring";
 import { StoryTreatmentDialog } from "./StoryTreatmentDialog";
 import type { BeatJoinAnalysis } from "./types";
@@ -33,7 +33,7 @@ export function StoryTreatmentPlanner({ referenceRevision, analysis, transcriptS
   const canGenerate = Boolean(analysis && project.videoMoments.length > 0);
   const inspected = state.treatments.find(treatment => treatment.id === inspectedId) ?? (state.confirmedTreatmentSnapshot?.id === inspectedId ? state.confirmedTreatmentSnapshot : undefined);
   const confirmed = state.confirmedTreatmentSnapshot;
-  const captionClusters = useMemo(() => project.videoMoments.map(moment => [moment.label, moment.caption, moment.captionMeta?.caption, moment.captionMeta?.action, moment.captionMeta?.setting, ...(moment.captionMeta?.subjects ?? [])].filter(Boolean).join(" · ")).filter(Boolean), [project.videoMoments]);
+  const captionClusters = useMemo(() => buildStoryCaptionClusters(project.videoMoments), [project.videoMoments]);
 
   const requests = useRef(createStoryRequestGuard());
   const inputSignature = storyAuthoringInputSignature({ referenceRevision, brief: state.brief, treatments: state.treatments, analysis, transcriptSummary, moments: project.videoMoments });
@@ -65,9 +65,10 @@ export function StoryTreatmentPlanner({ referenceRevision, analysis, transcriptS
     setIsGenerating(true); setError(null);
     try {
       let lastError: unknown;
+      let validationFeedback: string | undefined;
       for (let attempt = 0; attempt < 2; attempt++) {
         try {
-          const result = await requestStory({ ...context(), validationAttempt: attempt });
+          const result = await requestStory({ ...context(), validationAttempt: attempt, validationFeedback });
           if (!requests.current.isCurrent(token)) throw new Error("Story inputs changed while generation was running. The outdated reply was discarded.");
           const treatments = hydrateTreatmentCoverage(parseGeneratedTreatments(result.output), project.videoMoments).map(validateStoryAuthoring);
           const prefix = crypto.randomUUID();
@@ -78,7 +79,7 @@ export function StoryTreatmentPlanner({ referenceRevision, analysis, transcriptS
           // New options do not replace the confirmed story until the user chooses one.
           onChange({ treatments: namespaced, selectedTreatmentId: null, generationMeta: result.meta });
           return;
-        } catch (caught) { if (!requests.current.isCurrent(token)) throw caught; lastError = caught; }
+        } catch (caught) { if (!requests.current.isCurrent(token)) throw caught; lastError = caught; validationFeedback = storyValidationFeedback(caught); }
       }
       throw lastError;
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Story generation failed."); }
@@ -94,12 +95,13 @@ export function StoryTreatmentPlanner({ referenceRevision, analysis, transcriptS
   async function refine(treatment: StoryTreatment, instruction: string) {
     const token = requests.current.begin();
     let lastError: unknown;
+    let validationFeedback: string | undefined;
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        const result = await requestStory({ ...context(), revision: { treatment, instruction }, validationAttempt: attempt });
+        const result = await requestStory({ ...context(), revision: { treatment, instruction }, validationAttempt: attempt, validationFeedback });
         if (!requests.current.isCurrent(token)) throw new Error("Story inputs changed while the revision was running. The outdated reply was discarded.");
         return mergeStoryRevision(treatment, result.output, project.videoMoments);
-      } catch (caught) { if (!requests.current.isCurrent(token)) throw caught; lastError = caught; }
+      } catch (caught) { if (!requests.current.isCurrent(token)) throw caught; lastError = caught; validationFeedback = storyValidationFeedback(caught); }
     }
     throw lastError;
   }

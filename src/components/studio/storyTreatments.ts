@@ -126,6 +126,7 @@ export type StoryTreatmentRequest = {
   constraints?: string[];
   /** Internal retry hint when Qwen returns schema-invalid JSON. */
   validationAttempt?: number;
+  validationFeedback?: string;
   revision?: { treatment: StoryTreatment; instruction: string };
 };
 
@@ -206,6 +207,22 @@ export const STORY_CAPTION_CLUSTER_LIMIT = 28;
 export const STORY_CAPTION_CLUSTER_MAX_CHARS = 220;
 export const STORY_LYRIC_EXCERPT_MAX_CHARS = 1_200;
 
+/** Fixed corrective messages prevent provider errors or credentials entering retry prompts. */
+export function storyValidationFeedback(error: unknown): string | undefined {
+  const message = error instanceof Error ? error.message : "";
+  if (/loglines must be meaningfully distinct/i.test(message)) return "The previous response duplicated treatment loglines. Return three substantively different options within the user's constraints; do not copy an option and change only its title.";
+  if (/narrative purpose and explicit shot requirements/i.test(message)) return "The previous response omitted narrative roles or shot requirements. Every anchor must include role and a nonempty requirements array with id, momentId, description, and constraints.";
+  if (/three short sentences/i.test(message)) return "The previous synopsis had the wrong sentence count. Each synopsis must have exactly three sentences: situation, complication and response, then escalation or dilemma.";
+  if (/five logline elements|Logline (incident|protagonist|goal|opposition|stakes)/i.test(message)) return "Include all five nonempty loglineElements: incident, protagonist, goal, opposition, stakes. Use only facts from the chosen story.";
+  if (/exactly three treatments|faithful, bold, and wildcard/i.test(message)) return "Return exactly three complete treatment objects, one each of kind faithful, bold, and wildcard.";
+  if (/causal|dependency|moment IDs|requirement IDs/i.test(message)) return "Use unique stable IDs. Every requirement momentId must match its anchor and every causal dependency must reference an existing moment without cycles.";
+  return undefined;
+}
+
+export function buildStoryCaptionClusters(moments: VideoMoment[]): string[] {
+  return moments.map(moment => [...new Set([moment.label, moment.caption, moment.captionMeta?.caption, moment.captionMeta?.action, moment.captionMeta?.setting, ...(moment.captionMeta?.subjects ?? [])].filter((value): value is string => Boolean(value)))].join(" · ")).filter(Boolean);
+}
+
 export function sampleCaptionClustersForStory(clusters: string[]): string[] {
   const trimmed = clusters
     .map((item) => limitedString(item, STORY_CAPTION_CLUSTER_MAX_CHARS, ""))
@@ -255,6 +272,7 @@ export function parseStoryTreatmentRequest(value: unknown): StoryTreatmentReques
       ? record.constraints.map((item) => limitedString(item, 300, "")).filter(Boolean).slice(0, 20)
       : undefined,
     revision: record.revision ? parseRevisionRequest(record.revision) : undefined,
+    validationFeedback: optionalString(record.validationFeedback, 500),
     validationAttempt: Number.isFinite(record.validationAttempt)
       ? Math.round(clamp(Number(record.validationAttempt), 0, 1))
       : undefined,
@@ -273,9 +291,6 @@ export function parseGeneratedTreatments(value: unknown): GeneratedTreatment[] {
   }
   if (new Set(treatments.map((treatment) => normalizeForComparison(treatment.logline))).size !== 3) {
     throw new Error("Story treatment loglines must be meaningfully distinct.");
-  }
-  if (new Set(treatments.map((treatment) => normalizeForComparison(treatment.endingHook))).size !== 3) {
-    throw new Error("Story treatment endings must be meaningfully distinct.");
   }
   return treatments;
 }

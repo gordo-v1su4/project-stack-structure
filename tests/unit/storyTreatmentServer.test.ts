@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { STORY_TREATMENT_MODEL, hydrateTreatmentCoverage, parseGeneratedTreatments, type StoryTreatmentRequest } from "@/components/studio/storyTreatments";
-import { generateStoryTreatments, queueStoryTreatmentGeneration } from "@/lib/storyTreatmentServer";
+import { generateStoryTreatments, queueStoryTreatmentGeneration, STORY_DIRECTOR_INSTRUCTIONS, buildStoryInput } from "@/lib/storyTreatmentServer";
 
 const request: StoryTreatmentRequest = {
   brief: "Two strangers cross paths in an underground maze and reunite in a collapsing dance arena.",
@@ -10,20 +10,35 @@ const request: StoryTreatmentRequest = {
 };
 
 describe("story treatment Qwen service", () => {
+  test("preserves locked chronology and ending in every option and requests substantive diversity on retry", () => {
+    expect(STORY_DIRECTOR_INSTRUCTIONS).toContain("All three options preserve explicit user constraints");
+    expect(STORY_DIRECTOR_INSTRUCTIONS).toContain("Different treatments may share the same specified ending");
+    expect(STORY_DIRECTOR_INSTRUCTIONS).not.toContain("wildcard changes the premise");
+    const retry = buildStoryInput(request, 1);
+    expect(retry).toContain("Do not return duplicate options or change the required ending");
+    expect(retry).toContain(request.brief);
+    expect(buildStoryInput({ ...request, validationFeedback: "Include every shot requirement." }, 1)).toContain("Correct this validation failure: Include every shot requirement.");
+    expect(buildStoryInput({ ...request, validationFeedback: "Not applicable" }, 0)).not.toContain("Correct this validation failure");
+    expect(retry).toContain('"requirements":[{"id":"shot-1","momentId":"moment-1"');
+    expect(retry).toContain("requirements present on EVERY anchor");
+    expect(retry).toContain("Do not copy an option and merely change its title");
+  });
+
   test("queues Trigger without blocking on the run result", async () => {
     const queued = await queueStoryTreatmentGeneration(request, {
       gatewayModel: STORY_TREATMENT_MODEL,
-      trigger: async () => ({ id: "run-story-queue" }),
+      trigger: async payload => { expect(payload.operation).toBe("generate"); return { id: "run-story-queue" }; },
     });
     expect(queued).toEqual({ runId: "run-story-queue", model: STORY_TREATMENT_MODEL });
   });
 
   test("queues only the selected story for targeted revision", async () => {
     const treatment = hydrateTreatmentCoverage(parseGeneratedTreatments(buildValidPayload()), [])[0];
-    const calls: Array<{ instructions: string; input: string }> = [];
+    const calls: Array<{ operation?: "generate" | "revise"; instructions: string; input: string }> = [];
     await queueStoryTreatmentGeneration({ ...request, revision: { treatment, instruction: "Start outside the cave, preserve the later story." } }, {
       trigger: async payload => { calls.push(payload); return { id: "run-revise-one" }; },
     });
+    expect(calls[0].operation).toBe("revise");
     expect(calls[0].instructions).toContain("Revise only the supplied selected treatment");
     expect(calls[0].input).toContain("Start outside the cave");
     expect(calls[0].input).toContain("selectedTreatment");
@@ -54,6 +69,7 @@ describe("story treatment Qwen service", () => {
     });
 
     expect(calls).toHaveLength(2);
+    expect(calls[1].input).toContain("Correct this validation failure: Return exactly three complete treatment objects");
     expect(calls[0]?.instructions).toContain("captionClusters");
     expect(result.treatments).toHaveLength(3);
     expect(result.meta).toEqual({

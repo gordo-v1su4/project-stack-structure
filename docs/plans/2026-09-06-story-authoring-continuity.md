@@ -420,3 +420,43 @@ Infrastructure lookup: `../proxmox-home/docs/endpoint-index.md` and
 caption gateway and Trigger host. `../hermes-notebook-vault` is the Obsidian operator
 index. Public service responses were healthy during deployment preparation; SSH
 access must be re-established before deploying the updated Trigger worker.
+
+### September 7 production walkthrough
+
+- Web implementation `33690de` reached Vercel Ready and was correlated with the
+  GitHub deployment SHA. Follow-up `f1c6ab6` now labels legacy cards as needing
+  assessment and unconfirmed table rows as unapproved; estimated section labels
+  no longer claim detection. The saved six-video copy restored after reload.
+- A visible Edit → change title → Cancel → reopen test preserved the saved story.
+  The story dialog is centered and scrollable; its legacy assessment labels also
+  need the same review treatment as the cards.
+- Two real `qwen-story-treatment` runs completed on worker `20260906.1`:
+  `run_cmtqs7dn800lv3is0aqxch4gh` and `run_cmtqsaay000ly3is0rnjjl7zl`, approximately
+  125 and 129 seconds. Their outputs were rejected: missing per-shot requirements,
+  then duplicate Bold/Wildcard content. Preserved input/output evidence is in
+  ignored `.tmp/story-live-treatment-attempts.json`; this is a failed authoring
+  acceptance test, not a completed story workflow.
+- Corrective work includes a complete authoring JSON example, preservation of
+  explicit chronology and ending in all options, and distinct generation/revision
+  gateway envelopes. Same requested endings are allowed; duplicate loglines
+  remain rejected.
+- The gateway's old effective output cap was 3,000 tokens with an 8,192-token
+  backend context. Both observed replies finished below the cap, so truncation
+  is not established as their cause. The expanded contract requests 7,000 output
+  tokens; the proposed bounded 16,384-token context still needs live verification.
+  Source changes and rollout checks are in the canonical proxmox-home gateway
+  directory. No new gateway deployment or restart has occurred at this checkpoint.
+- The documented Hostinger SSH jump reaches app-vm, but Tailscale requires an
+  additional interactive sign-in. That check is open in the browser. The updated
+  worker, corrected live authoring, faithful/best-effort walkthrough, manual 3×3
+  import/split, and video-creation handoff remain outstanding.
+- Retry follow-up supplies bounded, specific validation feedback and removes
+  exact repeated caption fields without rewriting footage observations. The
+  selected-story revision operation now reaches the gateway. Dialog assessment
+  labels also withhold legacy coverage claims pending review.
+- Gateway source is committed and pushed as proxmox-home `a434ab6`, with 12
+  tests passing. This is source readiness only; production is unchanged.
+- Web follow-up checks: 37 affected tests / 133 assertions pass, typecheck
+  and production build pass, and scoped lint has no errors (one existing unused test argument
+  warning). The earlier full implementation check passed 585 tests. Live
+  authoring acceptance must still be rerun after worker and gateway deployment.
