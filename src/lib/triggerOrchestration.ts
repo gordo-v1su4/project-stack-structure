@@ -112,6 +112,7 @@ export async function triggerSmartSceneCaption(payload: SmartSceneCaptionPayload
 
 export type StoryTreatmentTriggerResult = {
   ok: boolean;
+  loglineReview?: { version: 1; status: "passed" };
   model: string;
   output: Record<string, unknown>;
   usage?: {
@@ -133,7 +134,8 @@ export async function triggerStoryTreatment(payload: StoryTreatmentPayload) {
       payload.instructions,
       payload.input,
       String(payload.maxTokens ?? ""),
-      "story-treatment-v1",
+      JSON.stringify(payload.reviewContext),
+      "story-treatment-logline-review-v2",
     ]),
     idempotencyKeyTTL: "24h",
     maxAttempts: 2,

@@ -27,7 +27,11 @@ describe("story treatment Qwen service", () => {
   test("queues Trigger without blocking on the run result", async () => {
     const queued = await queueStoryTreatmentGeneration(request, {
       gatewayModel: STORY_TREATMENT_MODEL,
-      trigger: async payload => { expect(payload.operation).toBe("generate"); return { id: "run-story-queue" }; },
+      trigger: async payload => {
+        expect(payload.operation).toBe("generate");
+        expect(payload.reviewContext).toEqual({ brief: request.brief, constraints: [] });
+        return { id: "run-story-queue" };
+      },
     });
     expect(queued).toEqual({ runId: "run-story-queue", model: STORY_TREATMENT_MODEL });
   });
@@ -36,7 +40,11 @@ describe("story treatment Qwen service", () => {
     const treatment = hydrateTreatmentCoverage(parseGeneratedTreatments(buildValidPayload()), [])[0];
     const calls: Array<{ operation?: "generate" | "revise"; instructions: string; input: string }> = [];
     await queueStoryTreatmentGeneration({ ...request, revision: { treatment, instruction: "Start outside the cave, preserve the later story." } }, {
-      trigger: async payload => { calls.push(payload); return { id: "run-revise-one" }; },
+      trigger: async payload => {
+        expect(payload.reviewContext.constraints).toContain("Start outside the cave, preserve the later story.");
+        expect(payload.reviewContext.brief).toBe(request.brief);
+        calls.push(payload); return { id: "run-revise-one" };
+      },
     });
     expect(calls[0].operation).toBe("revise");
     expect(calls[0].instructions).toContain("Revise only the supplied selected treatment");
@@ -61,6 +69,7 @@ describe("story treatment Qwen service", () => {
         if (attempt === 1) throw new Error("Story response must contain exactly three treatments.");
         return {
           ok: true,
+          loglineReview: { version: 1, status: "passed" },
           model: STORY_TREATMENT_MODEL,
           output: valid,
           usage: { prompt_tokens: 100, completion_tokens: 200 },
@@ -85,10 +94,35 @@ describe("story treatment Qwen service", () => {
       trigger: async () => ({ id: "run-story-fail" }),
       waitForRun: async <T,>() => ({
         ok: true,
+        loglineReview: { version: 1, status: "passed" },
         model: STORY_TREATMENT_MODEL,
         output: { treatments: [] },
       } as T),
     })).rejects.toThrow(/after validation retry/i);
+  });
+
+  test("rejects an old worker's unreviewed output without dispatching a second generation", async () => {
+    let dispatches = 0;
+    await expect(generateStoryTreatments(request, {
+      trigger: async () => { dispatches++; return { id: "old-worker" }; },
+      waitForRun: async <T,>() => ({ ok: true, model: STORY_TREATMENT_MODEL, output: buildValidPayload() }) as T,
+    })).rejects.toThrow("needs its logline-review update");
+    expect(dispatches).toBe(1);
+  });
+
+  test("retries rejected semantic review with corrected pitch instructions", async () => {
+    const inputs: string[] = [];
+    await generateStoryTreatments(request, {
+      trigger: async payload => { inputs.push(payload.input); return { id: "review-attempt" }; },
+      waitForRun: async <T,>() => {
+        if (inputs.length === 1) throw new Error("Story logline review failed: unsupported stakes");
+        return { ok: true, loglineReview: { version: 1, status: "passed" }, model: STORY_TREATMENT_MODEL, output: buildValidPayload() } as T;
+      },
+    });
+    expect(inputs).toHaveLength(2);
+    expect(inputs[1]).toContain("Rewrite the logline sentence");
+    expect(inputs[1]).toContain("all supported by the story");
+    expect(inputs[1]).not.toContain("unsupported stakes");
   });
 });
 

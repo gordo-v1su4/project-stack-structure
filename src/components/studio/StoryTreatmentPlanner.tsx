@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { waitForTriggerRunOutput } from "@/lib/clientTriggerRuns";
+import { assertStoryLoglineReview, isStoryReviewDeploymentError } from "@/lib/storyLoglineReview";
 import type { StoryTreatmentTriggerResult } from "@/lib/triggerOrchestration";
 import type { DeepgramTranscriptSummary } from "./deepgramUtils";
 import type { MusicVideoProject } from "./musicVideoProject";
@@ -23,6 +24,7 @@ type StoryTreatmentPlannerProps = {
 
 type TreatmentApiPayload = {
   success?: boolean; runId?: string; model?: string; treatments?: StoryTreatment[]; meta?: StoryGenerationMeta; error?: string;
+  loglineReview?: unknown;
 };
 const KIND_COPY = { faithful: "Faithful", bold: "Bold", wildcard: "Wildcard" } as const;
 
@@ -54,9 +56,11 @@ export function StoryTreatmentPlanner({ referenceRevision, analysis, transcriptS
     if (!response.ok || payload.success === false) throw new Error(payload.error || `Story generation failed (${response.status}).`);
     if (response.status === 202 && payload.runId) {
       const result = await waitForTriggerRunOutput(payload.runId, { timeoutMs: 540000, pollIntervalMs: 2000 }) as StoryTreatmentTriggerResult;
+      assertStoryLoglineReview(result.loglineReview);
       return { output: result.output, meta: { model: result.model || payload.model || "Qwen", generatedAt: new Date().toISOString(), inputTokens: result.usage?.prompt_tokens, outputTokens: result.usage?.completion_tokens } };
     }
     if (!payload.treatments || !payload.meta) throw new Error("Story generation returned an incomplete response.");
+    assertStoryLoglineReview(payload.loglineReview);
     return { output: { treatments: payload.treatments }, meta: payload.meta };
   }
   async function generateTreatments() {
@@ -79,7 +83,7 @@ export function StoryTreatmentPlanner({ referenceRevision, analysis, transcriptS
           // New options do not replace the confirmed story until the user chooses one.
           onChange({ treatments: namespaced, selectedTreatmentId: null, generationMeta: result.meta });
           return;
-        } catch (caught) { if (!requests.current.isCurrent(token)) throw caught; lastError = caught; validationFeedback = storyValidationFeedback(caught); }
+        } catch (caught) { if (!requests.current.isCurrent(token) || isStoryReviewDeploymentError(caught)) throw caught; lastError = caught; validationFeedback = storyValidationFeedback(caught); }
       }
       throw lastError;
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Story generation failed."); }
@@ -101,7 +105,7 @@ export function StoryTreatmentPlanner({ referenceRevision, analysis, transcriptS
         const result = await requestStory({ ...context(), revision: { treatment, instruction }, validationAttempt: attempt, validationFeedback });
         if (!requests.current.isCurrent(token)) throw new Error("Story inputs changed while the revision was running. The outdated reply was discarded.");
         return mergeStoryRevision(treatment, result.output, project.videoMoments);
-      } catch (caught) { if (!requests.current.isCurrent(token)) throw caught; lastError = caught; validationFeedback = storyValidationFeedback(caught); }
+      } catch (caught) { if (!requests.current.isCurrent(token) || isStoryReviewDeploymentError(caught)) throw caught; lastError = caught; validationFeedback = storyValidationFeedback(caught); }
     }
     throw lastError;
   }
@@ -113,7 +117,8 @@ export function StoryTreatmentPlanner({ referenceRevision, analysis, transcriptS
     <div className="mt-2 flex justify-end"><button type="button" disabled={!canGenerate || isGenerating} onClick={() => void generateTreatments()} className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-ink-0 disabled:opacity-40">{isGenerating ? "Developing three stories…" : state.treatments.length ? "Generate three new treatments" : "Generate three treatments"}</button></div>
     {!canGenerate ? <p className="mt-2 text-xs text-fg-3">Finish song analysis and scene captions in Ingest first.</p> : null}
     {error ? <p role="alert" className="mt-3 rounded-md border border-line p-3 text-sm text-fg-1">{error} Your story seed has been preserved.</p> : null}
-    <div className="mt-4 grid gap-3 xl:grid-cols-3">{state.treatments.map(treatment => <button key={treatment.id} type="button" onClick={() => setInspectedId(treatment.id)} aria-label={`Read story: ${treatment.title}`} className={`rounded-md border p-4 text-left transition-colors hover:border-accent ${treatment.id === state.selectedTreatmentId ? "border-accent bg-accent-tint" : "border-line bg-ink-1"}`}><p className="text-xs text-accent">{KIND_COPY[treatment.kind]}</p><h3 className="mt-2 font-serif text-lg text-fg-0">{treatment.title}</h3><p className="mt-2 text-sm leading-6 text-fg-1">{treatment.logline}</p><p className="mt-2 line-clamp-3 text-xs leading-5 text-fg-3">{treatment.synopsis}</p><p className="mt-3 text-xs text-fg-3">{treatment.reconciliation?.status === "legacy" || treatment.reconciliation?.status === "pending" ? "Assessment needs review" : `${treatment.anchors.filter(anchor => anchor.coverage === "missing").length} moments need footage`}</p><span className="mt-3 block text-sm text-accent">Read story →</span></button>)}</div>
+    {state.treatments.some(treatment => treatment.reconciliation?.status === "legacy") ? <p className="mt-3 text-sm text-fg-2">These saved options contain earlier summaries. Their loglines still need updating; generate new treatments or refine an option.</p> : null}
+    <div className="mt-4 grid gap-3 xl:grid-cols-3">{state.treatments.map(treatment => <button key={treatment.id} type="button" onClick={() => setInspectedId(treatment.id)} aria-label={`Read story: ${treatment.title}`} className={`rounded-md border p-4 text-left transition-colors hover:border-accent ${treatment.id === state.selectedTreatmentId ? "border-accent bg-accent-tint" : "border-line bg-ink-1"}`}><p className="text-xs text-accent">{KIND_COPY[treatment.kind]}</p><h3 className="mt-2 font-serif text-lg text-fg-0">{treatment.title}</h3>{treatment.reconciliation?.status === "legacy" ? <p className="mt-2 text-xs text-fg-3">Earlier summary · logline needs updating</p> : null}<p className="mt-2 text-sm leading-6 text-fg-1">{treatment.logline}</p><p className="mt-2 line-clamp-3 text-xs leading-5 text-fg-3">{treatment.synopsis}</p><p className="mt-3 text-xs text-fg-3">{treatment.reconciliation?.status === "legacy" || treatment.reconciliation?.status === "pending" ? "Assessment needs review" : `${treatment.anchors.filter(anchor => anchor.coverage === "missing").length} moments need footage`}</p><span className="mt-3 block text-sm text-accent">Read story →</span></button>)}</div>
     {inspected ? <StoryTreatmentDialog key={inspected.id} treatment={inspected} moments={project.videoMoments} sections={project.storySections} cues={[...(analysis?.beats ?? []), ...(analysis?.onsets ?? [])]} duration={analysis?.duration} onSave={next => saveTreatment(next)} onUse={next => saveTreatment(next, true)} onRefine={refine} onClose={() => setInspectedId(null)} /> : null}
   </section>;
 }

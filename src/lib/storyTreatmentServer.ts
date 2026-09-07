@@ -7,6 +7,7 @@ import {
   type StoryTreatmentRequest,
 } from "@/components/studio/storyTreatments";
 import { getStoryTreatmentGatewayConfig } from "@/lib/storyTreatmentGateway";
+import { assertStoryLoglineReview, isStoryReviewDeploymentError } from "@/lib/storyLoglineReview";
 import {
   triggerStoryTreatment,
   waitForTriggerRunResult,
@@ -21,6 +22,7 @@ type GenerateStoryTreatmentsOptions = {
     input: string;
     model: string;
     maxTokens?: number;
+    reviewContext: { brief: string; constraints: string[] };
   }) => Promise<{ id: string }>;
   waitForRun?: <T>(runId: string, options: { timeoutMs: number; pollIntervalMs?: number }) => Promise<T>;
   gatewayModel?: string;
@@ -45,6 +47,10 @@ export async function queueStoryTreatmentGeneration(
     input: buildStoryInput(request, attempt),
     model,
     maxTokens: request.revision ? 4_000 : 7_000,
+    reviewContext: {
+      brief: request.brief ?? "",
+      constraints: [...(request.constraints ?? []), ...(request.revision ? [request.revision.instruction] : [])],
+    },
   });
   return { runId: handle.id, model };
 }
@@ -53,9 +59,11 @@ export function materializeStoryTreatmentResult(
   result: StoryTreatmentTriggerResult,
   options: { now?: () => Date; model?: string } = {},
 ): StoryTreatmentGenerationResult {
+  assertStoryLoglineReview(result.loglineReview);
   const parsed = parseGeneratedTreatments(result.output);
   const model = result.model || options.model || STORY_TREATMENT_MODEL;
   return {
+    loglineReview: result.loglineReview,
     treatments: hydrateTreatmentCoverage(parsed, []),
     meta: {
       model,
@@ -89,6 +97,7 @@ export async function generateStoryTreatments(
         model: queued.model,
       });
     } catch (error) {
+      if (isStoryReviewDeploymentError(error)) throw error;
       lastError = error;
       validationFeedback = storyValidationFeedback(error);
     }

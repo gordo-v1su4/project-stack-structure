@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import type { MusicVideoProject, VideoMoment } from "@/components/studio/musicVideoProject";
+import { normalizePersistedStoryState } from "@/components/studio/projectPersistence";
 import {
   buildStoryCaptionClusters,
   storyValidationFeedback,
@@ -9,6 +10,7 @@ import {
   hydrateTreatmentCoverage,
   isStoryPlanConfirmable,
   parseGeneratedTreatments,
+  parseGeneratedTreatment,
   parseStoryTreatmentRequest,
   sampleCaptionClustersForStory,
   STORY_CAPTION_CLUSTER_LIMIT,
@@ -66,6 +68,48 @@ describe("story treatment contract", () => {
     const parsed = parseGeneratedTreatments(generated);
     expect(parsed.map((treatment) => treatment.kind)).toEqual(["faithful", "bold", "wildcard"]);
     expect(parsed.every((treatment) => treatment.anchors.length === 4)).toBe(true);
+  });
+
+  test("rejects overlong generated loglines without silently cutting their ending", () => {
+    const response = structuredClone(generated);
+    const completeLogline = `${"A".repeat(310)} or lose the only way home.`;
+    response.treatments[0].logline = completeLogline;
+    expect(() => parseGeneratedTreatments(response)).toThrow("Treatment 1 logline must be at most 320 characters.");
+    expect(response.treatments[0].logline).toBe(completeLogline);
+    response.treatments[0].logline = `  ${"A".repeat(319)}.  `;
+    expect(parseGeneratedTreatments(response)[0].logline).toBe(`${"A".repeat(319)}.`);
+  });
+
+  test("retains overlong saved legacy prose intact while requiring story review", () => {
+    const treatment = hydrateTreatmentCoverage(parseGeneratedTreatments(generated), moments)[0];
+    const originalLogline = `${"Saved user wording. ".repeat(20)}The complete original ending.`;
+    treatment.logline = originalLogline;
+    const state = normalizePersistedStoryState({
+      vocalStemName: "", transcriptSummary: null, storyBeats: [], activeBeatId: "", storyGenerated: true,
+      treatments: [treatment], confirmedTreatmentSnapshot: treatment, confirmedTreatmentId: treatment.id,
+      storyContentSignature: "saved-signature",
+    }, true);
+    expect(state.treatments?.[0].logline).toBe(originalLogline);
+    expect(state.treatments?.[0].reconciliation?.status).toBe("legacy");
+    expect(state.storyGenerated).toBe(false);
+    expect(treatment.logline).toBe(originalLogline);
+  });
+
+  test("refinement accepts complete long saved prose but does not relax generated reply limits", () => {
+    const treatment = hydrateTreatmentCoverage(parseGeneratedTreatments(generated), moments)[0];
+    const originalLogline = `${"Saved story detail. ".repeat(40)}Diego must find the exit before the floor gives way.`;
+    treatment.logline = originalLogline;
+    treatment.anchors[0].resolution = "source";
+    treatment.anchors[0].selectedCandidateId = "untrusted-coverage";
+    const request = { brief: "", song: { sections: [] }, footage: {}, revision: { treatment, instruction: "Shorten the logline without changing the story." } };
+    const parsed = parseStoryTreatmentRequest(request);
+    expect(parsed.revision?.treatment.logline).toBe(originalLogline);
+    expect(parsed.revision?.treatment.anchors[0].selectedCandidateId).toBe(null);
+    expect(() => parseGeneratedTreatment(parsed.revision!.treatment)).toThrow("Treatment 1 logline must be at most 320 characters.");
+    expect(parseGeneratedTreatment({ ...parsed.revision!.treatment, logline: generated.treatments[0].logline }).logline).toBe(generated.treatments[0].logline);
+    treatment.logline = "x".repeat(2001);
+    expect(() => parseStoryTreatmentRequest(request)).toThrow("Treatment 1 logline must be at most 2000 characters.");
+    expect(treatment.logline).toHaveLength(2001);
   });
 
   test("rejects three cosmetic copies of the same logline", () => {
@@ -209,6 +253,13 @@ test("bounds retry feedback and excludes raw provider error text", () => {
   expect(storyValidationFeedback(new Error("Each story moment needs a narrative purpose and explicit shot requirements."))).toContain("nonempty requirements array");
   expect(storyValidationFeedback(new Error("Provider credentials: secret-value"))).toBe(undefined);
   expect(storyValidationFeedback(new Error("Story treatment loglines must be meaningfully distinct. secret-value"))).not.toContain("secret-value");
+});
+
+test("semantic logline review retries use fixed corrective guidance without provider details", () => {
+  const feedback = storyValidationFeedback(new Error("Story logline review failed: provider credentials secret-value"));
+  expect(feedback).toBe("Rewrite the logline sentence so it expresses the inciting incident, specific protagonist, concrete goal, central opposition, and stakes, all supported by the story. Do not reveal the resolution, include spoilers, or invent facts.");
+  expect(feedback).not.toContain("secret-value");
+  expect(storyValidationFeedback(new Error("Treatment 1 logline must be at most 320 characters."))).toContain("each complete logline within 320 characters");
 });
 
 test("caption context deduplicates exact repeated fields without rewriting footage text", () => {

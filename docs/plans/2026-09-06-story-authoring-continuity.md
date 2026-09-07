@@ -460,3 +460,29 @@ access must be re-established before deploying the updated Trigger worker.
   and production build pass, and scoped lint has no errors (one existing unused test argument
   warning). The earlier full implementation check passed 585 tests. Live
   authoring acceptance must still be rerun after worker and gateway deployment.
+
+### Logline acceptance follow-up
+
+The user correctly identified the displayed legacy pitch as a plot recap. Those
+saved cards now explicitly distinguish earlier summaries from reviewed loglines.
+The existing field-presence validator alone was insufficient: unrelated prose
+could pass with populated five-element fields. New gateway source in
+proxmox-home `5c1c7ab` therefore runs a separate, bounded semantic review after
+generation or revision. It evaluates the actual sentence against explicit user
+constraints and ordered moments, with exact quoted spans and valid supporting
+moment IDs. Unsupported or unclear elements and disclosed resolutions fail
+closed. This is model-based review, not deterministic proof of narrative quality;
+its live Qwen performance remains an acceptance requirement.
+
+The web/worker contract requires a versioned review marker so an older worker
+cannot silently bypass this check. A deployment mismatch stops immediately;
+semantic rejection uses the existing single corrective authoring retry without
+an extra SDK retry. Long generated loglines reject rather than being cut at 320
+characters. Existing prose remains intact and can be submitted for refinement
+up to 2,000 characters; generated replies still require concise complete text.
+
+Local follow-up verification: 50 web tests / 171 assertions, typecheck and production build pass; scoped lint has no errors (one existing test warning);
+gateway 22 story and 4 evidence tests pass. The gateway tests exercise mocked
+review responses and evidence validation, not live model quality. Production
+gateway/worker rollout, new valid treatments, faithful gaps, 3×3 import/split,
+and video creation handoff remain outstanding behind app-vm SSH authentication.

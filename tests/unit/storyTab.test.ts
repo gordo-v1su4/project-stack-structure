@@ -113,6 +113,7 @@ describe("StoryTab section map", () => {
       expect(reviewMarkup).toContain("Assessment needs review");
       expect(reviewMarkup).not.toContain("0 moments need footage");
       expect(reviewMarkup).toContain(treatments[0].synopsis);
+      if (status === "legacy") expect(reviewMarkup).toContain("Earlier summary · logline needs updating");
     }
 
   });

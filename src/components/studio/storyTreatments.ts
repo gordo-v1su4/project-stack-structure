@@ -104,6 +104,7 @@ export type StoryTreatmentState = {
 export type StoryTreatmentGenerationResult = {
   treatments: StoryTreatment[];
   meta: StoryGenerationMeta;
+  loglineReview?: { version: 1; status: "passed" };
 };
 
 type GeneratedAnchor = Omit<StoryAnchor, "coverage" | "candidates" | "selectedCandidateId" | "resolution">;
@@ -210,6 +211,8 @@ export const STORY_LYRIC_EXCERPT_MAX_CHARS = 1_200;
 /** Fixed corrective messages prevent provider errors or credentials entering retry prompts. */
 export function storyValidationFeedback(error: unknown): string | undefined {
   const message = error instanceof Error ? error.message : "";
+  if (/Story logline review failed/i.test(message)) return "Rewrite the logline sentence so it expresses the inciting incident, specific protagonist, concrete goal, central opposition, and stakes, all supported by the story. Do not reveal the resolution, include spoilers, or invent facts.";
+  if (/Treatment \d+ logline must be at most 320 characters/i.test(message)) return "Keep each complete logline within 320 characters while expressing its incident, protagonist, goal, opposition, and stakes. Do not cut off the sentence or invent facts.";
   if (/loglines must be meaningfully distinct/i.test(message)) return "The previous response duplicated treatment loglines. Return three substantively different options within the user's constraints; do not copy an option and change only its title.";
   if (/narrative purpose and explicit shot requirements/i.test(message)) return "The previous response omitted narrative roles or shot requirements. Every anchor must include role and a nonempty requirements array with id, momentId, description, and constraints.";
   if (/three short sentences/i.test(message)) return "The previous synopsis had the wrong sentence count. Each synopsis must have exactly three sentences: situation, complication and response, then escalation or dilemma.";
@@ -370,6 +373,10 @@ export function selectedTreatment(
 }
 
 export function parseGeneratedTreatment(value: unknown, index: number = 0): GeneratedTreatment {
+  return parseTreatment(value, index, 320);
+}
+
+function parseTreatment(value: unknown, index: number, loglineLimit: number): GeneratedTreatment {
   const record = asRecord(value, `Treatment ${index + 1} is invalid.`);
   const kind = normalizeTreatmentKind(record.kind);
   if (!kind) {
@@ -384,7 +391,7 @@ export function parseGeneratedTreatment(value: unknown, index: number = 0): Gene
     id: limitedString(record.id, 80, `${kind}-${index + 1}`),
     kind,
     title: requiredString(record.title, 100, `Treatment ${index + 1} title`),
-    logline: requiredString(record.logline, 320, `Treatment ${index + 1} logline`),
+    logline: completeLogline(record.logline, index, loglineLimit),
     synopsis: requiredString(record.synopsis, 900, `Treatment ${index + 1} synopsis`),
     visualThesis: requiredString(record.visualThesis, 400, `Treatment ${index + 1} visual thesis`),
     endingHook: requiredString(record.endingHook, 320, `Treatment ${index + 1} ending hook`),
@@ -592,6 +599,14 @@ function requiredString(value: unknown, maxLength: number, label: string) {
   return text;
 }
 
+function completeLogline(value: unknown, index: number, maxLength: number) {
+  const text = typeof value === "string" ? value.trim() : "";
+  const label = `Treatment ${index + 1} logline`;
+  if (!text) throw new Error(`${label} is required.`);
+  if (text.length > maxLength) throw new Error(`${label} must be at most ${maxLength} characters.`);
+  return text;
+}
+
 function optionalString(value: unknown, maxLength: number) {
   const text = limitedString(value, maxLength, "");
   return text || undefined;
@@ -657,7 +672,8 @@ function parseRevisionRequest(value: unknown): NonNullable<StoryTreatmentRequest
     const description = requiredString(anchor.description, 500, `Describe story moment ${index + 1} before requesting a revision`);
     return { ...anchor, description, purpose: limitedString(anchor.purpose, 240, "Develop this proposed story moment."), generationPrompt: limitedString(anchor.generationPrompt, 600, description) };
   }) : [];
-  const generated = parseGeneratedTreatment({ ...draft, anchors });
+  // Existing prose may need shortening; the generated reply still uses the strict 320-character parser.
+  const generated = parseTreatment({ ...draft, anchors }, 0, 2000);
   return {
     instruction: requiredString(record.instruction, 2000, "Revision instruction"),
     // Only authoring fields are sent to the model. Coverage is recomputed locally.

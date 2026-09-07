@@ -86,7 +86,7 @@ export function StoryTreatmentDialog({ treatment, moments, sections, cues, durat
         <button type="button" className={secondary} disabled={busy || Boolean(proposal)} onClick={() => setEditing(!editing)}>{editing ? "Finish editing" : "Edit story"}</button>
         <span className="text-xs text-fg-3">{preview.anchors.length} story moments · {assessmentNeedsReview ? "Assessment needs review" : `${preview.anchors.filter(a => a.coverage === "missing").length} missing footage`}</span>
       </div>
-      {preview.reconciliation?.status === "legacy" ? <p className="rounded-md border border-line p-3 text-sm text-fg-3">This saved story uses an older assessment. Review its moments and footage; refining it will update the structured story without replacing the other options.</p> : null}
+      {preview.reconciliation?.status === "legacy" ? <p className="rounded-md border border-line p-3 text-sm text-fg-3">This saved option contains an earlier summary, not a reviewed logline. Refine it to update the pitch and story moments, then review its footage. The other options stay unchanged.</p> : null}
       {pending && !proposal ? <p role="status" className="rounded-md border border-accent-lo bg-accent-tint p-3 text-sm text-fg-1">Story edits need reconciliation. Request an updated moment plan below, then review the changes before using this story.</p> : null}
       {proposal ? <div className="rounded-md border border-accent-lo bg-accent-tint p-3">
         <h3 className="text-sm font-medium">Proposed changes</h3>
