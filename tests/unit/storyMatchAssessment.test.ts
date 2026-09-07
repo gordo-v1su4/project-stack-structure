@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { assessStoryMatch, deriveShotRequirementConstraints } from "@/components/studio/storyMatchAssessment";
 import { createMediaEvidence } from "@/components/studio/mediaEvidence";
 import { rankMomentsForSection, scoreMomentForSection } from "@/components/studio/semanticEditPlanner";
+import sixVideoReview from "../fixtures/story-evidence/six-video-review.json";
 
 const pair = { id: "pair", sourceClipId: 0, label: "club", start: 0, end: 5, duration: 5,
   caption: "Diego and Valentina dancing together in the Underground Latin Club." };
@@ -32,10 +33,51 @@ describe("story evidence eligibility", () => {
   });
 
   test("disaster footage is eligible for an intentional cold open or a climax", () => {
-    const moment = { ...pair, caption: "Diego and Valentina running together through a collapsing club." };
+    const caption = "Diego and Valentina running together through a collapsing club.";
+    const mediaEvidence = createMediaEvidence({ sourceId: "source", sceneId: "pair", sourceStart: 0, sourceEnd: 5,
+      rawCaption: caption, input: { kind: "ordered-frames", sampleTimes: [0, 4], urls: [] },
+      observation: { subjects: ["Diego", "Valentina"].map(name => ({ name, role: "focal", confidence: "supported" })), focalSubjectCount: 2, actions: ["running"], physicalState: ["collapsing"], location: "club" } });
+    const moment = { ...pair, caption, mediaEvidence };
     expect(assess("Cold open: Diego and Valentina running together through a collapsing club", moment).eligibility).toBe("eligible");
     expect(assess("Final climax: Diego and Valentina running together through a collapsing club", moment).eligibility).toBe("eligible");
     expect(assess("Diego entering the intact club alone", moment).eligibility).toBe("ineligible");
+  });
+
+  test("the actual mislabeled handstand caption remains a suggestion rather than verified coverage", () => {
+    const scene = sixVideoReview.scenes.find(scene => scene.sourceIndex === 1 && scene.sceneId === 3)!;
+    const moment = { ...pair, caption: scene.originalCaption };
+    const assessment = assessStoryMatch({ requirementId: "acrobat", requirementText: "Diego performs a handstand", constraints: { subjects: ["Diego"], actions: ["handstand"] }, moment });
+    expect(assessment.eligibility).toBe("uncertain");
+    expect(assessment.unknown).toContain("Legacy caption only: subject and action evidence requires review.");
+    expect(moment.caption).toBe(scene.originalCaption);
+    const section = { id: "intro", label: "Intro", prompt: "Diego performs a handstand", start: 0, end: 5 };
+    expect(rankMomentsForSection({ section, moments: [moment] })).toHaveLength(1);
+  });
+
+  test("mixed dance and singer shots cannot assign the singer's action to Diego", () => {
+    const mediaEvidence = createMediaEvidence({ sourceId: "S1", sceneId: "6", sourceStart: 8.67, sourceEnd: 12.83,
+      rawCaption: "Pair dancing followed by a separate singer", input: { kind: "ordered-frames", sampleTimes: [8.72, 10.75, 12.78], urls: [] },
+      observation: { subjects: ["Diego", "Valentina"].map(name => ({ name, confidence: "supported", role: "focal" })), focalSubjectCount: null,
+        actions: ["dancing", "singing"], transitions: ["Pair dance cuts to a separate female singer"], unknowns: ["Who sings is unknown"] } });
+    const input = { requirementId: "singer", requirementText: "Diego singing", constraints: { subjects: ["Diego"], actions: ["singing"] }, moment: { ...pair, mediaEvidence } };
+    const before = structuredClone(mediaEvidence);
+    const assessment = assessStoryMatch(input);
+    expect(assessment.eligibility).toBe("uncertain");
+    expect(assessment.unknown).toContain("Source evidence requires review: Who sings is unknown");
+    expect(assessment.unknown.some(reason => reason.startsWith("Actor/action association"))).toBe(true);
+    // Omission of an uncertainty string cannot make the flattened actor/action cross-product valid.
+    expect(assessStoryMatch({ ...input, moment: { ...input.moment, mediaEvidence: { ...mediaEvidence, unknowns: [] } } }).eligibility).toBe("uncertain");
+    expect(mediaEvidence).toEqual(before);
+  });
+
+  test("a reviewed single actor and action remains eligible without rewriting source decisions", () => {
+    const mediaEvidence = createMediaEvidence({ sourceId: "source", sceneId: "solo", sourceStart: 0, sourceEnd: 5,
+      rawCaption: "Diego walks", input: { kind: "ordered-frames", sampleTimes: [0, 4], urls: [] },
+      observation: { subjects: [{ name: "Diego", confidence: "supported", role: "focal" }], focalSubjectCount: 1, actions: ["walking"] } });
+    mediaEvidence.provenance.origin = "manual";
+    const moment = { ...pair, mediaEvidence, selectedCandidateId: "user-choice" };
+    expect(assessStoryMatch({ requirementId: "walk", requirementText: "Diego walking alone", moment }).eligibility).toBe("eligible");
+    expect(moment.selectedCandidateId).toBe("user-choice");
   });
 
   test("unknown identity and temporal evidence remain unknown despite a confident old caption", () => {

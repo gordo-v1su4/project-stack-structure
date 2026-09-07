@@ -1,3 +1,4 @@
+import { reviewedEvidence, focalSubject } from "../helpers/storyEvidence";
 import { describe, expect, test } from "bun:test";
 import type { MusicVideoProject, VideoMoment } from "@/components/studio/musicVideoProject";
 import { proposeBestEffortCoverage, selectStorySectionCandidate } from "@/components/studio/musicVideoProjectSelection";
@@ -5,9 +6,9 @@ import { rankMomentsForSection } from "@/components/studio/semanticEditPlanner";
 
 function fixture(): MusicVideoProject {
   const moments: VideoMoment[] = [
-    { id: "a", sourceClipId: 0, label: "Solo A", start: 0, end: 3, duration: 3, caption: "Diego dancing alone in the club." },
-    { id: "b", sourceClipId: 1, label: "Solo B", start: 0, end: 3, duration: 3, caption: "Diego dancing alone under red club lights." },
-    { id: "pair", sourceClipId: 2, label: "Pair", start: 0, end: 3, duration: 3, caption: "Diego and Valentina dancing together in the club." },
+    { id: "a", sourceClipId: 0, label: "Solo A", start: 0, end: 3, duration: 3, mediaEvidence: reviewedEvidence({ subjects: [focalSubject("Diego")], focalSubjectCount: 1, actions: ["dancing"], location: "club" }, 0, 3), caption: "Diego dancing alone in the club." },
+    { id: "b", sourceClipId: 1, label: "Solo B", start: 0, end: 3, duration: 3, mediaEvidence: reviewedEvidence({ subjects: [focalSubject("Diego")], focalSubjectCount: 1, actions: ["dancing"], location: "club" }, 0, 3), caption: "Diego dancing alone under red club lights." },
+    { id: "pair", sourceClipId: 2, label: "Pair", start: 0, end: 3, duration: 3, mediaEvidence: reviewedEvidence({ subjects: [focalSubject("Diego"), focalSubject("Valentina")], focalSubjectCount: 2, actions: ["dancing"], location: "club" }, 0, 3), caption: "Diego and Valentina dancing together in the club." },
   ];
   const section = { id: "chorus", label: "Chorus", start: 0, end: 10, prompt: "Diego dancing alone in the club" };
   const candidates = rankMomentsForSection({ section, moments, includeIneligible: true });

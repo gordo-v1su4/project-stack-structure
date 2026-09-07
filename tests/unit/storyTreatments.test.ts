@@ -1,3 +1,4 @@
+import { reviewedEvidence } from "../helpers/storyEvidence";
 import { describe, expect, test } from "bun:test";
 
 import type { MusicVideoProject, VideoMoment } from "@/components/studio/musicVideoProject";
@@ -16,6 +17,13 @@ import {
   STORY_CAPTION_CLUSTER_LIMIT,
 } from "@/components/studio/storyTreatments";
 
+const storyVisuals = [
+  "A stranger descends through a wet tunnel toward the hidden underground dance complex.",
+  "Two dancers move independently through a crowded room without noticing one another.",
+  "They search separate corridors after realizing their missed connection mattered.",
+  "They reunite and dance as the central arena floor splits and collapses.",
+];
+
 const generated = {
   treatments: ["faithful", "bold", "wildcard"].map((kind, treatmentIndex) => ({
     id: `${kind}-story`,
@@ -30,12 +38,8 @@ const generated = {
     anchors: Array.from({ length: 4 }, (_, anchorIndex) => ({
       id: `${kind}-anchor-${anchorIndex + 1}`,
       title: ["Tunnel arrival", "Crowded dance room", "Search through the maze", "Collapsing arena"][anchorIndex],
-      description: [
-        "A stranger descends through a wet tunnel toward the hidden underground dance complex.",
-        "Two dancers move independently through a crowded room without noticing one another.",
-        "They search separate corridors after realizing their missed connection mattered.",
-        "They reunite and dance as the central arena floor splits and collapses.",
-      ][anchorIndex],
+      description: storyVisuals[anchorIndex],
+      requirements: [{ id: `${kind}-requirement-${anchorIndex + 1}`, momentId: `${kind}-anchor-${anchorIndex + 1}`, description: storyVisuals[anchorIndex], constraints: { subjects: [] } }],
       purpose: "Advance the physical search and make the underground geography legible.",
       generationPrompt: "Cinematic wide shot of dancers moving through an underground industrial chamber.",
     })),
@@ -51,6 +55,7 @@ const moments: VideoMoment[] = [
     end: 4,
     duration: 3,
     caption: "Two dancers perform in a crowded underground room under orange lights.",
+    mediaEvidence: reviewedEvidence({ actions: ["dancing"], focalSubjectCount: 2, location: "underground room", physicalState: ["intact"] }, 1, 4),
   },
   {
     id: "collapse",
@@ -60,6 +65,7 @@ const moments: VideoMoment[] = [
     end: 8,
     duration: 3,
     caption: "The central dance floor fractures and collapses while the crowd keeps dancing.",
+    mediaEvidence: reviewedEvidence({ actions: ["dancing"], location: "arena dance floor", physicalState: ["fractured", "collapsing"] }, 5, 8),
   },
 ];
 
@@ -189,8 +195,10 @@ describe("story treatment contract", () => {
     const decided = {
       ...treatment,
       anchors: treatment.anchors.map((anchor, index) => index === 0
-        ? { ...anchor, resolution: "generate" as const, selectedCandidateId: null }
-        : { ...anchor, resolution: "source" as const, selectedCandidateId: anchor.candidates[0]?.momentId ?? "dance-room" }),
+        ? { ...anchor, resolution: "generate" as const, selectedCandidateId: null,
+          requirements: anchor.requirements?.map(requirement => ({ ...requirement, resolution: "generate" as const, selectedCandidateId: null })) }
+        : { ...anchor, resolution: "source" as const, selectedCandidateId: anchor.candidates[0]?.momentId ?? "dance-room",
+          requirements: anchor.requirements?.map(requirement => ({ ...requirement, resolution: "source" as const, selectedCandidateId: requirement.candidates?.find(candidate => candidate.assessment?.eligibility === "eligible")?.momentId ?? null })) }),
     };
     const project = projectFixture();
     const applied = applyTreatmentCoverageToProject(project, decided);

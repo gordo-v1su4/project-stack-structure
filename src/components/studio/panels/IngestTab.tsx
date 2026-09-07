@@ -332,7 +332,7 @@ export function IngestTab({
         ) : null}
         {genericCaptionCount > 0 && characterNames.length ? (
           <div className="mb-3 rounded-md border border-line-2 bg-ink-0 px-3 py-2 text-[12px] leading-5 text-fg-2">
-            {genericCaptionCount} caption{genericCaptionCount === 1 ? "" : "s"} still use generic terms instead of {characterNames.join(" / ")}. Set reference display names first, then use Recaption all so Match and Story see the canonical names.
+            {genericCaptionCount} caption{genericCaptionCount === 1 ? " does" : "s do"} not name a lead character. That can be correct for detail shots or uncertain identity; review the frames before rerunning a selected video.
           </div>
         ) : null}
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">

@@ -1,3 +1,4 @@
+import { reviewedEvidence, focalSubject } from "../helpers/storyEvidence";
 import { describe, expect, test } from "bun:test";
 
 import { buildCoverageIssueGroups, buildCoverageSlots, describeCoverageIssue, summarizeCoverage, analyzeEditPlanCoverage } from "@/components/studio/editPlanCoverage";
@@ -39,7 +40,7 @@ const chunks = [
 
 describe("Generate coverage truth", () => {
   test("counts weak assigned footage as real coverage and optional review, not missing duration", () => {
-    const moment: VideoMoment = { id: "moment-1", sourceClipId: 0, label: "Scene 1", start: 0, end: 10, duration: 10, caption: "Diego dancing alone in the club" };
+    const moment: VideoMoment = { id: "moment-1", sourceClipId: 0, label: "Scene 1", start: 0, end: 10, duration: 10, caption: "Diego dancing alone in the club", mediaEvidence: reviewedEvidence({ subjects: [focalSubject("Diego")], focalSubjectCount: 1, actions: ["dancing"], location: "club" }, 0, 10) };
     const item: TimelineItem = {
       id: "item-1",
       sectionId: "intro",
@@ -108,7 +109,7 @@ describe("Generate coverage truth", () => {
     expect(missingIssues).toHaveLength(1);
     expect(describeCoverageIssue(missingIssues[0]!)).toBe("No supported source scene covers 0:00 to 0:10. Review the required visual and its evidence, or plan generation. This gap remains in the draft.");
 
-    const shortMoment: VideoMoment = { id: "moment-short", sourceClipId: 0, label: "Short scene", start: 0, end: 3, duration: 3, caption: "Diego dancing alone in the club" };
+    const shortMoment: VideoMoment = { id: "moment-short", sourceClipId: 0, label: "Short scene", start: 0, end: 3, duration: 3, caption: "Diego dancing alone in the club", mediaEvidence: reviewedEvidence({ subjects: [focalSubject("Diego")], focalSubjectCount: 1, actions: ["dancing"], location: "club" }, 0, 3) };
     const shortItem = { ...missingItem, videoMomentId: shortMoment.id, semanticMatch: match(shortMoment.id, 0.9) };
     const shortSlots = buildCoverageSlots(project(shortItem, shortMoment), [chunks[0]!]);
 
@@ -166,7 +167,7 @@ describe("Generate coverage truth", () => {
     });
   });
   test("partial generated windows union with sources without double-counting or clearing stale gaps", () => {
-    const moment: VideoMoment = { id: "solo", sourceClipId: 0, label: "Solo", start: 0, end: 4, duration: 4, caption: "Diego dancing alone" };
+    const moment: VideoMoment = { id: "solo", sourceClipId: 0, label: "Solo", start: 0, end: 4, duration: 4, caption: "Diego dancing alone", mediaEvidence: reviewedEvidence({ subjects: [focalSubject("Diego")], focalSubjectCount: 1, actions: ["dancing"], location: "club" }, 0, 4) };
     const item: TimelineItem = { id: "item", requirementId: "opening", sectionId: "intro", lyricChunkIds: [], videoMomentId: moment.id,
       start: 0, end: 10, label: "Intro", prompt: "Diego dancing alone", semanticMatch: match(moment.id, 0.9) };
     const base = project(item, moment);
@@ -193,7 +194,7 @@ describe("Generate coverage truth", () => {
   });
 
   test("chunks cannot silently reuse the same three source seconds", () => {
-    const moment: VideoMoment = { id: "solo", sourceClipId: 0, label: "Solo", start: 0, end: 3, duration: 3, caption: "Diego dancing alone" };
+    const moment: VideoMoment = { id: "solo", sourceClipId: 0, label: "Solo", start: 0, end: 3, duration: 3, caption: "Diego dancing alone", mediaEvidence: reviewedEvidence({ subjects: [focalSubject("Diego")], focalSubjectCount: 1, actions: ["dancing"], location: "club" }, 0, 3) };
     const item: TimelineItem = { id: "item", sectionId: "intro", lyricChunkIds: [], videoMomentId: moment.id,
       start: 0, end: 10, label: "Intro", prompt: "Diego dancing alone", semanticMatch: match(moment.id, 0.9) };
     const slots = buildCoverageSlots(project(item, moment), chunks);
@@ -202,8 +203,8 @@ describe("Generate coverage truth", () => {
   });
 
   test("coverage uses saved placements across multiple eligible sources", () => {
-    const first: VideoMoment = { id: "first", sourceClipId: 0, label: "First", start: 0, end: 3, duration: 3, caption: "Diego dancing alone" };
-    const second: VideoMoment = { ...first, id: "second", sourceClipId: 1, end: 5, duration: 5 };
+    const first: VideoMoment = { id: "first", sourceClipId: 0, label: "First", start: 0, end: 3, duration: 3, caption: "Diego dancing alone", mediaEvidence: reviewedEvidence({ subjects: [focalSubject("Diego")], focalSubjectCount: 1, actions: ["dancing"], location: "club" }, 0, 3) };
+    const second: VideoMoment = { ...first, id: "second", sourceClipId: 1, end: 5, duration: 5, mediaEvidence: reviewedEvidence({ subjects: [focalSubject("Diego")], focalSubjectCount: 1, actions: ["dancing"], location: "club" }, 0, 5) };
     const item: TimelineItem = { id: "item", sectionId: "intro", lyricChunkIds: [], videoMomentId: first.id,
       start: 0, end: 10, label: "Intro", prompt: "Diego dancing alone", semanticMatch: match(first.id, 0.9) };
     const base = project(item, first);

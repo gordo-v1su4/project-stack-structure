@@ -1,3 +1,4 @@
+import { reviewedEvidence } from "../helpers/storyEvidence";
 import { describe, expect, test } from "bun:test";
 import { prepareApprovedPlacements, buildEditPlanPreviewSegments, isPlacementPlanCurrent, type MusicVideoProject } from "@/components/studio/musicVideoProject";
 import { mapStoryToMusic, suggestStoryMomentWindows } from "@/components/studio/storyMusicPlacement";
@@ -8,7 +9,7 @@ import type { StoryTreatment } from "@/components/studio/storyTreatments";
 const sources = [{ id: 0, videoUrl: "https://media.example/dance.mp4", duration: 4, name: "dance" }] as UploadedVideoSource[];
 function project(): MusicVideoProject {
   return { id: "test", duration: 10, song: { sourceLabel: "song", duration: 10, audioUrl: "", waveform: [], energy: [], beats: [0,2,4,6,8], onsets: [], sections: [{label:"Intro",start:0,end:10}] }, lyricChunks: [], reviewFindings: [],
-    videoMoments: [{ id: "dance", sourceClipId: 0, label: "dance", caption: "A couple dancing together", start: 0, end: 4, duration: 4 }],
+    videoMoments: [{ id: "dance", sourceClipId: 0, label: "dance", caption: "A couple dancing together", mediaEvidence: reviewedEvidence({ focalSubjectCount: 2, actions: ["dancing"] }), start: 0, end: 4, duration: 4 }],
     storySections: [{ id: "intro", label: "Intro", prompt: "A couple dancing together", start: 0, end: 10, source: "manual", lyricChunkIds: [], videoMomentIds: ["dance"] }],
     editPlan: { id: "edit", createdAt: "fixed", timelineItems: [{ id: "item", sectionId: "intro", lyricChunkIds: [], videoMomentId: "dance", start: 0, end: 10, label: "Intro", prompt: "A couple dancing together" }] } };
 }

@@ -1,3 +1,4 @@
+import { reviewedEvidence } from "../helpers/storyEvidence";
 import { describe, expect, test } from "bun:test";
 
 import { buildSemanticEditPlan, keywordSemanticScore, rankMomentsForSection, reserveSectionMoments } from "@/components/studio/semanticEditPlanner";
@@ -12,7 +13,7 @@ describe("semantic edit planner", () => {
       ],
       videoMoments: [
         { id: "rain", sourceClipId: 0, label: "rain street", start: 0, end: 5, duration: 5, caption: "a lonely person walking through neon rain on a city street", subjects: ["person"], action: "walking", setting: "city street" },
-        { id: "dance", sourceClipId: 1, label: "club dance", start: 0, end: 4, duration: 4, caption: "people dancing in a warm club with energetic movement", subjects: ["people"], action: "dancing", setting: "club" },
+        { id: "dance", sourceClipId: 1, label: "club dance", start: 0, end: 4, duration: 4, caption: "people dancing in a warm club with energetic movement", subjects: ["people"], action: "dancing", setting: "club", mediaEvidence: reviewedEvidence({ actions: ["dancing"], location: "club" }) },
       ],
     });
 
@@ -25,11 +26,11 @@ describe("semantic edit planner", () => {
   test("penalizes immediate repetition when another reasonable semantic match exists", () => {
     const ranked = rankMomentsForSection({
       section: { id: "hook", label: "Hook", prompt: "neon dance", start: 0, end: 3, lyricTexts: ["dance tonight"] },
-      previous: { id: "a", sourceClipId: 0, label: "neon dance", start: 0, end: 3, duration: 3, caption: "neon dance floor" },
+      previous: { id: "a", sourceClipId: 0, label: "neon dance", start: 0, end: 3, duration: 3, caption: "neon dance floor", mediaEvidence: reviewedEvidence({ actions: ["dancing"], location: "neon club" }, 0, 3) },
       useCounts: new Map([["a", 1]]),
       moments: [
-        { id: "a", sourceClipId: 0, label: "neon dance", start: 0, end: 3, duration: 3, caption: "neon dance floor" },
-        { id: "b", sourceClipId: 1, label: "dance club", start: 0, end: 3, duration: 3, caption: "club dancers under neon lights" },
+        { id: "a", sourceClipId: 0, label: "neon dance", start: 0, end: 3, duration: 3, caption: "neon dance floor", mediaEvidence: reviewedEvidence({ actions: ["dancing"], location: "neon club" }, 0, 3) },
+        { id: "b", sourceClipId: 1, label: "dance club", start: 0, end: 3, duration: 3, caption: "club dancers under neon lights", mediaEvidence: reviewedEvidence({ actions: ["dancing"], location: "neon club" }, 0, 3) },
       ],
     });
 
@@ -106,10 +107,10 @@ describe("semantic edit planner", () => {
   test("includes edge color continuity in the combined match score", () => {
     const ranked = rankMomentsForSection({
       section: { id: "verse", label: "Verse", prompt: "dance", start: 2, end: 4, lyricTexts: ["dance"] },
-      previous: { id: "previous", sourceClipId: 0, label: "previous", start: 0, end: 2, duration: 2, caption: "dance", exitColor: [0.9, 0.1, 0.1] },
+      previous: { id: "previous", sourceClipId: 0, label: "previous", start: 0, end: 2, duration: 2, caption: "dance", mediaEvidence: reviewedEvidence({ actions: ["dancing"] }, 0, 2), exitColor: [0.9, 0.1, 0.1] },
       moments: [
-        { id: "warm", sourceClipId: 1, label: "warm", start: 0, end: 2, duration: 2, caption: "dance", entryColor: [0.88, 0.12, 0.1] },
-        { id: "cool", sourceClipId: 2, label: "cool", start: 0, end: 2, duration: 2, caption: "dance", entryColor: [0.05, 0.1, 0.95] },
+        { id: "warm", sourceClipId: 1, label: "warm", start: 0, end: 2, duration: 2, caption: "dance", mediaEvidence: reviewedEvidence({ actions: ["dancing"] }, 0, 2), entryColor: [0.88, 0.12, 0.1] },
+        { id: "cool", sourceClipId: 2, label: "cool", start: 0, end: 2, duration: 2, caption: "dance", mediaEvidence: reviewedEvidence({ actions: ["dancing"] }, 0, 2), entryColor: [0.05, 0.1, 0.95] },
       ],
     });
 
@@ -152,7 +153,7 @@ describe("semantic edit planner", () => {
       { id: "b", label: "B", prompt: "dance floor", start: 3, end: 6, lyricTexts: ["dance"] },
     ];
     const videoMoments = [
-      { id: "only", sourceClipId: 0, label: "dance", start: 0, end: 3, duration: 3, caption: "people dancing on a dance floor" },
+      { id: "only", sourceClipId: 0, label: "dance", start: 0, end: 3, duration: 3, caption: "people dancing on a dance floor", mediaEvidence: reviewedEvidence({ actions: ["dancing"], location: "dance floor" }, 0, 3) },
     ];
 
     const reservations = reserveSectionMoments({ sections, moments: videoMoments });

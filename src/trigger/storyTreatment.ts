@@ -58,7 +58,7 @@ async function runStoryTreatmentGateway(payload: StoryTreatmentPayload, triggerR
   await ensureQwenBackend(gatewayUrl, token ? headers : undefined, triggerRunId);
 
   markWorkRunning("generating", payload.operation === "revise" ? "Reconciling selected story and moments" : "Generating three story treatments");
-  const response = await fetch(`${gatewayUrl}${endpoint}`, {
+  const requestOptions: RequestInit & { timeout: false } = {
     method: "POST",
     headers,
     body: JSON.stringify({
@@ -69,8 +69,12 @@ async function runStoryTreatmentGateway(payload: StoryTreatmentPayload, triggerR
       max_tokens: payload.maxTokens ?? 2_800,
       review_context: payload.reviewContext,
     }),
+    // Bun's separate five-minute socket idle timer otherwise disconnects while
+    // the gateway generates and reviews. Keep the whole-request deadline below.
+    timeout: false,
     signal: AbortSignal.timeout(540_000),
-  });
+  };
+  const response = await fetch(`${gatewayUrl}${endpoint}`, requestOptions);
   const result = await readJson(response);
   if (!response.ok || readBoolean(result, "ok") === false) {
     if (readString(result, "detail")?.startsWith("Story logline review failed:")) {

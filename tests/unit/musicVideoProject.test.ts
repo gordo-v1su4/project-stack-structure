@@ -1,3 +1,4 @@
+import { reviewedEvidence, focalSubject } from "../helpers/storyEvidence";
 import { describe, expect, test } from "bun:test";
 
 import {
@@ -326,7 +327,7 @@ describe("musicVideoProject source moments and review contract", () => {
             end: 8,
             duration: 5,
             detector: "pyscenedetect-adaptive",
-            caption: "Wide shot of dancers moving through heavy rain.",
+            caption: "Wide shot of dancers moving through heavy rain.", mediaEvidence: reviewedEvidence({ actions: ["dancing"], location: "rain" }, 3, 8),
             captionMeta: { subjects: ["dancers"], weather: "rain" },
             captionSource: "lfm-server",
           },
@@ -394,7 +395,7 @@ describe("musicVideoProject source moments and review contract", () => {
             end: 4,
             duration: 2,
             detector: "pyscenedetect-adaptive",
-            caption: "Dancers move through night rain in a city.",
+            caption: "Dancers move through night rain in a city.", mediaEvidence: reviewedEvidence({ actions: ["dancing"], location: "night city rain" }, 2, 4),
             captionMeta: { subjects: ["dancers"], action: "dance", setting: "night city", weather: "rain" },
             captionSource: "lfm-webgpu",
           },
@@ -406,7 +407,7 @@ describe("musicVideoProject source moments and review contract", () => {
             end: 6,
             duration: 2,
             detector: "pyscenedetect-adaptive",
-            caption: "Dancers move through wet night city streets.",
+            caption: "Dancers move through wet night city streets.", mediaEvidence: reviewedEvidence({ actions: ["dancing"], location: "night city streets rain" }, 4, 6),
             captionMeta: { action: "dancing", setting: "night city", weather: "rain" },
             captionSource: "lfm-webgpu",
           },
@@ -558,7 +559,7 @@ describe("musicVideoProject source moments and review contract", () => {
           end: 1.5,
           duration: 1.5,
           detector: "pyscenedetect-adaptive",
-          caption: "Dancer spinning in neon light.",
+          caption: "Dancer spinning in neon light.", mediaEvidence: reviewedEvidence({ actions: ["dancing"], location: "neon club" }, 0, 1.5),
           captionSource: "lfm-webgpu",
         },
         {
@@ -569,7 +570,7 @@ describe("musicVideoProject source moments and review contract", () => {
           end: 5.5,
           duration: 1.5,
           detector: "pyscenedetect-adaptive",
-          caption: "Another dancer spinning in a dark club.",
+          caption: "Another dancer spinning in a dark club.", mediaEvidence: reviewedEvidence({ actions: ["dancing"], location: "dark club" }, 4, 5.5),
           captionSource: "lfm-webgpu",
         },
       ],
@@ -620,8 +621,8 @@ describe("musicVideoProject source moments and review contract", () => {
         { id: "verse-2", label: "Verse 2", prompt: "dance", start: 2, end: 4, source: "analysis", lyricChunkIds: [], videoMomentIds: ["shot-a", "shot-b"] },
       ],
       videoMoments: [
-        { id: "shot-a", sourceClipId: 0, label: "Shot A", start: 0, end: 2, duration: 2, thumbnailUrl: "thumb:a", caption: "Dancing" },
-        { id: "shot-b", sourceClipId: 1, label: "Shot B", start: 0, end: 2, duration: 2, thumbnailUrl: "thumb:b", caption: "Dancing" },
+        { id: "shot-a", sourceClipId: 0, label: "Shot A", start: 0, end: 2, duration: 2, thumbnailUrl: "thumb:a", caption: "Dancing", mediaEvidence: reviewedEvidence({ actions: ["dancing"] }, 0, 2) },
+        { id: "shot-b", sourceClipId: 1, label: "Shot B", start: 0, end: 2, duration: 2, thumbnailUrl: "thumb:b", caption: "Dancing", mediaEvidence: reviewedEvidence({ actions: ["dancing"] }, 0, 2) },
       ],
       editPlan: {
         id: "plan",
@@ -667,7 +668,7 @@ function previewFixture(duration = 8): { project: MusicVideoProject; videoSource
     id: "preview", song: mockAnalysis({ duration, beats: Array.from({ length: duration * 2 }, (_, i) => i * 0.5), onsets: [1.6, 3.9, 5.2, 7.8, 9.1, 12.4, 14, 16.2], sections: [{ label: "Chorus", start: 0, end: duration, energy: 0.9 }] }),
     duration, lyricChunks: [], reviewFindings: [],
     storySections: [{ id: "chorus", label: "Chorus", prompt: "Diego dancing alone", start: 0, end: duration, source: "manual", lyricChunkIds: [], videoMomentIds: ["dance"] }],
-    videoMoments: [{ id: "dance", sourceClipId: 0, label: "Dancing", start: 3, end: 27, duration: 24, caption: "Diego dancing alone", thumbnailUrl: "thumb" }],
+    videoMoments: [{ id: "dance", sourceClipId: 0, label: "Dancing", start: 3, end: 27, duration: 24, caption: "Diego dancing alone", mediaEvidence: reviewedEvidence({ subjects: [focalSubject("Diego")], focalSubjectCount: 1, actions: ["dancing"] }, 3, 27), thumbnailUrl: "thumb" }],
     editPlan: { id: "edit", createdAt: "2026-09-06", timelineItems: [{ id: "item", sectionId: "chorus", lyricChunkIds: [], videoMomentId: "dance", eligibleMomentIds: ["dance"], start: 0, end: duration, label: "Chorus", prompt: "Diego dancing alone" }] },
   };
   return { project, videoSources: [{ id: 0, name: "dance.mp4", duration: 30, size: 1, thumbnailUrl: "thumb", videoUrl: "blob:dance" }] };

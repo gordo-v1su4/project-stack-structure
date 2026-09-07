@@ -41,8 +41,15 @@ GPU locking still protects shared hardware. Paid Higgsfield work is independentl
 serialized and uses one attempt so automatic retries cannot duplicate spend.
 
 Verified through the production worker API on 2026-09-07: worker
-`20260906.1` uses SDK/CLI `4.5.16` and exposes all 17 task IDs above.
-Task inventory parity does not establish application source-code parity.
+`20260907.1` (`worker_cmtquleg000m13is0w2exouyv`) uses SDK/CLI `4.5.16`
+and exposes exactly the 17 local task IDs above. Deployment `eec48qaq` was built
+on Linux from detached source commit `5108b564b9aadaf34aaceced4110a403fb1b4588`
+and published to the VM100 registry with image digest
+`sha256:729e0bea2369fc644bc27cd3dc9135d01b50b08b0e1bea0c9be18eabd7031011`.
+The canonical VM checkout remains clean on `fix/caption-gateway-three-references`
+at `50a62f82`; deployment used `/home/gordo/.cache/project-stack-structure-trigger/5108b56`.
+Inventory and build provenance are verified; real story authoring/revision and
+persisted caption evidence require their separate browser acceptance checks.
 
 The media parent awaits scene detection, then launches and awaits one Qwen
 batch at a time, then awaits finalization. Every child receives the authenticated

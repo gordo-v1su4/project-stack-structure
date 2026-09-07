@@ -114,6 +114,20 @@ export function assessStoryMatch(input: {
   const satisfied: string[] = [];
   const unknown: string[] = [];
   const contradicted: string[] = [];
+  const requiresSubjectOrAction = Boolean(constraints.subjects?.length || constraints.actions?.length || constraints.excludedActions?.length || constraints.actionSequence?.length || constraints.focalSubjectCount !== undefined);
+  if (requiresSubjectOrAction && (!evidence || evidence.provenance.origin === "legacy")) {
+    unknown.push("Legacy caption only: subject and action evidence requires review.");
+  }
+  if (evidence) {
+    // Scene-wide observations cannot resolve uncertainties or bind separate actors/actions to one source instant.
+    unknown.push(...evidence.unknowns.map((reason) => `Source evidence requires review: ${reason}`));
+    const focalSubjects = evidence.subjects.filter((subject) => subject.role === "focal");
+    if (constraints.subjects?.length && constraints.actions?.length
+      && ((evidence.actions.length > 1 && (focalSubjects.length > 1 || evidence.transitions.length > 0))
+        || focalSubjects.length > constraints.subjects.length)) {
+      unknown.push("Actor/action association requires review: scene-wide observations do not establish who performs this action throughout the selected interval.");
+    }
+  }
   for (const name of constraints.subjects ?? []) {
     const knownSubjects = evidence?.subjects.filter((subject) => subject.role === "focal" && subject.confidence === "supported").map((subject) => subject.name).filter((subject): subject is string => Boolean(subject));
     const observed = knownSubjects ? knownSubjects.some((subject) => hasName(subject, name)) : hasName(text, name);

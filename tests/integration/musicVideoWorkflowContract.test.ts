@@ -8,6 +8,7 @@ import {
   validateMusicVideoProject,
 } from "@/components/studio/musicVideoProject";
 import type { BeatJoinAnalysis, UploadedVideoSource } from "@/components/studio/types";
+import { reviewedEvidence } from "../helpers/storyEvidence";
 
 function makeCleanUploadAnalysis(): BeatJoinAnalysis {
   return {
@@ -62,6 +63,7 @@ function makeCaptionedUploadedVideos(): UploadedVideoSource[] {
           detector: "pyscenedetect-adaptive",
           confidence: 0.91,
           caption: "Close-up of a singer in blue neon light holding the microphone.",
+          mediaEvidence: reviewedEvidence({ focalSubjectCount: 1, actions: ["singing", "holding microphone"], shotScale: "close-up", location: "stage", interaction: "blue neon light" }, 0, 4),
           captionMeta: { subjects: ["singer"], action: "singing", lighting: "blue neon light" },
           captionSource: "lfm-server",
         },
@@ -76,6 +78,7 @@ function makeCaptionedUploadedVideos(): UploadedVideoSource[] {
           detector: "pyscenedetect-adaptive",
           confidence: 0.88,
           caption: "A performer turns toward flashing stage lights.",
+          mediaEvidence: reviewedEvidence({ focalSubjectCount: 1, actions: ["turning"], location: "stage", interaction: "flashing lights" }, 4, 8),
           captionMeta: { subjects: ["performer"], action: "turns", lighting: "flashing lights" },
           captionSource: "lfm-server",
         },
@@ -102,6 +105,7 @@ function makeCaptionedUploadedVideos(): UploadedVideoSource[] {
           detector: "pyscenedetect-adaptive",
           confidence: 0.93,
           caption: "Dancers move together through rain on a night street.",
+          mediaEvidence: reviewedEvidence({ focalSubjectCount: 2, actions: ["dancing"], interaction: "pair moving together", location: "night street in rain" }, 0, 5),
           captionMeta: { subjects: ["dancers"], action: "dance", setting: "night street", weather: "rain" },
           captionSource: "lfm-webgpu",
         },
@@ -116,6 +120,7 @@ function makeCaptionedUploadedVideos(): UploadedVideoSource[] {
           detector: "pyscenedetect-adaptive",
           confidence: 0.87,
           caption: "A quiet street after rain near morning.",
+          mediaEvidence: reviewedEvidence({ focalSubjectCount: 0, location: "quiet street after rain near morning" }, 5, 10),
           captionMeta: { setting: "street", timeOfDay: "morning", weather: "after rain" },
           captionSource: "lfm-webgpu",
         },
@@ -142,6 +147,7 @@ function makeCaptionedUploadedVideos(): UploadedVideoSource[] {
           detector: "pyscenedetect-adaptive",
           confidence: 0.9,
           caption: "A couple walks through the city at night holding hands.",
+          mediaEvidence: reviewedEvidence({ focalSubjectCount: 2, actions: ["walking"], interaction: "couple holding hands", location: "city at night" }, 0, 4.5),
           captionMeta: { subjects: ["couple"], action: "walking", setting: "city at night" },
           captionSource: "lfm-server",
         },
@@ -156,6 +162,7 @@ function makeCaptionedUploadedVideos(): UploadedVideoSource[] {
           detector: "pyscenedetect-adaptive",
           confidence: 0.89,
           caption: "A romantic last kiss under bright city lights.",
+          mediaEvidence: reviewedEvidence({ focalSubjectCount: 2, actions: ["kissing"], interaction: "couple kissing", location: "bright city lights" }, 4.5, 9),
           captionMeta: { subjects: ["couple"], action: "kiss", lighting: "bright city lights" },
           captionSource: "lfm-server",
         },

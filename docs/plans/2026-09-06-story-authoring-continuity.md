@@ -486,3 +486,38 @@ gateway 22 story and 4 evidence tests pass. The gateway tests exercise mocked
 review responses and evidence validation, not live model quality. Production
 gateway/worker rollout, new valid treatments, faithful gaps, 3×3 import/split,
 and video creation handoff remain outstanding behind app-vm SSH authentication.
+
+### Authenticated rollout and live transport follow-up
+
+SSH authentication cleared on September 7. Gateway source `5c1c7ab` is deployed
+with its hash verified, Qwen runtime context is 16,384, and Trigger worker
+`20260907.1` contains exact app source `5108b56` and all 17 expected tasks.
+The canonical VM checkout was preserved; rollback instructions are recorded in
+the deployment runbook. Caption output remains capped at 900 tokens.
+
+Visible Studio run `run_cmtqupq5x00m23is06aa58mhq` reached real authoring and
+independent review. Generation used 3,686 prompt / 4,465 completion tokens in
+240.9 seconds; review used 3,545 / 1,546 in 79.1 seconds. Neither was truncated.
+The worker trace recorded `TimeoutError: The operation timed out.` at five
+minutes, before the gateway finished reviewing, and automatically retried.
+The browser was reloaded and this run canceled to stop duplicate work; backend
+work already underway was allowed to finish. No valid treatments reached the UI.
+
+The story request now disables Bun's separate socket idle timer while retaining
+the 540-second whole-request abort. Deployed Bun 1.3.3 source supports that flag:
+[fetch timeout handling](https://github.com/oven-sh/bun/blob/bun-v1.3.3/src/bun.js/webcore/fetch.zig#L514).
+This correction still requires a fresh worker and real browser acceptance.
+
+The existing 42-scene visual audit also exposed a remaining matching defect:
+caption-only claims could auto-cover a named action, and flattened structured
+observations ignored explicit uncertainty. Legacy subject/action claims and
+ambiguous actor/action associations now remain uncertain candidates. Regression
+fixtures distinguish explicitly reviewed observations from caption prose; the
+actual misidentified handstand and mixed-performer cases are included.
+
+The visible per-video rerun on S3 completed three real caption tasks on worker
+`20260907.1`, with exactly the canonical three reference keys. Structured evidence,
+ordered sample times, source intervals, prompt/model provenance, and RustFS
+caption storage references survive the worker response. This verifies transport
+and persistence output; visual accuracy is being compared against the audit.
+No other videos were reprocessed in this targeted test.

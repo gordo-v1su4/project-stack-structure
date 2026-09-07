@@ -38,6 +38,9 @@ not a request to remove the library or its expand/collapse interaction.
   The user requested immediate restoration of the existing live feed during
   the technical walkthrough; that wiring repair proceeds now. Drawer redesign
   and the remaining visual changes stay deferred.
+  During the September 7 live authoring test, the gateway entered independent
+  logline review while the worker still displayed “Generating three story
+  treatments.” Expose that review phase through actual service progress.
 - [ ] **10 · Reference image preparation (later):** automatically resize and
   standardize reference-sheet dimensions and delivery formats. Preserve the
   uploaded originals; create derivatives appropriate for display and each

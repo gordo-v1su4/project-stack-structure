@@ -1,3 +1,4 @@
+import { reviewedEvidence, focalSubject } from "../helpers/storyEvidence";
 import { createPersistableStudioProjectDraft, hydrateStudioProjectDraft } from "@/components/studio/projectPersistence";
 import { describe, expect, test } from "bun:test";
 import { beginStoryInspection, buildStoryDraftCommit, createStoryRequestGuard, describeStoryRevision, getStoryTimingError, markStoryEdited, mergeStoryRevision, validateStoryAuthoring } from "@/components/studio/storyAuthoring";
@@ -150,8 +151,8 @@ describe("independent shot decisions", () => {
       { id: "dance", momentId: anchor.id, description: "Diego dances inside the cave.", constraints: { subjects: ["Diego"], actions: ["dancing"], setting: "cave" } },
     ];
     const moments = [
-      { id: "walk-clip", sourceClipId: 0, label: "Walking", start: 0, end: 4, duration: 4, caption: "Diego walks through the cave." },
-      { id: "dance-clip", sourceClipId: 1, label: "Dancing", start: 0, end: 4, duration: 4, caption: "Diego dances inside the cave." },
+      { id: "walk-clip", sourceClipId: 0, label: "Walking", start: 0, end: 4, duration: 4, caption: "Diego walks through the cave.", mediaEvidence: reviewedEvidence({ subjects: [focalSubject("Diego")], focalSubjectCount: 1, actions: ["walking"], location: "cave" }) },
+      { id: "dance-clip", sourceClipId: 1, label: "Dancing", start: 0, end: 4, duration: 4, caption: "Diego dances inside the cave.", mediaEvidence: reviewedEvidence({ subjects: [focalSubject("Diego")], focalSubjectCount: 1, actions: ["dancing"], location: "cave" }) },
     ];
     const ranked = hydrateTreatmentCoverage([original], moments)[0];
     expect(ranked.anchors[0].requirements?.map(requirement => requirement.selectedCandidateId)).toEqual(["walk-clip", "dance-clip"]);
