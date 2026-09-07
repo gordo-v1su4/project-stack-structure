@@ -8,6 +8,9 @@ export async function analyzeStudioAudio(args: {
   apiKey: string;
   file: File;
   idempotencyKey: string;
+  /** Saved accepted job ID, restored by the worker on a later attempt. */
+  jobId?: string;
+  onJobAccepted?: (jobId: string) => Promise<void>;
   onStage?: (stage: string) => void;
   fetcher?: typeof fetch;
   sleep?: (ms: number) => Promise<void>;
@@ -18,12 +21,22 @@ export async function analyzeStudioAudio(args: {
   const deadline = Date.now() + (args.timeoutMs ?? 25 * 60_000);
   const base = `${args.apiUrl.replace(/\/+$/, "")}/analyze/studio/jobs`;
   const headers = { "X-API-Key": args.apiKey };
-  const form = new FormData();
-  form.set("file", args.file);
-  let job = await readJob(await fetcher(base, {
-    method: "POST", headers: { ...headers, "Idempotency-Key": args.idempotencyKey }, body: form,
-    signal: AbortSignal.timeout(Math.min(90_000, Math.max(1, deadline - Date.now()))),
-  }));
+  let job: Job;
+  if (args.jobId) {
+    job = await readJob(await fetcher(`${base}/${encodeURIComponent(args.jobId)}`, {
+      headers, signal: AbortSignal.timeout(Math.min(30_000, Math.max(1, deadline - Date.now()))),
+    }));
+    if (job.id !== args.jobId) throw new Error("Studio audio response belongs to another job.");
+  } else {
+    const form = new FormData();
+    form.set("file", args.file);
+    job = await readJob(await fetcher(base, {
+      method: "POST", headers: { ...headers, "Idempotency-Key": args.idempotencyKey }, body: form,
+      signal: AbortSignal.timeout(Math.min(90_000, Math.max(1, deadline - Date.now()))),
+    }));
+    // Persist before polling; a lost submission response still retries the same key.
+    await args.onJobAccepted?.(job.id);
+  }
   const jobId = job.id;
   let lastStage = "";
   let consecutivePollFailures = 0;
@@ -33,7 +46,7 @@ export async function analyzeStudioAudio(args: {
       if (!isRecord(job.result)) throw new Error("Studio audio job completed without analysis.");
       return job.result;
     }
-    if (job.status === "failed") throw new Error(`Studio audio analysis failed: ${job.error?.message ?? job.error?.code ?? "unknown analysis error"}`);
+    if (job.status === "failed") throw new Error(`Studio audio analysis failed${job.error?.code ? ` (${job.error.code})` : ""}: ${job.error?.message ?? "unknown analysis error"}`);
     if (!["queued", "running"].includes(job.status)) throw new Error("Studio audio job returned an invalid status.");
     if (Date.now() >= deadline) throw new Error(`Studio audio analysis timed out; job ${jobId} may still be running.`);
     await sleep(Math.min(3_000, Math.max(1, deadline - Date.now())));

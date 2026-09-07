@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { approvedFreshFramesForPlacement, countStoryboardFramesForSegment, getReplacementWorkflowState } from "@/components/studio/wholeShotReplacement";
+import { approvedFreshFramesForPlacement, countStoryboardFramesForSegment, getReplacementWorkflowState, isStandalone2kStoryboardFrame } from "@/components/studio/wholeShotReplacement";
 import { acceptedFreshFrame } from "../helpers/storyboardFrame";
 import type { GeneratedStudioAsset } from "@/components/studio/generatedAssets";
 import type { EditPlanPreviewSegment } from "@/components/studio/musicVideoProject";
@@ -8,6 +8,12 @@ const segment: EditPlanPreviewSegment = { kind: "gap", videoUrl: "", startTime: 
 
 
 describe("manual 3x3 to standalone video handoff", () => {
+  test("only a full standalone return can be offered visual approval", () => {
+    const frame = acceptedFreshFrame();
+    expect(isStandalone2kStoryboardFrame({ ...frame, reviewStatus: "pending" })).toBe(true);
+    expect(isStandalone2kStoryboardFrame({ ...frame, width: 917, height: 512 })).toBe(false);
+    expect(isStandalone2kStoryboardFrame({ ...frame, storyboard: { ...frame.storyboard!, kind: "grid" } })).toBe(false);
+  });
   test("recognizes the actual return shape without a video target and unlocks after one approved fresh frame", () => {
     const count = countStoryboardFramesForSegment([acceptedFreshFrame()], segment, "project-1");
     expect(count).toBe(1);

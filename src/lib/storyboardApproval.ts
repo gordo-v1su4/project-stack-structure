@@ -20,7 +20,7 @@ export function validateStoryboardJob(value: unknown, allowedHosts: string[]): S
     if (typeof reference.label !== "string" || typeof reference.role !== "string") throw new Error("Every reference needs a label and role.");
   }
   if (!job.references.some((reference) => reference.role.startsWith("character"))) throw new Error("Attach the canonical character sheet before generation.");
-  if (job.kind === "fresh-frame" && (!job.sourceGridId || !Number.isInteger(job.panelIndex)
+  if (job.kind === "fresh-frame" && (typeof job.sourceGridId !== "string" || !job.sourceGridId.trim() || job.sourceGridId.length > 500 || !Number.isInteger(job.panelIndex) || job.panelIndex! < 0 || job.panelIndex! >= 9
     || !job.references.some((reference) => reference.role === "composition"))) throw new Error("Fresh frames require an identified storyboard panel composition reference.");
   return job;
 }

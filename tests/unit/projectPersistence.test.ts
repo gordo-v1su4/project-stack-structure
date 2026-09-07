@@ -547,6 +547,17 @@ test("section analysis provenance survives persistence with manual story timing"
 
 
 describe("service BPM persistence", () => {
+  test("retains neutral model margins and CUDA provenance through parsing and save/reload", () => {
+    const analysis = parseEssentiaPayload({ payload: { schemaVersion: "studio-audio-v1", duration: 4, bpm: 133,
+      beats: [0, 1, 2, 3], sections: [{ start: 0, end: 4, label: "section", original_label: "end",
+        provenance: { status: "detected", method: "allin1:harmonix-all", device: "cuda" } }] },
+      fileName: "master.wav", waveform: [], waveformDuration: 5, audioUrl: "blob:song" });
+    const saved = createPersistableStudioProjectDraft({ analysis, videoSources: [], storyState, musicVideoProject: { ...musicVideoProject, song: analysis } });
+    const restored = hydrateStudioProjectDraft({ draft: JSON.parse(JSON.stringify(saved)) });
+    expect(restored.analysis?.duration).toBe(4);
+    expect(restored.analysis?.sections[0]).toMatchObject({ label: "section", originalLabel: "end",
+      provenance: { status: "detected", method: "allin1:harmonix-all", device: "cuda" } });
+  });
   test("retains verified tempo through save and restore with a different median beat tempo", () => {
     const analysis = parseEssentiaPayload({ payload: { duration: 4, bpm: 133, beats: [0, 0.9, 1.8] }, fileName: "song.wav", waveform: [0.1, 0.5], waveformDuration: 4, audioUrl: "blob:song" });
     const saved = createPersistableStudioProjectDraft({ analysis, videoSources: [], storyState, musicVideoProject: { ...musicVideoProject, song: analysis } });

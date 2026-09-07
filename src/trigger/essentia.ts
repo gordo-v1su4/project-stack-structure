@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { logger, task } from "@trigger.dev/sdk";
+import { logger, metadata, task } from "@trigger.dev/sdk";
 import { analyzeStudioAudio, normalizeStudioAudio } from "@/lib/essentiaStudio";
 
 import { ESSENTIA_AUDIO_CHUNK_SIZE_BYTES, type EssentiaAudioChunkReference } from "@/lib/essentiaUpload";
@@ -44,10 +44,16 @@ export const essentiaStoredAudioTask = task({
 
     const apiUrl = (process.env.ESSENTIA_API_URL || "http://192.168.8.222:18000").replace(/\/+$/, "");
     const apiKey = requireEnv("ESSENTIA_API_KEY", "VITE_ESSENTIA_API_KEY");
+    const savedJobId = metadata.get("essentiaStudioJobId");
     const raw = await analyzeStudioAudio({
       apiUrl, apiKey,
       file: new File([source.bytes], source.fileName, { type: source.mime }),
       idempotencyKey: `studio-${ctx.run.id}`,
+      jobId: typeof savedJobId === "string" ? savedJobId : undefined,
+      onJobAccepted: async (jobId) => {
+        metadata.set("essentiaStudioJobId", jobId);
+        await metadata.flush();
+      },
       onStage: (stage) => markWorkRunning(stage, audioStageLabel(stage), { progressMode: "indeterminate" }),
     });
     const normalized = normalizeStudioAudio(raw, payload.sourceLabel);

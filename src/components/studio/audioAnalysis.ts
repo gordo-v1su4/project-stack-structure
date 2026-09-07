@@ -268,6 +268,8 @@ function normalizeSections(value: unknown, duration: number): BeatJoinSection[] 
 
     sections.push({
       label: String(section.label ?? section.name ?? "Section"),
+      ...(typeof section.original_label === "string" ? { originalLabel: section.original_label }
+        : typeof section.originalLabel === "string" ? { originalLabel: section.originalLabel } : {}),
       start: clamp(start, 0, duration),
       end: clamp(end, 0, duration),
       energy: getNumericValue(section.energy) ?? undefined,

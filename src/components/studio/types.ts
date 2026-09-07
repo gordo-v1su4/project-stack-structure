@@ -226,6 +226,8 @@ export interface SegmentPreview {
 
 export interface BeatJoinSection {
   label: string;
+  /** Unmodified model label, including neutral start/end margins. */
+  originalLabel?: string;
   start: number;
   end: number;
   energy?: number;

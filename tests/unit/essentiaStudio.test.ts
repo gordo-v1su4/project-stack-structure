@@ -108,8 +108,44 @@ describe("Studio audio job polling", () => {
     await expect(analyzeStudioAudio({ ...args, fetcher: (async () => {
       calls++;
       return Response.json({ id: "job-1", status: "failed", stage: "structure", error: { code: "structure_failed", message: "No functional segments" } });
-    }) as typeof fetch })).rejects.toThrow("No functional segments");
+    }) as typeof fetch })).rejects.toThrow("(structure_failed): No functional segments");
     expect(calls).toBe(1);
+  });
+  it("persists acceptance before polling and resumes the saved job with GET after interruption", async () => {
+    let savedJobId: string | undefined;
+    const firstMethods: string[] = [];
+    await expect(analyzeStudioAudio({ ...args,
+      onJobAccepted: async (jobId) => { savedJobId = jobId; },
+      fetcher: (async (_url, init) => {
+        firstMethods.push(init?.method ?? "GET");
+        if (init?.method === "POST") return Response.json({ id: "job-1", status: "queued", stage: "queued" });
+        expect(savedJobId).toBe("job-1");
+        throw new Error("polling connection interrupted");
+      }) as typeof fetch,
+    })).rejects.toThrow("polling connection interrupted");
+    expect(firstMethods.filter((method) => method === "POST")).toHaveLength(1);
+    const resumeMethods: string[] = [];
+    const result = await analyzeStudioAudio({ ...args, jobId: savedJobId,
+      fetcher: (async (url, init) => {
+        resumeMethods.push(init?.method ?? "GET");
+        expect(String(url).endsWith("/jobs/job-1")).toBe(true);
+        return Response.json({ id: "job-1", status: "completed", stage: "completed", result: analysis() });
+      }) as typeof fetch,
+    });
+    expect(resumeMethods).toEqual(["GET"]);
+    expect(result).toEqual(analysis());
+  });
+  it("retries a lost acceptance response with identical bytes and the same key", async () => {
+    const submissions: Array<{ key: string | null; bytes: string }> = [];
+    const fetcher = (async (_url: unknown, init?: RequestInit) => {
+      const submitted = (init?.body as FormData).get("file") as File;
+      submissions.push({ key: new Headers(init?.headers).get("Idempotency-Key"), bytes: await submitted.text() });
+      if (submissions.length === 1) throw new Error("acceptance response lost");
+      return Response.json({ id: "existing-job", status: "completed", stage: "completed", result: analysis() });
+    }) as typeof fetch;
+    await expect(analyzeStudioAudio({ ...args, fetcher })).rejects.toThrow("acceptance response lost");
+    await analyzeStudioAudio({ ...args, fetcher });
+    expect(submissions).toEqual([{ key: "run-1", bytes: "audio" }, { key: "run-1", bytes: "audio" }]);
   });
   it("fails closed on auth or another job's response", async () => {
     await expect(analyzeStudioAudio({ ...args, fetcher: (async () => new Response("private", { status: 401 })) as typeof fetch })).rejects.toThrow("401");

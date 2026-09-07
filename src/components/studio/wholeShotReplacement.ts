@@ -129,6 +129,19 @@ export function getReplacementWorkflowState(params: {
   };
 }
 
+export function isStandalone2kStoryboardFrame(asset: GeneratedStudioAsset) {
+  const job = asset.storyboard;
+  const url = asset.fullStorage?.mediaUrl ?? asset.fullStorage?.publicUrl ?? asset.resultUrl;
+  return asset.status === "completed" && asset.mediaKind === "image" && job?.kind === "fresh-frame"
+    && job.resolution === "2k" && Boolean(job.sourceGridId)
+    && Number.isInteger(job.panelIndex) && job.panelIndex! >= 0 && job.panelIndex! < 9
+    && typeof asset.width === "number" && asset.width >= 2000
+    && typeof asset.height === "number" && asset.height >= 1000
+    && Math.abs(asset.width / asset.height - 16 / 9) <= 0.08
+    && !asset.split?.panels?.length
+    && typeof url === "string" && url.startsWith("https://");
+}
+
 /** Only accepted standalone results can condition video; grid crops never qualify. */
 export function approvedFreshFramesForPlacement(
   assets: GeneratedStudioAsset[],
@@ -136,22 +149,13 @@ export function approvedFreshFramesForPlacement(
 ) {
   return assets.filter((asset) => {
     const job = asset.storyboard;
-    const url = asset.fullStorage?.mediaUrl ?? asset.fullStorage?.publicUrl ?? asset.resultUrl;
-    return asset.status === "completed" && asset.reviewStatus === "approved"
-      && asset.mediaKind === "image" && job?.kind === "fresh-frame"
-      && job.resolution === "2k" && Boolean(job.sourceGridId)
-      && Number.isInteger(job.panelIndex) && job.panelIndex! >= 0 && job.panelIndex! < 9
+    return isStandalone2kStoryboardFrame(asset) && asset.reviewStatus === "approved" && job
       && (!placement.projectId || job.projectId === placement.projectId)
       && Boolean(placement.planSignature) && job.planSignature === placement.planSignature
       && job.requirementId === placement.requirementId
       && job.sectionId === placement.sectionId
       && job.songStart <= placement.songStart && job.songEnd >= placement.songEnd
-      && placement.songEnd > placement.songStart
-      && typeof asset.width === "number" && asset.width >= 2000
-      && typeof asset.height === "number" && asset.height >= 1000
-      && Math.abs(asset.width / asset.height - 16 / 9) <= 0.08
-      && !asset.split?.panels?.length
-      && typeof url === "string" && url.startsWith("https://");
+      && placement.songEnd > placement.songStart;
   });
 }
 

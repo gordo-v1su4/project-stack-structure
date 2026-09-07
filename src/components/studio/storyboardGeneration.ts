@@ -55,6 +55,18 @@ export function buildStoryboardSequences(segments: EditPlanPreviewSegment[]): St
   return result;
 }
 
+/** A direction override or review selection belongs to one story revision. */
+export function storyboardSequenceReviewKey(sequence: StoryboardSequence) {
+  return JSON.stringify([sequence.planSignature, sequence.id, sequence.requirementId, sequence.songEnd]);
+}
+
+export function storyboardSequenceSourceFrame(sequence: StoryboardSequence, sourceFrames?: Record<string, string | undefined>) {
+  const cut = sequence.cuts[0];
+  if (!cut || cut.kind === "gap" || !cut.momentId) return undefined;
+  const url = sourceFrames?.[cut.momentId];
+  return url?.startsWith("https://") ? url : undefined;
+}
+
 export function canonicalStoryboardReferences(assets: ReferenceAsset[]): StoryboardReference[] {
   return assets.filter((asset) => asset.storageStatus === "uploaded" && asset.storageUrl?.startsWith("https://"))
     .map((asset) => ({ url: asset.storageUrl!, label: asset.displayName, role: asset.role }));

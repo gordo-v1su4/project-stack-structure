@@ -3,6 +3,7 @@ import type { BeatJoinSection } from "./types";
 export type MusicSectionProvenance = {
   status: "estimated" | "detected" | "unknown";
   method?: string;
+  device?: string;
   reason?: string;
 };
 
@@ -11,6 +12,7 @@ export function normalizeMusicSectionProvenance(value: unknown): MusicSectionPro
   return {
     status: value.status as MusicSectionProvenance["status"],
     ...(typeof value.method === "string" ? { method: value.method } : {}),
+    ...(typeof value.device === "string" ? { device: value.device } : {}),
     ...(typeof value.reason === "string" ? { reason: value.reason } : {}),
   };
 }

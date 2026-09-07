@@ -15,5 +15,9 @@ describe("manual image return placement identity", () => {
     expect(legacy.planSignature).toBe(undefined);
     expect(legacy.sourceGridId).toBe("grid");
     expect(() => validateStoryboardJob({ ...job, planSignature: {} }, ["media.example"])).toThrow("Invalid planSignature");
+    for (const panelIndex of [-1, 9, 0.5]) {
+      expect(() => validateStoryboardJob({ ...job, panelIndex }, ["media.example"])).toThrow("identified storyboard panel");
+    }
+    expect(() => validateStoryboardJob({ ...job, sourceGridId: {} }, ["media.example"])).toThrow("identified storyboard panel");
   });
 });
