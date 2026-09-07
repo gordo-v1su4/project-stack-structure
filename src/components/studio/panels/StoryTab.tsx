@@ -8,6 +8,7 @@ import {
   buildStorySections,
   createMusicVideoProject,
   prepareApprovedPlacements,
+  isPlacementPlanCurrent,
   DEFAULT_STORY_EDIT_SETTINGS,
   getDefaultStorySectionDrafts,
   normalizeStoryEditSettings,
@@ -145,6 +146,9 @@ export function StoryTab({ referenceRevision, analysis, audioStatus, videoSource
   );
 
   const storyRail = musicVideoProject.storySections;
+  const liveSourceContextSignature = buildStudioSourceContextSignature({ analysis, videoSources, referenceRevision });
+  const hasCurrentStoryPlan = Boolean(storyGenerated && state.confirmedTreatmentSnapshot && state.storyContentSignature
+    && state.confirmedSourceContextSignature === liveSourceContextSignature && isPlacementPlanCurrent(musicVideoProject));
 
   useEffect(() => {
     if (!storyGenerated || !state.confirmedTreatmentSnapshot || !state.storyContentSignature) return;
@@ -326,14 +330,14 @@ export function StoryTab({ referenceRevision, analysis, audioStatus, videoSource
           <div>
             <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Story-to-song translation</div>
             <div className="mt-1 text-[11px] text-[#6d6d6d]">
-              Each row shows what belongs together: song section, timed lyrics, story intent, selected footage, and match confidence.
+              Each row shows what belongs together: song section, timed lyrics, story intent, and approved footage once the story has been reviewed.
             </div>
           </div>
-          <div className="font-mono text-[9px] uppercase text-[#666]">{storyGenerated ? "Anchors confirmed" : "Waiting for anchor review"}</div>
+          <div className="font-mono text-[9px] uppercase text-[#666]">{hasCurrentStoryPlan ? "Story confirmed" : "Story review needed"}</div>
         </div>
 
-        <div className={`mb-3 rounded-[2px] border px-3 py-2 text-[9px] leading-4 ${storyGenerated ? "border-[#245c2c] bg-[#071107] text-[#78c878]" : "border-[#5a3219] bg-[#120a05] text-[#c68152]"}`}>
-          {storyGenerated
+        <div className={`mb-3 rounded-[2px] border px-3 py-2 text-[9px] leading-4 ${hasCurrentStoryPlan ? "border-[#245c2c] bg-[#071107] text-[#78c878]" : "border-[#5a3219] bg-[#120a05] text-[#c68152]"}`}>
+          {hasCurrentStoryPlan
             ? "Confirmed. Split and downstream stages may use this Story map."
             : state.selectedTreatmentId
               ? "Read a story and choose Use this story to continue. Missing shots remain visible as gaps."
@@ -354,16 +358,19 @@ export function StoryTab({ referenceRevision, analysis, audioStatus, videoSource
               <tbody>
             {storyRail.map((beat) => {
               const relatedChunks = musicVideoProject.lyricChunks.filter((chunk) => beat.lyricChunkIds.includes(chunk.id));
-              const sourceMoment = musicVideoProject.videoMoments.find((moment) => moment.id === beat.videoMomentIds[0]);
-              const timelineItem = musicVideoProject.editPlan.timelineItems.find((item) => item.sectionId === beat.id);
-              const semanticMatch = timelineItem?.semanticMatch ?? beat.semanticMatch;
+              const sourcePlacement = hasCurrentStoryPlan ? musicVideoProject.placementPlan?.placements.find(placement => placement.sectionId === beat.id && placement.kind === "source") : undefined;
+              const sourceMoment = sourcePlacement ? musicVideoProject.videoMoments.find(moment => moment.id === sourcePlacement.momentId) : undefined;
+              const timelineItem = sourcePlacement ? musicVideoProject.editPlan.timelineItems.find(item => item.id === sourcePlacement.timelineItemId) : undefined;
+              const semanticMatch = hasCurrentStoryPlan ? timelineItem?.semanticMatch : undefined;
+              const provenance = beat.provenance ?? analysis?.sections.find(section => Math.abs(section.start - beat.start) < 0.025 && Math.abs(section.end - beat.end) < 0.025)?.provenance;
+              const sectionStatus = beat.source === "manual" ? "Adjusted" : provenance?.status === "detected" ? "Detected" : provenance?.status === "unknown" ? "Unverified" : "Estimated";
               return (
                 <tr key={beat.id} className={`align-top ${activeBeatId === beat.id ? "bg-[#120c08]" : "odd:bg-[#080808]"}`}>
                   <td className="border-b border-[#151515] px-3 py-3">
                     <button type="button" onClick={() => setActiveBeatId(beat.id)} className="w-full text-left">
                       <span className="block truncate text-[10px] font-semibold uppercase tracking-[0.13em] text-[#d0d0d0]">{beat.label}</span>
                       <span className="mt-1 block font-mono text-[9px] text-[#707070]">{fmt(beat.start)}–{fmt(beat.end)}</span>
-                      <span className="mt-2 block text-[7px] uppercase tracking-[0.12em] text-[#555]">{beat.source === "analysis" ? "Detected" : "Adjusted"}</span>
+                      <span className="mt-2 block text-[7px] uppercase tracking-[0.12em] text-[#555]">{sectionStatus}</span>
                     </button>
                   </td>
                   <td className="border-b border-[#151515] px-3 py-3 text-[9px] leading-4 text-[#8f8f8f]">
@@ -388,7 +395,7 @@ export function StoryTab({ referenceRevision, analysis, audioStatus, videoSource
                           <div className="mt-1 line-clamp-3 text-[9px] leading-4 text-[#858585]">{sourceMoment.label}</div>
                         </div>
                       </div>
-                    ) : <span className="text-[9px] text-[#555]">No matched source</span>}
+                    ) : <span className="text-[9px] text-[#555]">{hasCurrentStoryPlan ? "No matched source · visible gap" : "Review needed · no approved source"}</span>}
                   </td>
                   <td className="border-b border-[#151515] px-3 py-3">
                     {semanticMatch ? (
@@ -408,7 +415,7 @@ export function StoryTab({ referenceRevision, analysis, audioStatus, videoSource
                         {semanticMatch.reasons.length ? <div className="mt-2 text-[8px] leading-3 text-[#666]">{semanticMatch.reasons.join(" · ")}</div> : null}
                         {semanticMatch.repetitionPenalty > 0 ? <div className="mt-1 text-[8px] text-[#b96c43]">repeat -{Math.round(semanticMatch.repetitionPenalty * 100)}%</div> : null}
                       </details>
-                    ) : <span className="text-[9px] text-[#555]">Not scored</span>}
+                    ) : <span className="text-[9px] text-[#555]">{hasCurrentStoryPlan ? "No approved match" : "Unconfirmed"}</span>}
                   </td>
                 </tr>
               );

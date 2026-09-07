@@ -54,7 +54,7 @@ describe("StoryTab section map", () => {
     expect(markup).toContain("Lyrics in window");
     expect(markup).toContain("Story intent");
     expect(markup).toContain("Matched source");
-    expect(markup).toContain("No matched source");
+    expect(markup).toContain("Review needed · no approved source");
     expect(markup).toContain("Review song sections · rename or adjust timing");
     expect(markup).not.toContain('role="slider"');
     expect(markup).not.toContain("Image prompt");
@@ -105,5 +105,33 @@ describe("StoryTab section map", () => {
     expect(markup).not.toContain("auto-resolved");
     expect(markup).not.toContain("75%");
     expect(markup).toContain("Missing shots remain visible as gaps");
+    for (const status of ["legacy", "pending"] as const) {
+      const reviewMarkup = renderToStaticMarkup(createElement(StoryTab, {
+        analysis: { sourceLabel: "song.wav", audioUrl: "", waveform: [], energy: [], beats: [], onsets: [], sections: [], duration: 8 }, audioStatus: "Ready", videoSources: [], segmentPreviews: [],
+        state: { ...base, treatments: treatments.map(treatment => ({ ...treatment, reconciliation: { status }, anchors: treatment.anchors.map(anchor => ({ ...anchor, coverage: "covered" as const })) })) }, onStateChange: () => {},
+      }));
+      expect(reviewMarkup).toContain("Assessment needs review");
+      expect(reviewMarkup).not.toContain("0 moments need footage");
+      expect(reviewMarkup).toContain(treatments[0].synopsis);
+    }
+
   });
+});
+
+
+test("unconfirmed Story rows show estimated provenance and suppress suggested footage", () => {
+  const markup = renderToStaticMarkup(createElement(StoryTab, {
+    analysis: { sourceLabel: "song.wav", audioUrl: "", waveform: [], energy: [], beats: [], onsets: [], duration: 8, sections: [{ start: 0, end: 8, label: "Intro", provenance: { status: "estimated", method: "service-fallback" } }] },
+    audioStatus: "Ready", segmentPreviews: [],
+    videoSources: [{ id: 0, name: "unapproved-disaster-clip.mp4", duration: 8, size: 42, videoUrl: "https://media.example/clip.mp4", thumbnailUrl: "https://media.example/unapproved-thumbnail.jpg", scenes: [{ id: 0, sourceClipId: 0, label: "Unapproved collapse", detector: "pyscenedetect-adaptive", start: 0, end: 8, duration: 8, caption: "The cave collapses as Diego runs." }] }],
+    state: { ...createDefaultStoryTabState(), storyBeats: [{ id: "intro", label: "Intro", prompt: "The cave collapses as Diego runs.", start: 0, end: 8, timingSource: "analysis" }] }, onStateChange: () => {},
+  }));
+  const table = markup.slice(markup.indexOf("<table"));
+  expect(table).toContain("Estimated");
+  expect(table).not.toContain("Detected");
+  expect(table).toContain("Review needed · no approved source");
+  expect(table).toContain("Unconfirmed");
+  expect(table).not.toContain("unapproved-disaster-clip");
+  expect(table).not.toContain("unapproved-thumbnail");
+  expect(table).not.toContain("caption</span>");
 });

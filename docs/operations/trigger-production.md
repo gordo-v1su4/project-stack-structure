@@ -17,7 +17,7 @@ environment, or deployment history here.
 | Task | Queue | Durable result |
 | --- | --- | --- |
 | `stack-structure-service-health` | `service-health` (2) | health result |
-| `media-video-pipeline` | default orchestration | child run correlation and final manifest |
+| `media-video-pipeline` | `media-pipeline` (3) | child run correlation and final manifest |
 | `media-video-scene-detect` | `scene-detection` (3) | scene manifest in RustFS |
 | `qwen-scene-caption-batch` | `vm100-heavy` (1) | caption batch in RustFS |
 | `media-video-finalize` | `media-finalization` (2) | final analysis manifest in RustFS |
@@ -25,18 +25,24 @@ environment, or deployment history here.
 | `qwen-smart-scene-caption` | `vm100-heavy` (1) | caption JSON in RustFS |
 | `qwen-story-treatment` | `vm100-heavy` (1) | story treatments JSON |
 | `local-ai-generation` | `vm100-heavy` (1) | generated objects in RustFS |
-| `ffmpeg-preview-or-concat` | `vm100-heavy` (1) | preview MP4 in RustFS |
-| `ffmpeg-final-music-video-export` | `vm100-heavy` (1) | final MP4 in RustFS |
-| `ffmpeg-shader-capture-export` | `vm100-heavy` (1) | muxed MP4 in RustFS |
+| `ffmpeg-preview-or-concat` | `media-assembly` (2) | preview MP4 in RustFS |
+| `ffmpeg-final-music-video-export` | `media-assembly` (2) | final MP4 in RustFS |
+| `ffmpeg-shader-capture-export` | `media-assembly` (2) | muxed MP4 in RustFS |
+| `ffmpeg-seedance-audio-reference` | `media-assembly` (2) | section audio reference in RustFS |
 | `ffglitch-transform` | `vm100-heavy` (1) | transformed MP4 in RustFS |
 | `higgsfield-nano-banana-pro-grid` | `paid-generation` (1) | provider asset and RustFS panels |
 | `deepgram-transcribe-stored-audio` | `external-provider` (2) | transcript JSON in RustFS |
 | `image-split-grid` | `external-provider` (2) | split panels in RustFS |
 
-All Qwen, Essentia, local generation, FFmpeg/NVENC, and FFglitch work shares
-one `vm100-heavy` queue. Separate queues with the same limit do not provide a
-global GPU lock. Paid Higgsfield work is independently serialized and uses one
-attempt so automatic retries cannot duplicate spend.
+Qwen, Essentia, local generation, and FFglitch share one `vm100-heavy`
+queue. FFmpeg preview, export, and audio-reference tasks use `media-assembly`
+with concurrency 2. Separate queues do not provide a global GPU lock; worker
+GPU locking still protects shared hardware. Paid Higgsfield work is independently
+serialized and uses one attempt so automatic retries cannot duplicate spend.
+
+Verified through the production worker API on 2026-09-07: worker
+`20260906.1` uses SDK/CLI `4.5.16` and exposes all 17 task IDs above.
+Task inventory parity does not establish application source-code parity.
 
 The media parent awaits scene detection, then launches and awaits one Qwen
 batch at a time, then awaits finalization. Every child receives the authenticated
@@ -106,7 +112,7 @@ gitignored bootstrap/recovery fallback. Never print either file.
 3. Run `bun run trigger:deploy -- --dry-run`.
 4. Run `bun run trigger:deploy`.
 5. Confirm the emitted image was pushed to `localhost:5000`.
-6. Query the current production worker and compare all 16 task IDs with the
+6. Query the current production worker and compare all 17 task IDs with the
    table above before triggering acceptance runs.
 
 The deploy script refuses non-Linux hosts, verifies that SDK, build, and React
@@ -143,7 +149,7 @@ or deploy must not modify `/opt/pindeck`.
 Static checks are prerequisites, not completion. Record separately:
 
 - focused and full tests, lint, typecheck, and production build;
-- current worker version, deployment code, and exact 16-task inventory;
+- current worker version, deployment code, and exact 17-task inventory;
 - one authenticated browser input and its application user/project ID;
 - parent and child run IDs with queue/start/end timing;
 - VM100 service responses for the exercised path;
