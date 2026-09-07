@@ -122,21 +122,31 @@ export type StoryTreatmentTriggerResult = {
   };
 };
 
-export async function triggerStoryTreatment(payload: StoryTreatmentPayload) {
+export type StoryTreatmentDispatchIntent = { requestIntentId: string; validationAttempt?: number };
+
+export function buildStoryTreatmentDispatchKey(payload: StoryTreatmentPayload, userId: string, intent: StoryTreatmentDispatchIntent) {
+  return createTriggerIdempotencyKey("story-treatment", [
+    userId,
+    intent.requestIntentId,
+    String(intent.validationAttempt ?? 0),
+    payload.operation ?? "generate",
+    payload.model,
+    payload.instructions,
+    payload.input,
+    String(payload.maxTokens ?? ""),
+    JSON.stringify(payload.reviewContext),
+    "story-treatment-logline-review-v3",
+  ]);
+}
+
+export async function triggerStoryTreatment(payload: StoryTreatmentPayload, intent: StoryTreatmentDispatchIntent = { requestIntentId: crypto.randomUUID() }) {
   assertTriggerConfigured();
   const dispatch = await buildDispatchContext(["stack-structure", "story", "qwen", "vm100-heavy"], {
     stageLabel: "Waiting for VM100 story treatment capacity",
     progressMode: "indeterminate",
   });
   return tasks.trigger<typeof storyTreatmentTask>(STACK_STRUCTURE_TRIGGER_TASKS.storyTreatment, payload, {
-    idempotencyKey: createTriggerIdempotencyKey("story-treatment", [
-      payload.model,
-      payload.instructions,
-      payload.input,
-      String(payload.maxTokens ?? ""),
-      JSON.stringify(payload.reviewContext),
-      "story-treatment-logline-review-v2",
-    ]),
+    idempotencyKey: buildStoryTreatmentDispatchKey(payload, dispatch.userId, intent),
     idempotencyKeyTTL: "24h",
     maxAttempts: 2,
     tags: dispatch.tags,

@@ -50,8 +50,8 @@ export function StoryTreatmentPlanner({ referenceRevision, analysis, transcriptS
       constraints: ["Honor the user's chosen story. Keep missing shots visible instead of silently substituting similar-looking actions.", "Use a light visual spine appropriate to the song; do not force a disaster, relationship, or a fixed song form."],
     };
   }
-  async function requestStory(body: StoryTreatmentRequest): Promise<{ output: unknown; meta: StoryGenerationMeta }> {
-    const response = await fetch("/api/story/treatments", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  async function requestStory(body: StoryTreatmentRequest, requestIntentId: string): Promise<{ output: unknown; meta: StoryGenerationMeta }> {
+    const response = await fetch("/api/story/treatments", { method: "POST", headers: { "content-type": "application/json", "x-story-request-id": requestIntentId }, body: JSON.stringify(body) });
     const payload = await response.json() as TreatmentApiPayload;
     if (!response.ok || payload.success === false) throw new Error(payload.error || `Story generation failed (${response.status}).`);
     if (response.status === 202 && payload.runId) {
@@ -66,13 +66,14 @@ export function StoryTreatmentPlanner({ referenceRevision, analysis, transcriptS
   async function generateTreatments() {
     if (!canGenerate || isGenerating) return;
     const token = requests.current.begin();
+    const requestIntentId = crypto.randomUUID();
     setIsGenerating(true); setError(null);
     try {
       let lastError: unknown;
       let validationFeedback: string | undefined;
       for (let attempt = 0; attempt < 2; attempt++) {
         try {
-          const result = await requestStory({ ...context(), validationAttempt: attempt, validationFeedback });
+          const result = await requestStory({ ...context(), validationAttempt: attempt, validationFeedback }, requestIntentId);
           if (!requests.current.isCurrent(token)) throw new Error("Story inputs changed while generation was running. The outdated reply was discarded.");
           const treatments = hydrateTreatmentCoverage(parseGeneratedTreatments(result.output), project.videoMoments).map(validateStoryAuthoring);
           const prefix = crypto.randomUUID();
@@ -98,11 +99,12 @@ export function StoryTreatmentPlanner({ referenceRevision, analysis, transcriptS
   }
   async function refine(treatment: StoryTreatment, instruction: string) {
     const token = requests.current.begin();
+    const requestIntentId = crypto.randomUUID();
     let lastError: unknown;
     let validationFeedback: string | undefined;
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        const result = await requestStory({ ...context(), revision: { treatment, instruction }, validationAttempt: attempt, validationFeedback });
+        const result = await requestStory({ ...context(), revision: { treatment, instruction }, validationAttempt: attempt, validationFeedback }, requestIntentId);
         if (!requests.current.isCurrent(token)) throw new Error("Story inputs changed while the revision was running. The outdated reply was discarded.");
         return mergeStoryRevision(treatment, result.output, project.videoMoments);
       } catch (caught) { if (!requests.current.isCurrent(token) || isStoryReviewDeploymentError(caught)) throw caught; lastError = caught; validationFeedback = storyValidationFeedback(caught); }

@@ -40,7 +40,9 @@ describe("story treatment Qwen service", () => {
     const treatment = hydrateTreatmentCoverage(parseGeneratedTreatments(buildValidPayload()), [])[0];
     const calls: Array<{ operation?: "generate" | "revise"; instructions: string; input: string }> = [];
     await queueStoryTreatmentGeneration({ ...request, revision: { treatment, instruction: "Start outside the cave, preserve the later story." } }, {
-      trigger: async payload => {
+      requestIntentId: "00000000-0000-4000-8000-000000000003",
+      trigger: async (payload, intent) => {
+        expect(intent).toEqual({ requestIntentId: "00000000-0000-4000-8000-000000000003", validationAttempt: 0 });
         expect(payload.reviewContext.constraints).toContain("Start outside the cave, preserve the later story.");
         expect(payload.reviewContext.brief).toBe(request.brief);
         calls.push(payload); return { id: "run-revise-one" };
@@ -55,12 +57,14 @@ describe("story treatment Qwen service", () => {
 
   test("dispatches Trigger, waits for the run, and retries malformed output once", async () => {
     const calls: Array<{ instructions: string; input: string }> = [];
+    const intents: Array<{ requestIntentId: string; validationAttempt?: number }> = [];
     const valid = buildValidPayload();
     let attempt = 0;
     const result = await generateStoryTreatments(request, {
       now: () => new Date("2026-09-02T12:00:00.000Z"),
       gatewayModel: STORY_TREATMENT_MODEL,
-      trigger: async (payload) => {
+      trigger: async (payload, intent) => {
+        intents.push(intent);
         calls.push({ instructions: payload.instructions, input: payload.input });
         attempt += 1;
         return { id: `run-story-${attempt}` };
@@ -78,6 +82,8 @@ describe("story treatment Qwen service", () => {
     });
 
     expect(calls).toHaveLength(2);
+    expect(intents[0].requestIntentId).toBe(intents[1].requestIntentId);
+    expect(intents.map(intent => intent.validationAttempt)).toEqual([0, 1]);
     expect(calls[1].input).toContain("Correct this validation failure: Return exactly three complete treatment objects");
     expect(calls[0]?.instructions).toContain("captionClusters");
     expect(result.treatments).toHaveLength(3);

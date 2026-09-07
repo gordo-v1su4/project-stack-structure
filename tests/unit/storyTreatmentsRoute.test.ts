@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 
 import { handleStoryTreatmentsPost } from "@/app/api/story/treatments/route";
+import { queueStoryTreatmentGeneration } from "@/lib/storyTreatmentServer";
+import { buildStoryTreatmentDispatchKey } from "@/lib/triggerOrchestration";
 
 const body = {
   brief: "Two strangers search an underground maze.",
@@ -9,6 +11,34 @@ const body = {
 };
 
 describe("POST /api/story/treatments", () => {
+  test("preserves gesture identity across redelivery and separates repair attempts and deliberate regeneration", async () => {
+    const keys: string[] = [];
+    const dependencies = { getUser: user, isConfigured: true, queue: async (input: Parameters<typeof queueStoryTreatmentGeneration>[0], options: { requestIntentId: string }) => queueStoryTreatmentGeneration(input, {
+      ...options,
+      trigger: async (payload, intent) => { const key = buildStoryTreatmentDispatchKey(payload, "github-story-user", intent); keys.push(key); return { id: key }; },
+    }) };
+    const firstId = "00000000-0000-4000-8000-000000000001";
+    const nextId = "00000000-0000-4000-8000-000000000002";
+    for (const [id, attempt] of [[firstId, 0], [firstId, 0], [firstId, 1], [firstId, 1], [nextId, 0]] as const) {
+      const response = await handleStoryTreatmentsPost(request({ ...body, validationAttempt: attempt }, id), dependencies);
+      expect(response.status).toBe(202);
+    }
+    expect(keys[0]).toBe(keys[1]);
+    expect(keys[2]).toBe(keys[3]);
+    expect(keys[0]).not.toBe(keys[2]);
+    expect(keys[0]).not.toBe(keys[4]);
+    await handleStoryTreatmentsPost(request(body), dependencies);
+    await handleStoryTreatmentsPost(request(body), dependencies);
+    expect(keys[5]).not.toBe(keys[6]);
+  });
+
+  test("rejects malformed gesture ids without dispatching and preserves session authorization", async () => {
+    let dispatched = false;
+    const queue = async () => { dispatched = true; return { runId: "unexpected", model: "qwen" }; };
+    expect((await handleStoryTreatmentsPost(request(body, "not-a-uuid"), { getUser: user, isConfigured: true, queue })).status).toBe(400);
+    expect((await handleStoryTreatmentsPost(request(body, "00000000-0000-4000-8000-000000000001"), { getUser: async () => null, isConfigured: true, queue })).status).toBe(401);
+    expect(dispatched).toBe(false);
+  });
   test("rejects an unauthenticated caller before checking configuration", async () => {
     const response = await handleStoryTreatmentsPost(request(body), { getUser: async () => null, isConfigured: false });
     expect(response.status).toBe(401);
@@ -62,10 +92,10 @@ describe("POST /api/story/treatments", () => {
 
 const STORY_TREATMENT_MODEL = "Qwen/Qwen3-VL-4B-Instruct-GGUF:Q4_K_M";
 
-function request(payload: unknown) {
+function request(payload: unknown, requestIntentId?: string) {
   return new Request("http://localhost/api/story/treatments", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...(requestIntentId ? { "x-story-request-id": requestIntentId } : {}) },
     body: JSON.stringify(payload),
   });
 }

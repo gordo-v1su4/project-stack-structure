@@ -16,7 +16,7 @@ export async function POST(request: Request) {
 export async function handleStoryTreatmentsPost(request: Request, dependencies: {
   getUser?: () => Promise<SessionUser | null>;
   generate?: (input: StoryTreatmentRequest) => Promise<StoryTreatmentGenerationResult>;
-  queue?: (input: StoryTreatmentRequest) => Promise<{ runId: string; model: string }>;
+  queue?: (input: StoryTreatmentRequest, options: { requestIntentId: string }) => Promise<{ runId: string; model: string }>;
   isConfigured?: boolean;
 } = {}) {
   const user = await (dependencies.getUser ?? getSessionUser)();
@@ -30,7 +30,13 @@ export async function handleStoryTreatmentsPost(request: Request, dependencies: 
   }
 
   let input: StoryTreatmentRequest;
+  let requestIntentId: string;
   try {
+    const suppliedId = request.headers.get("x-story-request-id");
+    if (suppliedId !== null && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(suppliedId)) {
+      throw new Error("Story request id must be a UUID.");
+    }
+    requestIntentId = suppliedId?.toLowerCase() ?? crypto.randomUUID();
     input = parseStoryTreatmentRequest(await request.json());
   } catch (error) {
     const message = error instanceof Error ? error.message : "Story treatment request is invalid.";
@@ -43,7 +49,7 @@ export async function handleStoryTreatmentsPost(request: Request, dependencies: 
       return Response.json({ success: true, ...result });
     }
 
-    const queued = await (dependencies.queue ?? queueStoryTreatmentGeneration)(input);
+    const queued = await (dependencies.queue ?? queueStoryTreatmentGeneration)(input, { requestIntentId });
     return Response.json({
       success: true,
       queued: true,

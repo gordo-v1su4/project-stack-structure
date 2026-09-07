@@ -12,9 +12,11 @@ import {
   triggerStoryTreatment,
   waitForTriggerRunResult,
   type StoryTreatmentTriggerResult,
+  type StoryTreatmentDispatchIntent,
 } from "@/lib/triggerOrchestration";
 
 type GenerateStoryTreatmentsOptions = {
+  requestIntentId?: string;
   now?: () => Date;
   trigger?: (payload: {
     operation?: "generate" | "revise";
@@ -23,7 +25,7 @@ type GenerateStoryTreatmentsOptions = {
     model: string;
     maxTokens?: number;
     reviewContext: { brief: string; constraints: string[] };
-  }) => Promise<{ id: string }>;
+  }, intent: StoryTreatmentDispatchIntent) => Promise<{ id: string }>;
   waitForRun?: <T>(runId: string, options: { timeoutMs: number; pollIntervalMs?: number }) => Promise<T>;
   gatewayModel?: string;
 };
@@ -51,7 +53,7 @@ export async function queueStoryTreatmentGeneration(
       brief: request.brief ?? "",
       constraints: [...(request.constraints ?? []), ...(request.revision ? [request.revision.instruction] : [])],
     },
-  });
+  }, { requestIntentId: options.requestIntentId ?? crypto.randomUUID(), validationAttempt: attempt });
   return { runId: handle.id, model };
 }
 
@@ -81,12 +83,13 @@ export async function generateStoryTreatments(
   const waitForRun = options.waitForRun ?? waitForTriggerRunResult;
   let lastError: unknown = null;
   let validationFeedback: string | undefined;
+  const requestIntentId = options.requestIntentId ?? crypto.randomUUID();
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
       const queued = await queueStoryTreatmentGeneration(
         { ...request, validationAttempt: attempt, validationFeedback: validationFeedback ?? request.validationFeedback },
-        options,
+        { ...options, requestIntentId },
       );
       const result = await waitForRun<StoryTreatmentTriggerResult>(queued.runId, {
         timeoutMs: 540_000,

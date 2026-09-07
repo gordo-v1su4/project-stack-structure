@@ -521,3 +521,27 @@ ordered sample times, source intervals, prompt/model provenance, and RustFS
 caption storage references survive the worker response. This verifies transport
 and persistence output; visual accuracy is being compared against the audit.
 No other videos were reprocessed in this targeted test.
+
+### Factual caption context and second live rerun
+
+Worker `20260907.2` now runs exact source `a07cd1e`, including the Bun idle
+timeout correction. Web `efa6d48` is Ready on the production alias and removes
+story summaries, story prompts, lyrics, and free-form narrative instructions
+from both caption dispatch entry points. Source identifiers, sample timing,
+and the three canonical visual references remain. Full local checks pass
+(601 tests, no errors; seven existing lint warnings).
+
+The second visible S3 rerun completed three tasks on that worker, from
+`run_cmtqvr7p600mf3is0crgc3hmt` through `run_cmtqvsfkl00ml3is02uafmq7y`.
+Submitted strips were byte-identical to the first rerun. The opening caption
+changed from dancing to walking through the crowd, and the close-up dropped
+unsupported wet-floor and overhead-circle details. However, the model still
+incorrectly identifies Valentina in the opening and misses part of the mixed
+interval's solo-to-pair transition. These are remaining visual accuracy defects,
+not successful evidence acceptance. The current matcher was exercised with
+all three real responses and rejects each as automatic solo-arrival coverage.
+
+Before/after responses and the visual comparison are saved under
+`.tmp/story-caption-rerun-s3-audit/`; `.tmp/story-caption-rerun-s3-factual.json`
+contains the second run's response and provenance. The first authoring attempt
+on worker `20260907.2` is `run_cmtqvx8r000mo3is0efydiy2c`; its acceptance is pending.

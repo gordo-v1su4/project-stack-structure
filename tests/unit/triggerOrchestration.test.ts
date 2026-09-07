@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { createTriggerIdempotencyKey } from "@/lib/triggerIdempotency";
 import {
   STACK_STRUCTURE_TRIGGER_TASKS,
+  buildStoryTreatmentDispatchKey,
 } from "@/lib/triggerOrchestration";
 import { MEDIA_ASSEMBLY_MACHINE } from "@/trigger/queues";
 import { resolvePreviewSegments } from "@/trigger/ffmpeg";
@@ -10,6 +11,18 @@ import { resolveExportSegments } from "@/trigger/export";
 import { copyAudioChunk } from "@/trigger/essentia";
 
 describe("Trigger orchestration", () => {
+  test("deduplicates one story delivery but separates new gestures, validation repairs, operations and users", () => {
+    const payload = { operation: "generate" as const, model: "qwen", instructions: "Direct the story", input: "Same seed", reviewContext: { brief: "Same seed", constraints: [] } };
+    const intent = { requestIntentId: "00000000-0000-4000-8000-000000000001", validationAttempt: 0 };
+    const key = buildStoryTreatmentDispatchKey(payload, "user-a", intent);
+    expect(buildStoryTreatmentDispatchKey({ ...payload }, "user-a", { ...intent })).toBe(key);
+    expect(buildStoryTreatmentDispatchKey(payload, "user-a", { ...intent, requestIntentId: "00000000-0000-4000-8000-000000000002" })).not.toBe(key);
+    expect(buildStoryTreatmentDispatchKey(payload, "user-a", { ...intent, validationAttempt: 1 })).not.toBe(key);
+    expect(buildStoryTreatmentDispatchKey({ ...payload, operation: "revise" }, "user-a", intent)).not.toBe(key);
+    expect(buildStoryTreatmentDispatchKey(payload, "user-b", intent)).not.toBe(key);
+    expect(key).not.toContain("Same seed");
+    expect(key).not.toContain("user-a");
+  });
   test("allocates the no-credit self-hosted large machine for media assembly", () => {
     expect(MEDIA_ASSEMBLY_MACHINE).toBe("large-1x");
   });
