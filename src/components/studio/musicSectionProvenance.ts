@@ -15,6 +15,13 @@ export function normalizeMusicSectionProvenance(value: unknown): MusicSectionPro
   };
 }
 
+export function reportsMusicSectionFallback(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  const provenance = isRecord(value.provenance) ? value.provenance : {};
+  return value.fallback === true || value.used_fallback === true ||
+    [value.method, value.algorithm, provenance.method].some((method) => typeof method === "string" && /fallback/i.test(method));
+}
+
 /** Recognizes the local service's duration-based fallback, not the song's actual form. */
 export function matchesFallbackSectionBoundaries(sections: Pick<BeatJoinSection, "start" | "end">[], duration: number): boolean {
   if (!Number.isFinite(duration) || duration <= 0 || sections.length < 3) return false;
@@ -39,16 +46,17 @@ export function annotateMusicSections<T extends Pick<BeatJoinSection, "start" | 
 ): Array<Omit<T, "provenance"> & { provenance: MusicSectionProvenance }> {
   const metadata = isRecord(serviceMetadata) ? serviceMetadata : {};
   const explicit = normalizeMusicSectionProvenance(metadata.provenance);
-  const method = typeof metadata.method === "string" ? metadata.method : typeof metadata.algorithm === "string" ? metadata.algorithm : "";
-  const fallbackReported = metadata.fallback === true || metadata.used_fallback === true || /fallback/i.test(method);
+  const fallbackReported = reportsMusicSectionFallback(metadata);
   const fallbackPattern = matchesFallbackSectionBoundaries(sections, duration);
   const inferred: MusicSectionProvenance = fallbackReported
     ? { status: "estimated", method: "service-fallback", reason: "The analysis service reported estimated section boundaries. Rename or move them to match the song." }
-    : fallbackPattern
+    : metadata.source === "allin1"
+      ? { status: "detected", method: "allin1", reason: "Functional song sections predicted by All-In-One. Review and adjust the model's timing and labels as needed." }
+      : fallbackPattern
       ? { status: "estimated", method: "fallback-pattern", reason: "These boundaries match the service's evenly spaced fallback pattern; the service did not confirm how they were made. Review the timing and names." }
       : { status: "estimated", method: "unverified-song-form", reason: "Section names are suggestions from audio analysis, not confirmed verse/chorus structure. Rename or move them to match the song." };
   return sections.map(({ provenance, ...section }) => ({
-    ...section, provenance: normalizeMusicSectionProvenance(provenance) ?? explicit ?? inferred,
+    ...section, provenance: fallbackReported ? inferred : normalizeMusicSectionProvenance(provenance) ?? explicit ?? inferred,
   }));
 }
 

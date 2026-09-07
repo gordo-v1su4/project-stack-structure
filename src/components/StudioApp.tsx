@@ -2309,7 +2309,7 @@ export default function StudioApp() {
   // Transport: Space drives the prepared cut when one is loaded, otherwise the master song.
   const masterAudioUrl = beatJoinAnalysis?.audioUrl ?? null;
   const songTransport = useSongTransport(masterAudioUrl, beatJoinAnalysis?.duration ?? 0);
-  const displayBpm = beatJoinAnalysis ? Math.round(deriveDisplayBpm(beatJoinAnalysis.beats, bpm)) : null;
+  const displayBpm = beatJoinAnalysis ? Math.round(deriveDisplayBpm(beatJoinAnalysis.beats, bpm, beatJoinAnalysis.bpm)) : null;
   const hasBrowserPreview = displayedBrowserPreviewSegments.length > 0;
   const transportModel: TransportModel = hasBrowserPreview
     ? {

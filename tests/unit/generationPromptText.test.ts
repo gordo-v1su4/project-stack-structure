@@ -51,4 +51,12 @@ describe("generation prompt caption safety", () => {
       selectedSegment,
     })).toBe(selectedMoment);
   });
+  test("a gap or missing selected source never borrows an unrelated first frame", () => {
+    const unrelated = { ...moment("Valentina escapes over a fractured floor"), firstFrameUrl: "https://media.example/escape.jpg" };
+    const gap: EditPlanPreviewSegment = { kind: "gap", videoUrl: "", startTime: 0, endTime: 5, musicStart: 0, musicEnd: 5, label: "Solo arrival", sectionId: "intro", storyDirection: "Diego enters alone" };
+    expect(resolveGenerationFrameMoment({ videoMoments: [unrelated], selectedSegment: gap })).toBe(undefined);
+    expect(resolveGenerationFrameMoment({ videoMoments: [unrelated], selectedSegment: { ...gap, kind: "source", momentId: "removed" } })).toBe(undefined);
+    expect(resolveGenerationFrameMoment({ videoMoments: [unrelated] })).toBe(undefined);
+  });
+
 });

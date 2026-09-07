@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { buildSeedanceContinuationPacket, serializeSeedanceContinuationPacket } from "@/components/studio/seedanceContinuation";
 import type { GeneratedStudioAsset } from "@/components/studio/generatedAssets";
+import { acceptedFreshFrame } from "../helpers/storyboardFrame";
 import type { ReferenceAsset } from "@/components/studio/referenceAssets";
 
 const referenceAssets: ReferenceAsset[] = [
@@ -160,8 +161,25 @@ describe("Seedance whole-shot replacement packet", () => {
       referenceSelection: {},
     });
 
-    expect(packet.errors).toContain("The selected source moment has no durable opening composition. Finish scene processing before preparing a replacement.");
+    expect(packet.errors.some((error) => error.includes("approved fresh standalone 2K"))).toBe(true);
     expect(packet.errors.some((error) => error.includes("character sheet"))).toBe(true);
     expect(packet.references).toEqual([]);
   });
+  test("fills a source-free dance gap using accepted standalone composition and story intent", () => {
+    const params = { projectId: "project-1", planSignature: "plan-current", requirementId: "dance", sectionId: "verse", sectionLabel: "Dance", storyIntent: "Diego and Valentina dance together on an intact club floor", songStart: 20, songEnd: 25, referenceAssets, referenceSelection: { character1Id: "diego", environmentId: "club" } };
+    const accepted = buildSeedanceContinuationPacket({ ...params, approvedFrames: [acceptedFreshFrame()] });
+    expect(accepted.errors).toEqual([]);
+    expect(accepted.references.some((ref) => ref.url === "https://media.example/fresh.png" && ref.role === "composition-reference")).toBe(true);
+    expect(accepted.prompt).toContain(params.storyIntent);
+    expect(accepted.parentClipId).toBe("missing-parent");
+    const pending = buildSeedanceContinuationPacket({ ...params, approvedFrames: [{ ...acceptedFreshFrame(), reviewStatus: "pending" }] });
+    expect(pending.errors.some((error) => error.includes("approved fresh standalone 2K"))).toBe(true);
+    const crop = buildSeedanceContinuationPacket({ ...params, approvedFrames: [{ ...acceptedFreshFrame(), width: 917, height: 512 }] });
+    expect(crop.references.some((ref) => ref.url === "https://media.example/fresh.png")).toBe(false);
+    expect(crop.errors.length).toBeGreaterThan(0);
+    const changedStory = buildSeedanceContinuationPacket({ ...params, planSignature: "plan-after-edit", approvedFrames: [acceptedFreshFrame()] });
+    expect(changedStory.references.some((ref) => ref.url === "https://media.example/fresh.png")).toBe(false);
+    expect(changedStory.errors.length).toBeGreaterThan(0);
+  });
+
 });

@@ -9,6 +9,9 @@ export function validateStoryboardJob(value: unknown, allowedHosts: string[]): S
   for (const key of ["id", "projectId", "sequenceId", "sectionId", "title", "prompt"] as const) {
     if (typeof job[key] !== "string" || !job[key].trim() || job[key].length > (key === "prompt" ? 16000 : 500)) throw new Error(`Invalid ${key}.`);
   }
+  for (const key of ["planSignature", "requirementId", "narrativeMomentId"] as const) {
+    if (job[key] !== undefined && (typeof job[key] !== "string" || !job[key]!.trim() || job[key]!.length > 500)) throw new Error(`Invalid ${key}.`);
+  }
   if (!Number.isFinite(job.songStart) || !Number.isFinite(job.songEnd) || job.songStart < 0 || job.songEnd <= job.songStart) throw new Error("Invalid song range.");
   if (!Array.isArray(job.references) || !job.references.length || job.references.length > 14) throw new Error("Choose 1–14 durable reference images.");
   for (const reference of job.references) {

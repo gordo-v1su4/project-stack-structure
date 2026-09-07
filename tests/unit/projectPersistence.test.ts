@@ -1,3 +1,5 @@
+import { parseEssentiaPayload } from "@/components/studio/audioAnalysis";
+import { deriveDisplayBpm } from "@/components/studio/math";
 import { describe, expect, test } from "bun:test";
 
 import {
@@ -541,4 +543,24 @@ test("section analysis provenance survives persistence with manual story timing"
   const restored = hydrateStudioProjectDraft({ draft });
   expect(restored.analysis?.sections).toEqual(analysis.sections);
   expect(restored.storyState.storyBeats[0].timingSource).toBe("manual");
+});
+
+
+describe("service BPM persistence", () => {
+  test("retains verified tempo through save and restore with a different median beat tempo", () => {
+    const analysis = parseEssentiaPayload({ payload: { duration: 4, bpm: 133, beats: [0, 0.9, 1.8] }, fileName: "song.wav", waveform: [0.1, 0.5], waveformDuration: 4, audioUrl: "blob:song" });
+    const saved = createPersistableStudioProjectDraft({ analysis, videoSources: [], storyState, musicVideoProject: { ...musicVideoProject, song: analysis } });
+    const draft = JSON.parse(JSON.stringify(saved));
+    const restored = hydrateStudioProjectDraft({ draft, audioUrl: "https://media.example/song.wav" });
+    expect(draft.analysis.bpm).toBe(133);
+    expect(restored.analysis?.bpm).toBe(133);
+    expect(restored.musicVideoProject?.song?.bpm).toBe(133);
+    expect(deriveDisplayBpm(restored.analysis!.beats, 130, restored.analysis?.bpm)).toBe(133);
+    delete draft.analysis.bpm;
+    const legacy = hydrateStudioProjectDraft({ draft });
+    expect(legacy.analysis?.bpm).toBe(undefined);
+    expect(Math.round(deriveDisplayBpm(legacy.analysis!.beats, 130, legacy.analysis?.bpm))).toBe(67);
+    draft.analysis.bpm = -20;
+    expect(hydrateStudioProjectDraft({ draft }).analysis?.bpm).toBe(undefined);
+  });
 });

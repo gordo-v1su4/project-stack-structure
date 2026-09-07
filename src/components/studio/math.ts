@@ -11,8 +11,9 @@ export function lerp(a: number, b: number, t: number) {
   return a + (b - a) * t;
 }
 
-/** Median beat interval → BPM; falls back when the grid is too sparse. */
-export function deriveDisplayBpm(beats: number[], fallback: number) {
+/** Prefer verified service tempo, then median beat interval, then the UI fallback. */
+export function deriveDisplayBpm(beats: number[], fallback: number, serviceBpm?: number) {
+  if (typeof serviceBpm === "number" && Number.isFinite(serviceBpm) && serviceBpm > 0) return serviceBpm;
   if (beats.length < 2) return fallback;
 
   const intervals = beats

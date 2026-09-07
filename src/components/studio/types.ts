@@ -233,6 +233,8 @@ export interface BeatJoinSection {
 }
 
 export interface BeatJoinAnalysis {
+  /** Verified service tempo when available; legacy projects derive it from beats. */
+  bpm?: number;
   sourceLabel: string;
   audioUrl: string;
   waveform: number[];

@@ -1,3 +1,4 @@
+import { approvedFreshFramesForPlacement } from "./wholeShotReplacement";
 import type { GeneratedStudioAsset } from "./generatedAssets";
 import type { VideoMoment } from "./musicVideoProject";
 import { getOrderedSelectedReferenceIds, type GenerationReferenceSelection, type ReferenceAsset } from "./referenceAssets";
@@ -63,6 +64,8 @@ export function buildSeedanceContinuationPacket(params: {
   resolution?: "480p" | "720p";
   handleSeconds?: number;
   approvedFrames?: GeneratedStudioAsset[];
+  planSignature?: string;
+  requirementId?: string;
 }): SeedanceContinuationPacket {
   const references: SeedanceContinuationReference[] = [];
   const errors: string[] = [];
@@ -76,8 +79,6 @@ export function buildSeedanceContinuationPacket(params: {
       url: finalFrameUrl,
       instruction: "@Image_1 guides composition, layout and blocking only. It is NOT an exact first/last frame or an identity source. Rebuild people from their attached high-resolution character sheets. Do not stitch onto the old action's last frame.",
     });
-  } else {
-    errors.push("The selected source moment has no durable opening composition. Finish scene processing before preparing a replacement.");
   }
 
   const selectedAssets = getOrderedSelectedReferenceIds(params.referenceSelection);
@@ -126,10 +127,8 @@ export function buildSeedanceContinuationPacket(params: {
     });
   }
 
-  for (const frame of params.approvedFrames ?? []) {
-    if (frame.reviewStatus !== "approved" || frame.storyboard?.kind !== "fresh-frame"
-      || frame.storyboard.sectionId !== params.sectionId
-      || frame.storyboard.songStart > params.songStart || frame.storyboard.songEnd < params.songEnd) continue;
+  const freshFrames = approvedFreshFramesForPlacement(params.approvedFrames ?? [], params);
+  for (const frame of freshFrames) {
     const url = durableUrl(frame.fullStorage?.mediaUrl ?? frame.fullStorage?.publicUrl ?? frame.resultUrl);
     if (!url) continue;
     const tag = `@Image_${references.length + 1}`;
@@ -138,6 +137,9 @@ export function buildSeedanceContinuationPacket(params: {
       instruction: role === "composition-reference" ? `${tag} is an approved composition/layout reference only. Character sheets remain authoritative for identity.`
         : role === "start-frame" ? `${tag} is the requested exact opening frame. No pre-roll exists before this frame; identity must still match the character sheets.`
         : `${tag} is the requested ending composition; use only if the selected provider mode explicitly supports end-frame conditioning.` });
+  }
+  if (!finalFrameUrl && !freshFrames.length) {
+    errors.push("This placement needs an approved fresh standalone 2K composition frame. A gap cannot borrow footage from another scene.");
   }
   const model = params.model ?? "Seedance 2.0";
   const maxDuration = model === "Seedance 2.5" ? 30 : 15;

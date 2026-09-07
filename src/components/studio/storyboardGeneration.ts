@@ -14,7 +14,7 @@ export type StoryboardReference = { url: string; label: string; role: string };
 export type StoryboardSequence = {
   id: string; sectionId: string; label: string; songStart: number; songEnd: number;
   cuts: EditPlanPreviewSegment[];
-  requirementId?: string; narrativeMomentId?: string; direction?: string;
+  requirementId?: string; narrativeMomentId?: string; direction?: string; planSignature?: string;
 };
 export type StoryboardJob = {
   id: string; projectId: string; sequenceId: string; sectionId: string; title: string;
@@ -22,6 +22,7 @@ export type StoryboardJob = {
   model: StoryboardImageModel; billing: GenerationBilling; resolution: "2k";
   prompt: string; references: StoryboardReference[];
   sourceGridId?: string; panelIndex?: number;
+  planSignature?: string; requirementId?: string; narrativeMomentId?: string;
 };
 export type StoryboardQuote = {
   token: string; expiresAt: number; credits: number | null; guideUsd: number;
@@ -42,10 +43,10 @@ export function buildStoryboardSequences(segments: EditPlanPreviewSegment[]): St
   for (const cut of segments) {
     if (!(cut.musicEnd > cut.musicStart)) continue;
     let sequence = result[result.length - 1];
-    if (!sequence || sequence.sectionId !== cut.sectionId || sequence.requirementId !== cut.requirementId || sequence.cuts[0]?.kind !== cut.kind || sequence.cuts.length === 9
+    if (!sequence || sequence.sectionId !== cut.sectionId || sequence.requirementId !== cut.requirementId || sequence.planSignature !== cut.planSignature || sequence.cuts[0]?.kind !== cut.kind || sequence.cuts.length === 9
       || Math.abs(sequence.songEnd - cut.musicStart) > 0.05) {
       sequence = { id: `${cut.sectionId}:${cut.musicStart.toFixed(3)}`, sectionId: cut.sectionId,
-        label: cut.sectionId, requirementId: cut.requirementId, narrativeMomentId: cut.narrativeMomentId, direction: cut.storyDirection, songStart: cut.musicStart, songEnd: cut.musicEnd, cuts: [] };
+        label: cut.sectionId, planSignature: cut.planSignature, requirementId: cut.requirementId, narrativeMomentId: cut.narrativeMomentId, direction: cut.storyDirection, songStart: cut.musicStart, songEnd: cut.musicEnd, cuts: [] };
       result.push(sequence);
     }
     sequence.cuts.push(cut);
@@ -100,4 +101,18 @@ export function buildFreshFramePrompt(references: StoryboardReference[]) {
 
 export function serializeStoryboardJob(job: StoryboardJob) {
   return `JOB DETAILS — separate from the image prompt\n${job.title}\nSong: ${job.songStart.toFixed(2)}–${job.songEnd.toFixed(2)}\n${IMAGE_MODELS[job.model].label} (${job.model}) · 2K · 16:9 · ${job.kind === "grid" ? "3×3 storyboard" : "fresh standalone image — NOT upscale"}\nBilling: ${job.billing}. Verify subscription inclusion in the provider UI; do not switch to paid credits.\n${job.references.map((ref, i) => `Image ${i + 1}: ${ref.label} [${ref.role}]\n${ref.url}`).join("\n")}\n\nPROMPT — exact text sent to the image model\n${job.prompt}`;
+}
+
+/** Legacy and stale image jobs stay readable but require an explicit new review. */
+export function storyboardJobMatchesSequence(job: StoryboardJob, sequence: StoryboardSequence) {
+  return Boolean(job.planSignature && job.planSignature === sequence.planSignature
+    && job.requirementId === sequence.requirementId && job.sectionId === sequence.sectionId
+    && job.songStart === sequence.songStart && job.songEnd === sequence.songEnd);
+}
+
+export function bindStoryboardJobToSequence(job: StoryboardJob, sequence: StoryboardSequence): StoryboardJob {
+  if (!sequence.planSignature) throw new Error("Confirm the current story and review Match before approving this image placement.");
+  return { ...job, sequenceId: sequence.id, sectionId: sequence.sectionId,
+    songStart: sequence.songStart, songEnd: sequence.songEnd, planSignature: sequence.planSignature,
+    requirementId: sequence.requirementId, narrativeMomentId: sequence.narrativeMomentId };
 }
