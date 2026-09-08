@@ -1,0 +1,9 @@
+# Reference language and source audio
+
+User requirements, 2026-09-08. Applies to the ongoing Studio whole-song rough-cut work.
+
+Character sheets define identity and wardrobe. Captions and generation direction use canonical names every time, even when repetitive: Diego, never a new wardrobe description or a later ambiguous pronoun. Preserve visible clothing actions (tearing, ripping, removing a shirt). Do not invent a replacement outfit or discard the action. A shared language preflight flags static appearance descriptions, ambiguous personal pronouns, and unnecessary sensitive adjectives before generation submission or manual handoff. It does not rewrite the requested action to circumvent provider rules. Existing observations and original uploads remain recoverable.
+
+Master song remains the soundtrack for previews and exports. Project-wide **Use clip audio** defaults Off, including restored projects with no preference. Per-source overrides are Inherit, On, or Off. Enabled audio is mixed with the master at its placed source interval; silent inputs remain silent. Decisions persist with the project, apply to both native playback and exported files, and invalidate previous prepared outputs. Never modify uploaded originals.
+
+Acceptance: focused language tests cover repeated names, ambiguous pronouns, static wardrobe, and visible clothing actions; blocked prompts cannot reach generation dispatch or packet copy. Playback tests cover active versus hidden decoders and default Off; persistence tests cover legacy drafts and overrides; real FFmpeg tone fixtures prove master-only output by default and correctly placed optional source sound. Verify controls and persistence through the browser. Continue whole-song Story/Join acceptance afterwards. Typography comments remain deferred in issue #66.

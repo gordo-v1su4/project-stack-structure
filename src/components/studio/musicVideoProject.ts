@@ -76,6 +76,7 @@ export interface SemanticClipMatch {
 }
 
 export interface EditPlanPreviewSegment {
+  useClipAudio?: boolean;
   placementId?: string;
   planSignature?: string;
   timelineItemId?: string;

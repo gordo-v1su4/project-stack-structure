@@ -1,5 +1,6 @@
 "use client";
 
+import { checkReferenceLanguage } from "./referenceLanguage";
 import { useEffect, useId, useRef, useState } from "react";
 import { sceneEvidenceInput, type MediaObservation } from "./mediaEvidence";
 import { initialSceneEvidenceReview, type SceneEvidenceReview } from "./sceneEvidenceReview";
@@ -9,7 +10,9 @@ import { Button } from "./ui";
 const field = "mt-1 w-full rounded-md border border-line bg-ink-1 px-3 py-2 text-sm text-fg-1 outline-none focus:border-accent";
 const lines = (value: string) => value.split("\n").map(line => line.trim()).filter(Boolean);
 
-export function SceneEvidenceDialog({ source, scene, onSave, onClose }: {
+export function SceneEvidenceDialog({ source, scene, onSave, onClose, useClipAudio = false, characterNames = [] }: {
+  useClipAudio?: boolean;
+  characterNames?: string[];
   source: UploadedVideoSource;
   scene: DetectedSceneSegment;
   onSave: (review: SceneEvidenceReview) => void;
@@ -19,6 +22,7 @@ export function SceneEvidenceDialog({ source, scene, onSave, onClose }: {
   const heading = useId();
   const [draft, setDraft] = useState(() => initialSceneEvidenceReview(scene));
   const [videoError, setVideoError] = useState(false);
+  const languageIssues = checkReferenceLanguage(draft.caption, characterNames);
   const temporal = sceneEvidenceInput(scene, scene.start).kind === "ordered-frames";
   useEffect(() => {
     const returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -41,11 +45,14 @@ export function SceneEvidenceDialog({ source, scene, onSave, onClose }: {
           <p className="mt-1 break-all text-xs text-fg-3">{source.name} · Cut {scene.id + 1} · {scene.start.toFixed(2)}–{scene.end.toFixed(2)} s</p></div>
         <Button type="button" onClick={onClose}>Cancel</Button>
       </div>
-      <video controls preload="metadata" playsInline aria-label="Scene interval preview" src={source.videoUrl}
+      {languageIssues.length > 0 ? <p role="status" className="mt-3 text-xs text-amber-400">Caption language review: {languageIssues.map(issue => issue.message).join(" ")}</p> : null}
+      <video muted={!useClipAudio} controls preload="metadata" playsInline aria-label="Scene interval preview" src={source.videoUrl}
         className="mt-4 max-h-72 w-full rounded-md bg-ink-0" onError={() => setVideoError(true)}
         onLoadedMetadata={event => { event.currentTarget.currentTime = scene.start; }}
-        onPlay={event => { const video = event.currentTarget; if (video.currentTime < scene.start || video.currentTime >= scene.end) video.currentTime = scene.start; }}
-        onSeeking={event => { const video = event.currentTarget; if (video.currentTime < scene.start) video.currentTime = scene.start; else if (video.currentTime > scene.end) video.currentTime = scene.end; }}
+        onPlay={event => { const video = event.currentTarget; if (video.currentTime < scene.start - 0.001 || video.currentTime >= scene.end) video.currentTime = scene.start; }}
+        // Media times may round to microseconds. Reassigning a rounded start on
+        // every seeking event keeps nonzero scene intervals stuck at metadata.
+        onSeeking={event => { const video = event.currentTarget; if (video.currentTime < scene.start - 0.001) video.currentTime = scene.start; else if (video.currentTime > scene.end + 0.001) video.currentTime = scene.end; }}
         onTimeUpdate={event => { const video = event.currentTarget; if (video.currentTime >= scene.end && !video.paused) { video.pause(); video.currentTime = scene.start; } }} />
       {videoError ? <p role="status" className="mt-2 text-sm text-warn">The video could not load. Review the frames below; leave motion uncertain when they do not establish it.</p> : null}
       {frames.length ? <div className="mt-2 grid grid-cols-3 gap-2">{frames.map(([label, url]) => <figure key={label}>

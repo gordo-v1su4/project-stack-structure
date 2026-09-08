@@ -1,3 +1,4 @@
+import { assertReferenceLanguage } from "@/components/studio/referenceLanguage";
 import { Buffer } from "node:buffer";
 
 import { AbortTaskRunError, logger, task, wait } from "@trigger.dev/sdk";
@@ -51,6 +52,7 @@ export const localGenerationTask = task({
   retry: { maxAttempts: 1 },
   run: async (payload: LocalGenerationPayload, { ctx }): Promise<LocalGenerationOutput> => {
     validatePayload(payload);
+    assertReferenceLanguage(payload.request.prompt);
     const provider = payload.request.provider === "comfyui" ? "comfyui" : "swarmui";
     markWorkRunning("generating", `Generating with ${provider}`, { progressMode: "provider" });
     const timeoutSeconds = Math.max(30, Math.min(payload.timeoutSeconds ?? 1_500, 1_700));

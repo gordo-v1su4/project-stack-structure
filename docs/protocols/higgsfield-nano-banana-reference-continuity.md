@@ -98,7 +98,7 @@ Preflight must fail if:
 - a copied prompt still contains roles from an earlier attachment packet.
 
 After the manifest, refer to the character by name rather than by pronoun or
-image number.
+image number. Repeat names even within the same sentence. Static clothing descriptions do not belong in captions or prompts. Preserve visible clothing actions such as tearing, ripping, or removal, naming the actor and possession explicitly (for example, "Diego pulls off Diego’s shirt"). Never replace a static description with a newly invented outfit.
 
 ## Prompt pattern
 

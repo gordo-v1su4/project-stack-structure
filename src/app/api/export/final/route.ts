@@ -1,50 +1,9 @@
-import { getMediaGatewayConfig, normalizeMediaPath, uploadFileToMediaGateway } from "@/lib/mediaGateway";
+import { resolveDurableInput, resolveDurableInputs, type DurableExportInput } from "@/lib/exportInputs";
+import { normalizeMediaPath, uploadFileToMediaGateway } from "@/lib/mediaGateway";
 import { getSessionUser, unauthorizedResponse } from "@/lib/session";
 import { triggerFinalExport } from "@/lib/triggerOrchestration";
 
 export const runtime = "nodejs";
-
-type DurableExportInput = { bucket: string; objectKey: string; fileName: string; mimeType: string; chunks?: Array<{ bucket: string; objectKey: string }> };
-
-function resolveDurableInput(entry: unknown, mimeType: string): DurableExportInput {
-  if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw new Error("Durable reference must be an object.");
-  const record = entry as Record<string, unknown>;
-  if (typeof record.bucket !== "string" || typeof record.objectKey !== "string") {
-    throw new Error("Durable reference requires string bucket and objectKey.");
-  }
-  const config = getMediaGatewayConfig();
-  if (!config) throw new Error("RustFS media gateway env is not configured; durable export references cannot be resolved.");
-  const objectKey = normalizeMediaPath(/%2f/i.test(record.objectKey) ? decodeURIComponent(record.objectKey) : record.objectKey);
-  if (!objectKey || objectKey.length > 512) throw new Error("Invalid durable reference object key.");
-  if (record.bucket.trim() !== config.bucket) throw new Error(`Durable reference bucket must be ${config.bucket}.`);
-
-  let chunks: Array<{ bucket: string; objectKey: string }> | undefined;
-  if (record.chunks !== undefined && record.chunks !== null) {
-    if (!Array.isArray(record.chunks)) throw new Error("Chunk references must be an array.");
-    chunks = record.chunks.map((part) => {
-      if (!part || typeof part !== "object" || Array.isArray(part)) throw new Error("Each chunk reference must be an object.");
-      const partRecord = part as Record<string, unknown>;
-      if (typeof partRecord.bucket !== "string" || typeof partRecord.objectKey !== "string") {
-        throw new Error("Chunk references require string bucket and objectKey.");
-      }
-      if (partRecord.bucket.trim() !== config.bucket) throw new Error(`Chunk reference bucket must be ${config.bucket}.`);
-      return { bucket: partRecord.bucket.trim(), objectKey: normalizeMediaPath(partRecord.objectKey) };
-    });
-  }
-
-  return {
-    bucket: record.bucket.trim(),
-    objectKey,
-    fileName: objectKey.split("/").pop() || "input.bin",
-    mimeType,
-    ...(chunks?.length ? { chunks } : {}),
-  };
-}
-
-function resolveDurableInputs(entries: unknown, mimeType: string): DurableExportInput[] {
-  if (!Array.isArray(entries) || !entries.length) throw new Error("Durable references must be a non-empty array.");
-  return entries.map((entry) => resolveDurableInput(entry, mimeType));
-}
 
 export async function POST(request: Request) {
   const user = await getSessionUser();
@@ -79,7 +38,8 @@ export async function POST(request: Request) {
         audio = resolveDurableInput(parsedAudio, "audio/wav");
         videos = resolveDurableInputs(parsedVideos, "video/mp4");
       } catch (error) {
-        return Response.json({ success: false, error: error instanceof Error ? error.message : "Invalid durable references." }, { status: 400 });
+        const message = error instanceof Error ? error.message : "Invalid durable references.";
+        return Response.json({ success: false, error: message }, { status: message.includes("within the application") ? 403 : 400 });
       }
       // Shared worker credentials mean every referenced object must belong to
       // the caller. Ownership is proven by the owner segment the storage route
@@ -121,6 +81,7 @@ export async function POST(request: Request) {
       audio,
       videos,
       segments: segments.map((segment) => ({
+        useClipAudio: segment.useClipAudio === true,
         sourceIndex: numberValue(segment.sourceIndex) ?? 0,
         startTime: numberValue(segment.startTime) ?? 0,
         endTime: numberValue(segment.endTime) ?? 0,

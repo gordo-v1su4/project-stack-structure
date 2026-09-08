@@ -1,3 +1,4 @@
+import { referenceAwareCaption } from "./referenceLanguage";
 import { normalizeMediaObservation, normalizeMediaEvidence, type MediaObservation, type MediaEvidence } from "./mediaEvidence";
 
 import type { SceneCaptionData, SceneCaptionSource } from "./types";
@@ -20,17 +21,17 @@ export type ServerCaptionResult = {
   model?: string;
 };
 
-export function normalizeServerCaptionPayload(payload: unknown): ServerCaptionResult {
+export function normalizeServerCaptionPayload(payload: unknown, characterNames: string[] = []): ServerCaptionResult {
   if (!isRecord(payload)) throw new Error("Server caption response was not an object.");
   if (payload.ok === false) throw new Error(readString(payload.error) || "Server captioning failed.");
 
   const rawText = readString(payload.text) || readString(payload.caption);
   const parsed = parseCaptionJson(rawText);
   const record = isRecord(payload.meta) ? payload.meta : isRecord(payload.sceneData) ? payload.sceneData : parsed;
-  const text = readString(record?.caption) || rawText;
+  const text = referenceAwareCaption(readString(record?.caption) || rawText || "", characterNames);
   if (!text) throw new Error("Server caption response did not include caption text.");
 
-  const meta = record ? normalizeSceneCaptionData(record) : undefined;
+  const meta = record ? { ...normalizeSceneCaptionData(record), caption: text } : undefined;
 
   return {
     text,

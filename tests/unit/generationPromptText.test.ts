@@ -16,11 +16,11 @@ function moment(caption: string): VideoMoment {
 }
 
 describe("generation prompt caption safety", () => {
-  test("does not copy a named-character caption into a prompt when that character has a reference sheet", () => {
+  test("removes a static appositive without losing the named action", () => {
     expect(getGenerationMomentCaption(
       moment("Diego, in a red plaid shirt, turns toward Valentina on the dance floor."),
       ["Diego", "Valentina"],
-    )).toBe(undefined);
+    )).toBe("Diego turns toward Valentina on the dance floor.");
   });
 
   test("keeps source context that does not describe a referenced character", () => {

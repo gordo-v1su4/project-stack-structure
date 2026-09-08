@@ -1,3 +1,4 @@
+import { assertReferenceLanguage } from "@/components/studio/referenceLanguage";
 import { getSessionUser, unauthorizedResponse } from "@/lib/session";
 import { getMediaGatewayConfig } from "@/lib/mediaGateway";
 import { estimateHiggsfieldImageCredits } from "@/lib/higgsfieldGateway";
@@ -22,6 +23,7 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const job = validateStoryboardJob(body.job, allowedHosts());
+    assertReferenceLanguage(job.prompt, job.references.filter(ref => ref.role.startsWith("character")).map(ref => ref.label));
     const secret = process.env.AUTH_SECRET;
     if (!secret) return Response.json({ error: "Approval signing is not configured." }, { status: 503 });
     if (body.action === "quote") {

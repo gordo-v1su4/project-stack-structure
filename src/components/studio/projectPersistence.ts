@@ -1,3 +1,4 @@
+import { normalizeClipAudioSettings, type ClipAudioSettings } from "./clipAudio";
 import type { DeepgramTranscriptSummary } from "./deepgramUtils";
 import { getDefaultStorySectionDrafts, type MusicVideoProject, type StoryEditSettings, type StoryPlanDraft } from "./musicVideoProject";
 import { hydrateGeneratedStudioAssets, sanitizeGeneratedStudioAssetForStorage, type GeneratedStudioAsset } from "./generatedAssets";
@@ -77,6 +78,7 @@ export interface PersistedStudioProjectDraft {
   musicVideoProject: MusicVideoProject | null;
   referenceAssets?: ReferenceAsset[];
   generatedAssets?: GeneratedStudioAsset[];
+  clipAudioSettings?: ClipAudioSettings;
   captionSettings?: SceneCaptionSettings;
   workflowUiSettings?: PersistedWorkflowUiSettings;
 }
@@ -88,6 +90,7 @@ export interface RuntimeStudioProjectDraft {
   musicVideoProject: MusicVideoProject | null;
   referenceAssets: ReferenceAsset[];
   generatedAssets: GeneratedStudioAsset[];
+  clipAudioSettings?: ClipAudioSettings;
   captionSettings?: SceneCaptionSettings;
   workflowUiSettings?: PersistedWorkflowUiSettings;
 }
@@ -99,6 +102,7 @@ export function createPersistableStudioProjectDraft(params: {
   musicVideoProject: MusicVideoProject | null;
   referenceAssets?: ReferenceAsset[];
   generatedAssets?: GeneratedStudioAsset[];
+  clipAudioSettings?: ClipAudioSettings;
   captionSettings?: SceneCaptionSettings;
   workflowUiSettings?: PersistedWorkflowUiSettings;
   savedAt?: string;
@@ -160,6 +164,7 @@ export function createPersistableStudioProjectDraft(params: {
     musicVideoProject: params.musicVideoProject ? sanitizeMusicVideoProjectForStorage(params.musicVideoProject) : null,
     referenceAssets: (params.referenceAssets ?? []).map(sanitizeReferenceAssetForStorage),
     generatedAssets: (params.generatedAssets ?? []).map(sanitizeGeneratedStudioAssetForStorage),
+    clipAudioSettings: normalizeClipAudioSettings(params.clipAudioSettings),
     captionSettings: sanitizeCaptionSettings(params.captionSettings),
     workflowUiSettings: sanitizeWorkflowUiSettings(params.workflowUiSettings),
   };
@@ -210,6 +215,7 @@ export function hydrateStudioProjectDraft(params: {
     musicVideoProject: params.draft.musicVideoProject,
     referenceAssets: hydrateReferenceAssets(params.draft.referenceAssets ?? []),
     generatedAssets: hydrateGeneratedStudioAssets(params.draft.generatedAssets ?? []),
+    clipAudioSettings: normalizeClipAudioSettings(params.draft.clipAudioSettings),
     captionSettings: sanitizeCaptionSettings(params.draft.captionSettings),
     workflowUiSettings: sanitizeWorkflowUiSettings(params.draft.workflowUiSettings),
   };

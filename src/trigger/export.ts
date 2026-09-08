@@ -28,6 +28,7 @@ export type FinalExportPayload = {
   audio: StoredExportInput;
   videos: StoredExportInput[];
   segments: Array<{
+    useClipAudio?: boolean;
     sourceIndex?: number;
     startTime: number;
     endTime: number;
@@ -46,6 +47,8 @@ export type ShaderCaptureExportPayload = {
   requestKey: string;
   audio: StoredExportInput;
   shaderCapture: StoredExportInput;
+  videos?: StoredExportInput[];
+  segments?: FinalExportPayload["segments"];
 };
 
 type DurableExportAsset = {
@@ -125,7 +128,10 @@ export const shaderCaptureExportTask = task({
     try {
       const audioPath = await materializeStoredInput(payload.audio, workspace, "audio");
       const capturePath = await materializeStoredInput(payload.shaderCapture, workspace, "capture");
+      const videoPaths: string[] = [];
+      for (const [index, input] of (payload.videos ?? []).entries()) videoPaths.push(await materializeStoredInput(input, workspace, `clip-${index}`));
       const result = await generateShaderCaptureMp4Export({
+        segments: payload.segments ? resolveExportSegments(payload.segments, videoPaths) : undefined,
         requestKey: payload.requestKey,
         audioPath,
         shaderCapturePath: capturePath,

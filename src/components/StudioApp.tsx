@@ -1,5 +1,7 @@
 "use client";
 
+import { ClipAudioSettings } from "./studio/ClipAudioSettings";
+import { clipAudioKey, normalizeClipAudioSettings, usesClipAudio } from "./studio/clipAudio";
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { extractWaveformData, fetchEssentiaAnalysis, getEssentiaStorageFromPayload, parseEssentiaPayload } from "./studio/audioAnalysis";
@@ -118,6 +120,7 @@ export default function StudioApp() {
   const [sensitivity] = useState(20);
   const [beatSplitMode] = useState<"beats" | "onsets">("onsets");
   const [splitMode, setSplitMode] = useState<SplitMode>("scene");
+  const [clipAudioSettings, setClipAudioSettings] = useState(() => normalizeClipAudioSettings());
   const [videoSources, setVideoSources] = useState<UploadedVideoSource[]>([]);
   const [videoStatus, setVideoStatus] = useState("Upload one or more video clips to begin.");
   const [videoError, setVideoError] = useState<string | null>(null);
@@ -301,6 +304,7 @@ export default function StudioApp() {
         musicVideoProject,
         referenceAssets,
         generatedAssets,
+        clipAudioSettings,
         captionSettings: buildSceneCaptionSettings(captionMode, beatJoinAnalysis, storyState, referenceAssets),
         workflowUiSettings: {
           activeTab: tab,
@@ -329,7 +333,7 @@ export default function StudioApp() {
       return;
     }
     setSaveState((current) => (current.kind === "dirty" || current.kind === "saving" ? current : { ...current, kind: "dirty" }));
-  }, [activeProjectId, activeProjectName, beatJoinAnalysis, captionMode, colorGradient, committedBeatSplit, draftRestored, finalExportCueCount, finalExportName, finalExportStatus, finalExportUrl, generatedAssets, isPreviewExpanded, matchLyricCueBlend, matchLyricMergeWindow, matchMode, matchOnsetDensity, musicVideoProject, referenceAssets, shaderAccentKinds, shaderPresetId, splitMode, storyState, tab, videoSources]);
+  }, [activeProjectId, activeProjectName, beatJoinAnalysis, clipAudioSettings, captionMode, colorGradient, committedBeatSplit, draftRestored, finalExportCueCount, finalExportName, finalExportStatus, finalExportUrl, generatedAssets, isPreviewExpanded, matchLyricCueBlend, matchLyricMergeWindow, matchMode, matchOnsetDensity, musicVideoProject, referenceAssets, shaderAccentKinds, shaderPresetId, splitMode, storyState, tab, videoSources]);
 
   useEffect(() => {
     if (!draftRestored) return;
@@ -507,6 +511,7 @@ export default function StudioApp() {
     videoFilesByMediaKeyRef.current.clear();
     setBeatJoinAnalysis(draft.analysis);
     setAudioStatus(draft.analysis ? `Restored · ${draft.analysis.sourceLabel}` : "Upload a song to unlock beat sync.");
+    setClipAudioSettings(normalizeClipAudioSettings(draft.clipAudioSettings));
     const restoredCaptionMode = resolveCaptionMode(draft.captionSettings?.mode);
     setVideoSources(draft.videoSources.map((source) => reconcileSourceCaptionStatus(source, restoredCaptionMode)));
     setVideoStatus(draft.videoSources.length
@@ -680,8 +685,11 @@ export default function StudioApp() {
       videoSources,
       editSettings: storyState.editSettings,
     });
-    return applyApprovedGeneratedAssets(resolved, generatedAssets);
-  }, [generatedAssets, musicVideoProject, storyState.editSettings, storyState.storyGenerated, videoSources]);
+    return applyApprovedGeneratedAssets(resolved, generatedAssets).map(segment => {
+      const source = videoSources.find(source => source.videoUrl === segment.videoUrl);
+      return { ...segment, useClipAudio: segment.kind !== "gap" && usesClipAudio(clipAudioSettings, source ? clipAudioKey(source) : undefined) };
+    });
+  }, [clipAudioSettings, generatedAssets, musicVideoProject, storyState.editSettings, storyState.storyGenerated, videoSources]);
 
   const auditionGeneratedAsset = (asset: GeneratedStudioAsset, contextRadius: number) => {
     const preview = buildGeneratedAssetContextPreview(storyPreviewSegments, asset, contextRadius);
@@ -1210,6 +1218,7 @@ export default function StudioApp() {
         musicVideoProject,
         referenceAssets,
         generatedAssets,
+        clipAudioSettings,
         captionSettings: buildSceneCaptionSettings(captionMode, migratedAnalysis, storyState, referenceAssets),
         workflowUiSettings: {
           activeTab: tab,
@@ -1282,7 +1291,8 @@ export default function StudioApp() {
           musicVideoProject,
           referenceAssets,
           generatedAssets,
-          captionSettings: buildSceneCaptionSettings(captionMode, beatJoinAnalysis, storyState, referenceAssets),
+          clipAudioSettings,
+        captionSettings: buildSceneCaptionSettings(captionMode, beatJoinAnalysis, storyState, referenceAssets),
           workflowUiSettings: {
             activeTab: tab,
             splitMode,
@@ -1331,6 +1341,7 @@ export default function StudioApp() {
 
       const segments = storyPreviewSegments.map((segment) => {
         return {
+          useClipAudio: segment.useClipAudio === true,
           sourceIndex: videoUrlIndex.get(segment.videoUrl) ?? 0,
           startTime: segment.startTime,
           endTime: segment.endTime,
@@ -1439,7 +1450,8 @@ export default function StudioApp() {
               musicVideoProject,
               referenceAssets,
               generatedAssets,
-              captionSettings: buildSceneCaptionSettings(captionMode, beatJoinAnalysis, storyState, referenceAssets),
+              clipAudioSettings,
+        captionSettings: buildSceneCaptionSettings(captionMode, beatJoinAnalysis, storyState, referenceAssets),
               workflowUiSettings: {
                 activeTab: tab,
                 splitMode,
@@ -1590,6 +1602,20 @@ export default function StudioApp() {
 
       const form = new FormData();
       form.set("audio", audioFile);
+      const urls = [...new Set(storyPreviewSegments.map(segment => segment.videoUrl))];
+      const refs = urls.map(url => {
+        const source = videoSources.find(source => source.videoUrl === url);
+        const generated = generatedAssets.find(asset => buildGeneratedAssetPlaybackUrl(asset) === url);
+        const bucket = source?.storageBucket ?? generated?.fullStorage?.bucket;
+        const objectKey = source?.storagePath ?? generated?.fullStorage?.objectKey ?? generated?.fullStorage?.storagePath;
+        if (!bucket || !objectKey) throw new Error("Save source media before exporting the project audio mix.");
+        return { bucket, objectKey };
+      });
+      form.set("videoRefs", JSON.stringify(refs));
+      form.set("segments", JSON.stringify(storyPreviewSegments.map(segment => ({
+        sourceIndex: urls.indexOf(segment.videoUrl), startTime: segment.startTime, endTime: segment.endTime,
+        musicStart: segment.musicStart, musicEnd: segment.musicEnd, useClipAudio: segment.useClipAudio === true,
+      }))));
       form.set("shaderCapture", new File([captureBlob], `${requestKey}.webm`, { type: captureBlob.type || "video/webm" }));
       form.set("requestKey", requestKey);
 
@@ -2005,7 +2031,8 @@ export default function StudioApp() {
     musicVideoProject,
     referenceAssets,
     generatedAssets,
-    captionSettings: buildSceneCaptionSettings(captionMode, beatJoinAnalysis, storyState, referenceAssets),
+    clipAudioSettings,
+        captionSettings: buildSceneCaptionSettings(captionMode, beatJoinAnalysis, storyState, referenceAssets),
     workflowUiSettings: {
       activeTab: tab,
       splitMode,
@@ -2019,7 +2046,7 @@ export default function StudioApp() {
       isPreviewExpanded,
       committedSplit: committedBeatSplit ?? undefined,
     },
-  }), [beatJoinAnalysis, captionMode, colorGradient, committedBeatSplit, generatedAssets, isPreviewExpanded, matchLyricCueBlend, matchLyricMergeWindow, matchMode, matchOnsetDensity, musicVideoProject, referenceAssets, shaderAccentKinds, shaderPresetId, splitMode, storyState, tab, videoSources]);
+  }), [beatJoinAnalysis, clipAudioSettings, captionMode, colorGradient, committedBeatSplit, generatedAssets, isPreviewExpanded, matchLyricCueBlend, matchLyricMergeWindow, matchMode, matchOnsetDensity, musicVideoProject, referenceAssets, shaderAccentKinds, shaderPresetId, splitMode, storyState, tab, videoSources]);
 
   useEffect(() => {
     const staleWorkflowSplit = tab === "split" && committedBeatSplit?.kind === "workflow" && !isCommittedSplitCurrent;
@@ -2356,9 +2383,13 @@ export default function StudioApp() {
             ) : null}
 
             <main className={`studio-fade-in min-h-0 flex-1 space-y-3 overflow-y-auto ${monitorFocused || activeStageBlocked ? "hidden" : ""}`}>
+            <ClipAudioSettings value={clipAudioSettings} sources={videoSources}
+              disabled={isFinalExporting || isShaderCaptureExporting || Boolean(previewState.activeRequestKey)}
+              onChange={value => { invalidateArrangementOutput(); setClipAudioSettings(value); }} />
             {activeStageBlocked ? null : <>
             {tab === "review" && (
               <IngestTab
+                clipAudioSettings={clipAudioSettings}
                 analysis={beatJoinAnalysis}
                 audioStatus={audioStatus}
                 audioError={audioError}

@@ -407,7 +407,7 @@ describe("BrowserPreviewPlayer double buffering", () => {
       expect(back.crossOrigin).toBe("anonymous");
       player.load([
         { videoUrl: "blob:a", startTime: 0, endTime: 1, label: "SEG_01" },
-        { videoUrl: "blob:b", startTime: 0, endTime: 1, label: "SEG_02" },
+        { videoUrl: "blob:b", startTime: 0, endTime: 1, label: "SEG_02", useClipAudio: true },
       ]);
 
       const playDone = player.play();
@@ -416,6 +416,8 @@ describe("BrowserPreviewPlayer double buffering", () => {
       // Segment 1 plays on the front element; segment 2 is staged hidden.
       expect(front.src).toBe("blob:a");
       expect(front.paused).toBe(false);
+      expect(front.muted).toBe(true);
+      expect(back.muted).toBe(true);
       expect(front.style.opacity).toBe("1");
       expect(back.src).toBe("blob:b");
       expect(back.style.opacity).toBe("0");
@@ -429,6 +431,8 @@ describe("BrowserPreviewPlayer double buffering", () => {
       expect(player.getState().currentIndex).toBe(1);
       expect(back.style.opacity).toBe("1");
       expect(back.paused).toBe(false);
+      expect(back.muted).toBe(false);
+      expect(front.muted).toBe(true);
       expect(front.style.opacity).toBe("0");
       expect(front.paused).toBe(true);
       // The old front element still holds its source — no src churn on swap.

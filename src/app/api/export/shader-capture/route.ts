@@ -1,3 +1,5 @@
+import { resolveDurableInputs } from "@/lib/exportInputs";
+import type { FinalExportPayload } from "@/trigger/export";
 import { uploadFileToMediaGateway } from "@/lib/mediaGateway";
 import { getSessionUser, unauthorizedResponse } from "@/lib/session";
 import { triggerShaderCaptureExport } from "@/lib/triggerOrchestration";
@@ -15,6 +17,17 @@ export async function POST(request: Request) {
     if (!(audioFile instanceof File)) return Response.json({ success: false, error: "Master audio file is required." }, { status: 400 });
     if (!(shaderCaptureFile instanceof File)) return Response.json({ success: false, error: "Shader capture video file is required." }, { status: 400 });
 
+    const segmentsRaw = formData.get("segments");
+    const refsRaw = formData.get("videoRefs");
+    let segments: FinalExportPayload["segments"] | undefined;
+    let videos;
+    if (segmentsRaw !== null || refsRaw !== null) {
+      if (typeof segmentsRaw !== "string" || typeof refsRaw !== "string") throw new Error("Both segments and videoRefs are required for clip audio.");
+      const parsed = JSON.parse(segmentsRaw) as FinalExportPayload["segments"];
+      if (!Array.isArray(parsed) || !parsed.length || parsed.some(segment => !Number.isFinite(segment.startTime) || !Number.isFinite(segment.endTime) || segment.endTime <= segment.startTime)) throw new Error("Invalid clip audio intervals.");
+      segments = parsed.map(segment => ({ ...segment, useClipAudio: segment.useClipAudio === true }));
+      videos = resolveDurableInputs(JSON.parse(refsRaw), "video/mp4");
+    }
     const folder = `media-uploads/export-inputs/${sanitize(requestKey)}`;
     const [audioUpload, captureUpload] = await Promise.all([
       uploadFileToMediaGateway({ file: audioFile, folder }),
@@ -22,6 +35,7 @@ export async function POST(request: Request) {
     ]);
     const handle = await triggerShaderCaptureExport({
       requestKey,
+      segments, videos,
       audio: { bucket: audioUpload.bucket, objectKey: audioUpload.objectKey, fileName: audioFile.name, mimeType: audioFile.type || "audio/wav" },
       shaderCapture: { bucket: captureUpload.bucket, objectKey: captureUpload.objectKey, fileName: shaderCaptureFile.name, mimeType: shaderCaptureFile.type || "video/webm" },
     });

@@ -169,7 +169,8 @@ async function runSmartSceneCaption(payload: SmartSceneCaptionPayload, triggerRu
       throw new Error(readString(result, "error") || readString(result, "detail") || `Caption gateway failed (${response.status})`);
     }
 
-    const normalized = normalizeServerCaptionPayload(result);
+    const original = normalizeServerCaptionPayload(result);
+    const normalized = normalizeServerCaptionPayload(result, payload.captionReferences?.filter(reference => reference.role === "primary" || reference.role === "secondary").map(reference => reference.name));
     let context: Record<string, unknown> = {};
     try { context = JSON.parse(payload.captionContext || "{}"); } catch { /* Unstructured legacy context. */ }
     const start = Number(payload.sceneStart);
@@ -180,7 +181,7 @@ async function runSmartSceneCaption(payload: SmartSceneCaptionPayload, triggerRu
       sourceId: typeof context.sourceId === "string" ? context.sourceId : payload.sourceName ?? "unknown",
       sceneId: payload.sceneId ?? "unknown", sourceStart: Number.isFinite(start) ? start : 0, sourceEnd: Number.isFinite(end) ? end : 0,
       input: { kind: input?.kind === "ordered-frames" && sampleTimes.length >= 2 ? "ordered-frames" : input?.kind === "single-frame" ? "single-frame" : "unknown", sampleTimes, urls: [], storage: { bucket: payload.bucket, objectKey: payload.objectKey } },
-      model: normalized.model ?? payload.model, rawCaption: normalized.text,
+      model: normalized.model ?? payload.model, rawCaption: original.text,
       referenceKeys: payload.captionReferences?.map((reference) => reference.objectKey),
     });
     const enrichedResult = { ...result, text: normalized.text, meta: { ...normalized.meta, evidence: normalized.observation }, mediaEvidence };

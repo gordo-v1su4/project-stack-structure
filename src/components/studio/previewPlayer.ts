@@ -1,4 +1,5 @@
 export interface PreviewSegment {
+  useClipAudio?: boolean;
   kind?: "source" | "gap";
   gapReason?: string;
   videoUrl: string;
@@ -178,7 +179,10 @@ export class BrowserPreviewPlayer {
 
   private applyElementVisibility() {
     this.elements.forEach((element, index) => {
-      if (element) element.style.opacity = this.segments[this.currentIndex]?.kind !== "gap" && index === this.activeElementIndex ? "1" : "0";
+      if (!element) return;
+      const active = this.segments[this.currentIndex]?.kind !== "gap" && index === this.activeElementIndex;
+      element.style.opacity = active ? "1" : "0";
+      element.muted = !active || this.segments[this.currentIndex]?.useClipAudio !== true;
     });
   }
 
@@ -433,7 +437,7 @@ export class BrowserPreviewPlayer {
       }
       if (standbyReady) {
         this.activeElementIndex = this.activeElementIndex === 0 ? 1 : 0;
-        this.applyElementVisibility();
+        video.muted = true;
         video.pause();
         this.nextSegmentIsLive = true;
         this.stopProgressLoop();

@@ -1,5 +1,6 @@
 "use client";
 
+import { clipAudioKey, normalizeClipAudioSettings, usesClipAudio, type ClipAudioSettings } from "./clipAudio";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { fmt } from "./math";
@@ -8,6 +9,7 @@ import { Button } from "./ui";
 import type { UploadedVideoSource } from "./types";
 
 type SourceVideoLibraryProps = {
+  clipAudioSettings?: ClipAudioSettings;
   sources: UploadedVideoSource[];
   isPreparingVideos: boolean;
   onAppendVideos: (files: File[]) => void | Promise<void>;
@@ -19,6 +21,7 @@ type SourceVideoLibraryProps = {
 };
 
 export function SourceVideoLibrary({
+  clipAudioSettings = normalizeClipAudioSettings(),
   sources,
   isPreparingVideos,
   onAppendVideos,
@@ -152,7 +155,7 @@ export function SourceVideoLibrary({
         })}
       </div>
 
-      {previewSource ? <SourceVideoPreviewDialog source={previewSource} onClose={() => setPreviewSourceId(null)} /> : null}
+      {previewSource ? <SourceVideoPreviewDialog useClipAudio={usesClipAudio(clipAudioSettings, clipAudioKey(previewSource))} source={previewSource} onClose={() => setPreviewSourceId(null)} /> : null}
     </div>
   );
 }
@@ -177,7 +180,7 @@ export function formatSourceFrameReadout(currentTime: number, duration: number, 
   };
 }
 
-function SourceVideoPreviewDialog({ source, onClose }: { source: UploadedVideoSource; onClose: () => void }) {
+function SourceVideoPreviewDialog({ source, onClose, useClipAudio = false }: { useClipAudio?: boolean; source: UploadedVideoSource; onClose: () => void }) {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(source.duration);
   const readout = formatSourceFrameReadout(currentTime, duration);
@@ -220,7 +223,7 @@ function SourceVideoPreviewDialog({ source, onClose }: { source: UploadedVideoSo
           </button>
         </div>
         <div className="bg-black p-2">
-          <video
+          <video muted={!useClipAudio}
             src={source.videoUrl}
             poster={getSourcePreviewImage(source)}
             controls

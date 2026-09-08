@@ -285,7 +285,7 @@ async function captionSceneFrameViaServer(
     const payload = response.status === 202 && runId
       ? await waitForTriggerRunOutput(runId, { timeoutMs: 420_000, pollIntervalMs: 2_000 })
       : initialPayload;
-    return { ...normalizeServerCaptionPayload(payload), input };
+    return { ...normalizeServerCaptionPayload(payload, settings.context?.characters?.map(character => character.name)), input };
   } finally {
     bitmap.close();
   }

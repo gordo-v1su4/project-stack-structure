@@ -1,3 +1,4 @@
+import { mixClipAudio } from "./clipAudioMix";
 import { execFile } from "node:child_process";
 import { rm, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -26,6 +27,7 @@ export { buildFfmpegShaderFilter } from "./shaderEffectPlan";
 export type { ShaderEffectCue } from "./shaderEffectPlan";
 
 export interface ExportTimelineSegment extends ConcatPreviewSegment {
+  useClipAudio?: boolean;
   musicStart?: number;
   musicEnd?: number;
   label?: string;
@@ -209,6 +211,9 @@ export async function generateMusicVideoExport(params: {
     });
   }
 
+  muxAudioPath = await mixClipAudio({ audioPath: muxAudioPath, segments,
+    outputPath: `${outputPath}.mix.wav`, ffmpegPath });
+
   const args = [
     "-y",
     "-i", videoAsset.outputPath,
@@ -313,6 +318,7 @@ export async function generateShaderCaptureMp4Export(params: {
   requestKey: string;
   shaderCapturePath: string;
   audioPath: string;
+  segments?: ExportTimelineSegment[];
   outputPath?: string;
   ffmpegPath?: string;
   probeFn?: ProbeFn;
@@ -324,10 +330,18 @@ export async function generateShaderCaptureMp4Export(params: {
     outputDir: getDefaultPreviewOutputDir(),
   });
 
+  let audioPath = params.audioPath;
+  const segments = normalizeExportSegments(params.segments ?? []);
+  const assembly = planExportAudioAssembly(params.segments ?? []);
+  if (assembly.mode === "windowed-slices") audioPath = await assembleWindowedMasterAudio({
+    audioPath, slices: assembly.slices, outputPath: `${outputPath}.master.wav`, ffmpegPath,
+  });
+  audioPath = await mixClipAudio({ audioPath, segments, outputPath: `${outputPath}.mix.wav`, ffmpegPath });
+
   await execFileAsync(ffmpegPath, [
     "-y",
     "-i", params.shaderCapturePath,
-    "-i", params.audioPath,
+    "-i", audioPath,
     "-map", "0:v:0",
     "-map", "1:a:0",
     "-vf", "fps=24,scale=640:360:force_original_aspect_ratio=decrease,pad=640:360:(ow-iw)/2:(oh-ih)/2,setsar=1,setpts=PTS-STARTPTS",

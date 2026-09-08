@@ -1,5 +1,6 @@
 "use client";
 
+import { assertReferenceLanguage, checkReferenceLanguage } from "../referenceLanguage";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { GeneratedStudioAsset } from "../generatedAssets";
 import type { EditPlanPreviewSegment } from "../musicVideoProject";
@@ -101,6 +102,7 @@ export function StoryboardPlanner({ projectId, segments, references, assets, onA
     try {
       const quotes: StoryboardQuote[] = [];
       for (const job of jobs) {
+        assertReferenceLanguage(job.prompt, job.references.filter(ref => ref.role.startsWith("character")).map(ref => ref.label));
         if (job.billing === "subscription-manual") {
           quotes.push({ token: "manual", expiresAt: Date.now() + 15 * 60_000, credits: null, guideUsd: IMAGE_MODELS[job.model].guideUsd2k });
         } else {
@@ -129,6 +131,7 @@ export function StoryboardPlanner({ projectId, segments, references, assets, onA
       const end = batch.auto ? batch.jobs.length : completed + 1;
       for (; completed < end && !stop.current; completed++) {
         const job = batch.jobs[completed];
+        assertReferenceLanguage(job.prompt, job.references.filter(ref => ref.role.startsWith("character")).map(ref => ref.label));
         const quote = batch.quotes[completed];
         if (job.billing === "subscription-manual") {
           setHandoff((current) => [...current.filter((item) => item.id !== job.id), job]);
@@ -266,7 +269,7 @@ export function StoryboardPlanner({ projectId, segments, references, assets, onA
       </article>)}
     </div>
     {packets.length ? <details open className="space-y-3 rounded border border-zinc-700 p-3"><summary className="text-sm">Approved subscription handoffs ({packets.length}) · not generated yet</summary>
-      {packets.map((job) => <details key={job.id}><summary className="cursor-pointer text-xs">{job.title}</summary><textarea readOnly aria-label={`Submission packet ${job.title}`} className={`${field} mt-2`} rows={10} value={serializeStoryboardJob(job)} /><button className={button} onClick={() => void navigator.clipboard.writeText(serializeStoryboardJob(job)).then(() => setStatus("Packet copied."), () => setStatus("Clipboard unavailable; select and copy the packet text."))}>Copy packet</button></details>)}
+      {packets.map((job) => <details key={job.id}><summary className="cursor-pointer text-xs">{job.title}</summary><textarea readOnly aria-label={`Submission packet ${job.title}`} className={`${field} mt-2`} rows={10} value={serializeStoryboardJob(job)} /><button className={button} disabled={checkReferenceLanguage(job.prompt).length > 0} title={checkReferenceLanguage(job.prompt).map(issue => issue.message).join(" ")} onClick={() => void navigator.clipboard.writeText(serializeStoryboardJob(job)).then(() => setStatus("Packet copied."), () => setStatus("Clipboard unavailable; select and copy the packet text."))}>Copy packet</button></details>)}
       <p className="text-xs text-zinc-400">After manual generation, upload the result to the project&apos;s RustFS storage and attach its image URL here. Grids are split into nine panels on import; standalone images are not split.</p>
       <label className="block text-xs">Returned job<select aria-label="Returned storyboard job" className={field} value={returnJobId} onChange={(event) => setReturnJobId(event.target.value)}><option value="">Choose the exact approved job</option>{packets.map((job) => <option key={job.id} value={job.id}>{job.title}</option>)}</select></label>
       <input aria-label="Returned image RustFS URL" className={field} value={returnUrl} onChange={(event) => setReturnUrl(event.target.value)} placeholder="https://… durable image URL" />

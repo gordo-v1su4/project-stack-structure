@@ -1,3 +1,4 @@
+import { checkReferenceLanguage } from "@/components/studio/referenceLanguage";
 import {
   buildSwarmComfyDirectUrl,
   checkSwarmUiStatus,
@@ -36,6 +37,9 @@ export async function POST(request: Request) {
     if (!prompt) {
       return Response.json({ success: false, error: "prompt is required" }, { status: 400 });
     }
+
+    const languageIssues = checkReferenceLanguage(prompt);
+    if (languageIssues.length) return Response.json({ success: false, error: "Review prompt language before submission.", languageIssues }, { status: 422 });
 
     const provider = body.provider === "comfyui" ? "comfyui" : "swarmui";
     const mediaConfig = getMediaGatewayConfig();

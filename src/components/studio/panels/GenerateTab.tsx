@@ -1,5 +1,7 @@
 "use client";
 
+import { referenceAwareCaption } from "../referenceLanguage";
+
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { fmt } from "../math";
 import {
@@ -1810,43 +1812,18 @@ function buildSuggestedPrompt(slot?: CoverageSlot, moment?: VideoMoment, referen
 
 function getMomentCaption(moment?: VideoMoment) {
   const caption = parseCaptionText(moment?.captionMeta?.caption) ?? parseCaptionText(moment?.caption);
-  return caption ? moderationSafeText(caption) : undefined;
+  return caption;
 }
 
 export function getGenerationMomentCaption(moment: VideoMoment | undefined, characterNames: string[]) {
   const caption = getMomentCaption(moment);
-  if (!caption || !characterNames.some((name) => containsCharacterName(caption, name))) return caption;
-  return undefined;
+  return caption ? referenceAwareCaption(caption, characterNames) : undefined;
 }
 
 function getSelectedCharacterNames(assets: ReferenceAsset[], selection: GenerationReferenceSelection) {
   return [selection.character1Id, selection.character2Id]
     .flatMap((id) => id ? assets.filter((asset) => asset.id === id).map((asset) => asset.displayName.trim()) : [])
     .filter(Boolean);
-}
-
-function containsCharacterName(value: string, name: string) {
-  const escaped = name.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return Boolean(escaped) && new RegExp(`\\b${escaped}\\b`, "i").test(value);
-}
-
-// Nano Banana Pro rejects prompts with NSFW-flagged vocabulary even when it
-// only describes wardrobe/lighting from real footage — these rewrites keep
-// story text and captions passing moderation without changing visual intent.
-const MODERATION_SAFE_REWRITES: Array<[RegExp, string]> = [
-  [/\bsteamy\b/gi, "haze-filled"],
-  [/\bsexy\b/gi, "stylish"],
-  [/\bsensual\b/gi, "elegant"],
-  [/\bseductive\b/gi, "confident"],
-  [/\bprovocative\b/gi, "striking"],
-  [/\bsultry\b/gi, "moody"],
-  [/\berotic\b/gi, "dramatic"],
-  [/\bshirtless\b/gi, "wearing an open shirt"],
-  [/\bclimax\b/gi, "tension peak"],
-];
-
-export function moderationSafeText(value: string) {
-  return MODERATION_SAFE_REWRITES.reduce((text, [pattern, replacement]) => text.replace(pattern, replacement), value);
 }
 
 function parseCaptionText(value?: string) {

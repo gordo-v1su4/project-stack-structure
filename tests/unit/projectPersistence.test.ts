@@ -575,3 +575,16 @@ describe("service BPM persistence", () => {
     expect(hydrateStudioProjectDraft({ draft }).analysis?.bpm).toBe(undefined);
   });
 });
+
+describe("project clip audio persistence", () => {
+  test("legacy defaults Off and explicit project/clip choices survive round trip", () => {
+    const params = { analysis: null, videoSources: [source], storyState, musicVideoProject: null };
+    const legacy = createPersistableStudioProjectDraft(params);
+    delete legacy.clipAudioSettings;
+    expect(hydrateStudioProjectDraft({ draft: legacy }).clipAudioSettings).toEqual({ useClipAudio: false, overrides: {} });
+    const settings = { useClipAudio: true, overrides: { "0:clip.mp4": false, "1:other.mp4": true } };
+    const saved = createPersistableStudioProjectDraft({ ...params, clipAudioSettings: settings });
+    expect(hydrateStudioProjectDraft({ draft: saved }).clipAudioSettings).toEqual(settings);
+    expect(saved.videoSources[0]?.storagePath).toBe(source.storagePath);
+  });
+});

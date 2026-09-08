@@ -1,5 +1,6 @@
 "use client";
 
+import { clipAudioKey, normalizeClipAudioSettings, usesClipAudio, type ClipAudioSettings } from "../clipAudio";
 import { useMemo, useState, type ReactNode } from "react";
 import { fmt } from "../math";
 import { deriveIngestLanes, hasRequiredIngestReferences, isCaptionContextReady, type IngestLane, type IngestLaneKey } from "../ingestLanes";
@@ -18,6 +19,7 @@ import { SceneEvidenceDialog } from "../SceneEvidenceDialog";
 import type { SceneEvidenceReview } from "../sceneEvidenceReview";
 
 type IngestTabProps = {
+  clipAudioSettings?: ClipAudioSettings;
   analysis: BeatJoinAnalysis | null;
   audioStatus: string;
   audioError: string | null;
@@ -70,6 +72,7 @@ const STEP_TITLES: Record<IngestStepKey, string> = {
  * under its heading — no separate readiness grid.
  */
 export function IngestTab({
+  clipAudioSettings = normalizeClipAudioSettings(),
   analysis,
   audioStatus,
   audioError,
@@ -250,7 +253,7 @@ export function IngestTab({
 
       <IngestStep step={3} id="footage" title={STEP_TITLES.footage} tone={steps.footage.tone} status={steps.footage.status} hint="Clips upload to RustFS and scene detection starts automatically.">
         {videoSources.length ? (
-          <SourceVideoLibrary
+          <SourceVideoLibrary clipAudioSettings={clipAudioSettings}
             sources={videoSources}
             isPreparingVideos={isPreparingVideos}
             onAppendVideos={onAppendVideos}
@@ -403,7 +406,7 @@ export function IngestTab({
           </div>
         )}
       </IngestStep>
-      {reviewTarget ? <SceneEvidenceDialog source={reviewTarget.source} scene={reviewTarget.scene}
+      {reviewTarget ? <SceneEvidenceDialog useClipAudio={usesClipAudio(clipAudioSettings, clipAudioKey(reviewTarget.source))} characterNames={referenceAssets.filter(asset => asset.role.startsWith("character")).map(asset => asset.displayName)} source={reviewTarget.source} scene={reviewTarget.scene}
         onClose={() => setReviewTarget(null)}
         onSave={review => { onReviewScene(reviewTarget.source.id, reviewTarget.scene.id, review); setReviewTarget(null); }} /> : null}
     </div>

@@ -1,3 +1,4 @@
+import { checkReferenceLanguage } from "./referenceLanguage";
 import { approvedFreshFramesForPlacement } from "./wholeShotReplacement";
 import type { GeneratedStudioAsset } from "./generatedAssets";
 import type { VideoMoment } from "./musicVideoProject";
@@ -77,7 +78,7 @@ export function buildSeedanceContinuationPacket(params: {
       role: "composition-reference",
       label: `${params.moment?.sourceRefLabel ?? params.moment?.label ?? "source shot"} opening composition`,
       url: finalFrameUrl,
-      instruction: "@Image_1 guides composition, layout and blocking only. It is NOT an exact first/last frame or an identity source. Rebuild people from their attached high-resolution character sheets. Do not stitch onto the old action's last frame.",
+      instruction: "@Image_1 guides composition, layout and blocking only. It is NOT an exact first/last frame or an identity source. Rebuild named characters from the attached character sheets. Do not stitch onto the old action's last frame.",
     });
   }
 
@@ -165,6 +166,8 @@ ${handles}–${(handles + requiredDuration).toFixed(2)}s: perform the complete n
 ${(handles + requiredDuration).toFixed(2)}–${durationSeconds}s: usable moving tail handle after the action, no freeze frame or fade.
 
 Canonical high-resolution character sheets ALWAYS control faces, bodies and wardrobe. Source frames and fresh storyboard images control composition/layout only unless explicitly assigned an endpoint role. Preserve location and lighting from the environment reference. ${audioDirection} Generated audio is not the master song. No duplicate people, unrelated location, captions, titles, logos or burned-in text.`;
+
+  errors.push(...checkReferenceLanguage(storyIntent + "\n" + completedAction, references.filter(ref => ref.role === "character-identity").map(ref => ref.label)).map(issue => issue.message));
 
   return {
     projectId: params.projectId,

@@ -145,6 +145,25 @@ describe("Next route Trigger.dev dispatch boundary", () => {
     expect(triggerMocks.triggerLocalGeneration).toHaveBeenCalledTimes(1);
   });
 
+  test("flags ambiguous pronouns and static wardrobe before generation dispatch", async () => {
+    for (const prompt of ["Diego runs. He turns.", "Diego in a red shirt runs.", "A sensual dance."]) {
+      resetMocks();
+      const response = await postLocalGeneration(new Request("http://localhost/api/generate/local", {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt }),
+      }));
+      expect(response.status).toBe(422);
+      expect(triggerMocks.triggerLocalGeneration).toHaveBeenCalledTimes(0);
+    }
+    resetMocks();
+    const prompt = "Diego's shirt tears as Diego climbs. Diego keeps climbing.";
+    const response = await postLocalGeneration(new Request("http://localhost/api/generate/local", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt }),
+    }));
+    expect(response.status).toBe(202);
+    const sent = (triggerMocks.triggerLocalGeneration as unknown as { mock: { calls: Array<[{ request: { prompt: string } }]> } }).mock.calls[0]?.[0];
+    expect(sent?.request.prompt).toBe(prompt);
+  });
+
   test("queues MiniMax conditioning only from the configured durable bucket", async () => {
     resetMocks();
     const response = await postLocalGeneration(new Request("http://localhost/api/generate/local", {
