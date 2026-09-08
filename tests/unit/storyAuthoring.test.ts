@@ -189,3 +189,17 @@ describe("independent shot decisions", () => {
     expect(isStoryPlanConfirmable(ranked)).toBe(false);
   });
 });
+
+
+test("opening a saved story refreshes advisory assessments without filling deliberate holes", () => {
+  const original = fixture();
+  const source = { id: "existing", sourceClipId: 0, label: "Dancing", start: 0, end: 4, duration: 4, caption: "Diego dances in the club" };
+  const before = JSON.stringify(original);
+  const inspected = beginStoryInspection(original, [source]);
+  const candidate = inspected.anchors[0]!.requirements![0]!.candidates![0]!;
+  expect(candidate.assessment?.usableInEdit).toBe(true);
+  expect(candidate.assessment?.eligibility).not.toBe("eligible");
+  expect(inspected.anchors.every(anchor => anchor.resolution === null && anchor.selectedCandidateId === null)).toBe(true);
+  expect(inspected.anchors.every(anchor => anchor.requirements?.every(requirement => requirement.resolution === null && requirement.selectedCandidateId === null))).toBe(true);
+  expect(JSON.stringify(original)).toBe(before);
+});

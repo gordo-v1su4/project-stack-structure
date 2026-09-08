@@ -105,8 +105,9 @@ export function getStoryTimingError(treatment: StoryTreatment, sections: StoryPl
 }
 
 /** Inspection is a detached draft; abandoning it has no project write. */
-export function beginStoryInspection(treatment: StoryTreatment): StoryTreatment {
-  return structuredClone(treatment);
+export function beginStoryInspection(treatment: StoryTreatment, moments?: VideoMoment[]): StoryTreatment {
+  const draft = structuredClone(treatment);
+  return moments ? hydrateTreatmentCoverage([draft], moments)[0]! : draft;
 }
 
 export function buildStoryDraftCommit(state: StoryTreatmentState, next: StoryTreatment, select = false) {

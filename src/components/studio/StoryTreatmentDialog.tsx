@@ -24,7 +24,7 @@ export function StoryTreatmentDialog({ treatment, moments, sections, cues, durat
   const dialog = useRef<HTMLDialogElement>(null);
   const headingId = useId();
   const requests = useRef(createStoryRequestGuard());
-  const [draft, setDraft] = useState(() => beginStoryInspection(treatment));
+  const [draft, setDraft] = useState(() => beginStoryInspection(treatment, moments));
   const [editing, setEditing] = useState(false);
   const [evidencePreview, setEvidencePreview] = useState<Record<string, string>>({});
   const [instruction, setInstruction] = useState("");

@@ -506,7 +506,7 @@ function normalizeCoveragePercent(value: unknown, fallback: number) {
 }
 
 export function rankStoryRequirementCoverage(requirement: StoryShotRequirement, moments: VideoMoment[]): StoryShotRequirement {
-  const ranked = rankAnchorCoverage({ id: requirement.id, title: requirement.description, description: requirement.description, purpose: "", generationPrompt: "", requirements: [requirement], coverage: requirement.coverage ?? "missing", candidates: requirement.candidates ?? [], selectedCandidateId: requirement.selectedCandidateId ?? null, resolution: requirement.resolution ?? null }, moments);
+  const ranked = rankAnchorCoverage({ id: requirement.id, title: requirement.description, description: requirement.description, purpose: "", generationPrompt: "", requirements: [requirement], coverage: requirement.coverage ?? "missing", candidates: requirement.candidates ?? [], selectedCandidateId: requirement.selectedCandidateId ?? null, resolution: requirement.resolution ?? null }, moments, requirement.resolution === null);
   const explicitGap = requirement.resolution === null;
   return { ...requirement, coverage: ranked.coverage, candidates: ranked.candidates,
     resolution: requirement.resolution !== undefined ? requirement.resolution : ranked.resolution,
@@ -523,7 +523,7 @@ function rankStoryMomentCoverage(anchor: GeneratedAnchor | StoryAnchor, moments:
   return { ...ranked, requirements, coverage };
 }
 
-function rankAnchorCoverage(anchor: GeneratedAnchor | StoryAnchor, moments: VideoMoment[]): StoryAnchor {
+function rankAnchorCoverage(anchor: GeneratedAnchor | StoryAnchor, moments: VideoMoment[], preserveGap = true): StoryAnchor {
   const query = `${anchor.title} ${anchor.description}`;
   const previous = "coverage" in anchor ? anchor : null;
   const rankedCandidates = moments.map(moment => {
@@ -543,7 +543,7 @@ function rankAnchorCoverage(anchor: GeneratedAnchor | StoryAnchor, moments: Vide
   const supported = candidates.find(candidate => candidate.assessment.eligibility === "eligible");
   const coverage: StoryCoverageState = supported ? "covered" : candidates.some(candidate => candidate.score >= COVERAGE_WEAK_THRESHOLD) ? "weak" : "missing";
   const previousSupported = candidates.find(candidate => candidate.momentId === previous?.selectedCandidateId && isUsableStoryMatch(candidate.assessment));
-  const selectedCandidateId = previousSupported?.momentId ?? supported?.momentId ?? null;
+  const selectedCandidateId = preserveGap && previous?.resolution === null ? null : previousSupported?.momentId ?? supported?.momentId ?? null;
   const resolution = previous?.resolution === "generate" || previous?.resolution === "omit" ? previous.resolution : selectedCandidateId ? "source" : null;
   return { ...anchor, coverage, candidates, selectedCandidateId: resolution === "source" ? selectedCandidateId : null, resolution };
 }
