@@ -24,6 +24,7 @@ declare module "bun:test" {
   }
 
   export function describe(name: string, fn: () => void): void;
+  export function afterEach(fn: () => void | Promise<void>): void;
   export function test(name: string, fn: () => void | Promise<void>, timeoutMs?: number): void;
   export namespace test {
     function skip(name: string, fn: () => void | Promise<void>, timeoutMs?: number): void;

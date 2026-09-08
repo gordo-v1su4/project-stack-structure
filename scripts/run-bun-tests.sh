@@ -3,6 +3,7 @@
 set -euo pipefail
 
 readonly isolated_tests=(
+  "tests/unit/storyTreatmentTask.test.ts"
   "tests/unit/sceneCaptionServer.test.ts"
   "tests/unit/triggerRoutes.test.ts"
   "tests/integration/exportRoute.test.ts"

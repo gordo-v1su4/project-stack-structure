@@ -59,6 +59,22 @@ does not create a second logical manifest.
 
 ## Realtime activity
 
+Story authoring and semantic review run as two traced stages inside the same
+`qwen-story-treatment` job. The worker calls authenticated gateway endpoints
+`/story/treatments/author` and `/story/treatments/review`, in that order. Both
+perform model inference on the existing GPU backend. The author response has no
+review approval marker; the worker only returns an accepted result after the
+independent review endpoint passes. Trigger shows model preparation, authoring,
+review, and the failed stage, while Studio metadata changes to `reviewing` during
+review. Logs contain model/run identifiers and fixed diagnostics, not full prompts
+or credentials. Deploy the gateway endpoints before the worker. The original
+combined `/story/treatments` endpoint remains available for older workers.
+
+Verification: exercise the app's Story action and inspect the resulting Trigger
+trace, including a review rejection; confirm both GPU stages appear and that a
+failed review produces no accepted proposal. A direct backend diagnostic alone
+does not verify this production path.
+
 Authenticated dispatches have exactly one `user:<githubOwnerId>` tag. The
 server-only `/api/orchestration/realtime-token` route issues a 15-minute public
 read token scoped only to that tag. The Studio Work Activity surface subscribes

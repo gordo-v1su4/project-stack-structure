@@ -49,58 +49,75 @@ export const storyTreatmentTask = task({
   },
 });
 
-async function runStoryTreatmentGateway(payload: StoryTreatmentPayload, triggerRunId: string) {
+export async function runStoryTreatmentGateway(payload: StoryTreatmentPayload, triggerRunId: string) {
   const { gatewayUrl, token } = resolveSceneCaptionGatewayAuth();
   const endpoint = normalizeEndpoint(process.env.STORY_TREATMENT_GATEWAY_ENDPOINT || "/story/treatments");
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  await ensureQwenBackend(gatewayUrl, token ? headers : undefined, triggerRunId);
+  await logger.trace("Prepare GPU story model", () => ensureQwenBackend(gatewayUrl, token ? headers : undefined, triggerRunId));
 
   markWorkRunning("generating", payload.operation === "revise" ? "Reconciling selected story and moments" : "Generating three story treatments");
-  const requestOptions: RequestInit & { timeout: false } = {
-    method: "POST",
-    headers,
-    body: JSON.stringify({
+  const result = await logger.trace("Author story on GPU", async () => {
+    const authored = await postStoryStage(`${endpoint}/author`, {
       operation: payload.operation ?? "generate",
       model: payload.model,
       instructions: payload.instructions,
       input: payload.input,
       max_tokens: payload.maxTokens ?? 2_800,
       review_context: payload.reviewContext,
-    }),
-    // Bun's separate five-minute socket idle timer otherwise disconnects while
-    // the gateway generates and reviews. Keep the whole-request deadline below.
-    timeout: false,
-    signal: AbortSignal.timeout(540_000),
-  };
-  const response = await fetch(`${gatewayUrl}${endpoint}`, requestOptions);
-  const result = await readJson(response);
-  if (!response.ok || readBoolean(result, "ok") === false) {
-    const reviewDetail = readString(result, "detail");
-    if (reviewDetail?.startsWith("Story logline review failed:")) {
-      // Only the authoring caller may retry with a corrected prompt. Repeating
-      // this identical task would multiply generation and review calls.
-      throw new AbortTaskRunError(safeStoryReviewFailureMessage(reviewDetail));
+    }, 390_000);
+    if (!authored.output || typeof authored.output !== "object" || Array.isArray(authored.output)) {
+      throw new Error("Story gateway returned no JSON output object.");
     }
-    throw new Error(formatSceneCaptionGatewayError(response.status, result, endpoint));
-  }
+    return authored;
+  });
   const output = result.output;
-  try { assertStoryLoglineReview(result.logline_review); }
-  catch { throw new AbortTaskRunError(STORY_LOGLINE_REVIEW_REQUIRED); }
-  if (!output || typeof output !== "object" || Array.isArray(output)) {
-    throw new Error("Story gateway returned no JSON output object.");
-  }
+  logger.info("Story authoring finished; independent review required", { triggerRunId, model: payload.model });
+  markWorkRunning("reviewing", "Checking story logline against authored facts");
+  const review = await logger.trace("Review story logline on GPU", async () => {
+    const reviewed = await postStoryStage(`${endpoint}/review`, {
+      operation: payload.operation ?? "generate", output, review_context: payload.reviewContext,
+    }, 135_000);
+    try { assertStoryLoglineReview(reviewed.logline_review); }
+    catch { throw new AbortTaskRunError(STORY_LOGLINE_REVIEW_REQUIRED); }
+    return { ...reviewed, logline_review: reviewed.logline_review };
+  });
+  logger.info("Independent story review passed", { triggerRunId, model: readString(review, "model") || payload.model });
   const usage = result.usage;
   return {
     ok: true,
-    loglineReview: result.logline_review,
+    loglineReview: review.logline_review,
     model: readString(result, "model") || payload.model,
     output: output as Record<string, unknown>,
     usage: usage && typeof usage === "object" && !Array.isArray(usage)
       ? usage as StoryTreatmentGatewayResult["usage"]
       : undefined,
   } satisfies StoryTreatmentGatewayResult;
+
+  async function postStoryStage(stageEndpoint: string, body: Record<string, unknown>, timeoutMs: number) {
+    const requestOptions: RequestInit & { timeout: false } = {
+      method: "POST", headers, body: JSON.stringify(body), timeout: false,
+      signal: AbortSignal.timeout(timeoutMs),
+    };
+    const response = await fetch(`${gatewayUrl}${stageEndpoint}`, requestOptions);
+    const stageResult = await readJson(response);
+    if (!response.ok || readBoolean(stageResult, "ok") === false) {
+      const detail = readString(stageResult, "detail");
+      if (detail?.startsWith("Story logline review failed:")) {
+        const message = safeStoryReviewFailureMessage(detail);
+        logger.warn("Story stage rejected", { triggerRunId, stage: stageEndpoint.endsWith("/review") ? "review" : "author", reason: message });
+        // A corrected authoring request must be a new run. Do not repeat the
+        // identical story automatically after a semantic review rejection.
+        throw new AbortTaskRunError(message);
+      }
+      if (response.status === 404) {
+        throw new AbortTaskRunError(STORY_LOGLINE_REVIEW_REQUIRED);
+      }
+      throw new Error(formatSceneCaptionGatewayError(response.status, stageResult, stageEndpoint));
+    }
+    return stageResult;
+  }
 }
 
 async function ensureQwenBackend(
