@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { JoinTab } from "@/components/studio/panels/JoinTab";
 import type { EditPlanPreviewSegment } from "@/components/studio/musicVideoProject";
 
-describe("JoinTab resolved edit", () => {
+describe("JoinTab whole-song rough cut", () => {
   test("shows the actual Match sequence instead of Split candidates or fake toggles", () => {
     const segments: EditPlanPreviewSegment[] = [
       {
@@ -37,14 +37,19 @@ describe("JoinTab resolved edit", () => {
     const markup = renderToStaticMarkup(createElement(JoinTab, {
       previewSegments: segments,
       activeClip: 0,
-      onActiveClip: () => {},
+      onActiveClip: () => {}, sectionLabels: {intro: "Intro"}, existingFootage: [],
+      onPlayWhole: () => {}, onPlaySection: () => {}, onFillGap: () => {}, onReviewAlternates: () => {},
+      onSwap: () => {}, proposalSummary: null, editMessage: null, onApplyProposal: () => {},
+      onCancelProposal: () => {}, onUndo: () => {}, canUndo: false, busy: false,
     }));
 
-    expect(markup).toContain("Resolved edit locked to preview / export");
-    expect(markup).toContain("2 cuts");
+    expect(markup).toContain("Whole-song rough cut");
+    expect(markup).toContain("Play whole song");
+    expect(markup).toContain("Review replacement");
+    expect(markup).toContain("1 sections");
     expect(markup).toContain("S5 · Scene 01");
     expect(markup).toContain("S13 · Scene 04");
-    expect(markup).toContain("SONG 0:00.00–0:02.50");
+    expect(markup).toContain("Song 0:00.0–0:02.5");
     expect(markup).not.toContain("click to toggle on/off");
     expect(markup).not.toContain("SKIP");
   });

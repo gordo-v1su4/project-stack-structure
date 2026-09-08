@@ -63,6 +63,38 @@ actual frames and temporal evidence before attributing a bad placement to captio
 
 ## 4. The user flow
 
+### September 7 clarification: the whole-song rough-cut loop
+
+The user clarified that the preview is an editable assembly of **all song
+sections together**, including story holes, rather than a collection of isolated
+section previews. The primary review loop is: play the whole rough cut, inspect
+a hole or uncertain clip order, move/swap footage or supply a missing shot, and
+play the revised sequence again. Final effects, transitions, and export follow
+that assembly review. Section playback remains a quick way to test a local edit.
+
+- Keep the master song and its section windows fixed while arranging visuals.
+  A hole plays as an explicit placeholder for its full song window; playback
+  continues into the next available clip without compressing the song.
+- Join must be available for an incomplete confirmed story, including an
+  all-gap assembly. Coverage is still incomplete, and final export remains
+  blocked until its requirements are satisfied.
+- Show sections in song order with their clips and holes. Provide whole-song
+  and selected-section playback, an obvious route to replace a selected clip,
+  and a route to fill the selected hole with supplied or generated media.
+- Support explicit arrangement changes with visible consequences and undo.
+  Preserve evidence eligibility and causal story constraints; when a change
+  requires revising the story, surface that requirement rather than silently
+  turning an incompatible clip into a supported match.
+- Match, Generate, Join, Effects, and Export consume the same saved placement
+  sequence. No preview may substitute the larger Split pool or random ordering.
+- A revision stops stale playback and invalidates affected prepared output;
+  the user can replay the new assembly immediately and restore it after reload.
+- Acceptance: visibly play source → hole → source across section boundaries
+  with continuous master audio; change a clip/order, replay and undo; fill a
+  hole from supplied media, review it in context, reload, and verify that final
+  effects/export use that same accepted sequence. No new image/video generation
+  is needed for this test.
+
 ```mermaid
 flowchart LR
     A[Upload song, refs, six videos] --> B[Analyze music and visible footage]

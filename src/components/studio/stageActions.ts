@@ -13,8 +13,8 @@ export const STAGE_DESCRIPTIONS: Record<Tab, string> = {
   story: "Pick a director treatment, resolve its story anchors against your footage, and confirm the plan that drives every section.",
   split: "Choose how footage is cut into candidate windows. Scene cuts are the default; rhythm adds onset-driven cuts.",
   shuffle: "Every section gets its best-scoring footage moment. Swap alternates where the pick is weak.",
-  generate: "Fill true coverage gaps with generated shots. Short and weak matches are optional quality reviews.",
-  join: "The approved edit in song order. Nothing reshuffles here — changes go back through Match or Generate.",
+  generate: "Fill missing shots, or continue to Join to review the whole-song rough cut with visible gaps. Short and weak matches are optional quality reviews.",
+  join: "Play the whole-song rough cut, including visible gaps. Swap or reorder shots, fill missing footage, and replay your changes.",
   ramp: "Speed ramps and transition curves over the joined edit. Defaults are tuned for music video pacing.",
   compose: "Pick a shader treatment, preview the final edit, and export the MP4.",
 };
@@ -80,7 +80,8 @@ export function buildStageHeaderModel(input: StageActionInput): StageHeaderModel
       kind: "continue",
       label: `Continue to ${next.label}`,
       targetTab: next.key,
-      disabledReason: stage.ready ? null : continueBlockedReason(stage),
+      // A stage can have unfinished coverage while the next review screen is usable.
+      disabledReason: next.available ? null : continueBlockedReason(stage, next),
     };
   }
 
@@ -109,7 +110,7 @@ export function buildStageHeaderModel(input: StageActionInput): StageHeaderModel
   };
 }
 
-function continueBlockedReason(stage: PipelineStage): string {
+function continueBlockedReason(stage: PipelineStage, next: PipelineStage): string {
   switch (stage.key) {
     case "review":
       return `Ingest not complete · ${stage.status}`;
@@ -118,13 +119,13 @@ function continueBlockedReason(stage: PipelineStage): string {
     case "split":
       return "Choose a split strategy with detected scenes";
     case "shuffle":
-      return "Match needs at least one matched section";
+      return next.blockedReason ?? "Confirm Story and commit Split to review missing shots";
     case "generate":
-      return `${stage.status} · required before Join`;
+      return next.blockedReason ?? "Build the Story timeline for whole-song rough-cut review";
     case "join":
-      return "Join needs a resolved edit";
+      return "Join needs a whole-song rough-cut timeline";
     default:
-      return stage.status;
+      return next.blockedReason ?? stage.status;
   }
 }
 
@@ -137,7 +138,7 @@ function previewLabel(tab: Tab): string {
     case "generate":
       return "Preview selection";
     case "join":
-      return "Preview edit";
+      return "Play whole-song rough cut";
     case "ramp":
       return "Preview with effects";
     case "compose":

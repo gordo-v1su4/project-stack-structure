@@ -155,7 +155,7 @@ describe("studio pipeline state", () => {
     const generate = state.stages.find((stage) => stage.key === "generate");
     expect(match).toMatchObject({ ready: true, status: "7/9 slots matched" });
     expect(generate).toMatchObject({ ready: false, status: "2 true gaps to fill" });
-    expect(state.stages.find((stage) => stage.key === "join")).toMatchObject({ available: false, prerequisiteKey: "generate" });
+    expect(state.stages.find((stage) => stage.key === "join")).toMatchObject({ available: false, prerequisiteKey: "story" });
     expect(state.nextStage?.key).toBe("generate");
   });
 
@@ -189,7 +189,7 @@ describe("studio pipeline state", () => {
       available: true,
       ready: true,
       complete: false,
-      status: "40 cuts · review",
+      status: "40 segments · rough cut",
     });
     expect(state.stages.find((stage) => stage.key === "ramp")).toMatchObject({ ready: true, complete: false, status: "Beat Pulse · review" });
     expect(state.stages.find((stage) => stage.key === "compose")).toMatchObject({ ready: true, complete: false, status: "Preview ready · export pending" });
@@ -275,7 +275,7 @@ describe("studio pipeline state", () => {
     });
   });
 
-  test("approved generated replacements unblock Join when edit plan still has missing primaries", () => {
+  test("approved generated replacements complete coverage without changing rough-cut access", () => {
     const missingItem: TimelineItem = {
       id: "item-gap",
       sectionId: "intro",
@@ -357,10 +357,73 @@ describe("studio pipeline state", () => {
       finalExportReady: false,
     }));
 
-    expect(blocked.stages.find((stage) => stage.key === "generate")).toMatchObject({ ready: false });
+    expect(blocked.stages.find((stage) => stage.key === "generate")).toMatchObject({ available: true, ready: false, complete: false });
+    expect(blocked.stages.find((stage) => stage.key === "join")).toMatchObject({ available: true, ready: true, complete: false });
+    expect(blocked.stages.find((stage) => stage.key === "compose")).toMatchObject({ available: false, ready: false, complete: false });
     expect(unblocked.stages.find((stage) => stage.key === "generate")).toMatchObject({ ready: true });
     expect(unblocked.stages.find((stage) => stage.key === "join")).toMatchObject({ available: true, ready: true });
   });
+
+  for (const gapSlotCount of [2, 9]) {
+    test(`a whole-song rough cut with ${gapSlotCount} gaps unlocks review but never final export`, () => {
+      const state = buildPipelineState(makeInput({
+        hasAudioAnalysis: true,
+        hasLyricTranscript: true,
+        videoCount: 2,
+        sceneCount: 10,
+        captionReadyCount: 10,
+        captionTotalCount: 10,
+        storyTreatmentSelected: true,
+        storyAnchorsResolved: true,
+        storyPlanConfirmed: true,
+        editSlotCount: 9,
+        matchedSlotCount: 9 - gapSlotCount,
+        gapSlotCount,
+        storySegmentCount: 9,
+        hasCommittedSplit: true,
+        // A stale output must not make an edit with newly introduced holes complete.
+        finalExportReady: true,
+      }));
+
+      expect(state.stages.find((stage) => stage.key === "shuffle")).toMatchObject({ available: true, ready: true, complete: false });
+      expect(state.stages.find((stage) => stage.key === "generate")).toMatchObject({ available: true, ready: false, complete: false });
+      expect(state.stages.find((stage) => stage.key === "join")).toMatchObject({
+        available: true, ready: true, complete: false, status: `Whole-song rough cut · ${gapSlotCount} gaps to fill`,
+    });
+    expect(state.stages.find((stage) => stage.key === "ramp")).toMatchObject({ available: true, ready: true, complete: false });
+    expect(state.stages.find((stage) => stage.key === "compose")).toMatchObject({
+      available: false, ready: false, complete: false, prerequisiteKey: "generate", status: `${gapSlotCount} gaps · final export blocked`,
+    });
+    expect(state.nextStage?.key).toBe("generate");
+    expect(state.nextHint).toContain("rough cut in Join");
+    });
+  }
+
+  for (const prerequisites of [
+    { storyPlanConfirmed: false, hasCommittedSplit: true },
+    { storyPlanConfirmed: true, hasCommittedSplit: false },
+  ]) {
+    test(`rough-cut access still requires current confirmed Story and Split: ${JSON.stringify(prerequisites)}`, () => {
+      const state = buildPipelineState(makeInput({
+        hasAudioAnalysis: true,
+        hasLyricTranscript: true,
+        videoCount: 2,
+        sceneCount: 10,
+        captionReadyCount: 10,
+        captionTotalCount: 10,
+        storyTreatmentSelected: true,
+        storyAnchorsResolved: true,
+        editSlotCount: 9,
+        matchedSlotCount: 9,
+        storySegmentCount: 9,
+        finalExportReady: true,
+        ...prerequisites,
+      }));
+      for (const key of ["generate", "join", "ramp", "compose"]) {
+        expect(state.stages.find((stage) => stage.key === key)).toMatchObject({ available: false, ready: false, complete: false });
+      }
+    });
+  }
 
   test("marks the active tab", () => {
     const state = buildPipelineState(makeInput({ activeTab: "shuffle" }));

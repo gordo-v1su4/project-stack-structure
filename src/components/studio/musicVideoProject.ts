@@ -76,6 +76,7 @@ export interface SemanticClipMatch {
 }
 
 export interface EditPlanPreviewSegment {
+  placementId?: string;
   planSignature?: string;
   timelineItemId?: string;
   narrativeMomentId?: string;
@@ -681,6 +682,7 @@ export function buildEditPlanPreviewSegments(params: {
     const isGap = placement.kind === "gap" || !source?.videoUrl;
     return {
       videoUrl: isGap ? "" : source!.videoUrl,
+      placementId: placement.id,
       kind: isGap ? "gap" : "source",
       gapReason: isGap ? placement.reason ?? "Source media is unavailable" : undefined,
       startTime: isGap ? 0 : placement.sourceStart,

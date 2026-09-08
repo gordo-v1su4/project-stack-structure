@@ -1,4 +1,21 @@
 import type { EditPlanPreviewSegment } from "./musicVideoProject";
+import type { Tab } from "./types";
+
+export function usesStoryAssembly(tab: Tab): boolean {
+  return ["story", "shuffle", "generate", "join", "ramp", "compose"].includes(tab);
+}
+
+/** Review stages share the accepted song sequence, including its empty windows. */
+export function selectStoryAssemblyPreview(
+  tab: Tab,
+  segments: EditPlanPreviewSegment[],
+  range: PreviewCutRange | null = null,
+  audition: EditPlanPreviewSegment[] | null = null,
+): EditPlanPreviewSegment[] {
+  if (!usesStoryAssembly(tab)) return [];
+  if (tab === "generate") return audition ?? slicePreviewCutRange(segments, range);
+  return tab === "join" ? slicePreviewCutRange(segments, range) : segments;
+}
 
 export type PreviewCutRange = {
   startIndex: number;

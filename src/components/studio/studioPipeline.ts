@@ -69,11 +69,14 @@ export function buildPipelineState(input: PipelineStageInput): PipelineState {
     && input.storyPlanConfirmed
     && input.editSlotCount > 0;
   const splitReady = storyReady && input.hasCommittedSplit;
-  const matchReady = splitReady && input.captionReadyCount > 0 && input.matchedSlotCount > 0;
+  const matchReady = splitReady && input.captionReadyCount > 0;
   const generateReady = matchReady && input.gapSlotCount === 0;
-  const joinReady = generateReady && input.storySegmentCount > 0;
+  // Rough-cut review includes empty song windows; coverage gates final export only.
+  const joinReady = splitReady && input.storySegmentCount > 0;
   const effectsReady = joinReady;
-  const exportReady = input.finalExportReady || effectsReady;
+  const exportReady = effectsReady && generateReady;
+  const exportComplete = exportReady && input.finalExportReady;
+  const gapLabel = `${input.gapSlotCount} gap${input.gapSlotCount === 1 ? "" : "s"}`;
 
   const stages: Omit<PipelineStage, "step" | "active" | "isNext">[] = [
     {
@@ -140,10 +143,10 @@ export function buildPipelineState(input: PipelineStageInput): PipelineState {
       ready: generateReady,
       complete: generateReady,
       available: matchReady,
-      blockedReason: matchReady ? null : "Finish Match before planning missing or replacement shots.",
-      prerequisiteKey: matchReady ? null : "shuffle",
-      status: !storyReady
-        ? "Waiting for match"
+      blockedReason: matchReady ? null : "Confirm Story and commit Split before planning missing or replacement shots.",
+      prerequisiteKey: matchReady ? null : "split",
+      status: !matchReady
+        ? "Waiting for Split"
         : input.gapSlotCount > 0
           ? `${input.gapSlotCount} true gap${input.gapSlotCount === 1 ? "" : "s"} to fill`
           : input.shortReviewSlotCount > 0
@@ -156,31 +159,41 @@ export function buildPipelineState(input: PipelineStageInput): PipelineState {
       key: "join",
       label: "Join",
       ready: joinReady,
-      complete: input.finalExportReady,
-      available: generateReady,
-      blockedReason: generateReady ? null : "Resolve required Generate gaps before assembling the approved Join timeline.",
-      prerequisiteKey: generateReady ? null : "generate",
-      status: joinReady ? `${input.storySegmentCount} cuts · review` : "Waiting for story preview",
+      complete: exportComplete,
+      available: joinReady,
+      blockedReason: joinReady ? null : !splitReady
+        ? "Confirm Story and commit Split before reviewing the whole-song rough cut."
+        : "Build the Story timeline before reviewing the whole-song rough cut.",
+      prerequisiteKey: joinReady ? null : !splitReady ? "split" : "story",
+      status: joinReady
+        ? input.gapSlotCount > 0
+          ? `Whole-song rough cut · ${gapLabel} to fill`
+          : `${input.storySegmentCount} segments · rough cut`
+        : "Waiting for story timeline",
     },
     {
       key: "ramp",
       label: "Effects",
       ready: effectsReady,
-      complete: input.finalExportReady,
+      complete: exportComplete,
       available: joinReady,
       blockedReason: joinReady ? null : "Build the Join timeline before applying transitions or effects.",
       prerequisiteKey: joinReady ? null : "join",
-      status: input.finalExportReady ? `${input.shaderPresetLabel} · applied` : `${input.shaderPresetLabel} · review`,
+      status: exportComplete ? `${input.shaderPresetLabel} · applied` : `${input.shaderPresetLabel} · review`,
     },
     {
       key: "compose",
       label: "Export",
       ready: exportReady,
-      complete: input.finalExportReady,
-      available: effectsReady,
-      blockedReason: effectsReady ? null : "Finish Join and review Effects before opening export controls.",
-      prerequisiteKey: effectsReady ? null : "ramp",
-      status: input.finalExportReady ? "MP4 ready" : input.storySegmentCount > 0 ? "Preview ready · export pending" : "Waiting",
+      complete: exportComplete,
+      available: exportReady,
+      blockedReason: exportReady ? null : input.gapSlotCount > 0
+        ? `Fill ${gapLabel} before final export.${joinReady ? " The whole-song rough cut is available in Join." : ""}`
+        : "Finish Join and review Effects before opening export controls.",
+      prerequisiteKey: exportReady ? null : input.gapSlotCount > 0 ? "generate" : "ramp",
+      status: exportComplete ? "MP4 ready" : input.gapSlotCount > 0
+        ? `${gapLabel} · final export blocked`
+        : exportReady ? "Preview ready · export pending" : "Waiting",
     },
   ];
 
@@ -226,9 +239,9 @@ function buildNextHint(stage: PipelineStage) {
     case "shuffle":
       return "Next: review semantic matches for each section in Match.";
     case "generate":
-      return "Next: fill the remaining true coverage gaps in Generate before Join.";
+      return "Review the whole-song rough cut in Join, or fill remaining coverage gaps in Generate.";
     case "join":
-      return "Next: run the Story preview so Join has cuts to assemble.";
+      return "Next: build the Story timeline for whole-song rough-cut review in Join.";
     case "ramp":
       return "Next: pick a shader preset in Effects.";
     case "compose":

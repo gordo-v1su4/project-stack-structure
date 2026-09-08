@@ -75,13 +75,64 @@ describe("buildStageHeaderModel", () => {
     }));
     const model = buildStageHeaderModel({ stages: pipeline.stages, activeTab: "join", canPreview: true, previewDisabledReason: null, isBusy: false });
     expect(model!.primary).toMatchObject({ kind: "continue", label: "Continue to Effects", targetTab: "ramp", disabledReason: null });
-    expect(model!.secondary).toMatchObject({ kind: "preview", label: "Preview edit", disabledReason: null });
+    expect(model!.secondary).toMatchObject({ kind: "preview", label: "Play whole-song rough cut", disabledReason: null });
   });
 
-  test("Generate keeps Continue disabled while true gaps remain and says why", () => {
+  for (const gapSlotCount of [2, 6]) {
+    test(`Generate can continue to Join with ${gapSlotCount} gaps while reporting incomplete coverage`, () => {
+      const pipeline = buildPipelineState(makeInput({
+        ...ingestDone,
+        activeTab: "generate",
+        storyTreatmentSelected: true,
+        storyAnchorsResolved: true,
+        storyPlanConfirmed: true,
+        editSlotCount: 6,
+        matchedSlotCount: 6 - gapSlotCount,
+        gapSlotCount,
+        storySegmentCount: 6,
+        hasCommittedSplit: true,
+      }));
+      const model = buildStageHeaderModel({ stages: pipeline.stages, activeTab: "generate", canPreview: true, previewDisabledReason: null, isBusy: true });
+      expect(model!.primary).toMatchObject({ kind: "continue", label: "Continue to Join" });
+      expect(model!.primary!.disabledReason).toBeNull();
+      expect(model!.status).toBe(`${gapSlotCount} true gaps to fill`);
+      expect(model!.secondary!.disabledReason).toBe("Preview already running");
+    });
+  }
+
+  test("all-gap Match can continue to Generate without claiming matched coverage", () => {
     const pipeline = buildPipelineState(makeInput({
       ...ingestDone,
-      activeTab: "generate",
+      storyTreatmentSelected: true,
+      storyAnchorsResolved: true,
+      storyPlanConfirmed: true,
+      editSlotCount: 6,
+      gapSlotCount: 6,
+      hasCommittedSplit: true,
+      storySegmentCount: 6,
+    }));
+    const model = buildStageHeaderModel({ stages: pipeline.stages, activeTab: "shuffle", canPreview: true, previewDisabledReason: null, isBusy: false });
+    expect(model!.primary).toMatchObject({ kind: "continue", targetTab: "generate", disabledReason: null });
+    expect(model!.status).toBe("0/6 slots matched");
+  });
+
+  test("Generate cannot continue to Join before the story timeline exists", () => {
+    const pipeline = buildPipelineState(makeInput({
+      ...ingestDone,
+      storyTreatmentSelected: true,
+      storyAnchorsResolved: true,
+      storyPlanConfirmed: true,
+      editSlotCount: 6,
+      matchedSlotCount: 6,
+      hasCommittedSplit: true,
+    }));
+    const model = buildStageHeaderModel({ stages: pipeline.stages, activeTab: "generate", canPreview: false, previewDisabledReason: null, isBusy: false });
+    expect(model!.primary!.disabledReason).toContain("Build the Story timeline");
+  });
+
+  test("Effects review can play the rough cut but cannot continue to final Export with holes", () => {
+    const pipeline = buildPipelineState(makeInput({
+      ...ingestDone,
       storyTreatmentSelected: true,
       storyAnchorsResolved: true,
       storyPlanConfirmed: true,
@@ -89,11 +140,12 @@ describe("buildStageHeaderModel", () => {
       matchedSlotCount: 4,
       gapSlotCount: 2,
       hasCommittedSplit: true,
+      storySegmentCount: 6,
     }));
-    const model = buildStageHeaderModel({ stages: pipeline.stages, activeTab: "generate", canPreview: true, previewDisabledReason: null, isBusy: true });
-    expect(model!.primary).toMatchObject({ kind: "continue", label: "Continue to Join" });
-    expect(model!.primary!.disabledReason).toContain("2 true gaps");
-    expect(model!.secondary!.disabledReason).toBe("Preview already running");
+    const model = buildStageHeaderModel({ stages: pipeline.stages, activeTab: "ramp", canPreview: true, previewDisabledReason: null, isBusy: false });
+    expect(model!.blocked).toBeNull();
+    expect(model!.primary!.disabledReason).toContain("Fill 2 gaps before final export");
+    expect(model!.secondary!.disabledReason).toBeNull();
   });
 
   test("last stage has no Continue action", () => {

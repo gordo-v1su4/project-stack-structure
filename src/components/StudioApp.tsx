@@ -12,6 +12,7 @@ import { buildCaptionRevisionKey, createCaptionRevisionGuard } from "./studio/me
 import { applySceneEvidenceReview, type SceneEvidenceReview } from "./studio/sceneEvidenceReview";
 import { buildStudioSourceContextSignature } from "./studio/studioSourceContext";
 import { isPlacementPlanCurrent, storyProjectInputSignature, prepareApprovedPlacements, buildEditPlanPreviewSegments, normalizeStoryEditSettings, type EditPlanPreviewSegment, type MusicVideoProject } from "./studio/musicVideoProject";
+import { applyRoughCutSwap, proposeRoughCutSwap, proposeRoughCutReplacement, type RoughCutSwapProposal } from "./studio/roughCutArrangement";
 import { selectStorySectionCandidate } from "./studio/musicVideoProjectSelection";
 import { buildAutoShaderCues, describeMusicVideoShaderPreset, MUSIC_VIDEO_SHADER_PRESETS, type ShaderAccentKinds, type ShaderEffectCue } from "./studio/shaderEffectPlan";
 import {
@@ -33,7 +34,7 @@ import type { StudioProjectSummary } from "@/lib/studioProjectStore";
 import { applyApprovedGeneratedAssets, buildGeneratedAssetContextPreview, buildGeneratedAssetPlaybackUrl, type GeneratedStudioAsset } from "./studio/generatedAssets";
 import { createLocalReferenceAsset, uploadReferenceAssetToRustFs, type ReferenceAsset, type ReferenceAssetLibraryRole } from "./studio/referenceAssets";
 import { BrowserPreviewPlayer, createPreviewPlayerState, type PreviewPlayerState, type PreviewSegment } from "./studio/previewPlayer";
-import { slicePreviewCutRange, type PreviewCutRange } from "./studio/resolvedPreviewSelection";
+import { selectStoryAssemblyPreview, usesStoryAssembly, type PreviewCutRange } from "./studio/resolvedPreviewSelection";
 import { ComposeTab } from "./studio/panels/ComposeTab";
 import { IngestTab } from "./studio/panels/IngestTab";
 import { GenerateTab, type SeedanceMasterAudioRef } from "./studio/panels/GenerateTab";
@@ -62,10 +63,7 @@ import type { StatusTone } from "./studio/ui";
 import { buildStudioPipelineInput } from "./studio/buildStudioPipelineInput";
 import { buildPipelineState } from "./studio/studioPipeline";
 import { isStoryPlanConfirmable, selectedTreatment, type StoryTreatment } from "./studio/storyTreatments";
-import { buildShuffleQueue } from "./studio/shuffleQueue";
 import { waitForTriggerRunOutput } from "@/lib/clientTriggerRuns";
-import { rankManifestCandidates } from "./studio/manifestRanking";
-import { buildMusicCutEvents, buildSegmentManifest } from "./studio/segmentManifest";
 import {
   createSectionRecomputeState,
   failSectionRecompute,
@@ -79,11 +77,8 @@ import {
   buildPreviewAssetUrl,
   deriveActionDisabledState,
   deriveCompletedLabel,
-  deriveEffectiveClipOrder,
-  deriveManifestRankingMode,
   derivePreviewStatusLabel,
   derivePreviewWindow,
-  normalizeColorScore,
 } from "./studio/studioUiState";
 import { mergeSceneIntoPrevious } from "./studio/sceneSplit";
 import { buildAudioDrivenSegments, buildBeatSegments, buildSourceClipSpans, buildUnifiedSplitSegments, getSourceClipTimeOffset } from "./studio/sourceTimeline";
@@ -134,16 +129,12 @@ export default function StudioApp() {
   const [audioProgress, setAudioProgress] = useState(0);
 
   const [shuffleMode] = useState<ShuffleMode>("motion");
-  const [minScore] = useState(0.5);
-  const [lookahead] = useState(3);
-  const [keepPct] = useState(70);
   const [colorGradient, setColorGradient] = useState<ColorGradient>("Sunset");
   const matchMode: MatchMode = "balanced";
   const [matchOnsetDensity, setMatchOnsetDensity] = useState(65);
   const [matchLyricCueBlend, setMatchLyricCueBlend] = useState(60);
   const [matchLyricMergeWindow, setMatchLyricMergeWindow] = useState(3.0);
 
-  const [joinClipStates, setJoinClipStates] = useState<Record<number, boolean>>({});
 
   const [beatJoinAnalysis, setBeatJoinAnalysis] = useState<BeatJoinAnalysis | null>(null);
 
@@ -162,6 +153,9 @@ export default function StudioApp() {
   const [committedBeatSplit, setCommittedBeatSplit] = useState<PersistedCommittedSplit | null>(null);
   const [storyState, setStoryState] = useState(createDefaultStoryTabState);
   const [storedMusicVideoProject, setMusicVideoProject] = useState<MusicVideoProject | null>(null);
+  const [roughCutProposal, setRoughCutProposal] = useState<RoughCutSwapProposal | null>(null);
+  const [roughCutEditMessage, setRoughCutEditMessage] = useState<string | null>(null);
+  const [roughCutUndo, setRoughCutUndo] = useState<{ before: MusicVideoProject; afterPlan: string } | null>(null);
   const [captionMode, setCaptionMode] = useState<SceneCaptionMode>("smart");
   const [referenceAssets, setReferenceAssets] = useState<ReferenceAsset[]>([]);
   const [generatedAssets, setGeneratedAssets] = useState<GeneratedStudioAsset[]>([]);
@@ -197,12 +191,11 @@ export default function StudioApp() {
   const [isBrowserPreviewActive, setIsBrowserPreviewActive] = useState(false);
   const [isPreviewExpanded, setIsPreviewExpanded] = useState(false);
   const [retainedBrowserPreviewSegments, setRetainedBrowserPreviewSegments] = useState<PreviewSegment[]>([]);
-  const [retainedPreviewEffectCues, setRetainedPreviewEffectCues] = useState<ShaderEffectCue[]>([]);
+  const [roughCutPreviewRange, setRoughCutPreviewRange] = useState<PreviewCutRange | null>(null);
   const [generatePreviewRange, setGeneratePreviewRange] = useState<PreviewCutRange | null>(null);
-  const [generatedAuditionSegments, setGeneratedAuditionSegments] = useState<PreviewSegment[] | null>(null);
+  const [generatedAuditionSegments, setGeneratedAuditionSegments] = useState<EditPlanPreviewSegment[] | null>(null);
   const [previewAuditionRequest, setPreviewAuditionRequest] = useState(0);
   const handledPreviewAuditionRequestRef = useRef(0);
-  const lastPreviewEffectCuesRef = useRef<ShaderEffectCue[]>([]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -654,14 +647,6 @@ export default function StudioApp() {
   const isAnyCommittedSplitCurrent = isCommittedSplitCurrent || isCommittedBeatSplitCurrent;
   const workingBeatSplitSegments = isAnyCommittedSplitCurrent ? committedBeatSplit!.segments : beatSplitSegments;
   const beatSplitClipCount = workingBeatSplitSegments.length;
-  const joinClips = useMemo(
-    () =>
-      Array.from({ length: beatSplitClipCount }, (_, index) => ({
-        id: index,
-        on: joinClipStates[index] ?? true,
-      })),
-    [beatSplitClipCount, joinClipStates]
-  );
   const splitActiveClip = Math.min(activeClip, Math.max(0, splitSegments.length - 1));
   const beatActiveClip = Math.min(activeClip, Math.max(0, beatSplitClipCount - 1));
   const segmentPreviews = useMemo<SegmentPreview[]>(
@@ -782,7 +767,6 @@ export default function StudioApp() {
           if (mode === "replace") {
             revokePreparedVideoSources(currentSources);
             setCommittedBeatSplit(null);
-            setJoinClipStates({});
             setActiveClip(0);
           } else {
             setCommittedBeatSplit(null);
@@ -823,7 +807,6 @@ export default function StudioApp() {
       const nextSources = removeVideoSourceById(currentSources, sourceId);
 
       setCommittedBeatSplit(null);
-      setJoinClipStates({});
       setActiveClip(0);
       setVideoStatus(
         nextSources.length
@@ -865,10 +848,7 @@ export default function StudioApp() {
     // The source-context signature retains old decisions but invalidates their placement plan.
     setStoryState(current => ({ ...current, storyGenerated: false }));
     setCommittedBeatSplit(null);
-    setJoinClipStates({});
     setRetainedBrowserPreviewSegments([]);
-    setRetainedPreviewEffectCues([]);
-    lastPreviewEffectCuesRef.current = [];
     setGeneratedAuditionSegments(null);
     setGeneratePreviewRange(null);
     previewPlayerRef.current.load([]);
@@ -1118,7 +1098,7 @@ export default function StudioApp() {
   async function runProcess() {
     if (isRunning || previewState.activeRequestKey) return;
 
-    if ((tab === "story" || tab === "compose" || tab === "shuffle" || tab === "generate" || tab === "join") && browserPreviewSegments.length > 0) {
+    if (usesStoryAssembly(tab) && browserPreviewSegments.length > 0) {
       runBrowserPreview();
       return;
     }
@@ -1656,119 +1636,13 @@ export default function StudioApp() {
   }
 
   async function runBrowserPreview() {
+    // The rough cut is an in-app assembly, including empty song windows. A
+    // render request cannot represent those holes and is unnecessary for review.
     setRetainedBrowserPreviewSegments(browserPreviewSegments);
-    setRetainedPreviewEffectCues(shaderEffectCues);
-    setIsRunning(true);
-    setDone(false);
-    setProgress(5);
-
-    const requestKey = `browser-preview-${Date.now()}`;
-    setPreviewState((current) =>
-      startSectionRecompute(current, {
-        requestKey,
-        sectionId: `${tab}:browser`,
-        continuityMode: shuffleMode,
-        paramsHash: `browser:${tab}`,
-        startedAt: new Date().toISOString(),
-        progress: 5,
-      }),
-    );
-    setPreviewState((current) => markSectionRecomputeRunning(current, requestKey));
-
-    const uniqueVideoUrls = [...new Set(browserPreviewSegments.map((s) => s.videoUrl))];
-    const videoUrlIndex = new Map(uniqueVideoUrls.map((url, index) => [url, index]));
-
-    try {
-      setProgress(20);
-      setPreviewState((current) => updateSectionRecomputeProgress(current, { requestKey, progress: 20 }));
-
-      const segments = browserPreviewSegments.map((seg) => ({
-        startTime: seg.startTime,
-        endTime: seg.endTime,
-        sourceIndex: videoUrlIndex.get(seg.videoUrl) ?? 0,
-      }));
-
-      // When every clip lives assembled in RustFS, send durable refs so the raw
-      // files never re-enter the browser or cross Vercel's serverless body cap.
-      const sourcesByUrl = new Map(videoSources.map((source) => [source.videoUrl, source]));
-      const generatedByUrl = new Map(generatedAssets.map((asset) => [buildGeneratedAssetPlaybackUrl(asset), asset]));
-      const durableRefs = uniqueVideoUrls.map((url) => {
-        const source = sourcesByUrl.get(url);
-        if (source?.storageBucket && source.storagePath && !source.uploadChunks) {
-          return { bucket: source.storageBucket, objectKey: source.storagePath };
-        }
-        const generated = generatedByUrl.get(url);
-        const generatedObjectKey = generated?.fullStorage?.objectKey ?? generated?.fullStorage?.storagePath;
-        return generated?.fullStorage?.bucket && generatedObjectKey
-          ? { bucket: generated.fullStorage.bucket, objectKey: generatedObjectKey }
-          : null;
-      });
-
-      const gatewayForm = new FormData();
-      if (durableRefs.length && durableRefs.every((ref) => ref !== null)) {
-        gatewayForm.set("refs", JSON.stringify(durableRefs));
-      } else {
-        const sourceFiles = await Promise.all(uniqueVideoUrls.map(async (url, index) => {
-          const response = await fetch(url);
-          const blob = await response.blob();
-          const ext = blob.type.includes("mp4") ? ".mp4" : blob.type.includes("webm") ? ".webm" : ".mp4";
-          return new File([blob], `source${index}${ext}`, { type: blob.type || "video/mp4" });
-        }));
-        gatewayForm.set("file", sourceFiles[0]);
-        sourceFiles.forEach((file, index) => {
-          gatewayForm.set(`file:${index}`, file);
-        });
-      }
-      gatewayForm.set("segments", JSON.stringify(segments));
-      gatewayForm.set("requestKey", requestKey);
-
-      setProgress(40);
-      setPreviewState((current) => updateSectionRecomputeProgress(current, { requestKey, progress: 40 }));
-
-      const gatewayResponse = await fetch("/api/preview/gateway", {
-        method: "POST",
-        body: gatewayForm,
-      });
-
-      const gatewayPayload = (await gatewayResponse.json()) as {
-        success?: boolean;
-        error?: string;
-        runId?: string;
-      };
-
-      if (!gatewayResponse.ok || !gatewayPayload.success || !gatewayPayload.runId) {
-        throw new Error(gatewayPayload.error ?? "Gateway preview generation failed.");
-      }
-
-      const output = await waitForTriggerRunOutput(gatewayPayload.runId, { timeoutMs: 10 * 60 * 1_000, pollIntervalMs: 2_000 }) as {
-        requestKey: string;
-        assetKey: string;
-        duration: number;
-        generatedAt: string;
-        videoUrl?: string;
-      };
-
-      setProgress(90);
-      setPreviewState((current) => updateSectionRecomputeProgress(current, { requestKey, progress: 90 }));
-
-      const asset = {
-        requestKey: output.requestKey,
-        assetKey: output.assetKey,
-        duration: output.duration,
-        generatedAt: output.generatedAt,
-      };
-
-      setPreviewState((current) => markSectionReady(current, asset));
-      setPreviewState((current) => swapReadySection(current, requestKey));
-      setProgress(100);
-      setDone(true);
-      setIsRunning(false);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Browser preview failed.";
-      setPreviewState((current) => failSectionRecompute(current, { requestKey, message }));
-      setVideoError(message);
-      setIsRunning(false);
-    }
+    setIsPreviewExpanded(true);
+    if (tab === "join") setRoughCutPreviewRange(null);
+    setVideoError(null);
+    setPreviewAuditionRequest(request => request + 1);
   }
 
   async function resolveMasterAudioFile(analysis: BeatJoinAnalysis, currentFile: File | null) {
@@ -1844,7 +1718,6 @@ export default function StudioApp() {
       committedAt: new Date().toISOString(),
     });
     workflowCheckpointAutosaveRequestedRef.current = true;
-    setJoinClipStates(Object.fromEntries(splitSegments.map((_, index) => [index, true])) as Record<number, boolean>);
     setActiveClip(0);
     setDone(true);
     setProgress(100);
@@ -1854,10 +1727,79 @@ export default function StudioApp() {
     setMusicVideoProject((current) => current && storyProjectInputSignature(current) === storyProjectInputSignature(next) ? current : next);
   }, []);
 
+  function invalidateArrangementOutput() {
+    previewPlayerRef.current.load([]);
+    setRetainedBrowserPreviewSegments([]);
+    setGeneratedAuditionSegments(null);
+    setGeneratePreviewRange(null);
+    setRoughCutPreviewRange(null);
+    resetPreparedPreview();
+    setFinalExportUrl(null);
+    setFinalExportName(null);
+    setFinalExportStatus("");
+    setFinalExportError(null);
+    setFinalExportCueCount(0);
+    workflowCheckpointAutosaveRequestedRef.current = true;
+  }
+
+  function reviewRoughCutSwap(firstIndex: number, secondIndex: number) {
+    if (!musicVideoProject || isFinalExporting || isShaderCaptureExporting || previewState.activeRequestKey) return;
+    const firstId = storyPreviewSegments[firstIndex]?.placementId;
+    const secondId = storyPreviewSegments[secondIndex]?.placementId;
+    if (!firstId || !secondId) return;
+    const result = proposeRoughCutSwap(musicVideoProject, firstId, secondId);
+    setRoughCutProposal(result.proposal ?? null);
+    setRoughCutEditMessage(result.reason ?? null);
+  }
+
+  function applyRoughCutArrangement() {
+    if (!musicVideoProject || !roughCutProposal || isFinalExporting || isShaderCaptureExporting || previewState.activeRequestKey) return;
+    const result = applyRoughCutSwap(musicVideoProject, roughCutProposal);
+    if (!result.project) { setRoughCutEditMessage(result.reason ?? "The arrangement changed. Review it again."); setRoughCutProposal(null); return; }
+    setRoughCutUndo({ before: musicVideoProject, afterPlan: JSON.stringify(result.project.placementPlan) });
+    setMusicVideoProject(result.project);
+    setRoughCutProposal(null);
+    setRoughCutEditMessage("Arrangement updated. Play the whole song or this section to review it.");
+    invalidateArrangementOutput();
+  }
+
+  function reviewRoughCutReplacement(index: number, momentId: string) {
+    if (!musicVideoProject || isFinalExporting || isShaderCaptureExporting || previewState.activeRequestKey) return;
+    const id = storyPreviewSegments[index]?.placementId;
+    if (!id) return;
+    const result = proposeRoughCutReplacement(musicVideoProject, id, momentId);
+    setRoughCutProposal(result.proposal ?? null);
+    setRoughCutEditMessage(result.reason ?? null);
+  }
+
+  function undoRoughCutArrangement() {
+    if (!musicVideoProject || !roughCutUndo || JSON.stringify(musicVideoProject.placementPlan) !== roughCutUndo.afterPlan
+      || storyProjectInputSignature(musicVideoProject) !== storyProjectInputSignature(roughCutUndo.before)) return;
+    setMusicVideoProject(roughCutUndo.before);
+    setRoughCutUndo(null);
+    setRoughCutProposal(null);
+    setRoughCutEditMessage("Previous arrangement restored.");
+    invalidateArrangementOutput();
+  }
+
+  function playRoughCutSection(sectionId: string) {
+    const indexes = storyPreviewSegments.flatMap((segment, index) => segment.sectionId === sectionId ? [index] : []);
+    if (!indexes.length) return;
+    setRoughCutPreviewRange({ startIndex: indexes[0]!, endIndex: indexes.at(-1)! });
+    setIsPreviewExpanded(true);
+    setPreviewAuditionRequest(request => request + 1);
+  }
+
+  function fillRoughCutPosition(index: number) {
+    setGeneratedAuditionSegments(null);
+    setGeneratePreviewRange({ startIndex: index, endIndex: index });
+    handleSelectTab("generate");
+  }
+
   function handleCoveragePolicyChange(policy: "faithful" | "best-effort") {
     if (!musicVideoProject || !isPlacementPlanCurrent(musicVideoProject)) return;
     setMusicVideoProject((current) => current ? prepareApprovedPlacements({ project: current, videoSources, editSettings: storyState.editSettings, policy }) : current);
-    setDone(false);
+    invalidateArrangementOutput();
   }
 
   function handleSelectSemanticCandidate(sectionId: string, momentId: string, timelineItemId?: string) {
@@ -1866,7 +1808,7 @@ export default function StudioApp() {
       if (!currentProject) return currentProject;
       return prepareApprovedPlacements({ project: selectStorySectionCandidate(currentProject, { sectionId, momentId, timelineItemId }), videoSources, editSettings: storyState.editSettings, origin: "manual-match" });
     });
-    setDone(false);
+    invalidateArrangementOutput();
   }
 
   // Split commits itself: while the Split stage is open, the current cut set
@@ -1902,69 +1844,6 @@ export default function StudioApp() {
         return "Master Audio Track · Studio Timeline";
     }
   }, [shuffleMode, splitMode, tab]);
-  const shuffleQueue = useMemo(
-    () =>
-      buildShuffleQueue({
-        clipCount: joinClips.length,
-        shuffleMode,
-        activeClip: beatActiveClip,
-        minScore,
-        lookahead,
-        keepPct,
-        colorGradient,
-      }),
-    [joinClips.length, shuffleMode, beatActiveClip, minScore, lookahead, keepPct, colorGradient]
-  );
-  const manifestSegments = useMemo(() => {
-    const totalDuration = sourceClips[sourceClips.length - 1]?.end ?? 0;
-    if (!beatJoinAnalysis || totalDuration <= 0) return [];
-
-    const cutEvents = buildMusicCutEvents({
-      analysis: beatJoinAnalysis,
-      mode: beatSplitMode,
-      includeSectionBoundaries: true,
-    });
-
-    return buildSegmentManifest({
-      sourceClips,
-      cutEvents,
-      totalDuration: Math.min(totalDuration, beatJoinAnalysis.duration),
-    });
-  }, [sourceClips, beatJoinAnalysis, beatSplitMode]);
-
-  const manifestRankingPreview = useMemo(() => {
-    if (!manifestSegments.length) return { ids: [] as string[], order: [] as number[] };
-
-    const anchorSegment = manifestSegments[Math.min(beatActiveClip, Math.max(0, manifestSegments.length - 1))];
-    if (!anchorSegment) return { ids: [] as string[], order: [] as number[] };
-    const targetDuration = anchorSegment.duration;
-    const previousDescriptor = anchorSegment.motionDescriptor;
-
-    const ranked = rankManifestCandidates({
-      mode: deriveManifestRankingMode(shuffleMode),
-      previousDescriptor,
-      randomSeed: `${tab}:${beatActiveClip}:${shuffleMode}`,
-      candidates: manifestSegments.map((segment) => ({
-        id: `SEG_${String(segment.id + 1).padStart(2, "0")}`,
-        segment,
-        musicalScore: Math.max(0, 1 - Math.abs(segment.duration - targetDuration) / Math.max(targetDuration, 0.001)),
-        targetDuration,
-        colorContinuityScore: normalizeColorScore({ sourceClipId: segment.sourceClipIds[0] ?? 0, gradient: colorGradient, clipCount: sourceClips.length }),
-      })),
-    });
-
-    return {
-      ids: ranked.slice(0, 3).map((candidate) => candidate.id),
-      order: ranked.map((candidate) => candidate.segmentId),
-    };
-  }, [manifestSegments, beatActiveClip, shuffleMode, tab, colorGradient, sourceClips.length]);
-
-  const effectiveClipOrder = deriveEffectiveClipOrder({
-    manifestSegmentCount: manifestSegments.length,
-    segmentPreviewCount: segmentPreviews.length,
-    rankedOrder: manifestRankingPreview.order,
-    defaultOrder: shuffleQueue,
-  });
   const previewAssetUrl = buildPreviewAssetUrl(previewState.currentAssetKey);
 
   useEffect(() => {
@@ -1985,51 +1864,19 @@ export default function StudioApp() {
 
   const shaderPresetSummary = useMemo(() => describeMusicVideoShaderPreset(shaderPresetId), [shaderPresetId]);
 
-  const browserPreviewSegments = useMemo<PreviewSegment[]>(() => {
-    if (tab === "generate") {
-      return generatedAuditionSegments ?? slicePreviewCutRange(storyPreviewSegments, generatePreviewRange);
-    }
-
-    if (tab === "story" || tab === "compose") {
-      return storyPreviewSegments;
-    }
-
-    if (tab === "join") {
-      return storyPreviewSegments;
-    }
-
-    if (tab === "shuffle") {
-      return effectiveClipOrder
-        .map((clipId): PreviewSegment | null => {
-          const segment = workingBeatSplitSegments[clipId];
-          if (!segment) return null;
-          const sourceClipId = segment.sourceClipIds[0] ?? -1;
-          const source = videoSources.find((candidate) => candidate.id === sourceClipId);
-          if (!source) return null;
-          const offset = getSourceClipTimeOffset(sourceClips, sourceClipId);
-          return {
-            videoUrl: source.videoUrl,
-            startTime: Math.max(0, segment.start - offset),
-            endTime: Math.max(0, segment.end - offset),
-            musicStart: segment.start,
-            musicEnd: segment.end,
-            label: `SEG_${String(clipId + 1).padStart(2, "0")}`,
-          };
-        })
-        .filter((s): s is PreviewSegment => s !== null && s.videoUrl !== undefined && s.endTime > s.startTime);
-    }
-
-    return [];
-  }, [tab, storyPreviewSegments, generatePreviewRange, generatedAuditionSegments, effectiveClipOrder, workingBeatSplitSegments, videoSources, sourceClips]);
+  const browserPreviewSegments = useMemo<EditPlanPreviewSegment[]>(() => selectStoryAssemblyPreview(
+    tab, storyPreviewSegments, tab === "generate" ? generatePreviewRange : roughCutPreviewRange,
+    generatedAuditionSegments,
+  ), [tab, storyPreviewSegments, generatePreviewRange, roughCutPreviewRange, generatedAuditionSegments]);
 
   useEffect(() => {
-    if (tab !== "generate" || previewAuditionRequest === 0 || !browserPreviewSegments.length) return;
+    if (!usesStoryAssembly(tab) || previewAuditionRequest === 0 || !browserPreviewSegments.length) return;
     if (handledPreviewAuditionRequestRef.current === previewAuditionRequest) return;
     handledPreviewAuditionRequestRef.current = previewAuditionRequest;
     setIsPreviewExpanded(true);
     const player = previewPlayerRef.current;
     player.load(browserPreviewSegments);
-    void player.play();
+    void player.play().catch(error => setVideoError(error instanceof Error ? error.message : "Rough-cut playback failed."));
   }, [browserPreviewSegments, previewAuditionRequest, tab]);
 
   const shaderEffectCues = useMemo(
@@ -2047,37 +1894,14 @@ export default function StudioApp() {
   );
 
   useEffect(() => {
-    if (shaderEffectCues.length > 0) {
-      lastPreviewEffectCuesRef.current = shaderEffectCues;
-    }
-  }, [shaderEffectCues]);
-
-  useEffect(() => {
-    if ((tab !== "story" && tab !== "compose") || browserPreviewSegments.length === 0) return;
+    if (!usesStoryAssembly(tab) || browserPreviewSegments.length === 0) return;
     setRetainedBrowserPreviewSegments(browserPreviewSegments);
-    setRetainedPreviewEffectCues(shaderEffectCues);
   }, [browserPreviewSegments, shaderEffectCues, tab]);
 
-  const displayedBrowserPreviewSegments = tab === "generate" && browserPreviewSegments.length > 0
+  const displayedBrowserPreviewSegments = usesStoryAssembly(tab)
     ? browserPreviewSegments
-    : (tab === "story" || tab === "compose" || tab === "join") && browserPreviewSegments.length > 0
-    ? browserPreviewSegments
-    : retainedBrowserPreviewSegments.length > 0
-      ? retainedBrowserPreviewSegments
-      : browserPreviewSegments.length > 0
-        ? browserPreviewSegments
-        : previewPlayer.getSegments();
-  const displayedPreviewEffectCues = tab === "join"
-    ? []
-    : tab === "generate" && generatePreviewRange
-    ? []
-    : (tab === "story" || tab === "compose") && shaderEffectCues.length > 0
-    ? shaderEffectCues
-    : retainedPreviewEffectCues.length > 0
-      ? retainedPreviewEffectCues
-      : shaderEffectCues.length > 0
-        ? shaderEffectCues
-        : lastPreviewEffectCuesRef.current;
+    : retainedBrowserPreviewSegments;
+  const displayedPreviewEffectCues = tab === "ramp" || tab === "compose" ? shaderEffectCues : [];
 
   const captionResumeInFlightRef = useRef(false);
 
@@ -2255,6 +2079,8 @@ export default function StudioApp() {
     ? "Upload master audio first."
     : !storyState.storyGenerated || storyPreviewSegments.length === 0
       ? "Generate story preview first."
+      : storyPreviewSegments.some(segment => segment.kind === "gap" || !segment.videoUrl)
+        ? "Fill the remaining rough-cut holes before final export."
       : isFinalExporting
         ? "Final export running."
         : isShaderCaptureExporting
@@ -2685,8 +2511,22 @@ export default function StudioApp() {
             {tab === "join" && (
               <JoinTab
                 previewSegments={storyPreviewSegments}
+                sectionLabels={Object.fromEntries((musicVideoProject?.storySections ?? []).map(section => [section.id, section.label]))}
+                existingFootage={(musicVideoProject?.videoMoments ?? []).map(moment => ({ id: moment.id, label: moment.sourceRefLabel ?? moment.label, caption: moment.caption }))}
                 activeClip={Math.min(activeClip, Math.max(0, storyPreviewSegments.length - 1))}
                 onActiveClip={setActiveClip}
+                onPlayWhole={() => void runBrowserPreview()}
+                onPlaySection={playRoughCutSection}
+                onFillGap={fillRoughCutPosition}
+                onReviewAlternates={reviewRoughCutReplacement}
+                onSwap={reviewRoughCutSwap}
+                proposalSummary={roughCutProposal?.summary ?? null}
+                editMessage={roughCutEditMessage}
+                onApplyProposal={applyRoughCutArrangement}
+                onCancelProposal={() => setRoughCutProposal(null)}
+                onUndo={undoRoughCutArrangement}
+                canUndo={Boolean(roughCutUndo && musicVideoProject && JSON.stringify(musicVideoProject.placementPlan) === roughCutUndo.afterPlan && storyProjectInputSignature(musicVideoProject) === storyProjectInputSignature(roughCutUndo.before))}
+                busy={isFinalExporting || isShaderCaptureExporting || Boolean(previewState.activeRequestKey)}
               />
             )}
 
