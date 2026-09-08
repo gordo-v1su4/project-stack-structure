@@ -165,8 +165,18 @@ On 2026-09-08, worker source `1419904` published as `20260908.3`, deployment
 `atibuyuz`, image digest
 `sha256:50a7e27afe716d2b37ad6b47bcea39e2c711a390e4bfe431b7e1c5088b8167d7`.
 Gateway stage changes are in sibling `proxmox-home` commit `ac396f8`; both deployed
-stage endpoints rejected unauthenticated requests. Publication and endpoint auth
-were verified; live app stage/result acceptance remains pending at this record.
+stage endpoints rejected unauthenticated requests. The production dashboard
+confirmed `20260908.3` as Current with 17 tasks. Web source `039c766` reached Ready
+on the production alias with the visible-writing instructions.
+
+The signed-in app submitted `run_cmtt303wp00qn3is0klva5dcr`: queue wait 233 ms,
+preparation 33 ms, authoring 10.4 s, review 2.4 s. All three named spans were
+visible; review rejected the incident and the task failed. The app's corrected
+validation run `run_cmtt30koi00qq3is0u3afo3t5` also used worker `20260908.3` and
+failed review on the goal. The app displayed the error and accepted no proposal.
+This verifies production dispatch, stage visibility, and rejection delivery;
+successful semantic review and accepted-result persistence remain unverified
+for this worker. Do not report the reviewer-quality problem as resolved.
 
 Focused coverage: `tests/unit/storyTreatmentTask.test.ts`,
 `tests/unit/storyTreatmentServer.test.ts`, and the gateway's `test_story.py`.
