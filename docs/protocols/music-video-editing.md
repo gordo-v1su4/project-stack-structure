@@ -100,3 +100,11 @@ The user's later clarification distinguishes permission to repeat from permissio
 Intentional-hole follow-up: `bun run check` passed 695 tests (8 existing lint warnings, no errors) and production build passed. A final added story-choice regression passed with its 22-test file: low-fit alternatives remain suggestions, explicit selections work, and null decisions stay empty. Browser acceptance follows deployment.
 
 Production inspection caught pre-policy assessments remaining disabled in saved Story dialogs. Opening a detached story draft now recomputes candidate assessments from current captions while preserving explicit source/gap decisions. The 39 affected authoring/treatment tests, typecheck, focused lint and production build pass; no new model call is needed to refresh these scores.
+
+### Scene review and automatic musical trims
+
+Split reviews the scene detection already performed during Ingest. It does not ask the user to subdivide source scenes again or choose Scene, Rhythm, or Scene + Rhythm. Studio uses the detected scene inventory for new and restored projects; legacy split strategy fields remain readable for compatibility but do not choose the inventory. Original uploads and scene boundaries remain intact. Musical trims belong to placement assembly on the song timeline, using beats/onsets and readable durations, followed by motion compatibility for source choice. This is one default policy, not separate music, motion, and color modes. Story order and intentional holes remain authoritative.
+
+The retired rhythm-source splitter applied song durations to concatenated source time, which is different from aligning an actual edit to the song. Removing its control avoids that extra subdivision. Review detected scenes, select story sources, then inspect the assembled rough cut; cut pace remains a Story creative setting.
+
+Follow-up: scene detection marks available shots without destructively cutting the upload. Assembly may use a complete shot or trim it further automatically to musical cues. Both long takes and uploads containing many existing cuts are supported inputs; users review the resulting edit and holes rather than manually fitting every piece.

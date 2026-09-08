@@ -115,7 +115,7 @@ export function buildPipelineState(input: PipelineStageInput): PipelineState {
       ready: splitReady,
       complete: splitReady,
       available: storyReady,
-      blockedReason: storyReady ? null : "Choose a treatment, resolve every anchor, and confirm the Story plan before building source cut windows.",
+      blockedReason: storyReady ? null : "Choose a treatment and confirm the Story plan before reviewing the detected scenes.",
       prerequisiteKey: storyReady ? null : "story",
       status: splitReady
         ? "Split committed"

@@ -11,7 +11,7 @@ import type { Tab } from "./types";
 export const STAGE_DESCRIPTIONS: Record<Tab, string> = {
   review: "Upload the song, vocal stem, character and location references, and footage. Scenes are detected and captioned automatically.",
   story: "Pick a director treatment, resolve its story anchors against your footage, and confirm the plan that drives every section.",
-  split: "Choose how footage is cut into candidate windows. Scene cuts are the default; rhythm adds onset-driven cuts.",
+  split: "Review the detected scenes and captions. The rough cut trims shots to the music and favors compatible motion.",
   shuffle: "Every section gets its best-scoring footage moment. Swap alternates where the pick is weak.",
   generate: "Fill missing shots, or continue to Join to review the whole-song rough cut with visible gaps. Short and weak matches are optional quality reviews.",
   join: "Play the whole-song rough cut, including visible gaps. Swap or reorder shots, fill missing footage, and replay your changes.",

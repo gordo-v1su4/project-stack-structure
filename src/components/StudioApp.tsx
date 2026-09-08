@@ -83,7 +83,7 @@ import {
   derivePreviewWindow,
 } from "./studio/studioUiState";
 import { mergeSceneIntoPrevious } from "./studio/sceneSplit";
-import { buildAudioDrivenSegments, buildBeatSegments, buildSourceClipSpans, buildUnifiedSplitSegments, getSourceClipTimeOffset } from "./studio/sourceTimeline";
+import { buildAudioDrivenSegments, buildBeatSegments, buildSourceClipSpans, buildSceneSplitSegments, getSourceClipTimeOffset } from "./studio/sourceTimeline";
 import type { SourceClipSpan, SourceTimelineSegment, SplitMode } from "./studio/sourceTimeline";
 import { assignVideoSourceIds, getNextVideoSourceId, removeVideoSourceById, withVideoSourceId } from "./studio/videoSourceIdentity";
 import type {
@@ -119,7 +119,8 @@ export default function StudioApp() {
   const [bpm] = useState(130);
   const [sensitivity] = useState(20);
   const [beatSplitMode] = useState<"beats" | "onsets">("onsets");
-  const [splitMode, setSplitMode] = useState<SplitMode>("scene");
+  // Scene detection defines source inventory; musical trimming belongs to edit assembly.
+  const splitMode: SplitMode = "scene";
   const [clipAudioSettings, setClipAudioSettings] = useState(() => normalizeClipAudioSettings());
   const [videoSources, setVideoSources] = useState<UploadedVideoSource[]>([]);
   const [videoStatus, setVideoStatus] = useState("Upload one or more video clips to begin.");
@@ -528,7 +529,6 @@ export default function StudioApp() {
     setGeneratedAssets(draft.generatedAssets ?? []);
     const workflowUi = draft.workflowUiSettings;
     if (workflowUi?.activeTab && NAV.some((item) => item.key === workflowUi.activeTab)) setTab(workflowUi.activeTab);
-    if (workflowUi?.splitMode) setSplitMode(workflowUi.splitMode);
     if (workflowUi?.colorGradient) setColorGradient(workflowUi.colorGradient);
     if (workflowUi?.matchOnsetDensity !== undefined) setMatchOnsetDensity(workflowUi.matchOnsetDensity);
     if (workflowUi?.matchLyricCueBlend !== undefined) setMatchLyricCueBlend(workflowUi.matchLyricCueBlend);
@@ -587,18 +587,7 @@ export default function StudioApp() {
   }
 
   const sourceClips = useMemo(() => buildSourceClipSpans(videoSources), [videoSources]);
-  const splitSegments = useMemo(
-    () =>
-      buildUnifiedSplitSegments({
-        sources: videoSources,
-        sourceClips,
-        analysis: beatJoinAnalysis,
-        mode: splitMode,
-        targetEvents: Math.max(1, Math.round(clipDur / 2)),
-        density: sensitivity / 100,
-      }),
-    [beatJoinAnalysis, clipDur, sensitivity, sourceClips, splitMode, videoSources],
-  );
+  const splitSegments = useMemo(() => buildSceneSplitSegments(videoSources), [videoSources]);
   const beatSplitSegments = useMemo(() => {
     if (beatJoinAnalysis) {
       return buildAudioDrivenSegments({
@@ -1874,7 +1863,7 @@ export default function StudioApp() {
       case "generate":
         return "Master Audio Track · Fill gaps with generated footage";
       case "split":
-        return `Master Audio Track · Split ${formatSplitModeLabel(splitMode)}`;
+        return "Master Audio Track · Scene review";
       case "join":
         return "Master Audio Track · Join Timeline";
       case "ramp":
@@ -1882,7 +1871,7 @@ export default function StudioApp() {
       default:
         return "Master Audio Track · Studio Timeline";
     }
-  }, [shuffleMode, splitMode, tab]);
+  }, [shuffleMode, tab]);
   const previewAssetUrl = buildPreviewAssetUrl(previewState.currentAssetKey);
 
   useEffect(() => {
@@ -2438,9 +2427,6 @@ export default function StudioApp() {
             {tab === "split" && (
               <SplitTab
                 playhead={playhead}
-                clipDur={clipDur}
-                mode={splitMode}
-                analysis={beatJoinAnalysis}
                 videoSources={videoSources}
                 videoStatus={videoStatus}
                 videoError={videoError}
@@ -2449,8 +2435,6 @@ export default function StudioApp() {
                 segments={splitSegments}
                 activeClip={splitActiveClip}
                 onVideoUpload={handleVideoUpload}
-                onClipDur={setClipDur}
-                onModeChange={setSplitMode}
                 onActiveClip={setActiveClip}
               />
             )}
@@ -2796,32 +2780,17 @@ function buildSceneCaptionSettings(
   };
 }
 
-function formatSplitModeLabel(mode: SplitMode) {
-  switch (mode) {
-    case "scene":
-      return "Scene";
-    case "beat":
-      return "Rhythm";
-    case "onset":
-      return "Rhythm";
-    case "scene-beat":
-      return "Scene + Rhythm";
-    case "scene-onset":
-      return "Scene + Rhythm";
-  }
-}
-
 function getSplitModeLockedReason(mode: SplitMode, state: { hasAnalysis: boolean; sceneCount: number }) {
   const needsScenes = mode === "scene" || mode === "scene-beat" || mode === "scene-onset";
   const needsAnalysis = mode === "beat" || mode === "onset" || mode === "scene-beat" || mode === "scene-onset";
 
   if (needsScenes && state.sceneCount === 0) {
-    return "Scene detection must return cuts before this split mode can build.";
+    return "Scene detection must finish before reviewing the footage.";
   }
   if (needsAnalysis && !state.hasAnalysis) {
     return "Upload and analyze the master song before using a rhythm split strategy.";
   }
-  return "No split cuts are ready for this mode.";
+  return "No detected scenes are ready.";
 }
 
 function formatVideoStatus(

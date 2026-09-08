@@ -4,15 +4,15 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { getCutMapRailWidth, SplitTab } from "@/components/studio/panels/SplitTab";
 import { buildSceneSplitSegments, buildSourceClipSpans } from "@/components/studio/sourceTimeline";
-import { makeBeatJoinAnalysis, makeVideoSources } from "../helpers/studioFixtures";
+import { makeVideoSources } from "../helpers/studioFixtures";
 
 describe("SplitTab simplified workflow", () => {
-  test("keeps one duration scale when pace changes the candidate count", () => {
+  test("keeps a readable source duration scale", () => {
     expect(getCutMapRailWidth(357)).toBe(2856);
     expect(getCutMapRailWidth(20)).toBe(960);
   });
 
-  test("presents three understandable strategies and a readable cut table", () => {
+  test("reviews detected scenes without asking for another subdivision", () => {
     const [source] = makeVideoSources();
     const sources = [{
       ...source!,
@@ -33,9 +33,6 @@ describe("SplitTab simplified workflow", () => {
     const segments = buildSceneSplitSegments(sources);
     const markup = renderToStaticMarkup(createElement(SplitTab, {
       playhead: 0.1,
-      clipDur: 6,
-      mode: "scene",
-      analysis: makeBeatJoinAnalysis(),
       videoSources: sources,
       videoStatus: "Ready",
       videoError: null,
@@ -44,16 +41,15 @@ describe("SplitTab simplified workflow", () => {
       segments,
       activeClip: 0,
       onVideoUpload: () => {},
-      onClipDur: () => {},
-      onModeChange: () => {},
       onActiveClip: () => {},
     }));
 
-    expect(markup).toContain("Create source cut windows");
-    expect(markup).toContain("Scene + Rhythm");
-    expect(markup).toContain("Candidate cut table");
-    expect(markup).toContain("Footage cut map · source time");
-    expect(markup).toContain("searchable slices of your uploads");
+    expect(markup).toContain("Review detected scenes");
+    expect(markup).not.toContain("Create source cut windows");
+    expect(markup).not.toContain("Scene + Rhythm");
+    expect(markup).toContain("Scene captions");
+    expect(markup).toContain("Detected scenes · source time");
+    expect(markup).toContain("Original clips stay intact.");
     expect(markup).toContain("S1 · 0:00–0:04");
     expect(markup).not.toContain("Scene + Beat");
     expect(markup).not.toContain("Cut thumbnails + caption readiness");
