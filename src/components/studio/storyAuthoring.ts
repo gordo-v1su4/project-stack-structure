@@ -1,6 +1,7 @@
 import { hydrateTreatmentCoverage, parseGeneratedTreatment, type StoryAnchor, type StoryTreatment, type StoryTreatmentState } from "./storyTreatments";
 import { mapStoryToMusic } from "./storyMusicPlacement";
 import type { StoryPlanDraft, VideoMoment } from "./musicVideoProject";
+import { assertReferenceLanguage } from "./referenceLanguage";
 
 export function describeStoryCoverage(treatment: StoryTreatment): string {
   const missing = treatment.anchors.filter(anchor => anchor.coverage === "missing").length;
@@ -16,6 +17,7 @@ export function validateStoryAuthoring(treatment: StoryTreatment) {
   const sentences = treatment.synopsis.match(/[^.!?]+[.!?]+(?:["']|$|\s)/g) ?? [];
   if (sentences.length !== 3) throw new Error("The story hook must contain three short sentences.");
   if (treatment.anchors.some(anchor => !anchor.role || !anchor.requirements?.length)) throw new Error("Each story moment needs a narrative purpose and explicit shot requirements.");
+  for (const anchor of treatment.anchors) assertReferenceLanguage(anchor.generationPrompt);
   return treatment;
 }
 

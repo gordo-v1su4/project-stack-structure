@@ -12,6 +12,7 @@ const request: StoryTreatmentRequest = {
 describe("story treatment Qwen service", () => {
   test("revision context retains authoring and timing without repeated matching data", () => {
     const treatment = hydrateTreatmentCoverage(parseGeneratedTreatments(buildValidPayload()), [])[0]!;
+    treatment.anchors[0]!.generationPrompt = "OBSOLETE_GENERATION_DIRECTION";
     const candidate = { momentId: "source-only", label: "DERIVED_MATCH_EVIDENCE".repeat(2000), sourceClipId: 1, start: 0, end: 2, score: 0.7, reason: "Derived assessment" };
     treatment.anchors[0] = { ...treatment.anchors[0]!, songWindow: { start: 0, end: 8 }, candidates: [candidate], requirements: [{ id: "shot-1", momentId: treatment.anchors[0]!.id, description: "A solo arrival", durationSeconds: 3, constraints: { subjects: ["Diego"], focalSubjectCount: 1 }, candidates: [candidate], resolution: "source", selectedCandidateId: "source-only" }] };
     const original = structuredClone(treatment);
@@ -23,6 +24,7 @@ describe("story treatment Qwen service", () => {
     expect(context.footage.captionClusters).toBe(undefined);
     expect(buildStoryInput(request, 0)).toContain(request.footage.captionClusters[0]!);
     expect(input).not.toContain("DERIVED_MATCH_EVIDENCE");
+    expect(input).not.toContain("OBSOLETE_GENERATION_DIRECTION");
     expect(input).not.toContain("source-only");
     expect(input.length).toBeLessThan(12000);
     expect(treatment).toEqual(original);

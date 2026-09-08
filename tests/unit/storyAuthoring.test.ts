@@ -61,6 +61,13 @@ describe("story authoring revisions", () => {
     expect(() => validateStoryAuthoring({ ...story, loglineElements: undefined })).toThrow(/five logline/i);
     expect(() => validateStoryAuthoring({ ...story, synopsis: "A vague mood description." })).toThrow(/three short sentences/i);
   });
+  test("new story generation directions must respect reference names and visible actions", () => {
+    const story = fixture();
+    story.anchors[0].generationPrompt = "Diego enters. He scans the crowd.";
+    expect(() => validateStoryAuthoring(story)).toThrow(/exact character name/);
+    story.anchors[0].generationPrompt = "Diego pulls off Diego's shirt and runs toward the exit.";
+    expect(validateStoryAuthoring(story)).toEqual(story);
+  });
   test("revision requests retain edited prose but strip client coverage assertions", () => {
     const story = fixture(); story.anchors[0].resolution = "source"; story.anchors[0].selectedCandidateId = "fake-coverage";
     const parsed = parseStoryTreatmentRequest({ brief: "", song: { sections: [] }, footage: { captionClusters: [], sourceCount: 0, momentCount: 0 }, revision: { treatment: story, instruction: "Open outside instead." } });

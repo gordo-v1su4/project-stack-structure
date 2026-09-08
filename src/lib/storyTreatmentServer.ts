@@ -8,6 +8,7 @@ import {
   type StoryTreatment,
 } from "@/components/studio/storyTreatments";
 import { getStoryTreatmentGatewayConfig } from "@/lib/storyTreatmentGateway";
+import { REFERENCE_LANGUAGE_RULE } from "@/components/studio/referenceLanguage";
 import { assertStoryLoglineReview, isStoryReviewDeploymentError } from "@/lib/storyLoglineReview";
 import {
   triggerStoryTreatment,
@@ -118,7 +119,8 @@ Structure is visual-arc, performance, or concept. Use a compact visual arc by de
 Anchors are ordered narrative moments, two to fifteen as needed, generally six. Each has id, title, description, purpose, generationPrompt, role, causalDependencies (other moment IDs), optional (boolean), requirements (array). Keep each description filmable and short. A location-only establishing shot is valid. Presentation order may include a cold open or flashback; causal dependencies describe what logically precedes an event, not array order.
 Each requirement has id, momentId (the anchor ID), description, optional, constraints. Constraints may include subjects (names), focalSubjectCount (foreground leads, not background crowd), actions (visible actions), setting, physicalStates, intent (story interpretation, never assert it is visible footage evidence). Leave unspecified constraints out. Requirements describe what this story needs, including missing shots.
 Optional songWindow {start,end} is an explicit desired interval in song seconds; only include it when the user's timing instruction specifies one. Music labels and story moments are separate.
-All names and IDs must be stable and internally consistent. Every anchor MUST include a nonempty requirements array, even for a missing shot. Do not omit requirements to save tokens. Keep prose, moments, and requirements in agreement. Keep fields concise.`;
+All names and IDs must be stable and internally consistent. Every anchor MUST include a nonempty requirements array, even for a missing shot. Do not omit requirements to save tokens. Keep prose, moments, and requirements in agreement. Keep fields concise.
+${REFERENCE_LANGUAGE_RULE}`;
 
 export const STORY_DIRECTOR_INSTRUCTIONS = `You are the story director for a music-video editor.
 Return JSON {"treatments":[...]} with exactly three distinct treatments: faithful, bold, wildcard.
@@ -183,7 +185,9 @@ function storyAuthoringContext(treatment: StoryTreatment) {
     sectionAnchorIds: treatment.sectionAnchorIds,
     anchors: treatment.anchors.map(anchor => ({
       id: anchor.id, title: anchor.title, description: anchor.description,
-      purpose: anchor.purpose, generationPrompt: anchor.generationPrompt,
+      // Generation direction is derived output, not an authored fact. Carrying
+      // its old copy forward reintroduced details removed from requested visuals.
+      purpose: anchor.purpose,
       role: anchor.role, causalDependencies: anchor.causalDependencies,
       optional: anchor.optional, songWindow: anchor.songWindow,
       requirements: anchor.requirements?.map(requirement => ({
