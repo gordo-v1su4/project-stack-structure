@@ -110,6 +110,18 @@ flowchart LR
 
 ### September 8 clarification: mixed footage, unnamed performers, and trimming
 
+The user clarified the pitch without requesting a large story change: Diego is
+the sole protagonist; entering the underground dance contest is the incident;
+finding a worthy partner is the goal; the collapsing world is the opposition;
+survival is at stake. The working logline is: "When Diego enters an underground
+dance contest, Diego must find a worthy partner to survive as the world collapses
+around Diego." Keep the existing seven-moment sequence (jungle entrance, solo
+arrival, meeting Valentina, dancing, floor fracture, corridor escape, together
+afterward). Work with supplied footage and preserve unsupported gaps. Contest
+meaning belongs in narrative purpose; do not add judges, trophies, new locations
+or plot points just to illustrate it. This supersedes the earlier escape-only
+pitch with Diego and Valentina as joint protagonists.
+
 The acceptance project mixes older and newer clips. A separate singer appears
 in the older earthquake source; the user deliberately omitted the singer's
 reference sheet and does not want another named character. Keep that performer
