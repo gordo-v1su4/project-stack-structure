@@ -32,6 +32,16 @@ clean commercial nightclub or unrelated cave is continuity failure.
 
 ### Named identity authority
 
+For source-footage captions, the supplied character references are not an
+exhaustive cast list. Match recognizable identity to the sheet; clothing color,
+outfit similarity, gender, and narrative prominence alone are not identity
+evidence. An unmatched performer can remain "a singer" or "a crowd member" in
+visible prose, with an unnamed/uncertain subject in structured evidence. Do not
+invent a character, copy a lead's name, or add wardrobe descriptions to resolve
+ambiguity. In the mixed-footage acceptance project, the singer is deliberately
+unnamed and must not be tagged as Valentina; retain the useful earthquake footage
+in that source without requiring a singer sheet.
+
 Build one high-quality identity sheet per lead before generating story frames.
 
 - Print the character's canonical name clearly on the sheet. Use that exact name

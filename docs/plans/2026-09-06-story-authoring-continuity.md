@@ -108,6 +108,42 @@ flowchart LR
     I --> J[Join, effects, export]
 ```
 
+### September 8 clarification: mixed footage, unnamed performers, and trimming
+
+The acceptance project mixes older and newer clips. A separate singer appears
+in the older earthquake source; the user deliberately omitted the singer's
+reference sheet and does not want another named character. Keep that performer
+unnamed. Clothing color or a similar outfit must not identify the singer as
+Valentina, and captions must not describe an outfit to compensate for uncertain
+identity. Preserve the source: its second detected interval contains useful
+floor-collapse footage after a singer close-up. Review these actions separately
+instead of discarding the whole clip or treating the singer as a lead.
+
+The assembly workflow must make it easy to trim the start or end of a selected
+clip while watching the result. Trims are editable source in/out points, not
+destructive changes to uploaded media. Keep song timing fixed; shortening the
+available footage must leave a visible hole unless the user supplies coverage.
+Reassess the retained interval's frames, captions and character evidence so a
+removed singer lead-in cannot continue influencing matching. Invalidate stale
+prepared previews and exports, support undo, and persist trims across reload.
+Acceptance uses this source to remove the singer lead-in while retaining the
+earthquake, then checks replay, undo, reload and the exact range in final output.
+
+The user further requested one continuous interaction: keep the desired part,
+then **Continue from here**. From the selected assembly clip, let the user trim
+the unwanted lead-in/tail and request continuation from the retained ending
+without moving through several setup tabs. Prepare the ending frame and relevant
+references from that exact interval using the canonical creative protocol;
+do not carry the removed singer into the continuation's subject constraints.
+Show the retained clip and proposed continuation together for review, then place
+an accepted continuation immediately after the retained clip within the fixed
+song timeline. Expose the requested continuation length and prompt for optional
+adjustment, with generation cost/approval at submission. Handle generation via
+the normal authenticated Trigger contract and retain provenance and undo. This
+is an implementation requirement, not authorization to generate new media during
+the current existing-media-only acceptance run; exercise the flow through its
+submission boundary and test result integration with already supplied media.
+
 ### Story cards and the full-story dialog
 
 Card: title, logline, compact three-sentence hook, and “Read story.” Remove the
