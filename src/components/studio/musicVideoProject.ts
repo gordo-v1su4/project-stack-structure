@@ -841,7 +841,8 @@ function buildFinding(severity: ReviewFindingSeverity, code: string, message: st
   };
 }
 
-function toSemanticClipMatch(assignment: SemanticEditAssignment): SemanticClipMatch {
+/** Store scores by source ID; full scene evidence already lives in videoMoments. */
+export function toSemanticClipMatch(assignment: SemanticClipMatch): SemanticClipMatch {
   return {
     momentId: assignment.momentId,
     score: assignment.score,

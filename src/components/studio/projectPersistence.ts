@@ -1,4 +1,5 @@
 import { normalizeClipAudioSettings, type ClipAudioSettings } from "./clipAudio";
+import { compactProjectMatches } from "./compactProjectMatches";
 import type { DeepgramTranscriptSummary } from "./deepgramUtils";
 import { getDefaultStorySectionDrafts, type MusicVideoProject, type StoryEditSettings, type StoryPlanDraft } from "./musicVideoProject";
 import { hydrateGeneratedStudioAssets, sanitizeGeneratedStudioAssetForStorage, type GeneratedStudioAsset } from "./generatedAssets";
@@ -212,7 +213,7 @@ export function hydrateStudioProjectDraft(params: {
       }))
       .filter((source) => source.videoUrl),
     storyState: normalizePersistedStoryState(params.draft.storyState, params.draft.version < 3),
-    musicVideoProject: params.draft.musicVideoProject,
+    musicVideoProject: params.draft.musicVideoProject ? compactProjectMatches(params.draft.musicVideoProject) : null,
     referenceAssets: hydrateReferenceAssets(params.draft.referenceAssets ?? []),
     generatedAssets: hydrateGeneratedStudioAssets(params.draft.generatedAssets ?? []),
     clipAudioSettings: normalizeClipAudioSettings(params.draft.clipAudioSettings),
@@ -416,7 +417,7 @@ function resolvePersistedPlaybackUrl(
 
 function sanitizeMusicVideoProjectForStorage(project: MusicVideoProject): MusicVideoProject {
   return {
-    ...project,
+    ...compactProjectMatches(project),
     song: project.song
       ? {
           ...project.song,

@@ -1,6 +1,6 @@
 import { rankMomentsForSection } from "./semanticEditPlanner";
 import { assessStoryMatch, isUsableStoryMatch } from "./storyMatchAssessment";
-import type { MusicVideoProject, SemanticClipMatch, StoryPlanDraft, TimelineItem } from "./musicVideoProject";
+import { toSemanticClipMatch, type MusicVideoProject, type SemanticClipMatch, type StoryPlanDraft, type TimelineItem } from "./musicVideoProject";
 import type { StoryAnchor, StoryTreatment } from "./storyTreatments";
 
 export interface StoryMusicPlacement {
@@ -113,7 +113,7 @@ export function applyStoryCoverage(project: MusicVideoProject, treatment: StoryT
     const explicit = ranked.find((candidate) => candidate.momentId === selectedCandidateId);
     const accepted = resolution === "source" ? explicit : undefined;
     const selected = accepted && isUsableStoryMatch(assessStoryMatch({ requirementId: placement.requirementId, requirementText: description, constraints: requirement?.constraints, moment: accepted.moment })) ? accepted : undefined;
-    const semanticMatch: SemanticClipMatch | undefined = selected ? { ...selected } : undefined;
+    const semanticMatch: SemanticClipMatch | undefined = selected ? toSemanticClipMatch(selected) : undefined;
     return {
       id: `story-item:${placement.id}`, sectionId: section.id, narrativeMomentId: anchor.id, requirementId: placement.requirementId,
       // Low-fit alternatives remain selectable, but never silently fill a story window.
@@ -121,7 +121,7 @@ export function applyStoryCoverage(project: MusicVideoProject, treatment: StoryT
       lyricChunkIds: section.lyricChunkIds, videoMomentId: selected?.momentId ?? null,
       start: placement.start, end: placement.end, label: `${section.label} · ${anchor.title}`,
       prompt: `${resolution === "generate" ? "[GENERATE GAP] " : resolution === "omit" ? "[OMITTED MOMENT] " : ""}${description}`,
-      semanticMatch, candidateMatches: ranked.map((candidate) => ({ ...candidate })), requirements: requirement?.constraints,
+      semanticMatch, candidateMatches: ranked.map(toSemanticClipMatch), requirements: requirement?.constraints,
     };
   });
   const storySections = project.storySections.map((section) => {
