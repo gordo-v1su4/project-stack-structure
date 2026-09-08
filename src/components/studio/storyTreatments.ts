@@ -700,6 +700,13 @@ function parseRevisionRequest(value: unknown): NonNullable<StoryTreatmentRequest
   }) : [];
   // Existing prose may need shortening; the generated reply still uses the strict 320-character parser.
   const generated = parseTreatment({ ...draft, anchors }, 0, 2000);
+  // Parsing a draft is not reconciliation. Keep pending edits pending so stale
+  // derived summaries and matching constraints cannot regain authoring authority.
+  const reconciliation = draft.reconciliation && typeof draft.reconciliation === "object" && !Array.isArray(draft.reconciliation)
+    ? draft.reconciliation as Record<string, unknown> : undefined;
+  if (reconciliation?.status === "pending" || reconciliation?.status === "legacy") {
+    generated.reconciliation = { status: reconciliation.status };
+  }
   return {
     instruction: requiredString(record.instruction, 2000, "Revision instruction"),
     // Only authoring fields are sent to the model. Coverage is recomputed locally.

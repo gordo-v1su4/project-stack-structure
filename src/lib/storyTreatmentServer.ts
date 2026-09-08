@@ -136,6 +136,7 @@ ${AUTHORING_CONTRACT}`;
 
 export const STORY_REVISION_INSTRUCTIONS = `Revise only the supplied selected treatment. Return JSON {"treatment":{...}}.
 The revision instruction is authoritative. Reconcile the edited prose, ordered moments, requirements and causal dependencies as one coherent story. Preserve unaffected facts, stable IDs, moments and timing. Add or remove moments only when needed. Do not return or regenerate the other treatment options.
+When selectedTreatment.rebuildDerivedFields is true, its old derived summaries, purposes and matching constraints have been omitted because the user edited the story. Rebuild visualThesis, endingHook, purpose, generationPrompt and constraints from the current logline, synopsis and requested visuals. Do not add a new closing moment to illustrate an old summary. Keep every required output field.
 When requested visuals or required-shot descriptions have been edited, regenerate their stale constraints and generationPrompt to agree with those edits. Do not restore obsolete details. Requirements constrain visible actions; put narrative meaning in the moment's purpose, and use an intent constraint only when an unobservable condition is itself essential to the requested shot.
 When the user edits only the opening, preserve the later story unless continuity requires a change. Keep unsupported requirements visible; never invent footage coverage. Never infer a source's permanent narrative phase from its action.
 ${AUTHORING_CONTRACT}`;
@@ -179,23 +180,26 @@ export function buildStoryInput(request: StoryTreatmentRequest, attempt: number)
 
 /** Matching output is recalculated locally; it is not input evidence for authoring. */
 function storyAuthoringContext(treatment: StoryTreatment) {
+  const rebuildDerivedFields = treatment.reconciliation?.status === "pending" || treatment.reconciliation?.status === "legacy";
   return {
     id: treatment.id, kind: treatment.kind, title: treatment.title,
     logline: treatment.logline, loglineElements: treatment.loglineElements,
-    synopsis: treatment.synopsis, visualThesis: treatment.visualThesis,
-    endingHook: treatment.endingHook, structure: treatment.structure,
+    synopsis: treatment.synopsis, structure: treatment.structure,
+    rebuildDerivedFields,
+    ...(!rebuildDerivedFields ? { visualThesis: treatment.visualThesis, endingHook: treatment.endingHook } : {}),
     sectionAnchorIds: treatment.sectionAnchorIds,
     anchors: treatment.anchors.map(anchor => ({
       id: anchor.id, title: anchor.title, description: anchor.description,
       // Generation direction is derived output, not an authored fact. Carrying
       // its old copy forward reintroduced details removed from requested visuals.
-      purpose: anchor.purpose,
+      ...(!rebuildDerivedFields ? { purpose: anchor.purpose } : {}),
       role: anchor.role, causalDependencies: anchor.causalDependencies,
       optional: anchor.optional, songWindow: anchor.songWindow,
       requirements: anchor.requirements?.map(requirement => ({
         id: requirement.id, momentId: requirement.momentId,
         description: requirement.description, optional: requirement.optional,
-        durationSeconds: requirement.durationSeconds, constraints: requirement.constraints,
+        durationSeconds: requirement.durationSeconds,
+        ...(!rebuildDerivedFields ? { constraints: requirement.constraints } : {}),
       })),
     })),
   };

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { STORY_TREATMENT_MODEL, hydrateTreatmentCoverage, parseGeneratedTreatments, type StoryTreatmentRequest } from "@/components/studio/storyTreatments";
+import { STORY_TREATMENT_MODEL, hydrateTreatmentCoverage, parseGeneratedTreatments, parseStoryTreatmentRequest, type StoryTreatmentRequest } from "@/components/studio/storyTreatments";
 import { generateStoryTreatments, queueStoryTreatmentGeneration, STORY_DIRECTOR_INSTRUCTIONS, buildStoryInput } from "@/lib/storyTreatmentServer";
 
 const request: StoryTreatmentRequest = {
@@ -10,14 +10,35 @@ const request: StoryTreatmentRequest = {
 };
 
 describe("story treatment Qwen service", () => {
+  test("pending user edits survive request parsing without obsolete derived facts in the model input", () => {
+    const treatment = hydrateTreatmentCoverage(parseGeneratedTreatments(buildValidPayload()), [])[0]!;
+    treatment.reconciliation = { status: "pending" };
+    treatment.visualThesis = "OBSOLETE_INTERIOR_ONLY_WORLD";
+    treatment.endingHook = "OBSOLETE_THRESHOLD_ENDING";
+    treatment.anchors[0] = { ...treatment.anchors[0]!, description: "A jungle cave entrance.", purpose: "OBSOLETE_PURPOSE", songWindow: { start: 0, end: 8 }, requirements: [{ id: "opening", momentId: treatment.anchors[0]!.id, description: "A jungle cave entrance.", durationSeconds: 3, constraints: { setting: "OBSOLETE_CORRIDOR" } }] };
+    const original = structuredClone(treatment);
+    const parsed = parseStoryTreatmentRequest({ ...request, revision: { treatment, instruction: "Keep the edited opening and seven moments." } });
+    expect(parsed.revision!.treatment.reconciliation?.status).toBe("pending");
+    const input = buildStoryInput(parsed, 0);
+    expect(input).not.toContain("OBSOLETE_");
+    const selected = JSON.parse(input.split("\n\n").at(-1)!).selectedTreatment;
+    expect(selected.rebuildDerivedFields).toBe(true);
+    expect(selected.loglineElements).toEqual(treatment.loglineElements);
+    expect(selected.anchors[0]).toMatchObject({ id: treatment.anchors[0].id, description: "A jungle cave entrance.", songWindow: { start: 0, end: 8 } });
+    expect(selected.anchors[0].requirements[0]).toEqual({ id: "opening", momentId: treatment.anchors[0].id, description: "A jungle cave entrance.", optional: false, durationSeconds: 3 });
+    expect(treatment).toEqual(original);
+  });
+
   test("revision context retains authoring and timing without repeated matching data", () => {
     const treatment = hydrateTreatmentCoverage(parseGeneratedTreatments(buildValidPayload()), [])[0]!;
+    treatment.reconciliation = { status: "current" };
     treatment.anchors[0]!.generationPrompt = "OBSOLETE_GENERATION_DIRECTION";
     const candidate = { momentId: "source-only", label: "DERIVED_MATCH_EVIDENCE".repeat(2000), sourceClipId: 1, start: 0, end: 2, score: 0.7, reason: "Derived assessment" };
     treatment.anchors[0] = { ...treatment.anchors[0]!, songWindow: { start: 0, end: 8 }, candidates: [candidate], requirements: [{ id: "shot-1", momentId: treatment.anchors[0]!.id, description: "A solo arrival", durationSeconds: 3, constraints: { subjects: ["Diego"], focalSubjectCount: 1 }, candidates: [candidate], resolution: "source", selectedCandidateId: "source-only" }] };
     const original = structuredClone(treatment);
     const input = buildStoryInput({ ...request, revision: { treatment, instruction: "Keep the solo arrival." } }, 0);
     const context = JSON.parse(input.split("\n\n").at(-1)!);
+    expect(context.selectedTreatment.rebuildDerivedFields).toBe(false);
     expect(context.selectedTreatment.anchors[0].songWindow).toEqual({ start: 0, end: 8 });
     expect(context.selectedTreatment.anchors[0].requirements[0]).toEqual({ id: "shot-1", momentId: treatment.anchors[0]!.id, description: "A solo arrival", durationSeconds: 3, constraints: { subjects: ["Diego"], focalSubjectCount: 1 } });
     expect(context.footage.sourceCount).toBe(request.footage.sourceCount);

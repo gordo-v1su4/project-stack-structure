@@ -83,6 +83,20 @@ existing edits when a run fails or a stale response arrives.
 
 ## Story authoring and review contract
 
+Revision input must distinguish authored edits from derived fields. Parsing a
+pending or legacy draft does not reconcile it. Preserve that status through the
+route, and rebuild its visual thesis, ending hook, moment purposes, generation
+directions, and matching constraints from the edited prose and requested shots.
+Do not send their stale copies back as authoritative story context. Preserve
+stable IDs, timing, shot descriptions, and causal dependencies. Coverage is
+recomputed locally after the returned proposal passes validation.
+
+A successful logline review is not approval of every story moment. During the
+2026-09-08 8B trial, run `run_cmtt48une00r53is0tykp2rj9` preserved the edited
+contest logline and passed review, but copied an obsolete ending summary into an
+unrequested eighth moment. The proposal was discarded. Inspect the full returned
+sequence and requested visuals before accepting a revision.
+
 [The Story worker](../../src/trigger/storyTreatment.ts) runs
 `qwen-story-treatment` on `vm100-heavy` with these trace spans:
 
