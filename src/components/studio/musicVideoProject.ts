@@ -657,7 +657,9 @@ export function prepareApprovedPlacements(params: {
   const placements: ApprovedPlacement[] = [];
   for (const item of project.editPlan.timelineItems) {
     let cursor = item.start;
-    const cuts = segments.filter((segment) => segment.sectionId === item.sectionId && segment.musicStart >= item.start && segment.musicEnd <= item.end);
+    // Musical cues are rounded to milliseconds; model windows may retain float
+    // precision. Identity keeps a 56.900 cut in its 56.9000015 story window.
+    const cuts = segments.filter((segment) => segment.timelineItemId === item.id);
     const addGap = (end: number) => {
       if (end <= cursor + 0.025) return;
       const manualGap = manualGaps.find(gap => gap.songStart < end && gap.songEnd > cursor);
@@ -1173,6 +1175,7 @@ function expandMomentsToSectionPreviewSegments(params: {
 
       segments.push({
         videoUrl: candidate.source.videoUrl,
+        timelineItemId: item.id,
         startTime,
         endTime,
         sectionId: item.sectionId,

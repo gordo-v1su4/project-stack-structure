@@ -718,6 +718,26 @@ describe("musicVideoProject saved preview contract", () => {
     expect(segments.every((segment) => segment.kind === "source")).toBe(true);
   });
 
+  test("rounded musical trims stay with their story item at fractional model boundaries", () => {
+    const input = previewFixture();
+    const original = input.project.editPlan.timelineItems[0]!;
+    input.project.videoMoments[0]!.end = 5;
+    input.project.videoMoments[0]!.duration = 2;
+    input.project.editPlan.timelineItems = [
+      { ...original, id: "opening-hole", start: 0, end: 2.900001525878906, videoMomentId: null, eligibleMomentIds: [] },
+      { ...original, id: "meeting", start: 2.900001525878906, end: 6.399999618530273 },
+      { ...original, id: "later-use", start: 6.399999618530273, end: 8 },
+    ];
+    const project = prepareApprovedPlacements(input);
+    const sources = project.placementPlan!.placements.filter(placement => placement.kind === "source");
+    expect(sources.length).toBeGreaterThan(0);
+    expect(sources.every(placement => placement.timelineItemId === "meeting")).toBe(true);
+    expect(sources[0]!.songStart).toBe(2.9);
+    expect(sources.reduce((sum, placement) => sum + placement.sourceEnd - placement.sourceStart, 0)).toBeCloseTo(2, 3);
+    expect(project.placementPlan!.placements.filter(placement => placement.timelineItemId === "opening-hole" || placement.timelineItemId === "later-use").every(placement => placement.kind === "gap")).toBe(true);
+    expect(project.placementPlan!.placements.reduce((sum, placement) => sum + placement.songEnd - placement.songStart, 0)).toBeCloseTo(8, 5);
+  });
+
   test("density is an explicit new placement decision and preserves song duration", () => {
     const input = previewFixture(18);
     const sparse = prepareAndReadPreview({ ...input, editSettings: { cutDensity: 0.2, preferOnsets: true } });

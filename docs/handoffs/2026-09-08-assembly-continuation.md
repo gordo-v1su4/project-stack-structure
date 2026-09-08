@@ -4,6 +4,8 @@ The user requested a fresh task because the old conversation became too large. C
 
 ## Goal and authorization
 
+September 8 continuation: the story is confirmed and footage is already split into scenes. First resolve saving and verify that story choices and placements survive save/reload. Then assemble the edit automatically: choose and trim existing shots to musical timing, favor compatible motion across cuts, preserve fixed song time, and leave visible holes where footage is missing. Continue editable whole-song and section-preview acceptance before effects/export. Do not restart story ideation or scene splitting.
+
 Finish story-to-edit reconstruction with existing supplied footage: Story → editable whole-song rough cut and section previews → FX/transitions → export → deferred UI/UX. No new images or videos should be generated. Implement, verify, fix and deploy within this scope without repeated approval. Preserve original uploads, actual holes and fixed master-song timing. Do not declare the whole goal complete on test/build success.
 
 Read AGENTS.md, DESIGN.md, docs/protocols/music-video-editing.md, docs/protocols/trigger-execution-contract.md, docs/plans/2026-09-06-story-authoring-continuity.md and relevant service runbooks. Use Bun. Do not spawn agents unless explicitly requested. Check checkout/remote state before edits; preserve unrelated work.
@@ -33,6 +35,20 @@ Completed and pushed before this handoff:
 Last verified Ready production before this handoff's commit: fa21f10, deployment `project-stack-structure-2im2xhe4f-gordo-v1su4s-projects.vercel.app`, id dpl_6LgFByXcbAtqwwMNCnfarfkVuVmQ. Main pushes auto-deploy. Verify the handoff commit's new Ready alias and visible UI; do not assume this older browser tab refreshed itself.
 
 ## Current browser checkpoint and FIRST unresolved issue
+
+### Continuation update: save failure resolved
+
+The historical checkpoint below has been superseded. Old agent tab12 disappeared when its task ended; recovery-only inspection confirmed it was unavailable. The older user tab11 and original saved project were left untouched. Exact documented source choices and accepted Faithful prose were reconstructed into **Assembly recovery · 2026-09-08**, project `5fc48d59-01e4-4bfb-90c1-e054a0307575`. This is a reconstruction from the handoff, not recovery of the vanished browser state.
+
+Production commit `c2c8c94` fixes the actual save failure: semantic candidate entries accidentally embedded full moment metadata repeatedly in each edit slot. The reconstructed request was 12,402,442 bytes and returned HTTP 413 FUNCTION_PAYLOAD_TOO_LARGE. Explicit score serialization and legacy compaction reduced it to 4,232,952 bytes without dropping original footage, candidates, choices or placements; authenticated save/read succeeded. Production deployment `dpl_4QSu5Bwgfm49sx69BqEF51fkHPni` was verified READY on the production alias.
+
+Visible browser verification: recovery project has 11 clips, 57 scenes, confirmed story, 22 edit slots, 29 placements and 20 gaps. Removing opening cut2 made its exact 0.210–3.065 song window a manual gap; Save persisted that gap. Undo restored the exact source interval; Save and reload retained the confirmed story, original sources and arrangement. Split showed the existing detected-scene inventory. All this evidence is in the 632b worktree under `.tmp/save-recovery-20260908/`. The recovery browser tab is marked deliverable; discover current IDs before interacting.
+
+A separate assembly defect discarded the selected two-second meeting shot: the cut began at rounded time 56.900, just before the model item's 56.9000015 start. The allocator consumed the footage, then float containment filtering discarded it. Generated segments now carry their timeline item ID and are associated by identity. The exact reconstructed fixture produces 30 placements with the meeting footage present and 20 remaining gaps. Regression tests, typecheck, focused lint and build pass. The saved 29-placement checkpoint still requires an explicit assembly rebuild; preserve accepted story and manual choices. Changing Story edit pace currently clears confirmation, so do not use that as a refresh shortcut.
+
+Whole-song playback and actual trim-boundary motion acceptance remain open. The goal is unfinished. The app goal object was paused and its available tool cannot edit objective text; the updated objective above is the durable continuation instruction.
+
+### Historical unsaved checkpoint
 
 **Autosave is currently failing. Preserve the open tab before any reload.** Tooltip: "Autosave failed; it retries automatically and on the next stage change." Moving Split → Join retried but Save failed remained. Earlier story draft choices survived close/reopen in-session; server persistence of latest assembly is NOT established. Recover save first; inspect failure safely, preserve local draft and avoid stale tab overwrites. Do not silently reset the project to clear this.
 
