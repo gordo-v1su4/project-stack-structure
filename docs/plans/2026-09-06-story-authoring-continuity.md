@@ -768,3 +768,30 @@ the wrong guidance. A narrow fixed-message mapping now preserves that specific
 duplicate-pitch rejection for the UI and corrective prompt, while unknown or
 extended provider text remains redacted. Its 29 affected tests, focused lint and
 typecheck passed. The corrective run and deployed acceptance remain pending.
+
+### September 8 — edited contest premise reconciled on 8B
+
+Web commit `dcaeaf2` deployed Ready as
+`project-stack-structure-fepxolqcv-gordo-v1su4s-projects.vercel.app` with the
+production alias verified. Pending/legacy revision input now excludes stale
+derived summaries and matching constraints while preserving edited prose,
+requested shots, IDs, and timing. The request parser preserves pending status.
+Checks: 45 affected tests, typecheck, production build, and focused ESLint passed
+(one existing unused `_runId` warning).
+
+Visible production run `run_cmtt4kfw100r83is0xxqkg0rl` completed on Trigger
+`20260908.3` from 20:31:29.399 to 20:31:44.512 UTC. Its independent logline review
+passed on `Qwen/Qwen3-VL-8B-Instruct-GGUF:Q4_K_M`. The exact edited logline and
+five ingredients survived, and the returned sequence retained seven moments;
+the obsolete eighth threshold ending did not return. During inference the RTX
+4090 reported 9,010 MiB and 97% utilization, with `--n-gpu-layers all` verified.
+The proposal was accepted and saved through the visible Story dialog after the
+user observed the pass. This is a saved story draft, not confirmed coverage.
+
+The next acceptance issue is matching: generated intent constraints such as
+“They move together rhythmically” incorrectly make ordinary dancing footage
+require interpretation review. Also, global source uncertainties about absent
+leads block an otherwise supported location-only establishing shot. Preserve
+real identity/action uncertainty and missing footage while fixing this distinction;
+do not simply remove every uncertainty or force source choices. Whole-song
+playback, assembly edits, FX/export, and deferred UI acceptance remain open.
