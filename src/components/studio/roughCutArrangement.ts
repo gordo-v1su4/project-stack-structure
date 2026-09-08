@@ -189,3 +189,20 @@ export function applyRoughCutSwap(project: MusicVideoProject, proposal: RoughCut
   return { summary: proposal.summary, project: { ...project, faithfulPlacementPlan,
     placementPlan: { ...plan, revision: plan.revision + 1, placements } } };
 }
+
+/** Reopen one song window without deleting its source upload or moving other cuts. */
+export function clearRoughCutPlacement(project: MusicVideoProject, placementId: string): { project?: MusicVideoProject; reason?: string; summary: string } {
+  const plan = project.placementPlan;
+  if (!plan || !isPlacementPlanCurrent(project)) return rejected("The rough cut is stale. Prepare it again before removing a clip.");
+  const invalid = validatePlacements(project, plan);
+  if (invalid) return rejected(invalid);
+  const selected = plan.placements.find(placement => placement.id === placementId);
+  if (!selected || selected.kind !== "source") return rejected("Choose a source clip to remove from the cut.");
+  const gap: ApprovedPlacement = { ...selected, kind: "gap", momentId: null, sourceStart: 0,
+    sourceEnd: selected.songEnd - selected.songStart, origin: "manual-match", reason: "Clip removed from cut; choose footage or plan a missing shot" };
+  const faithfulPlacementPlan = project.faithfulPlacementPlan?.inputSignature === plan.inputSignature
+    ? project.faithfulPlacementPlan : plan.policy === "faithful" ? plan : undefined;
+  return { summary: "Clip removed from the cut. The song window stays open and the source remains in your library.",
+    project: { ...project, faithfulPlacementPlan, placementPlan: { ...plan, revision: plan.revision + 1,
+      placements: plan.placements.map(placement => placement.id === placementId ? gap : placement) } } };
+}

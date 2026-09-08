@@ -92,3 +92,9 @@ Model factual-fit judgments are always advisory in this music-video workflow. Lo
 ## Verification checkpoint
 
 September 8 local verification: 693 tests passed across the shared suite and four isolated lanes; the additional approved-placement motion test passed in its six-test file. Typecheck, production build and lint passed (8 existing lint warnings, no errors). Coverage includes persisted low-fit source reuse, preserved factual warnings, movement ranking in four directions, source bounds, missing media, exact song duration, real FFmpeg preview/export fixtures and original-audio preservation. Production browser Story-to-export acceptance and actual trim-boundary motion analysis remain pending.
+
+### Preserve intentional holes
+
+The user's later clarification distinguishes permission to repeat from permission to fill everything. Low-fit candidates are available for explicit selection, not automatic filler. Unassigned story requirements stay holes so missing material can be planned or generated later. Join's Remove from cut reopens the selected fixed song window, preserves the source library, invalidates prepared output and supports undo. Enabling reuse must preserve manually opened holes. A future workflow choice may offer fully autonomous assembly or checkpoints for feedback; this patch does not implement those presets.
+
+Intentional-hole follow-up: `bun run check` passed 695 tests (8 existing lint warnings, no errors) and production build passed. A final added story-choice regression passed with its 22-test file: low-fit alternatives remain suggestions, explicit selections work, and null decisions stay empty. Browser acceptance follows deployment.

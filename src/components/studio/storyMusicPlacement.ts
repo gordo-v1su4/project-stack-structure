@@ -116,7 +116,8 @@ export function applyStoryCoverage(project: MusicVideoProject, treatment: StoryT
     const semanticMatch: SemanticClipMatch | undefined = selected ? { ...selected } : undefined;
     return {
       id: `story-item:${placement.id}`, sectionId: section.id, narrativeMomentId: anchor.id, requirementId: placement.requirementId,
-      eligibleMomentIds: resolution === "source" ? ranked.map((candidate) => candidate.momentId) : [],
+      // Low-fit alternatives remain selectable, but never silently fill a story window.
+      eligibleMomentIds: selected ? ranked.filter(candidate => candidate.momentId === selected.momentId || candidate.assessment?.eligibility === "eligible").map(candidate => candidate.momentId) : [],
       lyricChunkIds: section.lyricChunkIds, videoMomentId: selected?.momentId ?? null,
       start: placement.start, end: placement.end, label: `${section.label} · ${anchor.title}`,
       prompt: `${resolution === "generate" ? "[GENERATE GAP] " : resolution === "omit" ? "[OMITTED MOMENT] " : ""}${description}`,

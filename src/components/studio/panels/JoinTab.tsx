@@ -16,6 +16,7 @@ type JoinTabProps = {
   onFillGap: (index: number) => void;
   onReviewAlternates: (index: number, momentId: string) => void;
   onSwap: (firstIndex: number, secondIndex: number) => void;
+  onRemove: (index: number) => void;
   proposalSummary: string | null;
   editMessage: string | null;
   onApplyProposal: () => void;
@@ -26,7 +27,7 @@ type JoinTabProps = {
 };
 
 export function JoinTab({ previewSegments, sectionLabels, existingFootage, activeClip, onActiveClip, onPlayWhole, onPlaySection,
-  onFillGap, onReviewAlternates, onSwap, proposalSummary, editMessage, onApplyProposal,
+  onFillGap, onReviewAlternates, onSwap, onRemove, proposalSummary, editMessage, onApplyProposal,
   onCancelProposal, onUndo, canUndo, busy }: JoinTabProps) {
   const [swapTarget, setSwapTarget] = useState("");
   const [replacement, setReplacement] = useState("");
@@ -100,9 +101,10 @@ export function JoinTab({ previewSegments, sectionLabels, existingFootage, activ
         </label>
         <Button size="sm" disabled={busy || !canArrange(selected) || swapTarget === "" || Number(swapTarget) === selectedIndex}
           onClick={() => onSwap(selectedIndex, Number(swapTarget))}>Review swap</Button>
+        <Button size="sm" disabled={busy || !canArrange(selected) || selected.kind === "gap"} onClick={() => onRemove(selectedIndex)}>Remove from cut</Button>
         <Button size="sm" disabled={busy || !canUndo} onClick={onUndo}>Undo arrangement</Button>
       </div>
-      <p className="mt-2 text-xs text-fg-3">Song timing stays fixed. A swap must still fit the destination story moment; any trim or remaining hole is shown before applying it.</p>
+      <p className="mt-2 text-xs text-fg-3">Song timing stays fixed. Story fit is advisory. Any trim or remaining hole is shown before applying a swap. Removing a clip leaves a hole and keeps the original in your library.</p>
       {!canArrange(selected) ? <p className="mt-2 text-xs text-fg-3">Review this supplied-shot approval in Generate before moving its window.</p> : null}
       {editMessage ? <p role="status" className="mt-3 text-sm text-fg-2">{editMessage}</p> : null}
       {proposalSummary ? <div className="mt-3 rounded-md border border-review-lo bg-review-tint p-3">

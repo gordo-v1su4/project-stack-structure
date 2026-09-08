@@ -331,3 +331,25 @@ test("reranking retains an explicitly selected low-fit source outside the sugges
   expect(requirement.coverage).not.toBe("covered");
   expect(isStoryPlanConfirmable({ ...restored, anchors: [restored.anchors[0]!] })).toBe(true);
 });
+
+test("low-fit options remain suggestions while explicit story holes stay empty", () => {
+  const treatment = hydrateTreatmentCoverage(parseGeneratedTreatments(generated), moments)[0]!;
+  treatment.anchors.forEach(anchor => {
+    anchor.resolution = null;
+    anchor.selectedCandidateId = null;
+    anchor.requirements?.forEach(requirement => {
+      requirement.resolution = null;
+      requirement.selectedCandidateId = null;
+      requirement.constraints = { actions: ["running"] };
+    });
+  });
+  const first = treatment.anchors[0]!.requirements![0]!;
+  first.resolution = "source";
+  first.selectedCandidateId = "dance-room";
+  const applied = applyTreatmentCoverageToProject(projectFixture(), treatment);
+  const selected = applied.editPlan.timelineItems.find(item => item.requirementId === first.id)!;
+  expect(selected.videoMomentId).toBe("dance-room");
+  expect(selected.eligibleMomentIds).toEqual(["dance-room"]);
+  expect(selected.candidateMatches?.some(candidate => candidate.momentId === "collapse")).toBe(true);
+  expect(applied.editPlan.timelineItems.filter(item => item.requirementId !== first.id).every(item => item.videoMomentId === null && item.eligibleMomentIds?.length === 0)).toBe(true);
+});

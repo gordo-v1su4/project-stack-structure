@@ -799,3 +799,7 @@ playback, assembly edits, FX/export, and deferred UI acceptance remain open.
 ## September 8 clarification: flexible music-video editing
 
 The [music-video editing contract](../protocols/music-video-editing.md) supersedes earlier semantic vetoes and the current practice project's no-repeat restriction. Caption-first three-option ideation remains; preserve the accepted Diego story. Fit scores and reasons guide choices without blocking them. Repeats are authorized for this practice cut. Technical source bounds, song timing, valid persisted placements and original-upload preservation still apply. Boundary-motion analysis and full visible downstream acceptance remain unfinished.
+
+### Preserve intentional holes
+
+The user's later clarification distinguishes permission to repeat from permission to fill everything. Low-fit candidates are available for explicit selection, not automatic filler. Unassigned story requirements stay holes so missing material can be planned or generated later. Join's Remove from cut reopens the selected fixed song window, preserves the source library, invalidates prepared output and supports undo. Enabling reuse must preserve manually opened holes. A future workflow choice may offer fully autonomous assembly or checkpoints for feedback; this patch does not implement those presets.

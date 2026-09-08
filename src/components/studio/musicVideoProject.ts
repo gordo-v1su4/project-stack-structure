@@ -640,16 +640,30 @@ export function prepareApprovedPlacements(params: {
     ? project.placementPlan
     : project.faithfulPlacementPlan?.inputSignature === inputSignature ? project.faithfulPlacementPlan : undefined;
   if (policy === "faithful" && faithfulPlacementPlan) return { ...project, placementPlan: faithfulPlacementPlan, faithfulPlacementPlan };
-  const segments = arrangeEditPlanSegments({ ...params, allowReuse: policy === "best-effort" });
+  const manualGaps = project.placementPlan?.inputSignature === inputSignature
+    ? project.placementPlan.placements.filter(placement => placement.kind === "gap" && placement.origin === "manual-match") : [];
+  // Enabling reuse is not permission to refill windows the user deliberately cleared.
+  const segments = arrangeEditPlanSegments({ ...params, allowReuse: policy === "best-effort" }).flatMap(segment => {
+    let spans = [segment];
+    for (const gap of manualGaps) spans = spans.flatMap(span => {
+      if (gap.songEnd <= span.musicStart || gap.songStart >= span.musicEnd) return [span];
+      return [
+        { ...span, musicEnd: Math.min(span.musicEnd, gap.songStart), endTime: span.startTime + Math.min(span.musicEnd, gap.songStart) - span.musicStart },
+        { ...span, musicStart: Math.max(span.musicStart, gap.songEnd), startTime: span.startTime + Math.max(span.musicStart, gap.songEnd) - span.musicStart },
+      ].filter(part => part.musicEnd - part.musicStart > 0.025);
+    });
+    return spans;
+  });
   const placements: ApprovedPlacement[] = [];
   for (const item of project.editPlan.timelineItems) {
     let cursor = item.start;
     const cuts = segments.filter((segment) => segment.sectionId === item.sectionId && segment.musicStart >= item.start && segment.musicEnd <= item.end);
     const addGap = (end: number) => {
       if (end <= cursor + 0.025) return;
+      const manualGap = manualGaps.find(gap => gap.songStart < end && gap.songEnd > cursor);
       placements.push({ id: `${item.id}:gap:${cursor.toFixed(3)}`, timelineItemId: item.id, sectionId: item.sectionId, momentId: null,
         sourceStart: 0, sourceEnd: roundTime(end - cursor), songStart: cursor, songEnd: end, label: item.label,
-        kind: "gap", reason: item.videoMomentId ? "Insufficient unused footage for this story moment" : "No source selected for this story moment", origin: params.origin ?? "story-match" });
+        kind: "gap", reason: manualGap?.reason ?? (item.videoMomentId ? "Insufficient unused footage for this story moment" : "No source selected for this story moment"), origin: manualGap ? "manual-match" : params.origin ?? "story-match" });
       cursor = end;
     };
     for (const cut of cuts) {

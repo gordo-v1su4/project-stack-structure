@@ -14,7 +14,7 @@ import { buildCaptionRevisionKey, createCaptionRevisionGuard } from "./studio/me
 import { applySceneEvidenceReview, type SceneEvidenceReview } from "./studio/sceneEvidenceReview";
 import { buildStudioSourceContextSignature } from "./studio/studioSourceContext";
 import { isPlacementPlanCurrent, storyProjectInputSignature, prepareApprovedPlacements, buildEditPlanPreviewSegments, normalizeStoryEditSettings, type EditPlanPreviewSegment, type MusicVideoProject } from "./studio/musicVideoProject";
-import { applyRoughCutSwap, proposeRoughCutSwap, proposeRoughCutReplacement, type RoughCutSwapProposal } from "./studio/roughCutArrangement";
+import { clearRoughCutPlacement, applyRoughCutSwap, proposeRoughCutSwap, proposeRoughCutReplacement, type RoughCutSwapProposal } from "./studio/roughCutArrangement";
 import { selectStorySectionCandidate } from "./studio/musicVideoProjectSelection";
 import { buildAutoShaderCues, describeMusicVideoShaderPreset, MUSIC_VIDEO_SHADER_PRESETS, type ShaderAccentKinds, type ShaderEffectCue } from "./studio/shaderEffectPlan";
 import {
@@ -1798,6 +1798,19 @@ export default function StudioApp() {
     setRoughCutEditMessage(result.reason ?? null);
   }
 
+  function removeRoughCutClip(index: number) {
+    if (!musicVideoProject || isFinalExporting || isShaderCaptureExporting || previewState.activeRequestKey) return;
+    const id = storyPreviewSegments[index]?.placementId;
+    if (!id) return;
+    const result = clearRoughCutPlacement(musicVideoProject, id);
+    if (!result.project) { setRoughCutEditMessage(result.reason ?? result.summary); return; }
+    setRoughCutUndo({ before: musicVideoProject, afterPlan: JSON.stringify(result.project.placementPlan) });
+    setMusicVideoProject(result.project);
+    setRoughCutProposal(null);
+    setRoughCutEditMessage(result.summary);
+    invalidateArrangementOutput();
+  }
+
   function undoRoughCutArrangement() {
     if (!musicVideoProject || !roughCutUndo || JSON.stringify(musicVideoProject.placementPlan) !== roughCutUndo.afterPlan
       || storyProjectInputSignature(musicVideoProject) !== storyProjectInputSignature(roughCutUndo.before)) return;
@@ -2551,6 +2564,7 @@ export default function StudioApp() {
                 onFillGap={fillRoughCutPosition}
                 onReviewAlternates={reviewRoughCutReplacement}
                 onSwap={reviewRoughCutSwap}
+                onRemove={removeRoughCutClip}
                 proposalSummary={roughCutProposal?.summary ?? null}
                 editMessage={roughCutEditMessage}
                 onApplyProposal={applyRoughCutArrangement}

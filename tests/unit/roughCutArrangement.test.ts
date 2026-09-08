@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { applyRoughCutSwap, proposeRoughCutReplacement, proposeRoughCutSwap } from "@/components/studio/roughCutArrangement";
+import { clearRoughCutPlacement, applyRoughCutSwap, proposeRoughCutReplacement, proposeRoughCutSwap } from "@/components/studio/roughCutArrangement";
 import { isPlacementPlanCurrent, placementInputSignature, type ApprovedPlacement, type MusicVideoProject } from "@/components/studio/musicVideoProject";
 import { reviewedEvidence } from "../helpers/storyEvidence";
 
@@ -209,4 +209,23 @@ describe("rough cut source replacement", () => {
     expect(proposeRoughCutReplacement(project, "second", "b").proposal).not.toBe(undefined);
     expect(proposeRoughCutReplacement(project, "second", "missing").reason).toContain("no longer available");
   });
+});
+
+
+test("removing a clip reopens exactly its song window, preserves sources, and survives reuse preparation", async () => {
+  const { prepareApprovedPlacements, buildEditPlanPreviewSegments } = await import("@/components/studio/musicVideoProject");
+  const project = fixture();
+  const before = structuredClone(project);
+  const cleared = clearRoughCutPlacement(project, "first").project!;
+  expect(project).toEqual(before);
+  expect(cleared.videoMoments).toEqual(project.videoMoments);
+  expect(cleared.placementPlan!.placements[0]).toMatchObject({ id: "first", kind: "gap", momentId: null, songStart: 0, songEnd: 4 });
+  expect(cleared.placementPlan!.placements[1]).toEqual(project.placementPlan!.placements[1]);
+  expect(isPlacementPlanCurrent(cleared)).toBe(true);
+  const sources = project.videoMoments.map(moment => ({ id: moment.sourceClipId, name: moment.label, videoUrl: `blob:${moment.id}`, thumbnailUrl: "", duration: moment.end, size: 10 }));
+  const reused = prepareApprovedPlacements({ project: JSON.parse(JSON.stringify(cleared)), videoSources: sources, policy: "best-effort" });
+  const preview = buildEditPlanPreviewSegments({ project: reused, videoSources: sources });
+  expect(preview[0]).toMatchObject({ kind: "gap", musicStart: 0, musicEnd: 4 });
+  expect(preview.reduce((sum, cut) => sum + cut.musicEnd - cut.musicStart, 0)).toBe(8);
+  expect(clearRoughCutPlacement(cleared, "first").project).toBe(undefined);
 });

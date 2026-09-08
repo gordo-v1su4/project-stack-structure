@@ -39,7 +39,7 @@ describe("JoinTab whole-song rough cut", () => {
       activeClip: 0,
       onActiveClip: () => {}, sectionLabels: {intro: "Intro"}, existingFootage: [],
       onPlayWhole: () => {}, onPlaySection: () => {}, onFillGap: () => {}, onReviewAlternates: () => {},
-      onSwap: () => {}, proposalSummary: null, editMessage: null, onApplyProposal: () => {},
+      onRemove: () => {}, onSwap: () => {}, proposalSummary: null, editMessage: null, onApplyProposal: () => {},
       onCancelProposal: () => {}, onUndo: () => {}, canUndo: false, busy: false,
     }));
 
