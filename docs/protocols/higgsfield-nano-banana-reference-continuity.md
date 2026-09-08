@@ -100,6 +100,40 @@ Preflight must fail if:
 After the manifest, refer to the character by name rather than by pronoun or
 image number. Repeat names even within the same sentence. Static clothing descriptions do not belong in captions or prompts. Preserve visible clothing actions such as tearing, ripping, or removal, naming the actor and possession explicitly (for example, "Diego pulls off Diego’s shirt"). Never replace a static description with a newly invented outfit.
 
+## Visible writing and output rules
+
+These rules apply to source captions, requested visuals, required-shot descriptions,
+and generation prompts. Write like screenplay action: concrete subjects, visible
+actions, and the setting. Source captions report inspected footage; requested shots
+describe the intended image without pretending that matching footage exists.
+
+- Use an identified character's exact name on every mention. Reference sheets
+  supply appearance and wardrobe; preserve visible clothing actions only.
+- Describe background people as a crowd or a few people when that is what is
+  visible. Do not force a character identity onto an establishing shot or crowd.
+- A cave alone can be the entire shot. Do not append “no named leads required,”
+  reference availability, focal counts, or coverage explanations to its prose.
+  Do not erase a visible crowd merely because the main characters are absent.
+- Keep counts, unknown identity, absence constraints that the user actually
+  requested, reference mappings, and missing coverage in their structured fields.
+  Put narrative interpretation in `purpose`, not in an evidence caption.
+- Ask the language model for only the requested artifact. For structured work,
+  return only the specified JSON object, without Markdown fences, preamble,
+  rationale, or trailing commentary. For a standalone prompt or caption, return
+  only that text. Internal checks must not leak into the artifact's prose fields.
+
+Examples (choose only the version supported by the footage or requested shot):
+
+| Shot | Prose |
+| --- | --- |
+| Cave exterior | Red haze drifts from a cave entrance beneath the jungle canopy. |
+| People arriving | A few people walk toward the jungle cave entrance through red haze. |
+| Identified arrival | Diego walks through the cave entrance. Diego pauses beside the doorway. |
+
+The language preflight catches common pronoun and appearance problems; it is not
+proof that all prose follows these rules. Inspect returned text before accepting
+a proposal. Never add a crowd, character, or action solely to make a caption longer.
+
 ## Prompt pattern
 
 Keep image prompts short and conversational. The user refined this template

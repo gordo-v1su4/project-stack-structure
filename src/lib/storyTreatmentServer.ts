@@ -8,7 +8,7 @@ import {
   type StoryTreatment,
 } from "@/components/studio/storyTreatments";
 import { getStoryTreatmentGatewayConfig } from "@/lib/storyTreatmentGateway";
-import { REFERENCE_LANGUAGE_RULE } from "@/components/studio/referenceLanguage";
+import { REFERENCE_LANGUAGE_RULE, VISIBLE_WRITING_RULE } from "@/components/studio/referenceLanguage";
 import { assertStoryLoglineReview, isStoryReviewDeploymentError } from "@/lib/storyLoglineReview";
 import {
   triggerStoryTreatment,
@@ -120,7 +120,9 @@ Anchors are ordered narrative moments, two to fifteen as needed, generally six. 
 Each requirement has id, momentId (the anchor ID), description, optional, constraints. Constraints may include subjects (names), focalSubjectCount (foreground leads, not background crowd), actions (visible actions), setting, physicalStates, intent (story interpretation, never assert it is visible footage evidence). Leave unspecified constraints out. Requirements describe what this story needs, including missing shots.
 Optional songWindow {start,end} is an explicit desired interval in song seconds; only include it when the user's timing instruction specifies one. Music labels and story moments are separate.
 All names and IDs must be stable and internally consistent. Every anchor MUST include a nonempty requirements array, even for a missing shot. Do not omit requirements to save tokens. Keep prose, moments, and requirements in agreement. Keep fields concise.
-${REFERENCE_LANGUAGE_RULE}`;
+${REFERENCE_LANGUAGE_RULE}
+${VISIBLE_WRITING_RULE}
+Return only the specified JSON object. Keep internal checks out of every prose field.`;
 
 export const STORY_DIRECTOR_INSTRUCTIONS = `You are the story director for a music-video editor.
 Return JSON {"treatments":[...]} with exactly three distinct treatments: faithful, bold, wildcard.

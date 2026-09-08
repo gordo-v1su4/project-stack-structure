@@ -3,6 +3,8 @@
 Project Stack Structure uses its own Trigger.dev project at
 `https://trigger.v1su4.dev`.
 
+Before implementing a task or consumer, read the [Trigger execution contract](../protocols/trigger-execution-contract.md). This runbook covers deployment and operations; that contract covers dispatch, progress, validation, return shapes, and acceptance.
+
 - Project ref: `proj_wlrcsfnmovzmdwzojzfe`
 - Production dashboard: `https://trigger.v1su4.dev/orgs/v1su4-91d9/projects/project-stack-structure-C5T7/env/prod`
 - Platform, CLI, SDK, build, and React hooks: `4.5.16` (VM100 Docker image must match)
@@ -83,9 +85,9 @@ expiry, and remounts the subscription after credential rotation. It groups
 media children under their parent and shows queue wait, runtime, total duration,
 exact item counts where available, provider state, and terminal errors.
 
-Anonymous runs use the isolated `user:anonymous` tag and are not exposed by an
-authenticated user's realtime token. The management polling route also checks
-the current application user tag before returning a run.
+Anonymous dispatch is rejected. Never create a shared `user:anonymous` fallback.
+The management polling route also checks the current application user tag before
+returning a run.
 
 ## BWS-backed production variables
 

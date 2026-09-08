@@ -1,6 +1,8 @@
 /** Identity comes from reference sheets. Review language without inventing visuals. */
 export const REFERENCE_LANGUAGE_RULE = "Use the exact character name for every mention, even when repetitive; never switch to he, she, him, her, his, they, them, or their. Attached character sheets define appearance and wardrobe. Do not repeat static appearance or clothing descriptions. Preserve observed actions involving clothing, such as fabric ripping, tearing, or being removed, using the character name (for example, Diego's shirt tears). Never invent a replacement outfit.";
 
+export const VISIBLE_WRITING_RULE = 'Write shot prose like screenplay action: only concrete visible subjects, actions, and setting. Describe a crowd or a few people when visible; do not force named characters into a location or crowd shot. Do not write internal notes such as "no named leads required", focal counts, reference availability, or coverage checks in captions, requested visuals, required-shot descriptions, or generation prompts. Keep those facts in structured fields when needed. A location alone is a complete shot; do not invent people or actions to fill space. Return only the requested artifact, with no preamble, explanation, Markdown fences, or trailing commentary.';
+
 export type ReferenceLanguageIssue = { kind: "pronoun" | "appearance" | "sensitive-wording"; text: string; message: string };
 const clothing = "(?:shirt|t-shirt|blouse|jacket|coat|dress|trousers|pants|jeans|skirt|suit|outfit|clothing|clothes|top|hoodie|vest|shorts|boots)";
 const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

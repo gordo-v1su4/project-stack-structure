@@ -56,6 +56,8 @@ Scale local checks to the change: diff/links/commands for docs, affected tests a
 
 ## Task-specific references
 
+- Before adding or changing model calls, background jobs, progress, or result handling, read [the Trigger execution contract](docs/protocols/trigger-execution-contract.md). Production processing and acceptance runs must enter through authenticated app dispatch, run in Trigger, and return validated task results. Direct gateway probes are diagnostics, not pipeline acceptance.
+- Caption and prompt prose describes visible subjects, action, and setting only. Keep absence, uncertainty, reference bookkeeping, and coverage notes in structured metadata. Read [visible writing and output rules](docs/protocols/higgsfield-nano-banana-reference-continuity.md#visible-writing-and-output-rules); do not emit notes such as “no named leads required” as shot prose.
 - UI work: [DESIGN.md](DESIGN.md). Preserve musical alignment first, motion continuity second, prepared previews, and user approval of what enters the timeline.
 - Pipeline or service work: [product infrastructure](docs/architecture/product-infrastructure.md), [Trigger production](docs/operations/trigger-production.md), and [local generation](docs/local-generation.md), as relevant. Pushes to `main` auto-deploy the web app to Vercel.
 - Homelab runbooks, endpoints, shared skills, adapters, and scripts: sibling `proxmox-home` (`C:\Users\Gordo\Documents\Github\proxmox-home` on Windows). Consult relevant guidance for homelab work; its Git policy applies to changes there.

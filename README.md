@@ -66,6 +66,8 @@ Every heavy step dispatches through [Trigger.dev](https://trigger.v1su4.dev) to 
 ## Documentation
 
 - Architecture: [docs/architecture/product-infrastructure.md](docs/architecture/product-infrastructure.md) (start here)
+- Background/model implementation: [Trigger execution contract](docs/protocols/trigger-execution-contract.md) — required request, progress, result, retry, and production verification rules
+- Captions and prompts: [visible writing and output rules](docs/protocols/higgsfield-nano-banana-reference-continuity.md#visible-writing-and-output-rules) — describe what is visible; keep internal checks out of prose
 - Media pipeline: [docs/architecture/media-pipeline.md](docs/architecture/media-pipeline.md)
 - Roadmap: [docs/roadmap.md](docs/roadmap.md)
 - Agent guidance: [AGENTS.md](AGENTS.md)
