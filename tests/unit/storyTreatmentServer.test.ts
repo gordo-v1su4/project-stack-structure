@@ -19,7 +19,9 @@ describe("story treatment Qwen service", () => {
     const context = JSON.parse(input.split("\n\n").at(-1)!);
     expect(context.selectedTreatment.anchors[0].songWindow).toEqual({ start: 0, end: 8 });
     expect(context.selectedTreatment.anchors[0].requirements[0]).toEqual({ id: "shot-1", momentId: treatment.anchors[0]!.id, description: "A solo arrival", durationSeconds: 3, constraints: { subjects: ["Diego"], focalSubjectCount: 1 } });
-    expect(context.footage).toEqual(request.footage);
+    expect(context.footage.sourceCount).toBe(request.footage.sourceCount);
+    expect(context.footage.captionClusters).toBe(undefined);
+    expect(buildStoryInput(request, 0)).toContain(request.footage.captionClusters[0]!);
     expect(input).not.toContain("DERIVED_MATCH_EVIDENCE");
     expect(input).not.toContain("source-only");
     expect(input.length).toBeLessThan(12000);

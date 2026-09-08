@@ -132,6 +132,7 @@ ${AUTHORING_CONTRACT}`;
 
 export const STORY_REVISION_INSTRUCTIONS = `Revise only the supplied selected treatment. Return JSON {"treatment":{...}}.
 The revision instruction is authoritative. Reconcile the edited prose, ordered moments, requirements and causal dependencies as one coherent story. Preserve unaffected facts, stable IDs, moments and timing. Add or remove moments only when needed. Do not return or regenerate the other treatment options.
+When requested visuals or required-shot descriptions have been edited, regenerate their stale constraints and generationPrompt to agree with those edits. Do not restore obsolete details. Requirements constrain visible actions; put narrative meaning in the moment's purpose, and use an intent constraint only when an unobservable condition is itself essential to the requested shot.
 When the user edits only the opening, preserve the later story unless continuity requires a change. Keep unsupported requirements visible; never invent footage coverage. Never infer a source's permanent narrative phase from its action.
 ${AUTHORING_CONTRACT}`;
 
@@ -151,7 +152,12 @@ export function buildStoryInput(request: StoryTreatmentRequest, attempt: number)
   const context = {
     userBrief: request.brief || "No user brief supplied. Propose a visual story from song and available footage, keeping unfilmed requirements explicit.",
     song: request.song,
-    footage: request.footage,
+    // Revision reconciles authored meaning. Repeating the full caption library
+    // encouraged the model to copy convenient source details into corrected shots.
+    footage: request.revision
+      ? { sourceCount: request.footage.sourceCount, momentCount: request.footage.momentCount,
+        note: "Footage coverage is assessed separately after this revision. Preserve unfilmed requirements from the brief and edited story." }
+      : request.footage,
     constraints: request.constraints ?? [],
     ...(request.revision ? { selectedTreatment: storyAuthoringContext(request.revision.treatment), revisionInstruction: request.revision.instruction } : {}),
   };
