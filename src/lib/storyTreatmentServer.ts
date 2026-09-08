@@ -5,6 +5,7 @@ import {
   parseGeneratedTreatments,
   type StoryTreatmentGenerationResult,
   type StoryTreatmentRequest,
+  type StoryTreatment,
 } from "@/components/studio/storyTreatments";
 import { getStoryTreatmentGatewayConfig } from "@/lib/storyTreatmentGateway";
 import { assertStoryLoglineReview, isStoryReviewDeploymentError } from "@/lib/storyLoglineReview";
@@ -152,7 +153,7 @@ export function buildStoryInput(request: StoryTreatmentRequest, attempt: number)
     song: request.song,
     footage: request.footage,
     constraints: request.constraints ?? [],
-    ...(request.revision ? { selectedTreatment: request.revision.treatment, revisionInstruction: request.revision.instruction } : {}),
+    ...(request.revision ? { selectedTreatment: storyAuthoringContext(request.revision.treatment), revisionInstruction: request.revision.instruction } : {}),
   };
   return [
     request.revision ? "Propose a coherent revision of this one story for review." : "Develop three distinct treatments from this project context.",
@@ -162,6 +163,28 @@ export function buildStoryInput(request: StoryTreatmentRequest, attempt: number)
     "Legacy expectedReusePercent/expectedGenerationPercent fields are compatibility fields only; use 0 for both. Coverage is measured separately from footage evidence.",
     attempt > 0 ? "Validation retry: return only complete JSON matching all required authoring fields. Make each logline and developed treatment distinct in emphasis or progression within the user constraints. Do not return duplicate options or change the required ending merely to make options different." : "",
     attempt > 0 && request.validationFeedback ? `Correct this validation failure: ${request.validationFeedback.slice(0, 500)}` : "",
-    JSON.stringify(context, null, 2),
+    JSON.stringify(context),
   ].filter(Boolean).join("\n\n");
+}
+
+/** Matching output is recalculated locally; it is not input evidence for authoring. */
+function storyAuthoringContext(treatment: StoryTreatment) {
+  return {
+    id: treatment.id, kind: treatment.kind, title: treatment.title,
+    logline: treatment.logline, loglineElements: treatment.loglineElements,
+    synopsis: treatment.synopsis, visualThesis: treatment.visualThesis,
+    endingHook: treatment.endingHook, structure: treatment.structure,
+    sectionAnchorIds: treatment.sectionAnchorIds,
+    anchors: treatment.anchors.map(anchor => ({
+      id: anchor.id, title: anchor.title, description: anchor.description,
+      purpose: anchor.purpose, generationPrompt: anchor.generationPrompt,
+      role: anchor.role, causalDependencies: anchor.causalDependencies,
+      optional: anchor.optional, songWindow: anchor.songWindow,
+      requirements: anchor.requirements?.map(requirement => ({
+        id: requirement.id, momentId: requirement.momentId,
+        description: requirement.description, optional: requirement.optional,
+        durationSeconds: requirement.durationSeconds, constraints: requirement.constraints,
+      })),
+    })),
+  };
 }

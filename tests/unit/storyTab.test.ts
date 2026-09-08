@@ -105,6 +105,13 @@ describe("StoryTab section map", () => {
     expect(markup).not.toContain("auto-resolved");
     expect(markup).not.toContain("75%");
     expect(markup).toContain("Missing shots remain visible as gaps");
+    const uncertainMarkup = renderToStaticMarkup(createElement(StoryTab, {
+      analysis: { sourceLabel: "song.wav", audioUrl: "", waveform: [], energy: [], beats: [], onsets: [], sections: [], duration: 8 }, audioStatus: "Ready", videoSources: [], segmentPreviews: [],
+      state: { ...base, treatments: treatments.map(treatment => ({ ...treatment, anchors: treatment.anchors.map(anchor => ({ ...anchor, coverage: "weak" as const })) })) }, onStateChange: () => {},
+    }));
+    expect(uncertainMarkup).toContain("4 uncertain matches need review");
+    expect(uncertainMarkup).not.toContain("0 moments need footage");
+    expect(uncertainMarkup).not.toContain("Footage found for all moments");
     for (const status of ["legacy", "pending"] as const) {
       const reviewMarkup = renderToStaticMarkup(createElement(StoryTab, {
         analysis: { sourceLabel: "song.wav", audioUrl: "", waveform: [], energy: [], beats: [], onsets: [], sections: [], duration: 8 }, audioStatus: "Ready", videoSources: [], segmentPreviews: [],

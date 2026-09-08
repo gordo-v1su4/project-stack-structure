@@ -2,6 +2,13 @@ import { hydrateTreatmentCoverage, parseGeneratedTreatment, type StoryAnchor, ty
 import { mapStoryToMusic } from "./storyMusicPlacement";
 import type { StoryPlanDraft, VideoMoment } from "./musicVideoProject";
 
+export function describeStoryCoverage(treatment: StoryTreatment): string {
+  const missing = treatment.anchors.filter(anchor => anchor.coverage === "missing").length;
+  const uncertain = treatment.anchors.filter(anchor => anchor.coverage === "weak").length;
+  return [missing ? `${missing} moments need footage` : "", uncertain ? `${uncertain} uncertain matches need review` : ""]
+    .filter(Boolean).join(" · ") || "Footage found for all moments";
+}
+
 /** Validate new model output, while persisted legacy treatments remain readable. */
 export function validateStoryAuthoring(treatment: StoryTreatment) {
   const elements = treatment.loglineElements;

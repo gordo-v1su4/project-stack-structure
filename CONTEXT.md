@@ -120,7 +120,7 @@ Ranked assignment of a video moment to an edit slot (`SemanticClipMatch`), built
 
 ### Resolved edit / Edit plan preview segment
 
-Join-stage timeline item (`EditPlanPreviewSegment`): the locked sequence in song order for preview and export. Join does not silently reshuffle — changes go back through Match or Generate.
+Join-stage timeline item (`EditPlanPreviewSegment`): the saved sequence in song order shared by review and export. Join supports reviewed swaps and existing-footage replacements with undo. Song windows stay fixed; short replacements leave explicit holes. Playback never reranks sources.
 
 ### Generated studio asset
 
@@ -223,13 +223,13 @@ Smart captions receive character names, location continuity, and reference image
 
 | Signal | Color | Blocks Join? | Meaning |
 | --- | --- | --- | --- |
-| **Missing** (no primary match) | Red | **Yes** | True coverage hole — return to Match or approve a generated import |
+| **Missing** (no eligible source or approved replacement) | Red | **No** | Visible hole in the rough cut; blocks final export until filled |
 | **Short source** (primary assigned but shorter than slot) | Purple | **No** | Optional whole-shot replacement review; user may continue; UI should surface the issue clearly |
 | **Weak match** (score &lt; 45%) | Yellow | **No** | Optional quality reroll in Generate; not a workflow blocker |
 
 **Seedance external handoff order** (whole-shot replacement): select resolved cut → **2×2 storyboard frame grid** for that section (Nano Banana) → prepare Video_1 timing reference → copy operator packet → generate externally → import completed clip → approve exactly one candidate for Join. Storyboard is the first creative step; the current Generate UI buries this flow and needs clearer step-by-step guidance (see GitHub issue #61). ADR: `docs/adr/0001-generate-join-coverage-gating.md`.
 
-**Continuity review (current):** Match per-slot evidence + Generate resolved-cut audition (`selectPreviewSectionRange`). **Section-level preview** (play intro/verse/chorus as one unit across acts) is deferred — backlog item below.
+**Continuity review (current):** Match, Generate, Join, Effects, and Export consume the same saved arrangement. Join plays the whole song or a selected section, including timed placeholders for missing shots. Final export requires complete coverage. See ADR-0001 for the distinction between review availability and export readiness.
 
 **Local still generation (two lanes):**
 
@@ -296,7 +296,7 @@ Not scheduled. Capture product intent here so agents do not re-litigate in sessi
 | **Reference name from sheet (vision)** | Maybe | On reference upload, use Qwen3-VL (caption gateway) to read the printed character or location name from the image and set `displayName`. Sheets will always include a visible name somewhere; filenames are unreliable. Manual edit remains. Until then, user supplies names (e.g. Diego, Valentina, Underground Latin Club). |
 | **Project database (Convex-style)** | Maybe | Evaluate a proper DB for project metadata, ingest lanes, media catalog, reference assets, scene/caption manifests, and pipeline job state — similar to **Pindac** and **review-room** (both Convex). Today: RustFS blobs + `project.json` + in-browser state; works for solo use but caused orphaned clips and weak catalog queries. Convex is preferred if we pursue this; not committed — migration cost and dual-write period need a spec first. |
 | **Ingest parallelism tuning** | Maybe | Investigate whether current parallelism helps or hurts wall-clock time. Today: up to 3 scene-detect children at once, but Qwen captioning is globally serial (`vm100-heavy` concurrency 1) and batches run scenes sequentially inside each child. Parallel scene detect can pile work into the GPU queue and increase wait time vs a simpler one-clip-at-a-time flow. Measure queue wait vs runtime before changing limits. **Out of scope:** routing work to the local 5090 as a second remote GPU — homelab VM100 stays the single caption worker to avoid ops confusion. |
-| **Section-level preview** | Deferred | Play intro/verse/chorus (or arbitrary story section) as one prepared cut from Match or Generate, not only per-cut audition or full Join preview. |
+| **Section-level preview** | Implemented; browser acceptance in progress | Join plays a selected song section or the full saved arrangement; Generate retains cut and section audition. |
 | **Qwen Image Edit 2511 reference validation** | Next session | Prove SwarmUI/Comfy local stills honor ingest reference sheets + composition ref role split. Workflows/APIs exist on homelab; wire and test in order: 2511 still → Seedance still-first packet → R2V direct. |
 | **Studio cleanup (2026-09)** | In progress | Phased checklist: [2026-09-06-studio-story-match-generate-checklist.md](plans/2026-09-06-studio-story-match-generate-checklist.md). **A** docs done → **B** gating/UX/manual Seedance → **C** e2e after B. |
 

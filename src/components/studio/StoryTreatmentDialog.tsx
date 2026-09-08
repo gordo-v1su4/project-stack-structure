@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useId, useRef, useState } from "react";
-import { beginStoryInspection, createStoryRequestGuard, describeStoryRevision, getStoryTimingError, markStoryEdited } from "./storyAuthoring";
+import { describeStoryCoverage, beginStoryInspection, createStoryRequestGuard, describeStoryRevision, getStoryTimingError, markStoryEdited } from "./storyAuthoring";
 import { isStoryPlanConfirmable, rerankAnchorCoverage, type StoryAnchor, type StoryShotRequirement, type StoryTreatment } from "./storyTreatments";
 import type { StoryPlanDraft, VideoMoment } from "./musicVideoProject";
 
@@ -84,7 +84,7 @@ export function StoryTreatmentDialog({ treatment, moments, sections, cues, durat
       </> : <><p className="text-base leading-7 text-fg-0">{preview.logline}</p><p className="whitespace-pre-wrap text-sm leading-6 text-fg-2">{preview.synopsis}</p></>}
       <div className="flex flex-wrap items-center gap-2">
         <button type="button" className={secondary} disabled={busy || Boolean(proposal)} onClick={() => setEditing(!editing)}>{editing ? "Finish editing" : "Edit story"}</button>
-        <span className="text-xs text-fg-3">{preview.anchors.length} story moments · {assessmentNeedsReview ? "Assessment needs review" : `${preview.anchors.filter(a => a.coverage === "missing").length} missing footage`}</span>
+        <span className="text-xs text-fg-3">{preview.anchors.length} story moments · {assessmentNeedsReview ? "Assessment needs review" : describeStoryCoverage(preview)}</span>
       </div>
       {preview.reconciliation?.status === "legacy" ? <p className="rounded-md border border-line p-3 text-sm text-fg-3">This saved option contains an earlier summary, not a reviewed logline. Refine it to update the pitch and story moments, then review its footage. The other options stay unchanged.</p> : null}
       {pending && !proposal ? <p role="status" className="rounded-md border border-accent-lo bg-accent-tint p-3 text-sm text-fg-1">Story edits need reconciliation. Request an updated moment plan below, then review the changes before using this story.</p> : null}

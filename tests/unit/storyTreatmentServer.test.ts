@@ -10,6 +10,22 @@ const request: StoryTreatmentRequest = {
 };
 
 describe("story treatment Qwen service", () => {
+  test("revision context retains authoring and timing without repeated matching data", () => {
+    const treatment = hydrateTreatmentCoverage(parseGeneratedTreatments(buildValidPayload()), [])[0]!;
+    const candidate = { momentId: "source-only", label: "DERIVED_MATCH_EVIDENCE".repeat(2000), sourceClipId: 1, start: 0, end: 2, score: 0.7, reason: "Derived assessment" };
+    treatment.anchors[0] = { ...treatment.anchors[0]!, songWindow: { start: 0, end: 8 }, candidates: [candidate], requirements: [{ id: "shot-1", momentId: treatment.anchors[0]!.id, description: "A solo arrival", durationSeconds: 3, constraints: { subjects: ["Diego"], focalSubjectCount: 1 }, candidates: [candidate], resolution: "source", selectedCandidateId: "source-only" }] };
+    const original = structuredClone(treatment);
+    const input = buildStoryInput({ ...request, revision: { treatment, instruction: "Keep the solo arrival." } }, 0);
+    const context = JSON.parse(input.split("\n\n").at(-1)!);
+    expect(context.selectedTreatment.anchors[0].songWindow).toEqual({ start: 0, end: 8 });
+    expect(context.selectedTreatment.anchors[0].requirements[0]).toEqual({ id: "shot-1", momentId: treatment.anchors[0]!.id, description: "A solo arrival", durationSeconds: 3, constraints: { subjects: ["Diego"], focalSubjectCount: 1 } });
+    expect(context.footage).toEqual(request.footage);
+    expect(input).not.toContain("DERIVED_MATCH_EVIDENCE");
+    expect(input).not.toContain("source-only");
+    expect(input.length).toBeLessThan(12000);
+    expect(treatment).toEqual(original);
+  });
+
   test("preserves locked chronology and ending in every option and requests substantive diversity on retry", () => {
     expect(STORY_DIRECTOR_INSTRUCTIONS).toContain("All three options preserve explicit user constraints");
     expect(STORY_DIRECTOR_INSTRUCTIONS).toContain("Different treatments may share the same specified ending");
