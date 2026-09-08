@@ -1,4 +1,5 @@
-import { assessStoryMatch } from "./storyMatchAssessment";
+import { scoreMotionContinuity } from "./motionRanking";
+import { assessStoryMatch, isUsableStoryMatch } from "./storyMatchAssessment";
 import { promoteReservedMoment, rankMomentsForSection, reserveSectionMoments, type SemanticEditAssignment, type SemanticSectionInput, type SemanticVideoMomentInput } from "./semanticEditPlanner";
 import type { SrtChunk } from "./srtUtils";
 import type { BeatJoinAnalysis, BeatJoinSection, DetectedSceneSegment, SceneVisualAnalysis, SegmentPreview, UploadedVideoSource } from "./types";
@@ -648,7 +649,7 @@ export function prepareApprovedPlacements(params: {
       if (end <= cursor + 0.025) return;
       placements.push({ id: `${item.id}:gap:${cursor.toFixed(3)}`, timelineItemId: item.id, sectionId: item.sectionId, momentId: null,
         sourceStart: 0, sourceEnd: roundTime(end - cursor), songStart: cursor, songEnd: end, label: item.label,
-        kind: "gap", reason: item.videoMomentId ? "Insufficient unused footage for this story moment" : "Missing or uncertain story footage", origin: params.origin ?? "story-match" });
+        kind: "gap", reason: item.videoMomentId ? "Insufficient unused footage for this story moment" : "No source selected for this story moment", origin: params.origin ?? "story-match" });
       cursor = end;
     };
     for (const cut of cuts) {
@@ -721,6 +722,7 @@ function arrangeEditPlanSegments(params: {
     shotFamilyUseCounts: new Map(),
     recentMomentIds: [],
     recentShotFamilyKeys: [],
+    lastMotionDescriptor: null,
     lastMomentId: null,
     lastSourceClipId: null,
     lastShotFamilyKey: null,
@@ -741,7 +743,7 @@ function arrangeEditPlanSegments(params: {
         if (!source?.videoUrl) return null;
         const assessment = assessStoryMatch({ requirementId: item.requirementId ?? item.id, requirementText: item.prompt,
           constraints: item.requirements, moment: { ...moment, subjects: moment.captionMeta?.subjects, action: moment.captionMeta?.action, setting: moment.captionMeta?.setting } });
-        if (assessment.eligibility !== "eligible") return null;
+        if (!isUsableStoryMatch(assessment)) return null;
         return { moment, source };
       })
       .filter((candidate): candidate is { moment: VideoMoment; source: UploadedVideoSource } => candidate !== null);
@@ -1149,6 +1151,7 @@ function expandMomentsToSectionPreviewSegments(params: {
         shotFamilyKey,
         ...params.continuity.recentShotFamilyKeys.filter((familyKey) => familyKey !== shotFamilyKey),
       ].slice(0, 6);
+      params.continuity.lastMotionDescriptor = candidate.moment.motionDescriptor ?? null;
       params.continuity.lastMomentId = candidate.moment.id;
       params.continuity.lastSourceClipId = candidate.moment.sourceClipId;
       params.continuity.lastShotFamilyKey = shotFamilyKey;
@@ -1196,6 +1199,7 @@ interface PreviewSequenceContinuity {
   shotFamilyUseCounts: Map<string, number>;
   recentMomentIds: string[];
   recentShotFamilyKeys: string[];
+  lastMotionDescriptor: VideoMoment["motionDescriptor"] | null;
   lastMomentId: string | null;
   lastSourceClipId: number | null;
   lastShotFamilyKey: string | null;
@@ -1204,9 +1208,9 @@ interface PreviewSequenceContinuity {
 /**
  * Picks the source moment for the next music window slice. Readable moments
  * that do not leave a sub-minimum tail are considered first. Within that pool,
- * variety is tracked across the complete edit, not reset per Story section, so
- * a new verse cannot silently restart the same action or shot cycle. Coverage
- * and semantic rank break ties only after moment, family, and source reuse.
+ * available segment motion is compared before variety. Variety is tracked across
+ * the complete edit and breaks near motion ties. Reuse remains a project choice;
+ * whole-segment flow cannot establish trim-boundary or eyeline continuity.
  */
 function pickPreviewCandidate(params: {
   candidates: PreparedPreviewCandidate[];
@@ -1221,6 +1225,11 @@ function pickPreviewCandidate(params: {
       && (tailDuration <= 0.025 || tailDuration >= MIN_READABLE_PREVIEW_CUT_SECONDS - 0.025);
   });
   let pool = readableCandidates.length ? readableCandidates : candidates;
+  // Whole-segment motion is advisory; actual trim-boundary analysis is not available yet.
+  const movement = (candidate: PreparedPreviewCandidate) => scoreMotionContinuity({ from: continuity.lastMotionDescriptor ?? null, to: candidate.moment.motionDescriptor ?? null });
+  const bestMovement = Math.max(...pool.map(movement));
+  // Variety breaks near ties after movement, and never makes a repeat invalid.
+  if (bestMovement > 0) pool = pool.filter(candidate => movement(candidate) >= bestMovement - 0.05);
 
   pool = preferCandidatesWhenAvailable(pool, (candidate) => candidate.moment.id !== continuity.lastMomentId);
   pool = preferCandidatesWhenAvailable(pool, (candidate) => buildPreviewShotFamilyKey(candidate.moment) !== continuity.lastShotFamilyKey);

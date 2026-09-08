@@ -1,4 +1,4 @@
-import { assessStoryMatch, type MatchAssessment } from "./storyMatchAssessment";
+import { assessStoryMatch, isUsableStoryMatch, type MatchAssessment } from "./storyMatchAssessment";
 import type { GeneratedStudioAsset } from "./generatedAssets";
 import { generatedAssetWindow, listApprovedGeneratedVideoAssets } from "./generatedAssets";
 import { isPlacementPlanCurrent, type MusicVideoProject, type TimelineItem, type VideoMoment } from "./musicVideoProject";
@@ -60,7 +60,7 @@ export type CoverageSummary = {
   duration: number;
   semanticGapDuration: number;
   durationGapDuration: number;
-  /** Unresolved semantic or duration holes — blocks final readiness */
+  /** Uncovered media duration — blocks final readiness; semantic fit is advisory */
   blockingGapCount: number;
   /** All uncovered required duration */
   blockingGapDuration: number;
@@ -136,23 +136,27 @@ export function buildCoverageSlots(
       moment: { ...source, subjects: source.captionMeta?.subjects, action: source.captionMeta?.action,
         setting: source.captionMeta?.setting, shotType: source.captionMeta?.shotType },
     });
-    const assessment = moment ? assess(moment) : undefined;
+    let assessment = moment ? assess(moment) : undefined;
     let score = item.semanticMatch?.score ?? 0;
     const stalePlacements = project.placementPlan && !isPlacementPlanCurrent(project);
     const placements = stalePlacements ? [] : project.placementPlan?.placements.filter((placement) =>
       placement.timelineItemId === (originalItemIds.get(item.id) ?? item.id) && placement.sectionId === item.sectionId && placement.songStart < item.end && placement.songEnd > item.start);
-    let supported = !stalePlacements && assessment?.eligibility === "eligible";
+    let supported = !stalePlacements && isUsableStoryMatch(assessment);
     let assignedDuration = 0;
     const intervals: Array<[number, number]> = [];
     if (placements) {
+      const placedAssessments: MatchAssessment[] = [];
       for (const placement of placements) {
         if (placement.kind !== "source" || !placement.momentId) continue;
         const source = momentsById.get(placement.momentId);
-        if (!source || assess(source).eligibility !== "eligible") continue;
+        const placedAssessment = source ? assess(source) : undefined;
+        if (!source || !isUsableStoryMatch(placedAssessment)) continue;
+        placedAssessments.push(placedAssessment!);
         supported = true;
         intervals.push([Math.max(item.start, placement.songStart), Math.min(item.end, placement.songEnd)]);
       }
-
+      assessment = placedAssessments.find(value => value.eligibility === "ineligible")
+        ?? placedAssessments.find(value => value.eligibility === "uncertain") ?? placedAssessments[0] ?? assessment;
     } else if (moment && supported) {
       const available = Math.max(0, moment.duration - (consumed.get(moment.id) ?? 0));
       assignedDuration = Math.min(requiredDuration, available);
@@ -177,10 +181,10 @@ export function buildCoverageSlots(
       coveredEnd = Math.max(coveredEnd, end);
     }
     const missingDuration = Math.max(0, requiredDuration - assignedDuration);
-    const status = classifySlotStatus({ supported, requiredDuration, assignedDuration, score });
+    const status = classifySlotStatus({ supported, requiredDuration, assignedDuration, score: assessment && assessment.eligibility !== "eligible" ? Math.min(score, COVERAGE_WEAK_SCORE_THRESHOLD - 0.01) : score });
     const needs = deriveGenerationNeeds(status, requiredDuration, assignedDuration);
     return { item, moment, requiredDuration, assignedDuration, missingDuration, score, status, needs, assessment,
-      semanticStatus: supported ? "supported" as const : assessment?.eligibility === "uncertain" ? "uncertain" as const : "missing" as const,
+      semanticStatus: assessment?.eligibility === "eligible" ? "supported" as const : assessment ? "uncertain" as const : "missing" as const,
       gapKind: status === "missing" ? "semantic" as const : status === "short" ? "duration" as const : undefined };
   });
 }

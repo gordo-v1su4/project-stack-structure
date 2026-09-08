@@ -78,3 +78,5 @@ Every heavy step dispatches through [Trigger.dev](https://trigger.v1su4.dev) to 
 - **Motion continuity** as the default visual mode.
 - **Prepared previews** — explicit recompute states, no laggy pseudo-live playback.
 - **Human approval** — Match and Join gate what enters the timeline.
+
+Music-video story and matching behavior: [editing contract](docs/protocols/music-video-editing.md). Read this before changing semantic gates, cut ranking, or reuse behavior.

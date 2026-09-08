@@ -31,13 +31,14 @@ describe("story evidence eligibility", () => {
     expect(malformed.unknown).toContain("Invalid shot constraint requires review: actions");
     expect(malformed.contradicted).toContain("Action: requires walking, observes dancing");
   });
-  test("matching character and location names cannot rescue paired dancing for solo walking", () => {
+  test("paired dancing stays selectable without being mislabeled as solo walking", () => {
     const assessment = assess("Diego walking alone in the Underground Latin Club");
     expect(assessment.eligibility).toBe("ineligible");
     expect(assessment.contradicted).toContain("Focal subjects: requires 1, observes 2");
     const section = { id: "intro", label: "Intro", prompt: "Diego walking alone in the Underground Latin Club", start: 0, end: 5 };
-    expect(scoreMomentForSection({ section, moment: pair }).score).toBe(0);
-    expect(rankMomentsForSection({ section, moments: [pair] })).toEqual([]);
+    expect(assessment.usableInEdit).toBe(true);
+    expect(scoreMomentForSection({ section, moment: pair }).score).toBeGreaterThan(0);
+    expect(rankMomentsForSection({ section, moments: [pair] })).toHaveLength(1);
     expect(rankMomentsForSection({ section, moments: [pair], includeIneligible: true })).toHaveLength(1);
   });
 

@@ -1,4 +1,4 @@
-import { assessStoryMatch, type MatchAssessment, type ShotRequirementConstraints } from "./storyMatchAssessment";
+import { assessStoryMatch, isUsableStoryMatch, type MatchAssessment, type ShotRequirementConstraints } from "./storyMatchAssessment";
 import type { MediaEvidence } from "./mediaEvidence";
 import { scoreMotionContinuity } from "./motionRanking";
 import type { MotionDescriptor } from "./types";
@@ -199,6 +199,8 @@ export function promoteReservedMoment(ranked: SemanticEditAssignment[], reserved
   if (!reservedMomentId || !ranked.length || ranked[0]!.momentId === reservedMomentId) return ranked;
   const index = ranked.findIndex((entry) => entry.momentId === reservedMomentId);
   if (index <= 0) return ranked;
+  // Semantic reservations may break ties, but cannot overturn a better movement join.
+  if (ranked[0]!.motionContinuityScore > ranked[index]!.motionContinuityScore + 0.05) return ranked;
   return [ranked[index]!, ...ranked.slice(0, index), ...ranked.slice(index + 1)];
 }
 
@@ -207,7 +209,7 @@ export function rankMomentsForSection(params: {
   moments: SemanticVideoMomentInput[];
   previous?: SemanticVideoMomentInput | null;
   useCounts?: Map<string, number>;
-  /** Include uncertain and rejected options for inspection, never automatic placement. */
+  /** Include options without usable caption data for inspection. */
   includeIneligible?: boolean;
 }): SemanticEditAssignment[] {
   return params.moments
@@ -217,7 +219,7 @@ export function rankMomentsForSection(params: {
       previous: params.previous ?? null,
       useCount: params.useCounts?.get(moment.id) ?? 0,
     }))
-    .filter((assignment) => params.includeIneligible || assignment.assessment?.eligibility === "eligible")
+    .filter((assignment) => params.includeIneligible || isUsableStoryMatch(assignment.assessment))
     .sort((left, right) => right.score - left.score || left.moment.sourceClipId - right.moment.sourceClipId || left.moment.start - right.moment.start);
 }
 
@@ -243,12 +245,12 @@ export function scoreMomentForSection(params: {
   const repetitionPenalty = Math.min(0.4, (params.useCount ?? 0) * 0.18 + (params.previous?.id === params.moment.id ? 0.22 : 0));
 
   const score = roundScore(
-    semanticScore * 0.3 +
-      lyricCaptionScore * 0.14 +
-      actionIntentScore * 0.26 +
-      durationFitScore * 0.12 +
-      motionContinuityScore * 0.1 +
-      motionEnergyScore * 0.08 +
+    semanticScore * 0.10 +
+      lyricCaptionScore * 0.04 +
+      actionIntentScore * 0.08 +
+      durationFitScore * 0.24 +
+      motionContinuityScore * 0.40 +
+      motionEnergyScore * 0.10 +
       colorContinuityScore * 0.04 -
       repetitionPenalty,
   );
@@ -257,7 +259,7 @@ export function scoreMomentForSection(params: {
     momentId: params.moment.id,
     sectionId: params.section.id,
     moment: params.moment,
-    score: assessment.eligibility === "ineligible" ? 0 : score,
+    score,
     assessment,
     semanticScore,
     lyricCaptionScore,

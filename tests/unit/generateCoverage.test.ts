@@ -183,14 +183,14 @@ describe("Generate coverage truth", () => {
     expect(summarizeCoverage(buildCoverageSlots(base, chunks, [asset]))).toMatchObject({ assignedDuration: 0, blockingGapDuration: 10 });
   });
 
-  test("semantic contradictions stay gaps even with a high stored ranking score", () => {
+  test("semantic contradictions remain advisory even with a high stored ranking score", () => {
     const moment: VideoMoment = { id: "pair", sourceClipId: 0, label: "Club", start: 0, end: 10, duration: 10,
       caption: "Diego and Valentina dancing together in the club" };
     const item: TimelineItem = { id: "solo", sectionId: "intro", lyricChunkIds: [], videoMomentId: moment.id,
       start: 0, end: 10, label: "Intro", prompt: "Diego walking alone in the club", semanticMatch: match(moment.id, 1) };
     const slots = buildCoverageSlots(project(item, moment), []);
-    expect(slots[0]).toMatchObject({ status: "missing", semanticStatus: "missing", assignedDuration: 0, missingDuration: 10 });
-    expect(summarizeCoverage(slots)).toMatchObject({ semanticGapDuration: 10, durationGapDuration: 0, blockingGapCount: 1 });
+    expect(slots[0]).toMatchObject({ status: "weak", semanticStatus: "uncertain", assignedDuration: 10, missingDuration: 0 });
+    expect(summarizeCoverage(slots)).toMatchObject({ semanticGapDuration: 0, durationGapDuration: 0, blockingGapCount: 0, reviewCount: 1 });
   });
 
   test("chunks cannot silently reuse the same three source seconds", () => {

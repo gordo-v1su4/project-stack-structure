@@ -6,7 +6,7 @@ import {
   type StorySection,
   type TimelineItem,
 } from "./musicVideoProject";
-import { assessStoryMatch } from "./storyMatchAssessment";
+import { assessStoryMatch, isUsableStoryMatch } from "./storyMatchAssessment";
 import { scoreMomentForSection } from "./semanticEditPlanner";
 import type { UploadedVideoSource } from "./types";
 
@@ -31,7 +31,7 @@ export function selectStorySectionCandidate(project: MusicVideoProject, selectio
   const evidence = { ...moment, subjects: moment.captionMeta?.subjects, action: moment.captionMeta?.action,
     setting: moment.captionMeta?.setting, shotType: moment.captionMeta?.shotType };
   const assessment = assessStoryMatch({ requirementId: item.requirementId ?? item.id, requirementText: item.prompt, constraints: item.requirements, moment: evidence });
-  if (assessment.eligibility !== "eligible") return project;
+  if (!isUsableStoryMatch(assessment)) return project;
   const scored = scoreMomentForSection({ section: { ...item, requirements: item.requirements }, moment: evidence });
   const selectedMatch: SemanticClipMatch = { momentId: moment.id, score: scored.score, semanticScore: scored.semanticScore,
     lyricCaptionScore: scored.lyricCaptionScore, actionIntentScore: scored.actionIntentScore, durationFitScore: scored.durationFitScore,

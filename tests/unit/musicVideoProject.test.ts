@@ -252,9 +252,8 @@ describe("musicVideoProject source moments and review contract", () => {
 
     expect(project.videoMoments).toHaveLength(1);
     expect(project.videoMoments[0]).toMatchObject({ id: "segment-moment-12", sourceClipId: 3, label: "Close-up scene" });
-    expect(project.storySections.every((section) => section.videoMomentIds.length === 0)).toBe(true);
-    expect(project.editPlan.timelineItems.every((item) => item.videoMomentId === null)).toBe(true);
-    expect(project.editPlan.timelineItems.every((item) => !item.semanticMatch)).toBe(true);
+    expect(project.storySections.some((section) => section.videoMomentIds.includes("segment-moment-12"))).toBe(true);
+    expect(project.editPlan.timelineItems.some((item) => item.semanticMatch?.assessment?.usableInEdit)).toBe(true);
   });
 
   test("carries semantic clip-choice scores and reasons into story sections and edit-plan items", () => {
@@ -483,7 +482,7 @@ describe("musicVideoProject source moments and review contract", () => {
     expect([...pools[1]!].filter((momentId) => pools[2]!.has(momentId))).toHaveLength(0);
   });
 
-  test("retains a duration gap rather than substituting a long unrelated landscape", () => {
+  test("allows a readable landscape cut with lower story fit alongside a short singer close-up", () => {
     const videoSources: UploadedVideoSource[] = [{
       id: 0,
       name: "mixed.mp4",
@@ -532,13 +531,13 @@ describe("musicVideoProject source moments and review contract", () => {
       createdAt: "2026-06-18T00:00:00.000Z",
     });
 
-    // Premise: the short close-up outranks the long landscape semantically.
-    expect(project.storySections[0]?.videoMomentIds[0]).toBe("scene-moment-0-0");
+    // Readable duration can outweigh literal caption similarity in a music video.
+    expect(project.storySections[0]?.videoMomentIds[0]).toBe("scene-moment-0-1");
 
     const segments = prepareAndReadPreview({ project, videoSources });
 
-    expect(segments.filter((segment) => segment.kind === "source").every((segment) => segment.momentId === "scene-moment-0-0")).toBe(true);
-    expect(segments.some((segment) => segment.kind === "gap")).toBe(true);
+    expect(segments.some((segment) => segment.kind === "source" && segment.momentId === "scene-moment-0-1")).toBe(true);
+    expect(segments.some((segment) => segment.kind === "gap")).toBe(false);
     expect(segments.reduce((sum, segment) => sum + segment.musicEnd - segment.musicStart, 0)).toBe(4);
   });
 

@@ -64,3 +64,5 @@ Tokens live in `src/app/globals.css` under `@theme` and are the only source of c
 - Mute, solo, collapse, focus, and zoom controls are view-only. They must not mutate project state or imply export changes.
 - The selected export-bound candidate uses the existing burnt-orange selected treatment. Muted lanes reduce opacity/grayscale; empty cells stay visible as dashed placeholders so the user understands missing coverage.
 - Each block should expose source label, caption/search text, match score, lane confidence, and head/tail timing so transitions can be reasoned about without opening a heavy editor.
+
+Music-video matching follows the [editing contract](docs/protocols/music-video-editing.md): low story fit is advisory, and usable footage remains selectable. Keep technical media and timing failures distinct from editorial suggestions.

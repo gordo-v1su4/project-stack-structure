@@ -36,7 +36,7 @@ export function buildMotionRankedCandidate(params: {
 
 function scoreAngleContinuity(left: number | null, right: number | null) {
   if (left === null || right === null) return 0.5;
-  const delta = Math.abs(left - right);
+  const delta = ((Math.abs(left - right) % 360) + 360) % 360;
   const wrappedDelta = Math.min(delta, 360 - delta);
   return 1 - wrappedDelta / 180;
 }

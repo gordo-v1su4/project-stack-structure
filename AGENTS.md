@@ -79,3 +79,4 @@ Single-context layout: root `CONTEXT.md` plus `docs/adr/`. See `docs/agents/doma
 ## Cursor Cloud
 
 For cloud setup, startup, or recovery, use [cursor-cloud-setup/README.md](cursor-cloud-setup/README.md). `.cursor/environment.json` loads `scripts/cloud-agent-start.sh`; do not create `.env` files in the agent VM or give Cursor the broad Hermes Bitwarden token. Private generation uses SwarmUI on `:7861`, not its ComfyUI backend on `:7821`. Keep `TS_AUTHKEY` in Cursor environment-scoped Runtime Secrets.
+- Music-video story and matching work: [editing contract](docs/protocols/music-video-editing.md). Caption-first ideation, motion before semantics, advisory fit scores, and project-specific reuse choices.

@@ -17,11 +17,17 @@ export interface MatchAssessment {
   requirementId: string;
   sourceId: string;
   eligibility: "eligible" | "uncertain" | "ineligible";
+  /** Factual fit is advisory in music-video editing; unusable data is still rejected. */
+  usableInEdit?: boolean;
   satisfied: string[];
   unknown: string[];
   contradicted: string[];
   reasons: string[];
   evidenceReferences: string[];
+}
+
+export function isUsableStoryMatch(assessment: MatchAssessment | undefined): boolean {
+  return Boolean(assessment && (assessment.usableInEdit ?? assessment.eligibility === "eligible"));
 }
 
 export interface MatchEvidenceInput {
@@ -62,7 +68,7 @@ function actionOrder(text: string): string[] {
   }).sort((a, b) => a.index - b.index).map(({ action }) => action);
 }
 const STATES: Record<string, RegExp> = {
-  damaged: /\b(collaps(?:e|es|ing)|crumbl(?:e|es|ing)|earthquake|rubble|fractur(?:e|ed)|falling apart|destroyed)\b/i,
+  damaged: /\b(collaps(?:e|es|ing)|crumbl(?:e|es|ing)|earthquake|rubble|fractur(?:e|es|ed|ing)|crack(?:s|ed|ing)?|falling apart|destroyed)\b/i,
   intact: /\b(intact|undamaged|before (?:the )?(?:collapse|earthquake|disaster))\b/i,
 };
 const SETTING_WORDS = /\b(jungle|forest|cave|club|street|beach|ocean|kitchen|desert|stage)\b/gi;
@@ -218,6 +224,7 @@ export function assessStoryMatch(input: {
   const eligibility = contradicted.length ? "ineligible" : unknown.length ? "uncertain" : "eligible";
   return {
     version: 1, requirementId: input.requirementId, sourceId: moment.id, eligibility,
+    usableInEdit: Boolean(text.trim()) && malformedConstraints.length === 0,
     satisfied, unknown, contradicted,
     reasons: [...contradicted, ...unknown, ...satisfied],
     evidenceReferences: [...(evidence?.input.urls ?? []), moment.firstFrameUrl, moment.middleFrameUrl, moment.lastFrameUrl].filter((url): url is string => Boolean(url)),

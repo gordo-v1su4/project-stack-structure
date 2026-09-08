@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { isUsableStoryMatch } from "./storyMatchAssessment";
 import { useEffect, useId, useRef, useState } from "react";
 import { describeStoryCoverage, beginStoryInspection, createStoryRequestGuard, describeStoryRevision, getStoryTimingError, markStoryEdited } from "./storyAuthoring";
 import { isStoryPlanConfirmable, rerankAnchorCoverage, type StoryAnchor, type StoryShotRequirement, type StoryTreatment } from "./storyTreatments";
@@ -111,7 +112,7 @@ export function StoryTreatmentDialog({ treatment, moments, sections, cues, durat
               {anchor.requirements?.length ? <div className="mt-2 space-y-3">{anchor.requirements.map(requirement => <RequirementReview key={requirement.id} requirement={requirement} moments={moments} disabled={Boolean(proposal)} onChange={patch => updateRequirement(anchor.id, requirement.id, patch)} />)}</div> : <>
               <select className={field} aria-label={`Footage for ${anchor.title}`} disabled={Boolean(proposal)} value={anchor.resolution === "source" ? anchor.selectedCandidateId ?? "" : ""} onChange={e => updateAnchor(anchor.id, { resolution: e.target.value ? "source" : null, selectedCandidateId: e.target.value || null })}>
                 <option value="">Leave as a visible gap</option>
-                {anchor.candidates.map(candidate => <option key={candidate.momentId} value={candidate.momentId} disabled={candidate.assessment?.eligibility !== undefined && candidate.assessment.eligibility !== "eligible"}>{candidate.label} · {candidate.reason}</option>)}
+                {anchor.candidates.map(candidate => <option key={candidate.momentId} value={candidate.momentId} disabled={!isUsableStoryMatch(candidate.assessment)}>{candidate.label} · {Math.round(candidate.score * 100)}% story fit</option>)}
               </select>
               {anchor.candidates.length ? <div className="mt-2 flex flex-wrap gap-2">{anchor.candidates.map((candidate, candidateIndex) => <button key={candidate.momentId} type="button" className={secondary} onClick={() => setEvidencePreview(current => ({ ...current, [anchor.id]: candidate.momentId }))}>Inspect candidate {candidateIndex + 1}</button>)}</div> : null}
               {selected ? <div><p className="mt-2 text-xs leading-5 text-fg-3">{selected.caption || selected.label}</p><p className="mt-1 text-xs leading-5 text-fg-3">{anchor.candidates.find(candidate => candidate.momentId === selected.id)?.reason}</p><div className="mt-2 grid grid-cols-3 gap-2">{[selected.firstFrameUrl ?? selected.thumbnailUrl, selected.middleFrameUrl, selected.lastFrameUrl].map((url, frameIndex) => url ? <figure key={frameIndex}><Image unoptimized src={url} width={320} height={180} alt={`${anchor.title} · ${["first", "middle", "last"][frameIndex]} frame`} className="h-auto w-full rounded-sm" /><figcaption className="mt-1 text-xs text-fg-3">{["First", "Middle", "Last"][frameIndex]} frame</figcaption></figure> : null)}</div></div> : <p className="mt-2 text-xs text-fg-3">A related clip does not necessarily show the required action.</p>}
@@ -150,7 +151,7 @@ function RequirementReview({ requirement, moments, disabled, onChange }: {
     <p className="mt-1 text-xs text-fg-3">{status}</p>
     <select className={field} aria-label={`Footage for shot: ${requirement.description}`} disabled={disabled} value={requirement.resolution === "source" ? requirement.selectedCandidateId ?? "" : ""} onChange={event => onChange({ resolution: event.target.value ? "source" : null, selectedCandidateId: event.target.value || null })}>
       <option value="">Leave as a visible gap</option>
-      {candidates.map(candidate => <option key={candidate.momentId} value={candidate.momentId} disabled={candidate.assessment?.eligibility !== "eligible"}>{candidate.label} · {candidate.reason}</option>)}
+      {candidates.map(candidate => <option key={candidate.momentId} value={candidate.momentId} disabled={!isUsableStoryMatch(candidate.assessment)}>{candidate.label} · {Math.round(candidate.score * 100)}% story fit</option>)}
     </select>
     <div className="mt-2 flex flex-wrap gap-2"><button type="button" disabled={disabled} className={secondary} onClick={() => onChange({ resolution: "generate", selectedCandidateId: null })}>Plan missing shot</button><button type="button" disabled={disabled} className={secondary} onClick={() => onChange({ resolution: "omit", selectedCandidateId: null })}>Omit shot</button></div>
     {candidates.length ? <details className="mt-2"><summary className="cursor-pointer text-xs">Inspect footage evidence</summary><div className="mt-2 flex flex-wrap gap-2">{candidates.map((candidate, index) => <button type="button" key={candidate.momentId} className={secondary} onClick={() => setInspectedId(candidate.momentId)}>Candidate {index + 1}</button>)}</div>

@@ -165,3 +165,20 @@ describe("semantic edit planner", () => {
     expect(plan.assignments.every((assignment) => assignment.momentId === "only")).toBe(true);
   });
 });
+
+test("a compatible movement join beats stronger story keywords at equal duration", () => {
+  for (const angle of [0, 90, 180, 270]) {
+    const motion = makeMotionDescriptor({ dominantAngleDeg: angle, confidence: { overall: 1, camera: 1, residual: 1 } });
+    const base = { id: "previous", sourceClipId: 0, label: "Previous", start: 0, end: 4, duration: 4, caption: "Crowd moves", motionDescriptor: motion };
+    const ranked = rankMomentsForSection({
+      section: { id: "next", label: "Next", start: 4, end: 8, prompt: "Diego searches the club" }, previous: base,
+      moments: [
+        { ...base, id: "reversal", sourceClipId: 1, caption: "Diego searches the club", motionDescriptor: { ...motion, dominantAngleDeg: (angle + 180) % 360 } },
+        { ...base, id: "continuation", sourceClipId: 2, caption: "Crowd moves across the room" },
+      ],
+    });
+    expect(ranked[0]?.momentId).toBe("continuation");
+    expect(ranked[0]?.assessment?.usableInEdit).toBe(true);
+    expect(ranked[0]?.assessment?.eligibility).not.toBe("eligible");
+  }
+});

@@ -172,7 +172,7 @@ function makeCaptionedUploadedVideos(): UploadedVideoSource[] {
 }
 
 describe("clean music-video ingest contract", () => {
-  test("preserves music timing and honest story gaps from master audio, lyrics, and captioned footage", () => {
+  test("preserves music timing and real duration gaps while allowing low-fit captioned footage", () => {
     const analysis = makeCleanUploadAnalysis();
     const videoSources = makeCaptionedUploadedVideos();
     const created = createMusicVideoProject({
@@ -192,13 +192,14 @@ describe("clean music-video ingest contract", () => {
     });
 
     const project = prepareApprovedPlacements({ project: created, videoSources, editSettings: { cutDensity: 1, preferOnsets: true } });
-    expect(validateMusicVideoProject(project).some((finding) => finding.code === "section-has-no-video-moment")).toBe(true);
+    expect(validateMusicVideoProject(project).some((finding) => finding.code === "section-has-no-video-moment")).toBe(false);
     expect(project.song?.sourceLabel).toContain("Love me tonight");
     expect(project.lyricChunks).toHaveLength(5);
     expect(project.videoMoments).toHaveLength(6);
     expect(project.storySections).toHaveLength(6);
     expect(project.editPlan.timelineItems).toHaveLength(6);
-    expect(project.storySections[0]?.videoMomentIds).toEqual([]);
+    expect(project.storySections[0]?.videoMomentIds.length).toBeGreaterThan(0);
+    expect(project.storySections[0]?.semanticMatch?.assessment?.eligibility).not.toBe("eligible");
     expect(project.storySections.some((section) => section.semanticMatch?.assessment?.eligibility === "eligible")).toBe(true);
 
     const previewSegments = buildEditPlanPreviewSegments({
@@ -210,7 +211,7 @@ describe("clean music-video ingest contract", () => {
 
     expect(previewSegments.length).toBeGreaterThan(project.editPlan.timelineItems.length);
     expect(coveredDuration).toBeCloseTo(analysis.duration, 5);
-    expect(previewSegments[0]).toMatchObject({ kind: "gap", musicStart: 0, videoUrl: "" });
+    expect(previewSegments[0]).toMatchObject({ kind: "source", musicStart: 0 });
     const sourceSegments = previewSegments.filter((segment) => segment.kind === "source");
     const gapDuration = previewSegments.filter((segment) => segment.kind === "gap").reduce((sum, segment) => sum + segment.musicEnd - segment.musicStart, 0);
     expect(gapDuration).toBeGreaterThanOrEqual(4);

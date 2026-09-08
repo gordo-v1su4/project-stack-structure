@@ -28,9 +28,12 @@ describe("requirement-level source selection", () => {
     expect(project.editPlan.timelineItems[0]?.videoMomentId).toBe("a");
   });
 
-  test("explicit selection cannot override a contradiction even if the candidate is listed", () => {
+  test("explicit selection allows low story fit while preserving the factual warning", () => {
     const project = fixture();
-    expect(selectStorySectionCandidate(project, { sectionId: "chorus", timelineItemId: "requirement-a", momentId: "pair" })).toBe(project);
+    const selected = selectStorySectionCandidate(project, { sectionId: "chorus", timelineItemId: "requirement-a", momentId: "pair" });
+    expect(selected.editPlan.timelineItems[0]?.videoMomentId).toBe("pair");
+    expect(selected.editPlan.timelineItems[0]?.semanticMatch?.assessment?.eligibility).toBe("ineligible");
+    expect(project.editPlan.timelineItems[0]?.videoMomentId).toBe("a");
     expect(selectStorySectionCandidate(project, { sectionId: "chorus", timelineItemId: "requirement-a", momentId: "missing" })).toBe(project);
   });
 
@@ -57,4 +60,39 @@ describe("requirement-level source selection", () => {
     expect(proposal.repeatedSeconds).toBeGreaterThan(0);
     expect(proposal.proposed.placementPlan?.placements.filter((placement) => placement.kind === "source").every((placement) => placement.momentId !== "pair")).toBe(true);
   });
+});
+
+test("a low-fit selection with authorized reuse survives saved placements and preview coverage", async () => {
+  const { prepareApprovedPlacements, buildEditPlanPreviewSegments } = await import("@/components/studio/musicVideoProject");
+  const { buildCoverageSlots, summarizeCoverage } = await import("@/components/studio/editPlanCoverage");
+  const selected = selectStorySectionCandidate(fixture(), { sectionId: "chorus", timelineItemId: "requirement-a", momentId: "pair" });
+  selected.editPlan.timelineItems[0]!.eligibleMomentIds = ["pair"];
+  const sources = selected.videoMoments.map(moment => ({ id: moment.sourceClipId, name: moment.label, videoUrl: `blob:${moment.id}`, thumbnailUrl: "", duration: moment.duration, size: 10 }));
+  const prepared = prepareApprovedPlacements({ project: selected, videoSources: sources, policy: "best-effort" });
+  const restored: MusicVideoProject = JSON.parse(JSON.stringify(prepared));
+  const preview = buildEditPlanPreviewSegments({ project: restored, videoSources: sources });
+  expect(preview.every(cut => cut.kind === "source" && cut.momentId === "pair")).toBe(true);
+  expect(preview.reduce((sum, cut) => sum + cut.musicEnd - cut.musicStart, 0)).toBe(10);
+  expect(summarizeCoverage(buildCoverageSlots(restored, []))).toMatchObject({ blockingGapCount: 0, assignedDuration: 10, reviewCount: 1 });
+  expect(restored.editPlan.timelineItems[0]?.semanticMatch?.assessment?.eligibility).toBe("ineligible");
+  expect(buildEditPlanPreviewSegments({ project: restored, videoSources: [] }).every(cut => cut.kind === "gap")).toBe(true);
+});
+
+test("approved placement construction uses movement continuity before candidate order", async () => {
+  const { prepareApprovedPlacements, buildEditPlanPreviewSegments } = await import("@/components/studio/musicVideoProject");
+  const { makeMotionDescriptor } = await import("../helpers/studioFixtures");
+  const project = fixture();
+  project.duration = 6;
+  project.storySections[0]!.end = 6;
+  project.videoMoments.forEach((moment, index) => {
+    moment.motionDescriptor = makeMotionDescriptor({ dominantAngleDeg: index === 1 ? 180 : 0 });
+  });
+  const first = project.editPlan.timelineItems[0]!;
+  first.end = 3;
+  first.eligibleMomentIds = ["a"];
+  project.editPlan.timelineItems.push({ ...first, id: "next", start: 3, end: 6, videoMomentId: "b", eligibleMomentIds: ["b", "pair"] });
+  const sources = project.videoMoments.map(moment => ({ id: moment.sourceClipId, name: moment.label, videoUrl: `blob:${moment.id}`, thumbnailUrl: "", duration: moment.duration, size: 10 }));
+  const prepared = prepareApprovedPlacements({ project, videoSources: sources });
+  expect(buildEditPlanPreviewSegments({ project: prepared, videoSources: sources }).map(cut => cut.momentId)).toEqual(["a", "pair"]);
+  expect(project.editPlan.timelineItems[1]!.videoMomentId).toBe("b");
 });

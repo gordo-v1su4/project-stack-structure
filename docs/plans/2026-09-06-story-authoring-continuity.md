@@ -795,3 +795,7 @@ leads block an otherwise supported location-only establishing shot. Preserve
 real identity/action uncertainty and missing footage while fixing this distinction;
 do not simply remove every uncertainty or force source choices. Whole-song
 playback, assembly edits, FX/export, and deferred UI acceptance remain open.
+
+## September 8 clarification: flexible music-video editing
+
+The [music-video editing contract](../protocols/music-video-editing.md) supersedes earlier semantic vetoes and the current practice project's no-repeat restriction. Caption-first three-option ideation remains; preserve the accepted Diego story. Fit scores and reasons guide choices without blocking them. Repeats are authorized for this practice cut. Technical source bounds, song timing, valid persisted placements and original-upload preservation still apply. Boundary-motion analysis and full visible downstream acceptance remain unfinished.

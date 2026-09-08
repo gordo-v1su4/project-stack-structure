@@ -1,5 +1,5 @@
 import { isPlacementPlanCurrent, type ApprovedPlacement, type MusicVideoProject } from "./musicVideoProject";
-import { assessStoryMatch } from "./storyMatchAssessment";
+import { assessStoryMatch, isUsableStoryMatch } from "./storyMatchAssessment";
 
 const EPSILON = 0.001;
 type PlacementPlan = NonNullable<MusicVideoProject["placementPlan"]>;
@@ -107,7 +107,7 @@ function proposeArrangement(project: MusicVideoProject, firstPlacementId: string
     const assessment = assessStoryMatch({ requirementId: item.requirementId ?? item.id, requirementText: item.prompt,
       constraints: item.requirements,
       moment: { ...moment, subjects: moment.captionMeta?.subjects, action: moment.captionMeta?.action, setting: moment.captionMeta?.setting } });
-    if (assessment.eligibility !== "eligible") {
+    if (!isUsableStoryMatch(assessment)) {
       return rejected(`${moment.label} cannot move to ${target.label}: ${[...assessment.contradicted, ...assessment.unknown].join(" ")}`);
     }
   }

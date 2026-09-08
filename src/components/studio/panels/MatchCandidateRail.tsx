@@ -1,3 +1,4 @@
+import { isUsableStoryMatch } from "../storyMatchAssessment";
 import type { SemanticClipMatch, VideoMoment } from "../musicVideoProject";
 import { MATCH_MODE_LABELS, type MatchMode } from "./matchModes";
 import { buildMatchCandidateRailItems, type MatchCandidateRailItem } from "./matchCandidateRailModel";
@@ -44,7 +45,7 @@ function CandidateMiniCard({ candidate, mode, onSelectCandidate }: { candidate: 
     <button
       type="button"
       aria-pressed={candidate.selected}
-      disabled={!eligible || !onSelectCandidate}
+      disabled={!isUsableStoryMatch(candidate.match.assessment) || !onSelectCandidate}
       title={candidate.match.assessment?.reasons.join(" · ") ?? "Evidence has not been reviewed"}
       aria-label={`${candidate.selected ? "Selected" : "Select"} candidate ${candidate.rank}: ${candidate.caption}`}
       onClick={() => onSelectCandidate?.(candidate.match.momentId)}
@@ -56,7 +57,7 @@ function CandidateMiniCard({ candidate, mode, onSelectCandidate }: { candidate: 
         ) : <div className="h-full w-full bg-[#101010]" />}
         <div className="absolute left-1 top-1 rounded-[1px] bg-[#000000b8] px-1 py-[1px] font-mono text-[7px] uppercase tracking-[0.1em] text-[#d0d0d0]">#{candidate.rank}</div>
         <div className={`absolute right-1 top-1 rounded-[1px] border bg-[#000000b8] px-1 py-[1px] font-mono text-[7px] ${candidate.selected ? "border-[#e05c00] text-[#e05c00]" : "border-[#245c2c] text-[#79c779]"}`}>
-          {eligible ? "Supported" : candidate.match.assessment?.eligibility === "ineligible" ? "Contradiction" : "Uncertain"}
+          {eligible ? "Supported" : candidate.match.assessment?.eligibility === "ineligible" ? "Low story fit" : "Uncertain fit"}
         </div>
         {candidate.selected ? <div className="absolute bottom-1 left-1 rounded-[1px] bg-[#e05c00] px-1 py-[1px] text-[7px] uppercase tracking-[0.1em] text-white">selected</div> : null}
       </div>

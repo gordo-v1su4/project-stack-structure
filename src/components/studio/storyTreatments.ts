@@ -1,4 +1,4 @@
-import { assessStoryMatch, type MatchAssessment } from "./storyMatchAssessment";
+import { assessStoryMatch, isUsableStoryMatch, type MatchAssessment } from "./storyMatchAssessment";
 import { STORY_DUPLICATE_PITCH_REVIEW_FAILED, storyReviewCorrection } from "@/lib/storyLoglineReview";
 import type { StoryPlanDraft, VideoMoment } from "./musicVideoProject";
 
@@ -323,8 +323,8 @@ export function isStoryPlanConfirmable(treatment: StoryTreatment | null | undefi
   return Boolean(treatment?.reconciliation?.status !== "pending" && treatment?.anchors.length && treatment.anchors.every((anchor) => {
     if (!anchor.title.trim() || !anchor.description.trim()) return false;
     const requirementsWithDecisions = anchor.requirements?.filter(requirement => requirement.resolution !== undefined) ?? [];
-    if (requirementsWithDecisions.length) return requirementsWithDecisions.every(requirement => requirement.resolution !== "source" || Boolean(requirement.selectedCandidateId && requirement.candidates?.some(candidate => candidate.momentId === requirement.selectedCandidateId && candidate.assessment?.eligibility === "eligible")));
-    if (anchor.resolution === "source") return Boolean(anchor.selectedCandidateId && anchor.candidates.some(candidate => candidate.momentId === anchor.selectedCandidateId && candidate.assessment?.eligibility !== "ineligible" && candidate.assessment?.eligibility !== "uncertain"));
+    if (requirementsWithDecisions.length) return requirementsWithDecisions.every(requirement => requirement.resolution !== "source" || Boolean(requirement.selectedCandidateId && requirement.candidates?.some(candidate => candidate.momentId === requirement.selectedCandidateId && isUsableStoryMatch(candidate.assessment))));
+    if (anchor.resolution === "source") return Boolean(anchor.selectedCandidateId && anchor.candidates.some(candidate => candidate.momentId === anchor.selectedCandidateId && isUsableStoryMatch(candidate.assessment)));
     return anchor.resolution === null || anchor.resolution === "generate" || anchor.resolution === "omit";
   }));
 }
@@ -525,7 +525,8 @@ function rankStoryMomentCoverage(anchor: GeneratedAnchor | StoryAnchor, moments:
 
 function rankAnchorCoverage(anchor: GeneratedAnchor | StoryAnchor, moments: VideoMoment[]): StoryAnchor {
   const query = `${anchor.title} ${anchor.description}`;
-  const candidates = moments.map(moment => {
+  const previous = "coverage" in anchor ? anchor : null;
+  const rankedCandidates = moments.map(moment => {
     const requirements = anchor.requirements?.filter(requirement => !requirement.optional) ?? [];
     const assessments = (requirements.length ? requirements : [{ id: anchor.id, description: query, constraints: undefined }]).map(requirement => assessStoryMatch({
       requirementId: requirement.id, requirementText: requirement.description, constraints: requirement.constraints,
@@ -533,15 +534,15 @@ function rankAnchorCoverage(anchor: GeneratedAnchor | StoryAnchor, moments: Vide
     }));
     const worst = assessments.find(item => item.eligibility === "ineligible") ?? assessments.find(item => item.eligibility === "uncertain") ?? assessments[0];
     const assessment = { ...worst, satisfied: assessments.flatMap(item => item.satisfied), unknown: assessments.flatMap(item => item.unknown), contradicted: assessments.flatMap(item => item.contradicted), reasons: assessments.flatMap(item => item.reasons) };
-    return { moment, assessment, score: assessment.eligibility === "ineligible" ? 0 : scoreTextSimilarity(query, momentText(moment)) };
-  }).filter(item => item.assessment.eligibility !== "ineligible")
+    return { moment, assessment, score: scoreTextSimilarity(query, momentText(moment)) * (assessment.eligibility === "ineligible" ? 0.35 : assessment.eligibility === "uncertain" ? 0.7 : 1) };
+  }).filter(item => isUsableStoryMatch(item.assessment))
     .sort((left, right) => Number(right.assessment.eligibility === "eligible") - Number(left.assessment.eligibility === "eligible") || right.score - left.score)
-    .slice(0, 3)
     .map(({ moment, score, assessment }) => ({ momentId: moment.id, label: moment.label, sourceClipId: moment.sourceClipId, start: moment.start, end: moment.end, score, assessment, reason: assessment.reasons.join(" ") || "Visible requirements are supported." }));
+  // Retain the user's source even when new captions move it below the suggestions.
+  const candidates = rankedCandidates.filter((candidate, index) => index < 5 || candidate.momentId === previous?.selectedCandidateId);
   const supported = candidates.find(candidate => candidate.assessment.eligibility === "eligible");
   const coverage: StoryCoverageState = supported ? "covered" : candidates.some(candidate => candidate.score >= COVERAGE_WEAK_THRESHOLD) ? "weak" : "missing";
-  const previous = "coverage" in anchor ? anchor : null;
-  const previousSupported = candidates.find(candidate => candidate.momentId === previous?.selectedCandidateId && candidate.assessment.eligibility === "eligible");
+  const previousSupported = candidates.find(candidate => candidate.momentId === previous?.selectedCandidateId && isUsableStoryMatch(candidate.assessment));
   const selectedCandidateId = previousSupported?.momentId ?? supported?.momentId ?? null;
   const resolution = previous?.resolution === "generate" || previous?.resolution === "omit" ? previous.resolution : selectedCandidateId ? "source" : null;
   return { ...anchor, coverage, candidates, selectedCandidateId: resolution === "source" ? selectedCandidateId : null, resolution };

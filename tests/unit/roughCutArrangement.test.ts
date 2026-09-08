@@ -97,24 +97,23 @@ describe("rough cut arrangement", () => {
     assertSongCoverage(project);
   });
 
-  test("rejects incompatible or uncertain target requirements without changing input", () => {
+  test("allows editorial swaps with uncertain story fit without mutating the input", () => {
     for (const prompt of ["Running", "Entering", "Dancing in a cave"]) {
       const project = fixture();
       project.editPlan.timelineItems[1]!.prompt = prompt;
       project.placementPlan!.inputSignature = placementInputSignature(project);
       const before = structuredClone(project);
       const result = proposeRoughCutSwap(project, "first", "second");
-      expect(result.proposal).toBe(undefined);
-      expect(result.reason).toContain("cannot move to Ending");
+      expect(result.proposal).not.toBe(undefined);
       expect(project).toEqual(before);
     }
   });
 
-  test("requires both source swap directions to match their destination", () => {
+  test("allows a deliberate setting contrast in either swap direction", () => {
     const project = fixture();
     project.editPlan.timelineItems[0]!.requirements = { setting: "forest" };
     project.placementPlan!.inputSignature = placementInputSignature(project);
-    expect(proposeRoughCutSwap(project, "first", "second").reason).toContain("cannot move to Opening");
+    expect(proposeRoughCutSwap(project, "first", "second").proposal).not.toBe(undefined);
   });
 
   test("rejects stale evidence, changed plan contents, changed duration, and forged proposals", () => {
@@ -202,12 +201,12 @@ describe("rough cut source replacement", () => {
     assertSongCoverage(next);
   });
 
-  test("replacement refuses used footage in faithful mode and cannot skip compatibility", () => {
+  test("replacement respects no-reuse policy and missing media while allowing weak semantic fit", () => {
     const project = fixture(3, 7, true);
     expect(proposeRoughCutReplacement(project, "second", "a").reason).toContain("reuses overlapping source footage");
     project.editPlan.timelineItems[1]!.prompt = "Running";
     project.placementPlan!.inputSignature = placementInputSignature(project);
-    expect(proposeRoughCutReplacement(project, "second", "b").reason).toContain("cannot move to Ending");
+    expect(proposeRoughCutReplacement(project, "second", "b").proposal).not.toBe(undefined);
     expect(proposeRoughCutReplacement(project, "second", "missing").reason).toContain("no longer available");
   });
 });

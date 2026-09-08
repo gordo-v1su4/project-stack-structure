@@ -312,3 +312,22 @@ test("caption context deduplicates exact repeated fields without rewriting foota
   const clusters = buildStoryCaptionClusters([{ id: "scene", sourceClipId: 0, label: "Scene 1", start: 0, end: 4, duration: 4, caption, captionMeta: { caption, action: "walking", subjects: ["Diego", "Diego"] } }]);
   expect(clusters).toEqual([`Scene 1 · ${caption} · walking · Diego`]);
 });
+
+test("reranking retains an explicitly selected low-fit source outside the suggestion shortlist", () => {
+  const options = hydrateTreatmentCoverage(parseGeneratedTreatments(generated), moments);
+  const selected = { ...moments[0]!, id: "chosen-insert", label: "Quiet landscape", caption: "Trees beside a river", mediaEvidence: undefined };
+  const treatment = options[0]!;
+  const anchor = treatment.anchors[0]!;
+  anchor.resolution = "source";
+  anchor.selectedCandidateId = selected.id;
+  anchor.requirements![0]!.constraints = { actions: ["walking"] };
+  anchor.requirements![0]!.resolution = "source";
+  anchor.requirements![0]!.selectedCandidateId = selected.id;
+  const library = [...Array.from({ length: 8 }, (_, i) => ({ ...moments[0]!, id: `alternative-${i}` })), selected];
+  const restored = hydrateTreatmentCoverage([JSON.parse(JSON.stringify(treatment))], library)[0]!;
+  const requirement = restored.anchors[0]!.requirements![0]!;
+  expect(requirement.selectedCandidateId).toBe(selected.id);
+  expect(requirement.candidates?.some(candidate => candidate.momentId === selected.id)).toBe(true);
+  expect(requirement.coverage).not.toBe("covered");
+  expect(isStoryPlanConfirmable({ ...restored, anchors: [restored.anchors[0]!] })).toBe(true);
+});

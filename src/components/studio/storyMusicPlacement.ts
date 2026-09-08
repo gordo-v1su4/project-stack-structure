@@ -1,5 +1,5 @@
 import { rankMomentsForSection } from "./semanticEditPlanner";
-import { assessStoryMatch } from "./storyMatchAssessment";
+import { assessStoryMatch, isUsableStoryMatch } from "./storyMatchAssessment";
 import type { MusicVideoProject, SemanticClipMatch, StoryPlanDraft, TimelineItem } from "./musicVideoProject";
 import type { StoryAnchor, StoryTreatment } from "./storyTreatments";
 
@@ -112,7 +112,7 @@ export function applyStoryCoverage(project: MusicVideoProject, treatment: StoryT
     const selectedCandidateId = requirement?.resolution !== undefined ? requirement.selectedCandidateId : anchor.selectedCandidateId;
     const explicit = ranked.find((candidate) => candidate.momentId === selectedCandidateId);
     const accepted = resolution === "source" ? explicit : undefined;
-    const selected = accepted && assessStoryMatch({ requirementId: placement.requirementId, requirementText: description, constraints: requirement?.constraints, moment: accepted.moment }).eligibility === "eligible" ? accepted : undefined;
+    const selected = accepted && isUsableStoryMatch(assessStoryMatch({ requirementId: placement.requirementId, requirementText: description, constraints: requirement?.constraints, moment: accepted.moment })) ? accepted : undefined;
     const semanticMatch: SemanticClipMatch | undefined = selected ? { ...selected } : undefined;
     return {
       id: `story-item:${placement.id}`, sectionId: section.id, narrativeMomentId: anchor.id, requirementId: placement.requirementId,

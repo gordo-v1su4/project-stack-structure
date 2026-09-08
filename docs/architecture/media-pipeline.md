@@ -171,3 +171,5 @@ Move to a Tauri + sidecar architecture only if:
 - browser scheduling or decoding prevents musically correct preview playback,
 - section recompute cannot be made trustworthy under load,
 - or the performance checkpoint shows the browser path cannot satisfy the product’s correctness standard.
+
+Story-driven matching follows the [music-video editing contract](../protocols/music-video-editing.md): musical fit first, movement continuity next, semantic fit advisory, color secondary. Model uncertainty does not turn usable footage into a technical gap. Reuse follows the selected project edit policy.

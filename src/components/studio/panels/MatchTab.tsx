@@ -138,7 +138,7 @@ export function MatchTab({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 className="text-sm text-fg-0">{policy === "faithful" ? "Faithful draft" : "Best-effort edit"}</h3>
-            <p className="mt-1 text-xs text-fg-2">{coverage.summary.semanticGapDuration.toFixed(1)}s need story evidence · {coverage.summary.durationGapDuration.toFixed(1)}s need more footage</p>
+            <p className="mt-1 text-xs text-fg-2">{coverage.summary.semanticGapDuration.toFixed(1)}s have no selected footage · {coverage.summary.durationGapDuration.toFixed(1)}s need more footage</p>
           </div>
           {onCoveragePolicyChange && project ? policy === "best-effort" ? (
             <button type="button" className="rounded-md border border-line px-3 py-2 text-xs text-fg-1" onClick={() => { onCoveragePolicyChange("faithful"); setPolicyReview(null); }}>Restore faithful draft</button>
@@ -148,7 +148,7 @@ export function MatchTab({
         </div>
         {policyReview ? <div className="mt-3 rounded-md border border-line bg-ink-1 p-3" aria-label="Best-effort proposal">
           <p className="text-sm text-fg-1">Repeat {policyReview.proposal.repeatedSeconds.toFixed(1)}s across {policyReview.proposal.repeatedCuts} cuts. {policyReview.proposal.remainingGapSeconds.toFixed(1)}s remain uncovered.</p>
-          <p className="mt-2 text-xs text-fg-2">Only footage supporting each requested visual can repeat. No story moments are silently omitted. Your faithful draft is retained.</p>
+          <p className="mt-2 text-xs text-fg-2">Selected footage can repeat. Story-fit scores remain advisory. Song timing and your original draft are retained.</p>
           {!reviewCurrent ? <p className="mt-2 text-xs text-danger">The story or media changed. Cancel and review an updated proposal.</p> : null}
           <div className="mt-3 flex gap-2">
             <button type="button" className="rounded-md bg-accent px-3 py-2 text-xs text-white disabled:opacity-40" disabled={!reviewCurrent} onClick={() => { if (reviewCurrent) onCoveragePolicyChange?.("best-effort"); setPolicyReview(null); }}>Apply reviewed reuse</button>
