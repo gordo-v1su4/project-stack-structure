@@ -478,7 +478,10 @@ export class BrowserPreviewPlayer {
 
   private async prepareVisibleVideo(video: HTMLVideoElement, segment: PreviewSegment, token: number) {
     this.elementOwnerTokens.set(video, token);
-    const sameSource = video.currentSrc === segment.videoUrl || video.src === segment.videoUrl;
+    // stop() clears src, but Chromium can retain currentSrc until its next
+    // resource-selection task. That stale URL has no playable metadata.
+    // Trust the assigned source so immediate section replays always reload.
+    const sameSource = video.src === segment.videoUrl;
     if (!sameSource) {
       video.pause();
       video.preload = "auto";

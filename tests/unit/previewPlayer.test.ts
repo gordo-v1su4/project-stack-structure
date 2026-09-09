@@ -251,6 +251,59 @@ class FakeAudioElement {
 }
 
 describe("BrowserPreviewPlayer master audio", () => {
+  for (const action of ["stop", "section", "seek"]) {
+    test(`reloads a cleared video despite stale currentSrc after ${action}`, async () => {
+      const originalRaf = globalThis.requestAnimationFrame;
+      const originalCancelRaf = globalThis.cancelAnimationFrame;
+      globalThis.requestAnimationFrame = (() => 0) as typeof requestAnimationFrame;
+      globalThis.cancelAnimationFrame = (() => undefined) as typeof cancelAnimationFrame;
+      (globalThis as Record<string, unknown>).HTMLMediaElement ??= { HAVE_METADATA: 1, HAVE_CURRENT_DATA: 2 };
+      const player = new BrowserPreviewPlayer({ warmSourceLimit: 0 });
+      const video = new FakeVideoElement();
+      const audio = new FakeAudioElement();
+      // Chromium can retain currentSrc after removeAttribute("src") + load(),
+      // while src is empty and metadata is gone. Only assigning src reloads it.
+      video.load = () => {
+        video.readyState = 0;
+        video.currentTime = 0;
+        if (!video.src) return;
+        video.currentSrc = video.src;
+        queueMicrotask(() => {
+          video.readyState = 4;
+          video.dispatch("loadedmetadata");
+        });
+      };
+      const section = [{ videoUrl: "blob:intro", startTime: 0, endTime: 2, label: "Intro", musicStart: 0 }];
+      try {
+        player.attach(video as unknown as HTMLVideoElement);
+        player.attachAudioElement(audio as unknown as HTMLAudioElement);
+        player.load(section);
+        void player.play();
+        await flushAsync();
+        expect(player.getState().status).toBe("playing");
+
+        if (action === "section") player.load([{ ...section[0]!, musicStart: 14 }]);
+        else player.stop();
+        expect(video.src).toBe("");
+        expect(video.currentSrc).toBe("blob:intro");
+        expect(video.readyState).toBe(0);
+        if (action === "seek") player.seekToSegment(0);
+        else void player.play();
+        await flushAsync();
+
+        expect(player.getState().status).toBe("playing");
+        expect(video.src).toBe("blob:intro");
+        expect(video.paused).toBe(false);
+        expect(audio.paused).toBe(false);
+        expect(audio.currentTime).toBe(action === "section" ? 14 : 0);
+      } finally {
+        player.stop();
+        globalThis.requestAnimationFrame = originalRaf;
+        globalThis.cancelAnimationFrame = originalCancelRaf;
+      }
+    });
+  }
+
   test("attachAudioElement pauses the previously attached element", () => {
     const player = new BrowserPreviewPlayer();
     const first = new FakeAudioElement();
