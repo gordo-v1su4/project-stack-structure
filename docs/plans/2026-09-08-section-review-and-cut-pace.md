@@ -87,3 +87,15 @@ first/last shot indexes rather than expanding back to entire sections. Regressio
 coverage includes backwards range selection and extending/shrinking from the
 original anchor. Focused tests, lint (three existing warnings), typecheck and
 production build pass; live selection acceptance follows deployment.
+
+
+Production `03de698` is Ready on the main alias. Real pointer click on Verse 1
+then Shift-click Verse 2 selected both top labels and showed six ordered shot
+cards for 14.8–43.8s. Play selection ran 29.1 seconds with master audio through
+placeholders and stopped at the range end. Return to editor retained both verses
+and Join. A normal click on timeline shot 4 reset to one shot; Shift-clicking
+back to shot 2 selected shots 2–4, including the intervening shot. That 7.5-second
+source preview loaded with readyState 4, no media errors, muted source videos,
+and paused both buffers and master audio at its end. One Song sections navigator
+remains; the duplicate picker and duplicated section-play button are gone.
+These checks did not rebuild or change the 35 saved placements / 21 gaps.

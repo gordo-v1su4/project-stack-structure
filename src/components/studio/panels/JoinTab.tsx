@@ -65,7 +65,7 @@ export function JoinTab({ previewSegments, sectionLabels, existingFootage, activ
       <Surface>
         <div className="mb-3 flex items-center justify-between gap-3">
           <div><h3 className="text-sm font-medium text-fg-1">{selectionLabel}</h3>
-            <p className="mt-1 text-xs text-fg-3">{time(cuts[0]!.segment.musicStart)}–{time(cuts.at(-1)!.segment.musicEnd)} · {cuts.length} shots</p></div>
+            <p className="mt-1 text-xs text-fg-3">{time(cuts[0]!.segment.musicStart)}–{time(cuts.at(-1)!.segment.musicEnd)} · {cuts.length} {cuts.length === 1 ? "shot" : "shots"}</p></div>
           <Button size="sm" disabled={busy} onClick={() => onPlaySelection(cuts[0]!.index, cuts.at(-1)!.index)}>Play selection</Button>
         </div>
         <div className="flex gap-2 overflow-x-auto pb-2">

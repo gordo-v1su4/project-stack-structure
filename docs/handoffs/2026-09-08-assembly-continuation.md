@@ -285,3 +285,15 @@ and are numbered continuously. Existing saved short placements are flagged,
 not silently deleted. Applying this cadence to the already accepted blocking
 arrangement remains a separate review operation. The original uploads and
 accepted story remain intact.
+
+
+### Direct timeline selection follow-up
+
+The top song-section words now control Join directly; the duplicate lower section
+picker was removed at the user's request. Click one section or timeline clip;
+Shift-click another to extend a contiguous range, including holes. Join shows
+those shot cards in one strip with Play selection. Reverse selection, two-verse
+playback, exact clip-range playback, and pointer Return/Collapse over placeholders
+were verified on production; details are in the section-review plan linked above.
+The current saved project still has 35 placements / 21 gaps. Range selection is
+review state only and does not apply the new four-second cadence to legacy cuts.
