@@ -1,6 +1,16 @@
 import { expect, test } from "bun:test";
-import { buildSongSectionReview, buildRoughCutSections } from "@/components/studio/songSectionReview";
+import { buildSongSectionReview, buildRoughCutSections, selectReviewRange } from "@/components/studio/songSectionReview";
 import type { EditPlanPreviewSegment } from "@/components/studio/musicVideoProject";
+
+test("Shift selection includes intervening shots and holes, extends backwards and shrinks from the original anchor", () => {
+  const verse2 = selectReviewRange(null, 8, 11, false);
+  const bothVerses = selectReviewRange(verse2, 5, 7, true);
+  expect(bothVerses).toEqual({ startIndex: 5, endIndex: 11, anchorStart: 8, anchorEnd: 11 });
+  const throughChorus = selectReviewRange(bothVerses, 15, 19, true);
+  expect(throughChorus.startIndex).toBe(8);
+  expect(throughChorus.endIndex).toBe(19);
+  expect(selectReviewRange(throughChorus, 13, 13, false)).toEqual({ startIndex: 13, endIndex: 13, anchorStart: 13, anchorEnd: 13 });
+});
 
 test("one Intro and continuous numbering retain distinct musical boundaries and IDs", () => {
   const names = ["intro", "Intro 2", "verse", "Verse 2", "Verse", "chorus", "chorus", "verse", "verse", "chorus", "chorus", "bridge", "bridge", "chorus"];

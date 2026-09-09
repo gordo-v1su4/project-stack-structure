@@ -13,7 +13,7 @@ import type { VideoSceneUpdate } from "./studio/mediaUpload";
 import { buildCaptionRevisionKey, createCaptionRevisionGuard } from "./studio/mediaEvidence";
 import { applySceneEvidenceReview, type SceneEvidenceReview } from "./studio/sceneEvidenceReview";
 import { buildStudioSourceContextSignature } from "./studio/studioSourceContext";
-import { buildSongSectionReview } from "./studio/songSectionReview";
+import { buildSongSectionReview, selectReviewRange, type ReviewSelection } from "./studio/songSectionReview";
 import { isPlacementPlanCurrent, storyProjectInputSignature, prepareApprovedPlacements, buildEditPlanPreviewSegments, normalizeStoryEditSettings, type EditPlanPreviewSegment, type MusicVideoProject } from "./studio/musicVideoProject";
 import { clearRoughCutPlacement, applyRoughCutSwap, proposeRoughCutSwap, proposeRoughCutReplacement, type RoughCutSwapProposal } from "./studio/roughCutArrangement";
 import { selectStorySectionCandidate } from "./studio/musicVideoProjectSelection";
@@ -114,6 +114,7 @@ export default function StudioApp() {
   const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
   const [playhead] = useState(0.08);
   const [activeClip, setActiveClip] = useState(2);
+  const [roughCutSelection, setRoughCutSelection] = useState<ReviewSelection | null>(null);
 
   const [clipDur, setClipDur] = useState(5);
   const [barsPerSeg] = useState(4);
@@ -549,6 +550,7 @@ export default function StudioApp() {
   }
 
   function handleProjectSelected(project: StudioProjectSummary, draft: RuntimeStudioProjectDraft) {
+    setRoughCutSelection(null);
     applyRestoredProjectDraft(draft);
     setActiveProjectId(project.id);
     setActiveProjectName(project.name);
@@ -564,6 +566,7 @@ export default function StudioApp() {
   }
 
   async function handleNewProject() {
+    setRoughCutSelection(null);
     const confirmed = window.confirm(
       "Start a new project? This clears the current working draft. Named projects already saved to your Project Library will be kept.",
     );
@@ -1725,6 +1728,7 @@ export default function StudioApp() {
 
   function handleCommitSplit() {
     if (!splitSegments.length) return;
+    setRoughCutSelection(null);
 
     setCommittedBeatSplit({
       kind: "workflow",
@@ -1746,6 +1750,7 @@ export default function StudioApp() {
   }, []);
 
   function invalidateArrangementOutput() {
+    setRoughCutSelection(null);
     previewPlayerRef.current.load([]);
     setRetainedBrowserPreviewSegments([]);
     setGeneratedAuditionSegments(null);
@@ -1813,10 +1818,9 @@ export default function StudioApp() {
     invalidateArrangementOutput();
   }
 
-  function playRoughCutSection(sectionIds: string[]) {
-    const indexes = storyPreviewSegments.flatMap((segment, index) => sectionIds.includes(segment.sectionId) ? [index] : []);
-    if (!indexes.length) return;
-    setRoughCutPreviewRange({ startIndex: indexes[0]!, endIndex: indexes.at(-1)! });
+  function playRoughCutSelection(startIndex: number, endIndex: number) {
+    if (!storyPreviewSegments[startIndex] || !storyPreviewSegments[endIndex]) return;
+    setRoughCutPreviewRange({ startIndex, endIndex });
     setIsPreviewExpanded(true);
     setPreviewAuditionRequest(request => request + 1);
   }
@@ -2312,8 +2316,14 @@ export default function StudioApp() {
     if (!beatJoinAnalysis) return;
     songTransport.seek(Math.max(0, Math.min(1, seconds / Math.max(beatJoinAnalysis.duration, 0.001))));
   };
-  const handleSelectSlot = (slot: SpineSlot | null) => {
+  const handleSelectSlot = (slot: SpineSlot | null, extend = false) => {
     setSelectedSlotId(slot?.id ?? null);
+    if (tab === "join") {
+      if (slot) {
+        setActiveClip(slot.index);
+        setRoughCutSelection(previous => selectReviewRange(previous, slot.index, slot.index, extend));
+      } else setRoughCutSelection(null);
+    }
     if (slot && transportModel.source === "song") seekSong(slot.start);
   };
   const handleStepSlot = (direction: -1 | 1) => {
@@ -2332,7 +2342,7 @@ export default function StudioApp() {
     onSecondary: handleStageSecondary,
     onShortcuts: openShortcuts,
     onStepSlot: handleStepSlot,
-    onClearSlot: () => setSelectedSlotId(null),
+    onClearSlot: () => { setSelectedSlotId(null); setRoughCutSelection(null); },
     suspended: isCommandPaletteOpen || isShortcutSheetOpen,
   });
 
@@ -2360,6 +2370,18 @@ export default function StudioApp() {
                   if (transportModel.source === "song") songTransport.seek(next);
                 }}
                 caption={spineCaption}
+                selectedRange={tab === "join" && roughCutSelection && storyPreviewSegments[roughCutSelection.endIndex] ? {
+                  start: storyPreviewSegments[roughCutSelection.startIndex]!.musicStart,
+                  end: storyPreviewSegments[roughCutSelection.endIndex]!.musicEnd,
+                } : undefined}
+                onSelectSection={tab === "join" ? (start, end, extend) => {
+                  const indexes = storyPreviewSegments.flatMap((segment, index) => segment.musicEnd > start && segment.musicStart < end ? [index] : []);
+                  if (indexes.length) {
+                    setActiveClip(indexes[0]!);
+                    setRoughCutSelection(previous => selectReviewRange(previous, indexes[0]!, indexes.at(-1)!, extend));
+                  }
+                  setSelectedSlotId(null);
+                } : undefined}
                 slots={spineSlots}
                 selectedSlotId={selectedSlotId}
                 onSelectSlot={handleSelectSlot}
@@ -2547,7 +2569,8 @@ export default function StudioApp() {
                 activeClip={Math.min(activeClip, Math.max(0, storyPreviewSegments.length - 1))}
                 onActiveClip={setActiveClip}
                 onPlayWhole={() => void runBrowserPreview()}
-                onPlaySection={playRoughCutSection}
+                selection={roughCutSelection}
+                onPlaySelection={playRoughCutSelection}
                 onFillGap={fillRoughCutPosition}
                 onReviewAlternates={reviewRoughCutReplacement}
                 onSwap={reviewRoughCutSwap}

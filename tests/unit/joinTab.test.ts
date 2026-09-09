@@ -38,7 +38,7 @@ describe("JoinTab whole-song rough cut", () => {
       previewSegments: segments,
       activeClip: 0,
       onActiveClip: () => {}, sectionLabels: {intro: "Intro"}, existingFootage: [],
-      onPlayWhole: () => {}, onPlaySection: () => {}, onFillGap: () => {}, onReviewAlternates: () => {},
+      onPlayWhole: () => {}, onPlaySelection: () => {}, onFillGap: () => {}, onReviewAlternates: () => {},
       onRemove: () => {}, onSwap: () => {}, proposalSummary: null, editMessage: null, onApplyProposal: () => {},
       onCancelProposal: () => {}, onUndo: () => {}, canUndo: false, busy: false,
     }));
@@ -46,7 +46,8 @@ describe("JoinTab whole-song rough cut", () => {
     expect(markup).toContain("Whole-song rough cut");
     expect(markup).toContain("Play whole song");
     expect(markup).toContain("Review replacement");
-    expect(markup).toContain("1 sections");
+    expect(markup).toContain("Play selection");
+    expect(markup).not.toContain('aria-label="Song sections"');
     expect(markup).toContain("S5 · Scene 01");
     expect(markup).toContain("S13 · Scene 04");
     expect(markup).toContain("Song 0:00.0–0:02.5");

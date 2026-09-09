@@ -65,4 +65,25 @@ a separate return-control defect: the full-size gap placeholder had `z-10`,
 above the monitor toolbar. `elementsFromPoint` at the Return button returned the
 placeholder first; pointer clicks were swallowed, while Enter worked. The media
 container now establishes its own lower stacking layer and the toolbar stays
-above all media/placeholder overlays. Verify real pointer return after deployment.
+above all media/placeholder overlays. Deployment `9b07260` passed real pointer
+Return and Collapse over Verse 1 placeholders; Join and Verse 1 selection remained
+visible. The header now agrees with the 15 grouped song sections.
+
+
+## Selection simplification
+
+The user rejected the second large song-section picker as repetitive. The top
+spine is now the only section navigator. Click the actual section word to open
+its shots; Shift-click another section to include the contiguous range. Timeline
+clips support the same click / Shift-click behavior. Shift extends from the
+original anchor, forward or backward, and includes every intervening shot and
+hole. A normal click starts a new selection. A single compact shot strip shows
+the selected range in order, with one Play selection action. Individual shot
+review and replace/swap/remove remain available below it. This selects and
+previews existing placements; it does not change them.
+
+Selection changes preserve the clicked stage. Range playback uses the selected
+first/last shot indexes rather than expanding back to entire sections. Regression
+coverage includes backwards range selection and extending/shrinking from the
+original anchor. Focused tests, lint (three existing warnings), typecheck and
+production build pass; live selection acceptance follows deployment.

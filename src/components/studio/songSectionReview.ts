@@ -2,6 +2,15 @@ import type { EditPlanPreviewSegment } from "./musicVideoProject";
 
 type SongPart = { id: string; label: string; start: number; end: number };
 
+export type ReviewSelection = { startIndex: number; endIndex: number; anchorStart: number; anchorEnd: number };
+
+/** Shift extends from the original click, in either direction, including intervening holes. */
+export function selectReviewRange(previous: ReviewSelection | null, startIndex: number, endIndex: number, extend: boolean): ReviewSelection {
+  const anchorStart = extend && previous ? previous.anchorStart : startIndex;
+  const anchorEnd = extend && previous ? previous.anchorEnd : endIndex;
+  return { anchorStart, anchorEnd, startIndex: Math.min(anchorStart, startIndex), endIndex: Math.max(anchorEnd, endIndex) };
+}
+
 /** Display grouping only: source section IDs and exact song time remain authoritative. */
 export function buildSongSectionReview(parts: SongPart[]) {
   const groups: Array<SongPart & { sectionIds: string[] }> = [];

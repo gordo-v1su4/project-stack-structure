@@ -14,12 +14,15 @@ type BeatSpineProps = {
   /** 0..1 position of the playhead on the master song. */
   playhead: number;
   onSeek: (playhead: number) => void;
+  /** Selecting a musical section also opens its shots in the editor. */
+  onSelectSection?: (start: number, end: number, extend: boolean) => void;
+  selectedRange?: { start: number; end: number };
   /** Act-specific caption on the right, e.g. "Match · sections". */
   caption: string | null;
   /** Cuts of the prepared edit, in song time. Empty until Story has a plan. */
   slots: SpineSlot[];
   selectedSlotId: string | null;
-  onSelectSlot: (slot: SpineSlot | null) => void;
+  onSelectSlot: (slot: SpineSlot | null, extend?: boolean) => void;
   /** Alternate takes for the selected slot's section; hang under the slot. */
   takes: MatchCandidateRailItem[];
   onSelectTake: (sectionId: string, momentId: string) => void;
@@ -31,7 +34,7 @@ type BeatSpineProps = {
  * takes under the selected slot, then the waveform with the beat ruler and a
  * playhead the transport bar drives.
  */
-export function BeatSpine({ analysis, bpm, playhead, onSeek, caption, slots, selectedSlotId, onSelectSlot, takes, onSelectTake }: BeatSpineProps) {
+export function BeatSpine({ analysis, bpm, playhead, onSeek, onSelectSection, selectedRange, caption, slots, selectedSlotId, onSelectSlot, takes, onSelectTake }: BeatSpineProps) {
   const duration = Math.max(analysis.duration, 0.001);
   const playheadSeconds = playhead * duration;
   const selected = slots.find((slot) => slot.id === selectedSlotId) ?? null;
@@ -39,24 +42,29 @@ export function BeatSpine({ analysis, bpm, playhead, onSeek, caption, slots, sel
 
   return (
     <section aria-label="Beat spine" className="vt-spine shrink-0 overflow-hidden rounded-[10px] border border-line bg-ink-1">
-      <div className="relative h-7 border-b border-line">
+      <nav aria-label="Song sections" className="relative h-7 border-b border-line">
         {buildSongSectionReview(analysis.sections.map((section, index) => ({ ...section, id: `analysis-${index}` }))).map((section, index) => {
           const left = (Math.max(0, section.start) / duration) * 100;
           const width = Math.max(0.5, ((Math.min(duration, section.end) - Math.max(0, section.start)) / duration) * 100);
+          const isSelected = Boolean(selectedRange && selectedRange.end > section.start && selectedRange.start < section.end);
           return (
             <button
               key={`${section.label}-${index}`}
               type="button"
-              onClick={() => onSeek(Math.max(0, section.start) / duration)}
+              aria-pressed={onSelectSection ? isSelected : undefined}
+              onClick={(event) => {
+                onSelectSection?.(section.start, section.end, event.shiftKey);
+                onSeek(Math.max(0, section.start) / duration);
+              }}
               title={`${section.label} · ${fmt(section.start)}–${fmt(section.end)}`}
               style={{ left: `${left}%`, width: `${width}%` }}
-              className="absolute top-0 h-full border-r border-line px-2 text-left font-sans text-xs font-medium leading-7 text-fg-2 hover:bg-ink-2 hover:text-fg-0"
+              className={`absolute top-0 h-full border-r border-line px-2 text-left font-sans text-xs font-medium leading-7 ${isSelected ? "bg-accent-tint text-accent" : "text-fg-2 hover:bg-ink-2 hover:text-fg-0"}`}
             >
               <span className="block truncate">{section.label}</span>
             </button>
           );
         })}
-      </div>
+      </nav>
 
       {slots.length ? (
         <>
@@ -64,9 +72,9 @@ export function BeatSpine({ analysis, bpm, playhead, onSeek, caption, slots, sel
             <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-fg-3">Edit plan · song time</span>
             <span className="font-mono text-[9px] text-fg-3">Match places footage here · Space plays song</span>
           </div>
-          <div role="listbox" aria-label="Cuts" className="relative h-[68px] border-b border-line bg-ink-0" onClick={(event) => { if (event.target === event.currentTarget) onSelectSlot(null); }}>
+          <div role="listbox" aria-label="Cuts" aria-multiselectable={Boolean(onSelectSection)} className="relative h-[68px] border-b border-line bg-ink-0" onClick={(event) => { if (event.target === event.currentTarget) onSelectSlot(null); }}>
           {slots.map((slot) => {
-            const isSelected = slot.id === selectedSlotId;
+            const isSelected = selectedRange ? slot.end > selectedRange.start && slot.start < selectedRange.end : slot.id === selectedSlotId;
             const isLive = playheadSeconds >= slot.start && playheadSeconds < slot.end;
             const wide = (slot.duration / duration) * 100 > 4;
             return (
@@ -75,7 +83,7 @@ export function BeatSpine({ analysis, bpm, playhead, onSeek, caption, slots, sel
                 type="button"
                 role="option"
                 aria-selected={isSelected}
-                onClick={() => onSelectSlot(isSelected ? null : slot)}
+                onClick={(event) => onSelectSlot(onSelectSection ? slot : isSelected ? null : slot, event.shiftKey)}
                 onDoubleClick={() => onSeek(slot.start / duration)}
                 title={`${slot.sectionLabel} · ${fmt(slot.start)}–${fmt(slot.end)}\n${slot.label}${slot.kind === "generated" ? "\nGenerated shot" : ""}`}
                 style={{ left: pct(slot.start), width: `calc(${(slot.duration / duration) * 100}% - 2px)` }}
