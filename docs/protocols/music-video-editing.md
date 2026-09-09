@@ -108,3 +108,16 @@ Split reviews the scene detection already performed during Ingest. It does not a
 The retired rhythm-source splitter applied song durations to concatenated source time, which is different from aligning an actual edit to the song. Removing its control avoids that extra subdivision. Review detected scenes, select story sources, then inspect the assembled rough cut; cut pace remains a Story creative setting.
 
 Follow-up: scene detection marks available shots without destructively cutting the upload. Assembly may use a complete shot or trim it further automatically to musical cues. Both long takes and uploads containing many existing cuts are supported inputs; users review the resulting edit and holes rather than manually fitting every piece.
+
+### Replacing footage inside the rough cut
+
+`roughCutArrangement.ts` applies the same timing priority when a short replacement
+or moved shot ends inside an existing song window. It trims back to the latest
+beat or onset within 0.5 seconds of the available source end, provided the shot
+still lasts at least 1.5 seconds. It never extends the source, stretches playback,
+or moves the destination window. With no nearby usable cue, it retains the
+natural source end. A replacement that fills its destination keeps that existing
+boundary. The proposal describes the musical endpoint, omitted source tail, and
+remaining gap before Apply; undo restores the previous arrangement. Saved source
+uploads are unchanged. This endpoint adjustment does not claim measured motion
+continuity or select additional filler.

@@ -40,6 +40,18 @@ export interface RoughCutSwapResult {
 const rejected = (reason: string): RoughCutSwapResult => ({ reason, summary: reason });
 const seconds = (value: number) => `${Number(value.toFixed(3))}s`;
 
+/** A short source creates a new boundary; keep existing destination boundaries intact. */
+function musicalSourceEnd(project: MusicVideoProject, target: ApprovedPlacement, sourceDuration: number) {
+  const latest = Math.min(target.songEnd, target.songStart + sourceDuration);
+  if (latest >= target.songEnd || !project.song) return latest;
+  // Trim back to a nearby beat/onset, never extend media or turn a readable shot
+  // into a flash merely because analysis has a sparse or invalid cue list.
+  const earliest = Math.max(target.songStart + 1.5, latest - 0.5);
+  const cues = [...project.song.beats, ...project.song.onsets]
+    .filter(time => Number.isFinite(time) && time >= earliest && time <= latest);
+  return cues.length ? Math.max(...cues) : latest;
+}
+
 function validatePlacements(project: MusicVideoProject, plan: PlacementPlan): string | undefined {
   const ids = new Set<string>();
   const sorted = [...plan.placements].sort((a, b) => a.songStart - b.songStart);
@@ -126,11 +138,13 @@ function proposeArrangement(project: MusicVideoProject, firstPlacementId: string
         reason: "Clip moved to another song window", origin: "manual-match" }];
     }
     const sourceDuration = source.sourceEnd - source.sourceStart;
-    const usedDuration = Math.min(sourceDuration, duration);
-    const songEnd = Math.abs(sourceDuration - duration) < 1e-9 ? target.songEnd : Math.min(target.songEnd, target.songStart + usedDuration);
+    const naturalEnd = Math.abs(sourceDuration - duration) < 1e-9 ? target.songEnd : Math.min(target.songEnd, target.songStart + sourceDuration);
+    const songEnd = naturalEnd === target.songEnd ? target.songEnd : musicalSourceEnd(project, target, sourceDuration);
+    const usedDuration = songEnd - target.songStart;
     const sourceEnd = Math.min(source.sourceEnd, source.sourceStart + usedDuration);
     const momentLabel = project.videoMoments.find((moment) => moment.id === source.momentId)!.label;
     descriptions.push(`${momentLabel} moves to ${target.label} (${window}).`);
+    if (songEnd < naturalEnd) descriptions.push(`End on the music cue at ${seconds(songEnd)}.`);
     const replacement: ApprovedPlacement = { ...target, kind: "source", momentId: source.momentId,
       sourceStart: source.sourceStart, sourceEnd, songEnd, origin: "manual-match", reason: undefined };
     if (sourceEnd < source.sourceEnd - 1e-9) {

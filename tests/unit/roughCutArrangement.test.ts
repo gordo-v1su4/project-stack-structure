@@ -177,6 +177,53 @@ describe("rough cut arrangement", () => {
 
 
 describe("rough cut source replacement", () => {
+  function musicalFixture(beats: number[], onsets: number[] = []) {
+    const project = fixture(3, 7, true);
+    project.videoMoments.push({ ...project.videoMoments[0]!, id: "c", label: "Library dance", sourceClipId: 3, end: 13.3, duration: 3.3 });
+    project.song = { sourceLabel: "Master", audioUrl: "audio:master", waveform: [], energy: [], sections: [], duration: 10, beats, onsets };
+    project.placementPlan!.inputSignature = placementInputSignature(project);
+    return project;
+  }
+
+  test("aligns a new replacement boundary to a nearby onset and retains the source tail and song gap", () => {
+    const project = musicalFixture([6, 6.5], [6.2]);
+    const before = structuredClone(project);
+    const result = proposeRoughCutReplacement(project, "second", "c");
+    expect(result.proposal!.after.find(cut => cut.momentId === "c")).toMatchObject({ sourceStart: 10, sourceEnd: 13.2, songStart: 3, songEnd: 6.2 });
+    expect(result.proposal!.residualGaps[0]).toMatchObject({ songStart: 6.2, songEnd: 10 });
+    expect(result.proposal!.trims[0]).toMatchObject({ sourceStart: 13.2, sourceEnd: 13.3 });
+    expect(result.summary).toContain("music cue at 6.2s");
+    expect(project).toEqual(before);
+    assertSongCoverage(applyRoughCutSwap(project, result.proposal!).project!);
+  });
+
+  test("uses beats without onsets, ignores invalid cues, and never extends a source to the next beat", () => {
+    const project = musicalFixture([NaN, Infinity, 6.5, 6, -1]);
+    const result = proposeRoughCutReplacement(project, "second", "c");
+    expect(result.proposal!.after.find(cut => cut.momentId === "c")).toMatchObject({ songEnd: 6, sourceEnd: 13 });
+    assertSongCoverage(applyRoughCutSwap(project, result.proposal!).project!);
+  });
+
+  test("preserves natural ends when cues are absent, too distant, or would produce a flash", () => {
+    for (const beats of [[], [4], [6.5]]) {
+      const project = musicalFixture(beats);
+      expect(proposeRoughCutReplacement(project, "second", "c").proposal!.after.find(cut => cut.momentId === "c")!.songEnd).toBeCloseTo(6.3);
+    }
+    const project = musicalFixture([4]);
+    project.videoMoments[2]!.end = 11.3;
+    project.videoMoments[2]!.duration = 1.3;
+    project.placementPlan!.inputSignature = placementInputSignature(project);
+    expect(proposeRoughCutReplacement(project, "second", "c").proposal!.after.find(cut => cut.momentId === "c")!.songEnd).toBeCloseTo(4.3);
+  });
+
+  test("does not move an existing destination boundary when the replacement fills it", () => {
+    const project = musicalFixture([2.8]);
+    const result = proposeRoughCutReplacement(project, "first", "c");
+    expect(result.proposal!.after[0]).toMatchObject({ songStart: 0, songEnd: 3, sourceEnd: 13 });
+    expect(result.proposal!.residualGaps).toEqual([]);
+    assertSongCoverage(applyRoughCutSwap(project, result.proposal!).project!);
+  });
+
   test("replaces only one gap and keeps a shorter clip's residual gap", () => {
     const project = fixture(3, 7, true);
     project.videoMoments.push({ ...project.videoMoments[0]!, id: "c", label: "Library dance", sourceClipId: 3 });
