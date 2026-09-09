@@ -48,7 +48,7 @@ export function BeatSpine({ analysis, bpm, playhead, onSeek, caption, slots, sel
               onClick={() => onSeek(Math.max(0, section.start) / duration)}
               title={`${section.label} · ${fmt(section.start)}–${fmt(section.end)}`}
               style={{ left: `${left}%`, width: `${width}%` }}
-              className="absolute top-0 h-full border-r border-line px-2 text-left font-display text-[13px] italic leading-7 text-fg-2 hover:bg-ink-2 hover:text-fg-0"
+              className="absolute top-0 h-full border-r border-line px-2 text-left font-sans text-xs font-medium leading-7 text-fg-2 hover:bg-ink-2 hover:text-fg-0"
             >
               <span className="block truncate">{section.label}</span>
             </button>

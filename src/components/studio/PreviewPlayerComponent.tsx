@@ -169,10 +169,20 @@ export function PreviewPlayer({
     return () => monitor.removeEventListener("loadedmetadata", seek);
   }, [currentSegment, isExpanded]);
 
+  const gapPlaceholder = currentSegment?.kind === "gap" ? (
+    <div role="status" className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-ink-0 px-6 text-center text-fg-2">
+      <span className="text-xs text-fg-3">Missing footage</span>
+      <p className="mt-3 max-w-xl text-lg font-medium leading-snug text-fg-1">
+        {currentSegment.label.replace(/^Missing footage\s*·\s*/, "")}
+      </p>
+      <p className="mt-2 max-w-xl text-xs text-fg-3">{currentSegment.gapReason}</p>
+    </div>
+  ) : null;
+
   if (variant === "monitor") {
     return (
       <div className="absolute inset-0 bg-black" data-preview-variant="monitor">
-        {currentSegment?.kind === "gap" && <div role="status" className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-ink-0 text-fg-2"><span>Missing footage</span><span className="mt-2 text-xs text-fg-3">{currentSegment.gapReason}</span></div>}
+        {gapPlaceholder}
         <video
           ref={videoRef}
           crossOrigin="anonymous"
@@ -238,7 +248,7 @@ export function PreviewPlayer({
     <div className={isExpanded ? "space-y-2" : "space-y-1.5"}>
       <div className={isExpanded ? "grid items-start gap-2 xl:grid-cols-[minmax(0,1.45fr)_minmax(260px,0.75fr)]" : "grid grid-cols-[minmax(150px,1fr)_minmax(150px,1fr)_minmax(120px,0.62fr)] gap-2 items-start"}>
         <div className="relative min-w-0 self-start overflow-hidden bg-black">
-          {currentSegment?.kind === "gap" && <div role="status" className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-ink-0 text-fg-2"><span>Missing footage</span><span className="mt-2 text-xs text-fg-3">{currentSegment.gapReason}</span></div>}
+          {gapPlaceholder}
           <video
             ref={videoRef}
             crossOrigin="anonymous"
