@@ -4,6 +4,60 @@ The user requested a fresh task because the old conversation became too large. C
 
 ## Goal and authorization
 
+### Latest checkpoint: ten-block rough story saved
+
+The user explicitly prioritized **blocking everything in and getting the logic
+correct**, with imperfect footage coverage and rough timing acceptable. This
+checkpoint supersedes the seven-anchor / 19-gap descriptions below.
+
+The focused Story revision ran through authenticated app dispatch and Trigger.
+After reviewing the returned proposal, the ten moments were ordered and timed:
+
+| Story block | Provisional song seconds |
+| --- | --- |
+| Jungle and cave entrance | 0–14.77 |
+| Diego enters alone | 14.77–29.28 |
+| Valentina appears separately | 29.28–36.60 |
+| Glance across the room | 36.60–43.82 |
+| Diego walks through tunnel hallways | 43.82–60.20 |
+| Diego approaches Valentina / first meeting | 60.20–74.74 |
+| Connection and dancing | 74.74–151.73 |
+| Fracture and panic | 151.73–189.75 |
+| Escape through corridors | 189.75–227.71 |
+| Together after escape | 227.71–246.69995464852607 |
+
+The logline is unchanged. The meeting at 60.20s is a provisional first-chorus
+marker, **not verified synchronization to the first title lyric**. Separate
+introductions, glance, hallway walking, first meeting and safe ending remain
+visible gaps. Automatic paired-dancing matches were explicitly removed from
+Valentina's separate introduction and the first meeting.
+
+Saved rough sources: S7 Scene 01 for the opening, S2 Scene 02 for dancing, S9
+Scene 01 for destruction, S6 Scene 20 for escape. Join replacements add S7
+Scene 02 at 3.75–7.732s and S3 Scene 02 at 89.29–101.343s. Both replacements
+leave the rest of their target windows empty and preserve source tails.
+
+Browser tab 14 saved **31 placements / 18 gaps / 20 edit slots**, then loaded
+the saved project through its library entry and retained those counts. Explicit
+Save reported success. Whole-song playback advanced through the opening source
+shots into the Diego placeholder with the master audio playing and videos muted.
+No images or videos were generated. The 57 detected scenes and 11 uploads remain.
+
+Remaining technical follow-up: the preview currently totals 246.64s versus the
+246.6999546s master; closely spaced authored/section boundaries may be dropping
+tiny intervals. This change removes the 25ms discard thresholds from Story
+intersections, unassigned intervals and placement gaps. A regression covers
+nearby section/Story boundaries and a 10ms uncovered ending through browser
+preview construction. 104 affected tests, typecheck, focused lint and build
+passed. Deploy and rebuild the saved Story map before claiming exact full-song
+timing acceptance; old saved maps do not repair themselves on playback.
+Entering rounded 246.7 as the final Story end also fails strict duration
+validation; the actual duration above was entered through the UI. Legacy source
+captions still contain wardrobe/pronoun/identity errors; this focused revision
+did not recaption the library. Do not mistake those legacy captions for approved
+new generation prose. Exact trim polish, broader playback acceptance, FX/export
+and deferred typography remain outstanding.
+
 Current objective: finish the editable whole-song rough cut in **Assembly recovery · 2026-09-08** (`5fc48d59-01e4-4bfb-90c1-e054a0307575`). The Diego story is confirmed, footage is already split into scenes, and saving is repaired. **First review actual footage and automatic matching suggestions; exact video matches remain provisional.** Assess broad establishing, solo, together, crowd/performance, destruction and ending roles. Prioritize musical timing and compatible subject/camera motion, then loose story fit, with color secondary. Scores advise rather than block technically valid choices. Do not assume an unselected window proves footage is absent, or treat saved selections as final user approval.
 
 **Latest user direction, during takeover:** Diego walks into the club. Show Diego

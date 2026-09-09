@@ -14,6 +14,27 @@ function project(): MusicVideoProject {
     editPlan: { id: "edit", createdAt: "fixed", timelineItems: [{ id: "item", sectionId: "intro", lyricChunkIds: [], videoMomentId: "dance", start: 0, end: 10, label: "Intro", prompt: "A couple dancing together" }] } };
 }
 describe("approved story placements", () => {
+  test("nearby story and section boundaries retain every interval through playback", () => {
+    const treatment = { anchors: [
+      { id: "opening", songWindow: { start: 0, end: 4.02 } },
+      { id: "arrival", songWindow: { start: 4.02, end: 9.99 } },
+    ] } as StoryTreatment;
+    const p = project();
+    p.storySections = [
+      { ...p.storySections[0]!, id: "intro", start: 0, end: 4 },
+      { ...p.storySections[0]!, id: "verse", start: 4, end: 10 },
+    ];
+    const mapped = mapStoryToMusic(treatment, p.storySections, 10);
+    expect(mapped.map(m => [m.start, m.end])).toEqual([[0, 4], [4, 4.02], [4.02, 9.99], [9.99, 10]]);
+    p.editPlan.timelineItems = mapped.map(m => ({ id: m.id, sectionId: m.sectionId, start: m.start, end: m.end, label: m.momentId, prompt: "", lyricChunkIds: [], videoMomentId: null }));
+    const prepared = prepareApprovedPlacements({ project: p, videoSources: sources });
+    const cuts = buildEditPlanPreviewSegments({ project: prepared, videoSources: sources });
+    expect(cuts.map(c => [c.musicStart, c.musicEnd])).toEqual(mapped.map(m => [m.start, m.end]));
+    const player = new BrowserPreviewPlayer({ warmSourceLimit: 0 });
+    player.load(cuts);
+    expect(player.getState().totalDuration).toBe(10);
+    expect(cuts.every(c => c.kind === "gap")).toBe(true);
+  });
   test("suggested moment boundaries snap to nearby music cues", () => {
     const treatment = { anchors: [{id:"a"}, {id:"b"}] } as StoryTreatment;
     expect(suggestStoryMomentWindows(treatment, 20, [10.2])[0]!.end).toBe(10.2);

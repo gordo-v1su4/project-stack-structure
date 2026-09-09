@@ -73,18 +73,20 @@ export function mapStoryToMusic(treatment: StoryTreatment, sections: StoryPlanDr
         const from = Math.max(start, cursor);
         const to = Math.min(end, next);
         cursor = next;
-        return to > from + 0.025 ? [{ id: `${section.id}:${requirement.id}:${from.toFixed(3)}`, momentId: window.anchor.id, requirementId: requirement.id, sectionId: section.id, start: from, end: to }] : [];
+        // Even sub-frame intersections occupy real master-song time. Readable
+        // source-cut limits belong in assembly, not in the story time map.
+        return to > from ? [{ id: `${section.id}:${requirement.id}:${from.toFixed(3)}`, momentId: window.anchor.id, requirementId: requirement.id, sectionId: section.id, start: from, end: to }] : [];
       });
     }).sort((left, right) => left.start - right.start);
     const result: StoryMusicPlacement[] = [];
     let cursor = start;
     for (const placement of placed) {
       if (placement.start < cursor - 0.025) throw new Error("Story moment timing overlaps. Adjust the moment windows before using this story.");
-      if (placement.start > cursor + 0.025) result.push({ id: `${section.id}:unassigned:${cursor}`, momentId: "unassigned", requirementId: "unassigned", sectionId: section.id, start: cursor, end: placement.start });
+      if (placement.start > cursor) result.push({ id: `${section.id}:unassigned:${cursor}`, momentId: "unassigned", requirementId: "unassigned", sectionId: section.id, start: cursor, end: placement.start });
       result.push(placement);
       cursor = placement.end;
     }
-    if (cursor < end - 0.025) result.push({ id: `${section.id}:unassigned:${cursor}`, momentId: "unassigned", requirementId: "unassigned", sectionId: section.id, start: cursor, end });
+    if (cursor < end) result.push({ id: `${section.id}:unassigned:${cursor}`, momentId: "unassigned", requirementId: "unassigned", sectionId: section.id, start: cursor, end });
     return result;
   });
 }

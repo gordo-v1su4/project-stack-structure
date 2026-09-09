@@ -661,7 +661,7 @@ export function prepareApprovedPlacements(params: {
     // precision. Identity keeps a 56.900 cut in its 56.9000015 story window.
     const cuts = segments.filter((segment) => segment.timelineItemId === item.id);
     const addGap = (end: number) => {
-      if (end <= cursor + 0.025) return;
+      if (end <= cursor) return;
       const manualGap = manualGaps.find(gap => gap.songStart < end && gap.songEnd > cursor);
       placements.push({ id: `${item.id}:gap:${cursor.toFixed(3)}`, timelineItemId: item.id, sectionId: item.sectionId, momentId: null,
         sourceStart: 0, sourceEnd: roundTime(end - cursor), songStart: cursor, songEnd: end, label: item.label,
