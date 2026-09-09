@@ -1,3 +1,4 @@
+import { buildSongSectionReview } from "../songSectionReview";
 import { fmt } from "../math";
 import type { AdaptiveCueMap, OnsetMarker } from "../adaptiveCueMap";
 import type { MusicVideoProject } from "../musicVideoProject";
@@ -22,7 +23,7 @@ export function MatchMusicCueTimeline({ cueMap, project }: { cueMap: AdaptiveCue
   return (
     <div className="rounded-[2px] border border-[#151515] bg-[#060606] p-2">
       <div className="relative h-24 overflow-hidden border border-[#101010] bg-[#040404]">
-        {project?.storySections.map((section) => {
+        {buildSongSectionReview(project?.storySections ?? []).map((section) => {
           const left = clamp01(section.start / duration) * 100;
           const width = Math.max(0.15, clamp01((section.end - section.start) / duration) * 100);
           return (

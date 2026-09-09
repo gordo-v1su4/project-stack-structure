@@ -310,7 +310,7 @@ export function StoryTab({ referenceRevision, analysis, audioStatus, videoSource
                 );
               })}
             </div>
-            <div className="mt-2 text-[9px] leading-4 text-[#555]">This controls final edit rhythm. It does not create more source footage or change scene captions.</div>
+            <div className="mt-2 text-[9px] leading-4 text-[#555]">New cuts aim for 4–6 seconds, with a four-second minimum. Rapid edits can happen inside a supplied or generated clip. Saved placements change only when you prepare a new arrangement.</div>
           </div>
         </div>
 

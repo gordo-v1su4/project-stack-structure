@@ -1,5 +1,7 @@
 "use client";
 
+import { buildSongSectionReview } from "../songSectionReview";
+
 import { fmt } from "../math";
 import type { MatchCandidateRailItem } from "../panels/matchCandidateRailModel";
 import { SolidWaveform } from "../SolidWaveform";
@@ -38,7 +40,7 @@ export function BeatSpine({ analysis, bpm, playhead, onSeek, caption, slots, sel
   return (
     <section aria-label="Beat spine" className="vt-spine shrink-0 overflow-hidden rounded-[10px] border border-line bg-ink-1">
       <div className="relative h-7 border-b border-line">
-        {analysis.sections.map((section, index) => {
+        {buildSongSectionReview(analysis.sections.map((section, index) => ({ ...section, id: `analysis-${index}` }))).map((section, index) => {
           const left = (Math.max(0, section.start) / duration) * 100;
           const width = Math.max(0.5, ((Math.min(duration, section.end) - Math.max(0, section.start)) / duration) * 100);
           return (

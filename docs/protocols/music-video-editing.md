@@ -121,3 +121,28 @@ boundary. The proposal describes the musical endpoint, omitted source tail, and
 remaining gap before Apply; undo restores the previous arrangement. Saved source
 uploads are unchanged. This endpoint adjustment does not claim measured motion
 continuity or select additional filler.
+
+### September 8: song parts and four-second assembly floor
+
+The user's latest clarification supersedes the earlier two-second choice.
+New automatic placements require at least four seconds of usable footage and
+normally target four to six seconds between cuts. Short source fragments stay in
+the library; unfilled time remains a gap. Fast montage cuts can be contained in
+one supplied or generated clip. Do not force every detected source scene or
+lyric cue to become an individual assembly shot. Existing saved placements are
+preserved for review, including flagged shorter legacy pieces; changing a cue
+slider must not silently replace accepted footage.
+
+Use musical sections for navigation: one Intro, numbered Verse occurrences,
+numbered Chorus occurrences, and numbered Bridge occurrences. Continue each
+counter through intervening section types and preserve distinct consecutive
+verses/choruses. Combine adjoining Intro fragments only for display and range
+playback; underlying section and placement IDs, exact master time and story
+windows remain unchanged. A story action may continue across a musical boundary.
+
+Match's cue density, lyric influence and combine-nearby-cues controls describe
+suggested timing, not saved placements. Local slider feedback updates during a
+drag; expensive graph recomputation occurs on release. The graph retains section
+edges but never adds interior cuts less than four seconds apart.
+
+Implementation scope and acceptance: [section review and cut pace](../plans/2026-09-08-section-review-and-cut-pace.md).

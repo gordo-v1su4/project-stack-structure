@@ -70,7 +70,9 @@ describe("approved story placements", () => {
     const original = prepareApprovedPlacements({project:project(),videoSources:sources});
     const repeated = prepareApprovedPlacements({project:original,videoSources:sources,policy:'best-effort'});
     expect(original.placementPlan!.policy).toBe('faithful');
-    expect(repeated.placementPlan!.placements.some(cut=>cut.kind==='gap')).toBe(false);
+    expect(repeated.placementPlan!.placements.filter(cut=>cut.kind==='source').every(cut=>cut.songEnd-cut.songStart>=4)).toBe(true);
+    expect(repeated.placementPlan!.placements.filter(cut=>cut.kind==='source').reduce((sum,cut)=>sum+cut.songEnd-cut.songStart,0)).toBe(8);
+    expect(repeated.placementPlan!.placements.filter(cut=>cut.kind==='gap').reduce((sum,cut)=>sum+cut.songEnd-cut.songStart,0)).toBe(2);
     expect(original.placementPlan!.placements.some(cut=>cut.kind==='gap')).toBe(true);
   });
   test("browser keeps gap entries and master-song offsets", () => {

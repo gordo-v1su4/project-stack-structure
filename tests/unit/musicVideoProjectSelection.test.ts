@@ -6,13 +6,13 @@ import { rankMomentsForSection } from "@/components/studio/semanticEditPlanner";
 
 function fixture(): MusicVideoProject {
   const moments: VideoMoment[] = [
-    { id: "a", sourceClipId: 0, label: "Solo A", start: 0, end: 3, duration: 3, mediaEvidence: reviewedEvidence({ subjects: [focalSubject("Diego")], focalSubjectCount: 1, actions: ["dancing"], location: "club" }, 0, 3), caption: "Diego dancing alone in the club." },
-    { id: "b", sourceClipId: 1, label: "Solo B", start: 0, end: 3, duration: 3, mediaEvidence: reviewedEvidence({ subjects: [focalSubject("Diego")], focalSubjectCount: 1, actions: ["dancing"], location: "club" }, 0, 3), caption: "Diego dancing alone under red club lights." },
-    { id: "pair", sourceClipId: 2, label: "Pair", start: 0, end: 3, duration: 3, mediaEvidence: reviewedEvidence({ subjects: [focalSubject("Diego"), focalSubject("Valentina")], focalSubjectCount: 2, actions: ["dancing"], location: "club" }, 0, 3), caption: "Diego and Valentina dancing together in the club." },
+    { id: "a", sourceClipId: 0, label: "Solo A", start: 0, end: 5, duration: 5, mediaEvidence: reviewedEvidence({ subjects: [focalSubject("Diego")], focalSubjectCount: 1, actions: ["dancing"], location: "club" }, 0, 5), caption: "Diego dancing alone in the club." },
+    { id: "b", sourceClipId: 1, label: "Solo B", start: 0, end: 5, duration: 5, mediaEvidence: reviewedEvidence({ subjects: [focalSubject("Diego")], focalSubjectCount: 1, actions: ["dancing"], location: "club" }, 0, 5), caption: "Diego dancing alone under red club lights." },
+    { id: "pair", sourceClipId: 2, label: "Pair", start: 0, end: 5, duration: 5, mediaEvidence: reviewedEvidence({ subjects: [focalSubject("Diego"), focalSubject("Valentina")], focalSubjectCount: 2, actions: ["dancing"], location: "club" }, 0, 5), caption: "Diego and Valentina dancing together in the club." },
   ];
-  const section = { id: "chorus", label: "Chorus", start: 0, end: 10, prompt: "Diego dancing alone in the club" };
+  const section = { id: "chorus", label: "Chorus", start: 0, end: 15, prompt: "Diego dancing alone in the club" };
   const candidates = rankMomentsForSection({ section, moments, includeIneligible: true });
-  return { id: "project", song: null, duration: 10, lyricChunks: [], videoMoments: moments, reviewFindings: [],
+  return { id: "project", song: null, duration: 15, lyricChunks: [], videoMoments: moments, reviewFindings: [],
     storySections: [{ ...section, source: "manual", lyricChunkIds: [], videoMomentIds: ["a", "b"], candidateMatches: candidates, semanticMatch: candidates.find((match) => match.momentId === "a") }],
     editPlan: { id: "edit", createdAt: "2026-09-06", timelineItems: [{ ...section, id: "requirement-a", sectionId: section.id, requirementId: "solo", lyricChunkIds: [], videoMomentId: "a", eligibleMomentIds: ["a", "b"], candidateMatches: candidates }] } };
 }
@@ -72,8 +72,8 @@ test("a low-fit selection with authorized reuse survives saved placements and pr
   const restored: MusicVideoProject = JSON.parse(JSON.stringify(prepared));
   const preview = buildEditPlanPreviewSegments({ project: restored, videoSources: sources });
   expect(preview.every(cut => cut.kind === "source" && cut.momentId === "pair")).toBe(true);
-  expect(preview.reduce((sum, cut) => sum + cut.musicEnd - cut.musicStart, 0)).toBe(10);
-  expect(summarizeCoverage(buildCoverageSlots(restored, []))).toMatchObject({ blockingGapCount: 0, assignedDuration: 10, reviewCount: 1 });
+  expect(preview.reduce((sum, cut) => sum + cut.musicEnd - cut.musicStart, 0)).toBe(15);
+  expect(summarizeCoverage(buildCoverageSlots(restored, []))).toMatchObject({ blockingGapCount: 0, assignedDuration: 15, reviewCount: 1 });
   expect(restored.editPlan.timelineItems[0]?.semanticMatch?.assessment?.eligibility).toBe("ineligible");
   expect(buildEditPlanPreviewSegments({ project: restored, videoSources: [] }).every(cut => cut.kind === "gap")).toBe(true);
 });
@@ -82,15 +82,15 @@ test("approved placement construction uses movement continuity before candidate 
   const { prepareApprovedPlacements, buildEditPlanPreviewSegments } = await import("@/components/studio/musicVideoProject");
   const { makeMotionDescriptor } = await import("../helpers/studioFixtures");
   const project = fixture();
-  project.duration = 6;
-  project.storySections[0]!.end = 6;
+  project.duration = 10;
+  project.storySections[0]!.end = 10;
   project.videoMoments.forEach((moment, index) => {
     moment.motionDescriptor = makeMotionDescriptor({ dominantAngleDeg: index === 1 ? 180 : 0 });
   });
   const first = project.editPlan.timelineItems[0]!;
-  first.end = 3;
+  first.end = 5;
   first.eligibleMomentIds = ["a"];
-  project.editPlan.timelineItems.push({ ...first, id: "next", start: 3, end: 6, videoMomentId: "b", eligibleMomentIds: ["b", "pair"] });
+  project.editPlan.timelineItems.push({ ...first, id: "next", start: 5, end: 10, videoMomentId: "b", eligibleMomentIds: ["b", "pair"] });
   const sources = project.videoMoments.map(moment => ({ id: moment.sourceClipId, name: moment.label, videoUrl: `blob:${moment.id}`, thumbnailUrl: "", duration: moment.duration, size: 10 }));
   const prepared = prepareApprovedPlacements({ project, videoSources: sources });
   expect(buildEditPlanPreviewSegments({ project: prepared, videoSources: sources }).map(cut => cut.momentId)).toEqual(["a", "pair"]);

@@ -429,9 +429,7 @@ describe("musicVideoProject source moments and review contract", () => {
     }).filter((segment) => segment.sectionId === "chorus");
 
     expect(segments.reduce((total, segment) => total + segment.musicEnd - segment.musicStart, 0)).toBe(8);
-    expect(new Set(segments.map((segment) => segment.startTime)).size).toBeGreaterThan(1);
-    expect(new Set(segments.map((segment) => segment.momentId)).size).toBeGreaterThan(1);
-    expect(segments.filter((segment) => segment.kind === "source").every((segment) => segment.sourceClipId === 0 && segment.thumbnailUrl === "thumb")).toBe(true);
+    expect(segments.every(segment => segment.kind === "gap")).toBe(true);
     expect(segments.some((segment) => segment.kind === "gap")).toBe(true);
     expect(segments.some((segment) => segment.momentId === "scene-moment-0-0")).toBe(false);
   });
@@ -555,10 +553,10 @@ describe("musicVideoProject source moments and review contract", () => {
           sourceClipId: 0,
           label: "Shot A",
           start: 0,
-          end: 1.5,
-          duration: 1.5,
+          end: 4,
+          duration: 4,
           detector: "pyscenedetect-adaptive",
-          caption: "Dancer spinning in neon light.", mediaEvidence: reviewedEvidence({ actions: ["dancing"], location: "neon club" }, 0, 1.5),
+          caption: "Dancer spinning in neon light.", mediaEvidence: reviewedEvidence({ actions: ["dancing"], location: "neon club" }, 0, 4),
           captionSource: "lfm-webgpu",
         },
         {
@@ -566,10 +564,10 @@ describe("musicVideoProject source moments and review contract", () => {
           sourceClipId: 0,
           label: "Shot B",
           start: 4,
-          end: 5.5,
-          duration: 1.5,
+          end: 8,
+          duration: 4,
           detector: "pyscenedetect-adaptive",
-          caption: "Another dancer spinning in a dark club.", mediaEvidence: reviewedEvidence({ actions: ["dancing"], location: "dark club" }, 4, 5.5),
+          caption: "Another dancer spinning in a dark club.", mediaEvidence: reviewedEvidence({ actions: ["dancing"], location: "dark club" }, 4, 8),
           captionSource: "lfm-webgpu",
         },
       ],
@@ -579,10 +577,10 @@ describe("musicVideoProject source moments and review contract", () => {
       analysis: mockAnalysis({
         beats: [],
         onsets: [],
-        sections: [{ label: "Chorus", start: 0, end: 4, energy: 0.5 }],
-        duration: 4,
+        sections: [{ label: "Chorus", start: 0, end: 8, energy: 0.5 }],
+        duration: 8,
       }),
-      duration: 4,
+      duration: 8,
       storyDrafts: [{ id: "chorus", label: "Chorus", prompt: "dance energy" }],
       videoSources,
       createdAt: "2026-06-18T00:00:00.000Z",
@@ -605,30 +603,30 @@ describe("musicVideoProject source moments and review contract", () => {
     const project: MusicVideoProject = {
       id: "cross-section-continuity",
       song: mockAnalysis({
-        duration: 4,
+        duration: 8,
         beats: [],
         onsets: [],
         sections: [
-          { label: "Verse 1", start: 0, end: 2 },
-          { label: "Verse 2", start: 2, end: 4 },
+          { label: "Verse 1", start: 0, end: 4 },
+          { label: "Verse 2", start: 4, end: 8 },
         ],
       }),
-      duration: 4,
+      duration: 8,
       lyricChunks: [],
       storySections: [
-        { id: "verse-1", label: "Verse 1", prompt: "dance", start: 0, end: 2, source: "analysis", lyricChunkIds: [], videoMomentIds: ["shot-a", "shot-b"] },
-        { id: "verse-2", label: "Verse 2", prompt: "dance", start: 2, end: 4, source: "analysis", lyricChunkIds: [], videoMomentIds: ["shot-a", "shot-b"] },
+        { id: "verse-1", label: "Verse 1", prompt: "dance", start: 0, end: 4, source: "analysis", lyricChunkIds: [], videoMomentIds: ["shot-a", "shot-b"] },
+        { id: "verse-2", label: "Verse 2", prompt: "dance", start: 4, end: 8, source: "analysis", lyricChunkIds: [], videoMomentIds: ["shot-a", "shot-b"] },
       ],
       videoMoments: [
-        { id: "shot-a", sourceClipId: 0, label: "Shot A", start: 0, end: 2, duration: 2, thumbnailUrl: "thumb:a", caption: "Dancing", mediaEvidence: reviewedEvidence({ actions: ["dancing"] }, 0, 2) },
-        { id: "shot-b", sourceClipId: 1, label: "Shot B", start: 0, end: 2, duration: 2, thumbnailUrl: "thumb:b", caption: "Dancing", mediaEvidence: reviewedEvidence({ actions: ["dancing"] }, 0, 2) },
+        { id: "shot-a", sourceClipId: 0, label: "Shot A", start: 0, end: 4, duration: 4, thumbnailUrl: "thumb:a", caption: "Dancing", mediaEvidence: reviewedEvidence({ actions: ["dancing"] }, 0, 4) },
+        { id: "shot-b", sourceClipId: 1, label: "Shot B", start: 0, end: 4, duration: 4, thumbnailUrl: "thumb:b", caption: "Dancing", mediaEvidence: reviewedEvidence({ actions: ["dancing"] }, 0, 4) },
       ],
       editPlan: {
         id: "plan",
         createdAt: "2026-08-27T00:00:00.000Z",
         timelineItems: [
-          { id: "timeline-verse-1", sectionId: "verse-1", lyricChunkIds: [], videoMomentId: "shot-a", start: 0, end: 2, label: "Verse 1", prompt: "dance" },
-          { id: "timeline-verse-2", sectionId: "verse-2", lyricChunkIds: [], videoMomentId: "shot-a", start: 2, end: 4, label: "Verse 2", prompt: "dance" },
+          { id: "timeline-verse-1", sectionId: "verse-1", lyricChunkIds: [], videoMomentId: "shot-a", start: 0, end: 4, label: "Verse 1", prompt: "dance" },
+          { id: "timeline-verse-2", sectionId: "verse-2", lyricChunkIds: [], videoMomentId: "shot-a", start: 4, end: 8, label: "Verse 2", prompt: "dance" },
         ],
       },
       reviewFindings: [],
@@ -714,57 +712,59 @@ describe("musicVideoProject saved preview contract", () => {
     const input = previewFixture(6);
     input.project.song!.beats = [0, 1, 2, 3, 4, 5];
     const segments = prepareAndReadPreview({ ...input, editSettings: { cutDensity: 1, preferOnsets: false } });
-    expect(segments.map((segment) => [segment.musicStart, segment.musicEnd])).toEqual([[0, 2], [2, 4], [4, 6]]);
+    expect(segments.map((segment) => [segment.musicStart, segment.musicEnd])).toEqual([[0, 6]]);
     expect(segments.every((segment) => segment.kind === "source")).toBe(true);
   });
 
   test("rounded musical trims stay with their story item at fractional model boundaries", () => {
-    const input = previewFixture();
+    const input = previewFixture(12);
     const original = input.project.editPlan.timelineItems[0]!;
-    input.project.videoMoments[0]!.end = 5;
-    input.project.videoMoments[0]!.duration = 2;
+    input.project.videoMoments[0]!.end = 7;
+    input.project.videoMoments[0]!.duration = 4;
     input.project.editPlan.timelineItems = [
       { ...original, id: "opening-hole", start: 0, end: 2.900001525878906, videoMomentId: null, eligibleMomentIds: [] },
-      { ...original, id: "meeting", start: 2.900001525878906, end: 6.399999618530273 },
-      { ...original, id: "later-use", start: 6.399999618530273, end: 8 },
+      { ...original, id: "meeting", start: 2.900001525878906, end: 8.399999618530273 },
+      { ...original, id: "later-use", start: 8.399999618530273, end: 12 },
     ];
     const project = prepareApprovedPlacements(input);
     const sources = project.placementPlan!.placements.filter(placement => placement.kind === "source");
     expect(sources.length).toBeGreaterThan(0);
     expect(sources.every(placement => placement.timelineItemId === "meeting")).toBe(true);
     expect(sources[0]!.songStart).toBe(2.9);
-    expect(sources.reduce((sum, placement) => sum + placement.sourceEnd - placement.sourceStart, 0)).toBeCloseTo(2, 3);
+    expect(sources.reduce((sum, placement) => sum + placement.sourceEnd - placement.sourceStart, 0)).toBeCloseTo(4, 3);
     expect(project.placementPlan!.placements.filter(placement => placement.timelineItemId === "opening-hole" || placement.timelineItemId === "later-use").every(placement => placement.kind === "gap")).toBe(true);
-    expect(project.placementPlan!.placements.reduce((sum, placement) => sum + placement.songEnd - placement.songStart, 0)).toBeCloseTo(8, 5);
+    expect(project.placementPlan!.placements.reduce((sum, placement) => sum + placement.songEnd - placement.songStart, 0)).toBeCloseTo(12, 5);
   });
 
   test("density is an explicit new placement decision and preserves song duration", () => {
     const input = previewFixture(18);
-    const sparse = prepareAndReadPreview({ ...input, editSettings: { cutDensity: 0.2, preferOnsets: true } });
-    const dense = prepareAndReadPreview({ ...input, editSettings: { cutDensity: 1, preferOnsets: true } });
-    expect(dense.length).toBeGreaterThan(sparse.length);
-    expect(new Set(dense.map((segment) => (segment.musicEnd - segment.musicStart).toFixed(2))).size).toBeGreaterThan(2);
+    const sparse = prepareAndReadPreview({ ...input, editSettings: { cutDensity: 0.2, preferOnsets: false } });
+    const dense = prepareAndReadPreview({ ...input, editSettings: { cutDensity: 1, preferOnsets: false } });
+    expect(dense.length).toBeGreaterThanOrEqual(sparse.length);
+    expect(dense.map(s => s.musicEnd)).not.toEqual(sparse.map(s => s.musicEnd));
+    expect(dense.filter(s => s.kind === "source").every(s => s.musicEnd - s.musicStart >= 4)).toBe(true);
     for (const segments of [sparse, dense]) expect(segments.reduce((total, segment) => total + segment.musicEnd - segment.musicStart, 0)).toBeCloseTo(18, 5);
   });
 
   test("faithful gaps preserve time and only explicit best-effort reuses eligible footage", () => {
     const input = previewFixture();
-    input.project.videoMoments[0]!.end = 5;
-    input.project.videoMoments[0]!.duration = 2;
+    input.project.videoMoments[0]!.end = 7;
+    input.project.videoMoments[0]!.duration = 4;
     const faithful = prepareAndReadPreview(input);
     const bestEffort = prepareAndReadPreview({ ...input, policy: "best-effort" });
     expect(faithful.some((segment) => segment.kind === "gap")).toBe(true);
-    expect(faithful.filter((segment) => segment.kind === "source").reduce((total, segment) => total + segment.endTime - segment.startTime, 0)).toBeLessThanOrEqual(2);
+    expect(faithful.filter((segment) => segment.kind === "source").reduce((total, segment) => total + segment.endTime - segment.startTime, 0)).toBeLessThanOrEqual(4);
     expect(bestEffort.every((segment) => segment.kind === "source")).toBe(true);
     for (const segments of [faithful, bestEffort]) expect(segments.reduce((total, segment) => total + segment.musicEnd - segment.musicStart, 0)).toBe(8);
   });
   test("overlapping scene IDs cannot spend the same physical source seconds twice", () => {
     const input = previewFixture();
-    input.project.videoMoments[0] = { ...input.project.videoMoments[0]!, start: 0, end: 3, duration: 3 };
-    input.project.videoMoments.push({ ...input.project.videoMoments[0]!, id: "overlapping-dance", start: 1, end: 4 });
+    input.project.videoMoments[0] = { ...input.project.videoMoments[0]!, start: 0, end: 4, duration: 4 };
+    input.project.videoMoments.push({ ...input.project.videoMoments[0]!, id: "overlapping-dance", start: 1, end: 5 });
     input.project.editPlan.timelineItems[0]!.eligibleMomentIds = ["dance", "overlapping-dance"];
     const segments = prepareAndReadPreview(input).filter((segment) => segment.kind === "source");
-    expect(segments.reduce((sum, segment) => sum + segment.endTime - segment.startTime, 0)).toBeLessThanOrEqual(4);
+    expect(segments.length).toBeGreaterThan(0);
+    expect(segments.reduce((sum, segment) => sum + segment.endTime - segment.startTime, 0)).toBeLessThanOrEqual(5);
     for (let i = 0; i < segments.length; i++) for (let j = i + 1; j < segments.length; j++) {
       expect(Math.max(0, Math.min(segments[i]!.endTime, segments[j]!.endTime) - Math.max(segments[i]!.startTime, segments[j]!.startTime))).toBe(0);
     }
@@ -782,4 +782,17 @@ describe("musicVideoProject saved preview contract", () => {
     expect(buildEditPlanPreviewSegments({ ...input, project: restored })).toEqual(buildEditPlanPreviewSegments({ ...input, project: faithful }));
   });
 
+});
+
+test("short supplied moments remain library candidates but cannot become sub-four-second assembly shots", () => {
+  const input = previewFixture();
+  input.project.videoMoments[0]!.end = 6.9;
+  input.project.videoMoments[0]!.duration = 3.9;
+  for (const policy of ["faithful", "best-effort"] as const) {
+    const cuts = prepareAndReadPreview({ ...input, policy });
+    expect(cuts.every(cut => cut.kind === "gap")).toBe(true);
+    expect(cuts.reduce((sum, cut) => sum + cut.musicEnd - cut.musicStart, 0)).toBe(8);
+  }
+  expect(input.project.videoMoments).toHaveLength(1);
+  expect(input.videoSources[0]!.duration).toBe(30);
 });

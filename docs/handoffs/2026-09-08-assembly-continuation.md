@@ -4,6 +4,41 @@ The user requested a fresh task because the old conversation became too large. C
 
 ## Goal and authorization
 
+### User-reported section replay and navigation defects
+
+The earlier playback pass did not cover repeated section playback after Stop.
+The user reproduced a persistent `loading cut…` overlay when replaying Intro 1
+and Intro 2. Live DOM evidence showed both playback videos had **no src attribute**
+and `readyState = 0`, while `currentSrc` still held the previous opening-video
+URL. The separate warmup video had the same media loaded at `readyState = 4`.
+This was a player restart bug, not evidence that the upload was missing.
+
+Commit `598677e` makes source reuse depend on the assigned `video.src`, rather
+than stale `currentSrc` after `stop()` removes the source. Regression scenarios
+for Stop/replay, loading another section from the same source, and seeking all
+failed before the fix and passed afterward. The 34 affected tests, typecheck,
+focused lint and production build passed.
+
+The user's navigation feedback remains an open product requirement:
+
+- Review the video by understandable sections, with the story beat visible.
+  A 0.21-second `Intro 1` fragment should not be presented as though it were a
+  full introductory sequence. Keep exact placement timing underneath the UI.
+- One current section/shot should persist across watching, selecting footage
+  and planning a missing shot. Live Generate showed different selections in
+  the inspector and resolved preview; Join maintained another selection.
+- Generate's 182 diagnostic chunks and older `blocks Join` labels compete with
+  the 35 actual placements and the available rough-cut preview. Analysis detail
+  should not be the default way to navigate or imply every chunk needs a shot.
+- Return from enlarged playback should clearly return to the current section's
+  editing controls. Dock/Collapse preview language is confusing. The reported
+  apparent switch to Story was not reproduced: the inspected screen was Match,
+  which also displays the Story draft. Do not claim Dock changes stages.
+
+Fixing replay alone does not complete this navigation simplification. Preserve
+the existing arrangement and uploads while addressing it; avoid another story
+rewrite or generation merely to make the timeline appear full.
+
 ### Verified playback and downstream review
 
 The ten-block rough story below is now saved and playable across the full
@@ -238,3 +273,15 @@ Core policy: full suite693 pass; intentional holes: bun run check695 pass, 8 exi
 Canonical ignored logs: .tmp/music-video-policy-*, .tmp/intentional-gap-*, .tmp/saved-advisory-*, .tmp/scene-review-{tests,typecheck,lint,build}. These do not prove real browser downstream playback/export. No current export acceptance, no new generation.
 
 Old task goal remains active and unfinished; fresh task should continue this objective. The old task stops editing after creating the continuation task to prevent concurrent writes.
+
+## Latest section/cadence clarification
+
+See [section review and cut pace](../plans/2026-09-08-section-review-and-cut-pace.md).
+The latest choice is **four seconds minimum, normally four to six seconds**,
+superseding the earlier two-second answer. Rapid edits belong inside a clip.
+Join now reviews one named musical section at a time; adjoining Intro fragments
+share one navigation entry, while all verses, choruses and bridges stay distinct
+and are numbered continuously. Existing saved short placements are flagged,
+not silently deleted. Applying this cadence to the already accepted blocking
+arrangement remains a separate review operation. The original uploads and
+accepted story remain intact.

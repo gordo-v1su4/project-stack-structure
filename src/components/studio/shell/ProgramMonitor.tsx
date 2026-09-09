@@ -120,7 +120,7 @@ export function ProgramMonitor({
             onClick={onToggleFocused}
             className="studio-hud shrink-0 rounded-md px-2 py-1 text-[11px] text-fg-1 hover:text-fg-0 focus-visible:outline-accent"
           >
-            {focused ? "Dock" : "Focus"}
+            {focused ? "Return to editor" : "Enlarge preview"}
           </button>
         ) : null}
         <button

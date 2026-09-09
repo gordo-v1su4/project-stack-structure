@@ -498,6 +498,8 @@ describe("BrowserPreviewPlayer double buffering", () => {
       await playDone;
 
       expect(player.getState().status).toBe("ended");
+      expect(front.paused).toBe(true);
+      expect(back.paused).toBe(true);
     } finally {
       globalThis.requestAnimationFrame = originalRaf;
       globalThis.cancelAnimationFrame = originalCancelRaf;

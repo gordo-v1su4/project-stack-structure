@@ -1812,8 +1812,8 @@ export default function StudioApp() {
     invalidateArrangementOutput();
   }
 
-  function playRoughCutSection(sectionId: string) {
-    const indexes = storyPreviewSegments.flatMap((segment, index) => segment.sectionId === sectionId ? [index] : []);
+  function playRoughCutSection(sectionIds: string[]) {
+    const indexes = storyPreviewSegments.flatMap((segment, index) => sectionIds.includes(segment.sectionId) ? [index] : []);
     if (!indexes.length) return;
     setRoughCutPreviewRange({ startIndex: indexes[0]!, endIndex: indexes.at(-1)! });
     setIsPreviewExpanded(true);

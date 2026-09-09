@@ -134,7 +134,7 @@ export const DEFAULT_STORY_EDIT_SETTINGS: StoryEditSettings = {
 
 const MAX_SECTION_CANDIDATE_MATCHES = 6;
 const MAX_SECTION_PREVIEW_CANDIDATES = 16;
-const MIN_READABLE_PREVIEW_CUT_SECONDS = 1.5;
+export const MIN_READABLE_PREVIEW_CUT_SECONDS = 4;
 const MAX_PREVIEW_MOMENT_USES_BEFORE_EXHAUSTION = 2;
 const MAX_PREVIEW_SHOT_FAMILY_USES_BEFORE_EXHAUSTION = 3;
 
@@ -652,7 +652,7 @@ export function prepareApprovedPlacements(params: {
         { ...span, musicStart: Math.max(span.musicStart, gap.songEnd), startTime: span.startTime + Math.max(span.musicStart, gap.songEnd) - span.musicStart },
       ].filter(part => part.musicEnd - part.musicStart > 0.025);
     });
-    return spans;
+    return spans.filter(span => span.musicEnd - span.musicStart >= MIN_READABLE_PREVIEW_CUT_SECONDS - 0.001);
   });
   const placements: ApprovedPlacement[] = [];
   for (const item of project.editPlan.timelineItems) {
@@ -665,7 +665,7 @@ export function prepareApprovedPlacements(params: {
       const manualGap = manualGaps.find(gap => gap.songStart < end && gap.songEnd > cursor);
       placements.push({ id: `${item.id}:gap:${cursor.toFixed(3)}`, timelineItemId: item.id, sectionId: item.sectionId, momentId: null,
         sourceStart: 0, sourceEnd: roundTime(end - cursor), songStart: cursor, songEnd: end, label: item.label,
-        kind: "gap", reason: manualGap?.reason ?? (item.videoMomentId ? "Insufficient unused footage for this story moment" : "No source selected for this story moment"), origin: manualGap ? "manual-match" : params.origin ?? "story-match" });
+        kind: "gap", reason: manualGap?.reason ?? (item.videoMomentId ? "Insufficient usable footage for a four-second cut in this story moment" : "No source selected for this story moment"), origin: manualGap ? "manual-match" : params.origin ?? "story-match" });
       cursor = end;
     };
     for (const cut of cuts) {
@@ -1011,8 +1011,8 @@ function buildMusicCueWindows(params: {
   const energy = clamp01(section?.energy ?? sampleSeries(analysis.energy, analysis.duration, start + duration / 2) ?? 0.5);
   const beatInterval = medianInterval(uniqueSortedTimes(analysis.beats, Math.max(analysis.duration, end))) ?? Math.max(0.35, duration / 8);
   const density = clamp01(editSettings.cutDensity);
-  const densityTargetDuration = lerp(4.2, 0.85, density);
-  const energyMultiplier = lerp(1.2, 0.72, energy);
+  const densityTargetDuration = lerp(6, 4, density);
+  const energyMultiplier = lerp(1.05, 0.95, energy);
   const targetDuration = roundTime(Math.max(MIN_READABLE_PREVIEW_CUT_SECONDS, beatInterval, densityTargetDuration * energyMultiplier));
   const minDuration = roundTime(Math.min(
     duration,
@@ -1036,7 +1036,7 @@ function buildMusicCueWindows(params: {
   while (end - cursor >= minDuration * 2 - 0.025) {
     const desiredDuration = roundTime(Math.max(
       minDuration,
-      Math.min(maxDuration, targetDuration * cadenceMultiplier(cutIndex, energy)),
+      Math.min(maxDuration, Math.min(6, targetDuration * cadenceMultiplier(cutIndex, energy))),
     ));
     const latest = Math.min(end - minDuration, cursor + maxDuration);
     const available = cueSource.filter((cueTime) => cueTime >= cursor + minDuration - 0.025 && cueTime <= latest + 0.025);
@@ -1068,11 +1068,7 @@ function buildMusicCueWindows(params: {
 }
 
 function cadenceMultiplier(index: number, energy: number) {
-  const patterns = energy >= 0.72
-    ? [0.82, 1.35, 0.94, 1.62, 1.08, 1.42]
-    : energy <= 0.36
-      ? [1.28, 0.9, 1.52, 1.08, 1.72, 1.18]
-      : [1, 1.42, 0.84, 1.58, 1.16, 1.3];
+  const patterns = energy >= 0.72 ? [0.95, 1.05, 1] : [1, 1.05, 0.95];
   return patterns[index % patterns.length] ?? 1;
 }
 
@@ -1099,7 +1095,7 @@ function expandMomentsToSectionPreviewSegments(params: {
       const momentStart = roundTime(Math.max(0, Math.min(sourceDuration, moment.start)));
       const momentEnd = roundTime(Math.max(momentStart, Math.min(sourceDuration, moment.end || momentStart + moment.duration)));
       const momentDuration = roundTime(momentEnd - momentStart);
-      if (!source.videoUrl || momentDuration <= 0.05) return null;
+      if (!source.videoUrl || momentDuration < MIN_READABLE_PREVIEW_CUT_SECONDS - 0.001) return null;
       return { moment, source, momentStart, momentEnd, momentDuration };
     })
     .filter((candidate): candidate is {
@@ -1136,8 +1132,9 @@ function expandMomentsToSectionPreviewSegments(params: {
         });
         return unused.map((span) => ({ ...candidate, momentStart: span.start, momentEnd: span.end, momentDuration: span.end - span.start }));
       });
-      if (!available.length) break;
-      const candidate = pickPreviewCandidate({ candidates: available, remaining, continuity: params.continuity });
+      const eligible = available.filter(candidate => Math.min(candidate.momentDuration, remaining) >= MIN_READABLE_PREVIEW_CUT_SECONDS - 0.001);
+      if (!eligible.length) break;
+      const candidate = pickPreviewCandidate({ candidates: eligible, remaining, continuity: params.continuity });
       const sliceDuration = roundTime(Math.min(candidate.momentDuration, remaining));
       const startTime = candidate.momentStart;
       const endTime = roundTime(Math.min(candidate.momentEnd, startTime + sliceDuration));

@@ -77,8 +77,8 @@ export function SplitTab({
           <div>
             <h2 className="text-sm text-fg-0">Review detected scenes</h2>
             <p className="mt-1 max-w-4xl text-xs leading-5 text-fg-2">
-              Your footage is already divided at scene changes. Review the shots and captions here.
-              The rough cut uses beats and onsets for timing and favors compatible movement between shots.
+              Scene changes mark possible trim points inside your original clips. Review the shots and captions here.
+              The rough cut aims for 4–6 second pieces, with a four-second minimum, aligned to beats and onsets. A supplied clip can contain faster edits; every detected scene does not need its own cut.
             </p>
           </div>
           <span className="font-mono text-xs text-fg-2">

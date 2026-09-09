@@ -558,6 +558,7 @@ export class BrowserPreviewPlayer {
     const nextIndex = this.currentIndex + 1;
     if (nextIndex >= this.segments.length) {
       this.stopProgressLoop();
+      for (const element of this.elements) element?.pause();
       this.pauseMasterAudio();
       this.currentSegmentEndTime = null;
       this.status = "ended";

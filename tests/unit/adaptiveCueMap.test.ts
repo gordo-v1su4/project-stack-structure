@@ -46,7 +46,8 @@ describe("adaptive cue map lyric/SRT blending", () => {
     const blended = buildAdaptiveCueMap({ analysis, project, density: 0.65, lyricBlend: 1, lyricMergeWindowSeconds: 0 });
 
     expect(blended.lyricActiveCount).toBeGreaterThan(0);
-    expect(blended.chunks.length).toBeGreaterThan(onsetOnly.chunks.length);
+    expect(blended.chunks.map(chunk => chunk.start)).not.toEqual(onsetOnly.chunks.map(chunk => chunk.start));
+    expect(blended.chunks.every(chunk => chunk.end - chunk.start >= 4)).toBe(true);
     expect(blended.markers.some((marker) => marker.kind === "lyric" && marker.active)).toBe(true);
     expect(blended.chunks.some((chunk) => chunk.lyricCueCount > 0)).toBe(true);
   });
@@ -68,7 +69,7 @@ describe("adaptive cue map lyric/SRT blending", () => {
 
   test("caps chunk duration so strength-clustered onsets cannot leave giant blocks", () => {
     const map = buildAdaptiveCueMap({ analysis, project, density: 0.9, lyricBlend: 0, lyricMergeWindowSeconds: 0 });
-    const maxChunkSeconds = Math.max(1.2, 6.5 - 0.9 * 4.6);
+    const maxChunkSeconds = 8;
 
     expect(map.chunks.length).toBeGreaterThan(3);
     for (const chunk of map.chunks) {
@@ -81,7 +82,8 @@ describe("adaptive cue map lyric/SRT blending", () => {
     const merged = buildAdaptiveCueMap({ analysis, project, density: 0.65, lyricBlend: 1, lyricMergeWindowSeconds: 2 });
 
     expect(merged.lyricMergedCount).toBeGreaterThan(0);
-    expect(merged.chunks.length).toBeLessThan(noMerge.chunks.length);
+    expect(merged.chunks.length).toBeLessThanOrEqual(noMerge.chunks.length);
+    expect(merged.chunks.every(chunk => chunk.end - chunk.start >= 4)).toBe(true);
     expect(merged.markers.some((marker) => marker.kind === "lyric" && marker.mergedWithTime !== undefined)).toBe(true);
   });
 
@@ -89,4 +91,11 @@ describe("adaptive cue map lyric/SRT blending", () => {
     expect(shouldWarnForEarlySrtEnd({ lyricCount: 46, lyricLastTime: 240.8 }, 246.5)).toBe(false);
     expect(shouldWarnForEarlySrtEnd({ lyricCount: 46, lyricLastTime: 104 }, 246.5)).toBe(true);
   });
+});
+
+for (const density of [0.05, 0.35, 1]) test(`dense onsets and lyrics never produce sub-four-second interior chunks at ${density}`, () => {
+  const dense = { ...analysis, duration: 40, onsets: Array.from({length: 400}, (_, i) => i / 10) };
+  const map = buildAdaptiveCueMap({ analysis: dense, project: { ...project, duration: 40, storySections: [{ ...project.storySections[0]!, end: 40 }] }, density, lyricBlend: 1 });
+  expect(map.chunks.every(chunk => chunk.end - chunk.start >= 4)).toBe(true);
+  expect(map.chunks.reduce((sum, chunk) => sum + chunk.end - chunk.start, 0)).toBeCloseTo(40, 8);
 });

@@ -1,3 +1,4 @@
+import { buildSongSectionReview } from "./songSectionReview";
 import type { BeatJoinAnalysis } from "./types";
 import type { LyricChunk, MusicVideoProject } from "./musicVideoProject";
 
@@ -62,7 +63,7 @@ export function buildAdaptiveCueMap(params: {
   const duration = analysis?.duration ?? project?.duration ?? 0;
   if (!analysis || duration <= 0) return createEmptyCueMap(duration);
 
-  const density = clamp(params.density, 0.1, 1);
+  const density = clamp(params.density, 0.05, 1);
   const lyricBlend = clamp(params.lyricBlend ?? 0, 0, 1);
   const lyricMergeWindowSeconds = clamp(params.lyricMergeWindowSeconds ?? 0, 0, 8);
   const onsets = uniqueSortedTimes(analysis.onsets, duration).map((time) => ({
@@ -70,7 +71,7 @@ export function buildAdaptiveCueMap(params: {
     strength: clamp(sampleSeries(analysis.energy, duration, time) * 0.62 + sampleSeries(analysis.waveform, duration, time) * 0.38, 0.05, 1),
   }));
   const lyricBoundaries = buildLyricBoundaries(project?.lyricChunks ?? [], duration);
-  const sections = buildCoverageWindows(project?.storySections ?? [], duration);
+  const sections = buildCoverageWindows(buildSongSectionReview(project?.storySections ?? []), duration);
 
   const activeOnsetKeys = new Set<string>();
   const activeLyricKeys = new Set<string>();
@@ -112,13 +113,26 @@ export function buildAdaptiveCueMap(params: {
       lyricCutTimes.push(lyric.time);
     }
 
-    const cutTimes = uniqueSortedTimes([start, ...onsetCutTimes, ...lyricCutTimes, end], duration);
+    const cutTimes = [start];
+    for (const cue of uniqueSortedTimes([...onsetCutTimes, ...lyricCutTimes], duration)) {
+      if (cue - cutTimes.at(-1)! >= 4 && end - cue >= 4) cutTimes.push(cue);
+    }
+    cutTimes.push(end);
     // Strength-ranked selection clusters cuts where the music is loud and can
     // leave the rest of a window as one giant block. Split oversized gaps at
-    // the strongest unused onset inside them (midpoint when none exists) so
-    // no chunk exceeds the density-derived maximum.
-    const maxChunkSeconds = Math.max(1.2, 6.5 - density * 4.6);
+    // an unused onset inside them (midpoint when none exists). Four-second
+    // minimum spacing takes priority over the suggested maximum.
+    const maxChunkSeconds = 6 - density * 2;
     enforceMaxChunkDuration({ cutTimes, onsets: sectionOnsets, maxChunkSeconds, activeOnsetKeys });
+
+    const retained = new Set(cutTimes.map(timeKey));
+    for (const onset of sectionOnsets) if (!retained.has(timeKey(onset.time))) activeOnsetKeys.delete(timeKey(onset.time));
+    for (const lyric of selectedLyrics) {
+      const nearest = nearestTime(lyric.time, sectionOnsets.filter(onset => activeOnsetKeys.has(timeKey(onset.time))).map(onset => onset.time));
+      if (mergedLyricKeys.has(timeKey(lyric.time)) && nearest !== null && Math.abs(nearest - lyric.time) <= lyricMergeWindowSeconds) continue;
+      mergedLyricKeys.delete(timeKey(lyric.time));
+      if (!retained.has(timeKey(lyric.time))) activeLyricKeys.delete(timeKey(lyric.time));
+    }
 
     for (let index = 0; index < cutTimes.length - 1; index += 1) {
       const chunkStart = cutTimes[index];
@@ -304,14 +318,14 @@ function enforceMaxChunkDuration(params: {
   while (index < cutTimes.length - 1 && guard-- > 0) {
     const gapStart = cutTimes[index]!;
     const gapEnd = cutTimes[index + 1]!;
-    if (gapEnd - gapStart <= maxChunkSeconds) {
+    if (gapEnd - gapStart <= maxChunkSeconds || gapEnd - gapStart < 8) {
       index += 1;
       continue;
     }
 
-    const margin = Math.min(0.4, (gapEnd - gapStart) / 4);
+    const margin = 4;
     const candidate = onsets
-      .filter((onset) => onset.time > gapStart + margin && onset.time < gapEnd - margin && !used.has(timeKey(onset.time)))
+      .filter((onset) => onset.time >= gapStart + margin && onset.time <= gapEnd - margin && !used.has(timeKey(onset.time)))
       .sort((left, right) => right.strength - left.strength)[0];
     const splitTime = roundTime(candidate ? candidate.time : (gapStart + gapEnd) / 2);
     if (used.has(timeKey(splitTime))) {

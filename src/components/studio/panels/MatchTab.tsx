@@ -105,13 +105,13 @@ export function MatchTab({
       <section className="rounded-[2px] border border-line bg-ink-2 p-3">
         <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
           <div>
-            <div className="text-[10px] uppercase tracking-[0.18em] text-accent">Adaptive music + lyric cut blocks</div>
-            <div className="mt-1 text-[11px] text-fg-3">Orange markers are music onsets. Cyan markers are SRT phrase boundaries. Density and blend snap in 5% steps. The merge window snaps in 0.5s steps so lyric cuts can lock to nearby music cuts without double-counting.</div>
+            <div className="text-[10px] uppercase tracking-[0.18em] text-accent">Suggested cut timing · 4–6 second pace</div>
+            <div className="mt-1 text-[11px] text-fg-3">Orange marks musical accents; cyan marks lyric phrases. These controls adjust this suggestion graph, not your saved rough cut. Lower density suggests fewer cuts. Lyric influence adds phrase boundaries; combine nearby cues keeps close music and lyric cues together. Short section edges remain visible as timing markers.</div>
           </div>
           <div className="grid min-w-[320px] flex-1 gap-2 md:min-w-[640px] md:grid-cols-3 md:gap-3">
-            <ParamSlider label="Cut Density" value={onsetDensity} min={5} max={100} step={5} unit="%" layout="stack" onChange={onOnsetDensity} />
-            <ParamSlider label="SRT Blend" value={lyricCueBlend} min={0} max={100} step={5} unit="%" accent="#32c7d7" layout="stack" onChange={onLyricCueBlend} />
-            <ParamSlider label="Merge Window" value={lyricMergeWindow} min={0} max={5} step={0.5} unit="s" accent="#75d767" layout="stack" onChange={onLyricMergeWindow} />
+            <ParamSlider label="Cue density" commitOnRelease value={onsetDensity} min={5} max={100} step={5} unit="%" layout="stack" onChange={onOnsetDensity} />
+            <ParamSlider label="Lyric influence" commitOnRelease value={lyricCueBlend} min={0} max={100} step={5} unit="%" accent="#32c7d7" layout="stack" onChange={onLyricCueBlend} />
+            <ParamSlider label="Combine nearby cues" commitOnRelease value={lyricMergeWindow} min={0} max={5} step={0.5} unit="s" accent="#75d767" layout="stack" onChange={onLyricMergeWindow} />
           </div>
         </div>
         <MatchMusicCueTimeline cueMap={cueMap} project={project} />
