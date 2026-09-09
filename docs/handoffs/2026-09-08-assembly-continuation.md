@@ -23,8 +23,13 @@ and restoring the previously discarded meeting source. This is provisional,
 especially the meeting timing under the user's clarification above. No dancing
 replacement was applied. Commit `f5fcd2a` adds nearby beat/onset endpoints for
 short rough-cut replacements and swaps; 19 arrangement tests, typecheck, focused
-lint and production build passed. Production verification and the revised
-opening sequence remain in progress.
+lint and production build passed. Production deployment
+`dpl_2Fb4NLoUPit6DwjwTMBC9Xtep2S9` is Ready on the main alias. Fresh browser tab
+14 restored the saved 31-placement arrangement. Reviewing (then cancelling) S2
+Scene 03 in the later dancing slot proposed a music-cue end at 98.859s, retained
+the omitted 0.143s source tail and a 4.981s gap. No dancing replacement was
+applied. Exact first-lyric timing and the revised opening placeholders still need
+to be applied; the timestamp question is pending. Tab 14 is marked deliverable.
 
 Then apply the reviewed matching decisions and rebuild the assembly using the deployed meeting-shot boundary fix. Let the app choose and trim available shots to beats/onsets, preserve original uploads and fixed master-song timing, and retain deliberate gaps and genuinely missing coverage. Repeats can be useful but must not fill every window merely to cover duration. Verify reliable whole-song and section playback with master audio, meaningful edit/remove/undo behavior, and save/reload persistence in the visible browser. Fix and verify defects with relevant tests and production checks. Preserve the accepted story and detected scene inventory; do not regenerate story, images or videos. Effects and export follow rough-cut review, and unresolved coverage continues to block final export. Tests/build alone do not complete this goal.
 
