@@ -95,7 +95,7 @@ describe("buildStageHeaderModel", () => {
       const model = buildStageHeaderModel({ stages: pipeline.stages, activeTab: "generate", canPreview: true, previewDisabledReason: null, isBusy: true });
       expect(model!.primary).toMatchObject({ kind: "continue", label: "Continue to Join" });
       expect(model!.primary!.disabledReason).toBeNull();
-      expect(model!.status).toBe(`${gapSlotCount} true gaps to fill`);
+      expect(model!.status).toBe(`${gapSlotCount} unfilled windows`);
       expect(model!.secondary!.disabledReason).toBe("Preview already running");
     });
   }
@@ -113,7 +113,7 @@ describe("buildStageHeaderModel", () => {
     }));
     const model = buildStageHeaderModel({ stages: pipeline.stages, activeTab: "shuffle", canPreview: true, previewDisabledReason: null, isBusy: false });
     expect(model!.primary).toMatchObject({ kind: "continue", targetTab: "generate", disabledReason: null });
-    expect(model!.status).toBe("0/6 slots matched");
+    expect(model!.status).toBe("0/6 model-supported slots");
   });
 
   test("Generate cannot continue to Join before the story timeline exists", () => {

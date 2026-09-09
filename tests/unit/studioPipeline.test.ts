@@ -153,8 +153,8 @@ describe("studio pipeline state", () => {
 
     const match = state.stages.find((stage) => stage.key === "shuffle");
     const generate = state.stages.find((stage) => stage.key === "generate");
-    expect(match).toMatchObject({ ready: true, status: "7/9 slots matched" });
-    expect(generate).toMatchObject({ ready: false, status: "2 true gaps to fill" });
+    expect(match).toMatchObject({ ready: true, status: "7/9 model-supported slots" });
+    expect(generate).toMatchObject({ ready: false, status: "2 unfilled windows" });
     expect(state.stages.find((stage) => stage.key === "join")).toMatchObject({ available: false, prerequisiteKey: "story" });
     expect(state.nextStage?.key).toBe("generate");
   });

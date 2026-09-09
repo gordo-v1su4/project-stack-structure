@@ -22,6 +22,8 @@ Local evidence in the 632b checkout: `.tmp/matching-review/fixture-manifest.json
 
 Other caption discrepancies: S1 scene 4 shows a background dancer's handstand with the lead pair elsewhere in the frame. S1 scene 8 and parts of S5 scene 2 feature the separate singer. S1 scene 2 changes appearance/composition within the detected scene. Several longer detected scenes contain internal cuts, so preserving the 57-scene inventory does not mean every scene is one continuous take.
 
+Closer S8 inspection at one-second intervals from 6s to 14s shows the singer still visible at 9s, followed by collapse/crowd views at 10–14s. Start the exact motion review around 10s for the user's singer-free earthquake candidate; this sample review does not yet establish a frame-accurate trim. Evidence: `.tmp/matching-review/s8-collapse.jpg` and `inspect-collapse.py`.
+
 ## Matching implications
 
 The current holes are a mixture of deliberate choices, unreviewed alternatives and insufficient placed duration. They are not proof that the library lacks every required broad role. Review the candidate pool before deciding coverage is missing. Repeats remain permitted for this practice project, but are not permission to pad every window.
@@ -31,6 +33,8 @@ The app should propose musical trims automatically, with compatible motion guidi
 ## Evidence display repair
 
 The Match cards previously inferred screen direction from caption words, inferred entry/exit edges from aggregate flow, inverted vertical image coordinates, generated synthetic palettes when analysis was missing, and repeated a thumbnail as temporal evidence. The repair removes those fallbacks, shows unknown measurements explicitly, retains uncropped frames, and labels selections and scores as provisional advice. Neutral motion/color ranking defaults are not displayed as measured match scores. This is a presentation repair, not completion of boundary analysis or matching acceptance.
+
+Commit `1ec9c86` was verified READY on the production alias (`dpl_3ZQuTTbQFgxYLFwnrwWYbkmxekw2`). The recovery project reopened with 11 clips, 57 captions and the original 29-cut checkpoint; new provisional labels and unavailable evidence states were inspected in the visible Match board. A thumbnail badge overlap found during that check was corrected. Sidebar wording now distinguishes model-supported slots from confirmed matches and unfilled windows from proven missing material. Follow-up local validation passed 36 focused tests, typecheck, focused lint and production build. This verification does not approve the footage matches or whole-song playback.
 
 ## Remaining acceptance
 

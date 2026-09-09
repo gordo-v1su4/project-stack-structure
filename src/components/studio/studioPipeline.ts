@@ -132,7 +132,7 @@ export function buildPipelineState(input: PipelineStageInput): PipelineState {
       blockedReason: splitReady ? null : "Open Split once so cut windows are built before reviewing matches.",
       prerequisiteKey: splitReady ? null : "split",
       status: matchReady
-        ? `${input.matchedSlotCount}/${input.editSlotCount} slots matched`
+        ? `${input.matchedSlotCount}/${input.editSlotCount} model-supported slots`
         : splitReady
           ? "Review match candidates"
           : "Needs Split cut windows",
@@ -148,7 +148,7 @@ export function buildPipelineState(input: PipelineStageInput): PipelineState {
       status: !matchReady
         ? "Waiting for Split"
         : input.gapSlotCount > 0
-          ? `${input.gapSlotCount} true gap${input.gapSlotCount === 1 ? "" : "s"} to fill`
+          ? `${input.gapSlotCount} unfilled window${input.gapSlotCount === 1 ? "" : "s"}`
           : input.shortReviewSlotCount > 0
             ? `${input.shortReviewSlotCount} short source${input.shortReviewSlotCount === 1 ? "" : "s"} · optional`
             : input.weakMatchSlotCount > 0

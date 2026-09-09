@@ -19,11 +19,11 @@ export function ThumbMatchCard({ label, start, end, match, moment, mode }: { lab
           // eslint-disable-next-line @next/next/no-img-element
           <img src={frameUrl} alt={label} className="h-full w-full object-contain" loading="lazy" decoding="async" />
         ) : null}
-        <div className="absolute left-2 top-2 rounded-sm bg-ink-0/80 px-2 py-1 text-[8px] uppercase tracking-[0.12em] text-fg-0">{label}</div>
-        <div className={`absolute right-2 top-2 rounded-sm border px-2 py-1 font-mono text-[8px] ${hole ? "border-danger/40 text-danger" : "border-line-2 text-fg-1"}`}>{hole ? "No usable selection" : "Selected · review fit"}</div>
+        <div className="absolute left-2 right-2 top-2 truncate rounded-sm bg-ink-0/80 px-2 py-1 text-[8px] uppercase tracking-[0.12em] text-fg-0" title={label}>{label}</div>
         <div className="absolute bottom-2 left-2 rounded-sm bg-ink-0/80 px-2 py-1 font-mono text-[8px] text-accent">{direction}</div>
         <div className="absolute bottom-2 right-2 rounded-sm bg-ink-0/80 px-2 py-1 font-mono text-[8px] text-fg-2">{fmt(start)}–{fmt(end)}</div>
       </div>
+      <div className={`px-2 py-1 font-mono text-[8px] ${hole ? "text-danger" : "text-fg-1"}`}>{hole ? "No usable selection" : "Selected · review fit"}</div>
       <PaletteStrip palette={palette} />
       <div className="flex items-center justify-between gap-2 border-t border-line px-2 py-2 font-mono text-[8px] uppercase tracking-[0.1em] text-fg-3">
         <span className="truncate">{moment?.sourceRefLabel ?? "No candidate"}</span>
