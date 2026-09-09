@@ -6,6 +6,26 @@ The user requested a fresh task because the old conversation became too large. C
 
 Current objective: finish the editable whole-song rough cut in **Assembly recovery · 2026-09-08** (`5fc48d59-01e4-4bfb-90c1-e054a0307575`). The Diego story is confirmed, footage is already split into scenes, and saving is repaired. **First review actual footage and automatic matching suggestions; exact video matches remain provisional.** Assess broad establishing, solo, together, crowd/performance, destruction and ending roles. Prioritize musical timing and compatible subject/camera motion, then loose story fit, with color secondary. Scores advise rather than block technically valid choices. Do not assume an unselected window proves footage is absent, or treat saved selections as final user approval.
 
+**Latest user direction, during takeover:** Diego walks into the club. Show Diego
+and Valentina separately, then a glance across the room. Diego walks through the
+tunnel hallways and looks around. Diego and Valentina first meet on the **first
+"love me tonight"**. Dancing follows the encounter. Missing individual views,
+the glance, hallway coverage, or the meeting can remain labeled placeholders for
+later generation; do not substitute dancing to fill these beats. The saved SRT
+does not contain the title phrase, so the exact meeting timestamp is not verified.
+Do not claim the previous 56.900s placement is synchronized to that lyric.
+
+Takeover is in the existing `632b` worktree, branch
+`codex/studio-assembly-save-recovery`. The original task owns the work again; the
+continuation task was told to stop. One reviewed S7 Scene 02 entrance selection
+was applied to Verse 1, rebuilding the arrangement to 31 placements / 19 gaps
+and restoring the previously discarded meeting source. This is provisional,
+especially the meeting timing under the user's clarification above. No dancing
+replacement was applied. Commit `f5fcd2a` adds nearby beat/onset endpoints for
+short rough-cut replacements and swaps; 19 arrangement tests, typecheck, focused
+lint and production build passed. Production verification and the revised
+opening sequence remain in progress.
+
 Then apply the reviewed matching decisions and rebuild the assembly using the deployed meeting-shot boundary fix. Let the app choose and trim available shots to beats/onsets, preserve original uploads and fixed master-song timing, and retain deliberate gaps and genuinely missing coverage. Repeats can be useful but must not fill every window merely to cover duration. Verify reliable whole-song and section playback with master audio, meaningful edit/remove/undo behavior, and save/reload persistence in the visible browser. Fix and verify defects with relevant tests and production checks. Preserve the accepted story and detected scene inventory; do not regenerate story, images or videos. Effects and export follow rough-cut review, and unresolved coverage continues to block final export. Tests/build alone do not complete this goal.
 
 **User clarification after save recovery:** confirming the story did not approve the exact video matches. Existing source selections and the reconstructed arrangement are provisional matching evidence, not a finished or user-approved cut. Resume matching review before committing a rebuilt assembly. The previous task, `Continue previous repo work` (`01a08238-0994-7c02-90bf-3db6e7d48e2c`), records broad establishing/solo/together/crowd-performance/destruction/ending roles; musical timing and compatible movement come before semantic specificity, color is secondary, and low model scores remain advisory. Preserve saved decisions while examining them; do not silently equate selection with approval or assume every current hole proves that the library lacks suitable footage. The next task is to assess the footage and automatic matching suggestions against that loose music-video contract.
