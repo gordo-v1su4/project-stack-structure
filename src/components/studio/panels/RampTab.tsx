@@ -3,13 +3,14 @@
 import { ParamSlider } from "../ParamSlider";
 import { getRampPresetDefinition, RAMP_PRESETS } from "../remapPresets";
 import { SpeedCurve } from "../SpeedCurve";
-import type { BeatJoinAnalysis, RampPreset, SegmentPreview } from "../types";
+import type { BeatJoinAnalysis, RampPreset } from "../types";
+import type { EffectsTimelineSegment } from "../resolvedPreviewSelection";
 
 type RampTabProps = {
   playhead: number;
   bpm: number;
   analysis: BeatJoinAnalysis | null;
-  segmentPreviews: SegmentPreview[];
+  segmentPreviews: EffectsTimelineSegment[];
   isUsingCommittedSplit?: boolean;
   rampPreset: RampPreset;
   minSpeed: number;
@@ -47,7 +48,7 @@ export function RampTab({
   onBuildBoost,
   onDropSlowdown,
 }: RampTabProps) {
-  const arrangementDuration = segmentPreviews.reduce((sum, preview) => sum + preview.duration, 0);
+  const arrangementDuration = Math.max(0, ...segmentPreviews.map(preview => preview.musicEnd));
   const rampNodes = buildRampNodes({
     segmentPreviews,
     analysis,
@@ -79,40 +80,42 @@ export function RampTab({
         </div>
       ) : null}
 
-      <div className="border border-[#1a1a1a] rounded-[2px] bg-[#080808] overflow-hidden">
-        <div className="flex items-center justify-between px-3 py-2 border-b border-[#181818]">
-          <span className="text-[10px] uppercase tracking-[0.18em] text-[#404040]">Effects Source Layout</span>
-          <span className="font-mono text-[10px] text-[#666]">{segmentPreviews.length} committed segments</span>
+      <div className="overflow-hidden rounded-md border border-line bg-ink-1">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-3 py-2">
+          <span className="text-xs font-medium text-fg-2">Effects timeline</span>
+          <span className="font-mono text-[10px] text-fg-3">{segmentPreviews.length} placements · {arrangementDuration.toFixed(1)}s · {segmentPreviews.filter(preview => preview.kind === "gap").length} gaps</span>
         </div>
-        <div className="relative h-16 flex bg-[#070707]">
+        <div className="relative h-16 bg-ink-0">
           {segmentPreviews.map((preview, index) => {
             const total = Math.max(arrangementDuration, 0.001);
             return (
               <div
                 key={preview.clipId}
-                className={`relative border-r border-[#0d0d0d] ${index % 2 === 0 ? "bg-[#0f0f0f]" : "bg-[#0b0b0b]"}`}
-                style={{ width: `${(preview.duration / total) * 100}%` }}
+                title={`${preview.label} · song ${preview.musicStart.toFixed(3)}–${preview.musicEnd.toFixed(3)}s`}
+                className={`absolute inset-y-0 overflow-hidden border-r border-line ${preview.kind === "gap" ? "border border-dashed border-warn-lo bg-ink-0" : index % 2 === 0 ? "bg-ink-3" : "bg-ink-2"}`}
+                style={{ left: `${(preview.musicStart / total) * 100}%`, width: `${(preview.duration / total) * 100}%` }}
               >
-                <span className="absolute left-[4px] top-[4px] text-[8px] font-mono text-[#666]">
-                  {preview.label}
+                <span className="absolute inset-x-1 top-1 truncate font-mono text-[8px] text-fg-2">
+                  {preview.kind === "gap" ? "Missing footage" : preview.sourceRefLabel ?? `Cut ${index + 1}`}
                 </span>
-                <span className="absolute right-[4px] bottom-[4px] text-[8px] font-mono text-[#444]">
+                <span className="absolute bottom-1 right-1 font-mono text-[8px] text-fg-3">
                   {preview.duration.toFixed(1)}s
                 </span>
               </div>
             );
           })}
-          <div className="absolute inset-y-0 w-[1px] bg-[#e05c00]" style={{ left: `${playhead * 100}%` }} />
+          <div className="absolute inset-y-0 w-px bg-accent" style={{ left: `${playhead * 100}%` }} />
         </div>
       </div>
 
       <div className="border border-[#1a1a1a] rounded-[2px] bg-[#0c0c0c]">
         <div className="flex items-center justify-between px-3 py-2 border-b border-[#181818]">
-          <span className="text-[10px] uppercase tracking-[0.2em] text-[#6f8287]">Effects curve — drag anchors</span>
+          <span className="text-[10px] uppercase tracking-[0.2em] text-fg-3">Speed study — drag anchors</span>
           <span className="text-[10px] font-mono text-[#e05c00] uppercase">{selectedPreset.label}</span>
         </div>
         <div className="p-2">
-          <SpeedCurve key={`${rampPreset}-${segmentPreviews.length}-${analysis?.sourceLabel ?? "none"}`} minSpeed={minSpeed} maxSpeed={maxSpeed} preset={rampPreset} initialNodes={rampNodes} />
+          <p className="mb-2 text-xs text-fg-3">This speed study is not applied to preview or export. The saved cut keeps its musical timing.</p>
+          <SpeedCurve key={`${rampPreset}-${JSON.stringify(rampNodes)}`} minSpeed={minSpeed} maxSpeed={maxSpeed} preset={rampPreset} initialNodes={rampNodes} />
         </div>
       </div>
 
@@ -166,7 +169,7 @@ export function RampTab({
 }
 
 function buildRampNodes(params: {
-  segmentPreviews: SegmentPreview[];
+  segmentPreviews: EffectsTimelineSegment[];
   analysis: BeatJoinAnalysis | null;
   preset: RampPreset;
   minSpeed: number;
@@ -178,7 +181,7 @@ function buildRampNodes(params: {
   const { segmentPreviews, analysis, preset, minSpeed, maxSpeed, energyThresh, buildBoost, dropSlowdown } = params;
   if (!segmentPreviews.length) return [];
 
-  const totalDuration = segmentPreviews.reduce((sum, preview) => sum + preview.duration, 0);
+  const totalDuration = Math.max(0, ...segmentPreviews.map(preview => preview.musicEnd));
   const sectionMap = (analysis?.sections ?? []).map((section) => ({
     ...section,
     normalized: analysis && analysis.duration > 0 ? section.start / analysis.duration : 0,
@@ -190,9 +193,9 @@ function buildRampNodes(params: {
     { x: 0, y: normalizeSpeed(1, minSpeed, maxSpeed), kind: "start", label: "START" },
   ];
 
-  let cursor = 0;
   for (const preview of segmentPreviews) {
-    const midpoint = cursor + preview.duration / 2;
+    if (preview.kind === "gap") continue;
+    const midpoint = preview.musicStart + preview.duration / 2;
     const normalized = midpoint / Math.max(totalDuration, 0.001);
     const matchingSection = sectionMap.find((section, index) => {
       const next = sectionMap[index + 1];
@@ -212,7 +215,6 @@ function buildRampNodes(params: {
       kind: matchingSection ? "section" : "cut",
       label: matchingSection?.label?.slice(0, 3).toUpperCase() ?? `C${preview.clipId + 1}`,
     });
-    cursor += preview.duration;
   }
 
   anchors.push({ x: 1, y: normalizeSpeed(1, minSpeed, maxSpeed), kind: "end", label: "END" });

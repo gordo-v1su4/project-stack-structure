@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  buildEffectsTimeline,
   selectStoryAssemblyPreview,
   selectPreviewCutRange,
   selectPreviewSectionRange,
@@ -17,6 +18,23 @@ const segments = [
 ];
 
 describe("resolved preview selection", () => {
+  test("Effects keeps saved song windows, source trims, gaps and repeated source identities", () => {
+    const source = { ...makeSegment("verse", 0), sourceClipId: 7, startTime: 20, endTime: 22, musicStart: 30, musicEnd: 32 };
+    const assembly = [source,
+      { ...source, kind: "gap" as const, videoUrl: "", musicStart: 32, musicEnd: 38 },
+      { ...source, startTime: 24, endTime: 26, musicStart: 38, musicEnd: 40 },
+    ];
+    const before = JSON.stringify(assembly);
+    const effects = buildEffectsTimeline(selectStoryAssemblyPreview("ramp", assembly));
+    expect(effects.map(c => [c.kind, c.musicStart, c.musicEnd, c.duration])).toEqual([
+      ["source", 30, 32, 2], ["gap", 32, 38, 6], ["source", 38, 40, 2],
+    ]);
+    expect(effects.map(c => c.sourceClipIds)).toEqual([[7], [], [7]]);
+    expect(effects.map(c => [c.sourceStart, c.sourceEnd])).toEqual([[20, 22], [20, 22], [24, 26]]);
+    expect(new Set(effects.map(c => c.clipId)).size).toBe(3);
+    expect(JSON.stringify(assembly)).toBe(before);
+    expect(buildEffectsTimeline([{ ...source, videoUrl: "" }])[0]).toMatchObject({ kind: "gap", sourceClipIds: [] });
+  });
   test("every review stage plays the same saved source-gap-source assembly", () => {
     const assembly = [segments[0]!, { ...segments[1]!, kind: "gap" as const, videoUrl: "", gapReason: "Missing solo arrival" }, segments[2]!];
     for (const tab of ["story", "shuffle", "join", "ramp", "compose"] as const) {

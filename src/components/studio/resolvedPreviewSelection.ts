@@ -1,5 +1,25 @@
 import type { EditPlanPreviewSegment } from "./musicVideoProject";
 import type { Tab } from "./types";
+import type { SegmentPreview } from "./types";
+
+export type EffectsTimelineSegment = SegmentPreview & { kind: "source" | "gap"; musicStart: number; musicEnd: number };
+
+/** Effects reviews the saved song placements, never the source-scene inventory. */
+export function buildEffectsTimeline(segments: EditPlanPreviewSegment[]): EffectsTimelineSegment[] {
+  return segments.map((segment, index) => ({
+    clipId: index,
+    kind: segment.kind === "gap" || !segment.videoUrl ? "gap" : "source",
+    label: segment.label,
+    duration: segment.musicEnd - segment.musicStart,
+    musicStart: segment.musicStart,
+    musicEnd: segment.musicEnd,
+    thumbnailUrl: segment.thumbnailUrl,
+    sourceClipIds: segment.kind === "gap" || !segment.videoUrl || segment.sourceClipId === undefined ? [] : [segment.sourceClipId],
+    sourceRefLabel: segment.sourceRefLabel,
+    sourceStart: segment.startTime,
+    sourceEnd: segment.endTime,
+  }));
+}
 
 export function usesStoryAssembly(tab: Tab): boolean {
   return ["story", "shuffle", "generate", "join", "ramp", "compose"].includes(tab);

@@ -36,7 +36,7 @@ import type { StudioProjectSummary } from "@/lib/studioProjectStore";
 import { applyApprovedGeneratedAssets, buildGeneratedAssetContextPreview, buildGeneratedAssetPlaybackUrl, type GeneratedStudioAsset } from "./studio/generatedAssets";
 import { createLocalReferenceAsset, uploadReferenceAssetToRustFs, type ReferenceAsset, type ReferenceAssetLibraryRole } from "./studio/referenceAssets";
 import { BrowserPreviewPlayer, createPreviewPlayerState, type PreviewPlayerState, type PreviewSegment } from "./studio/previewPlayer";
-import { selectStoryAssemblyPreview, usesStoryAssembly, type PreviewCutRange } from "./studio/resolvedPreviewSelection";
+import { buildEffectsTimeline, selectStoryAssemblyPreview, usesStoryAssembly, type PreviewCutRange } from "./studio/resolvedPreviewSelection";
 import { ComposeTab } from "./studio/panels/ComposeTab";
 import { IngestTab } from "./studio/panels/IngestTab";
 import { GenerateTab, type SeedanceMasterAudioRef } from "./studio/panels/GenerateTab";
@@ -679,6 +679,8 @@ export default function StudioApp() {
       return { ...segment, useClipAudio: segment.kind !== "gap" && usesClipAudio(clipAudioSettings, source ? clipAudioKey(source) : undefined) };
     });
   }, [clipAudioSettings, generatedAssets, musicVideoProject, storyState.editSettings, storyState.storyGenerated, videoSources]);
+
+  const effectsTimeline = useMemo(() => buildEffectsTimeline(storyPreviewSegments), [storyPreviewSegments]);
 
   const auditionGeneratedAsset = (asset: GeneratedStudioAsset, contextRadius: number) => {
     const preview = buildGeneratedAssetContextPreview(storyPreviewSegments, asset, contextRadius);
@@ -2564,8 +2566,8 @@ export default function StudioApp() {
                 playhead={playhead}
                 bpm={bpm}
                 analysis={beatJoinAnalysis}
-                segmentPreviews={segmentPreviews}
-                isUsingCommittedSplit={isAnyCommittedSplitCurrent}
+                segmentPreviews={effectsTimeline}
+                isUsingCommittedSplit={isAnyCommittedSplitCurrent && effectsTimeline.length > 0}
                 rampPreset={rampPreset}
                 minSpeed={minSpeed}
                 maxSpeed={maxSpeed}
