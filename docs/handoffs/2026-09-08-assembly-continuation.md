@@ -37,20 +37,25 @@ Scene 01 for destruction, S6 Scene 20 for escape. Join replacements add S7
 Scene 02 at 3.75–7.732s and S3 Scene 02 at 89.29–101.343s. Both replacements
 leave the rest of their target windows empty and preserve source tails.
 
-Browser tab 14 saved **31 placements / 18 gaps / 20 edit slots**, then loaded
+Before the timing repair, browser tab 14 saved **31 placements / 18 gaps / 20 edit slots**, then loaded
 the saved project through its library entry and retained those counts. Explicit
 Save reported success. Whole-song playback advanced through the opening source
 shots into the Diego placeholder with the master audio playing and videos muted.
 No images or videos were generated. The 57 detected scenes and 11 uploads remain.
 
-Remaining technical follow-up: the preview currently totals 246.64s versus the
-246.6999546s master; closely spaced authored/section boundaries may be dropping
-tiny intervals. This change removes the 25ms discard thresholds from Story
+Timing repair: the preview had totaled 246.64s versus the 246.6999546s master
+because closely spaced authored/section boundaries discarded tiny intervals.
+Commit `c0eae80` removes the 25ms discard thresholds from Story
 intersections, unassigned intervals and placement gaps. A regression covers
 nearby section/Story boundaries and a 10ms uncovered ending through browser
 preview construction. 104 affected tests, typecheck, focused lint and build
-passed. Deploy and rebuild the saved Story map before claiming exact full-song
-timing acceptance; old saved maps do not repair themselves on playback.
+passed. Production deployment `dpl_Du8LBzhjjsgD8rFx7wtx8t2iMPip` was verified
+Ready on the main alias. Fresh tab **15** rebuilt the map when entering Story,
+then restored the two reviewed Join replacements above and explicitly saved
+**35 placements / 21 gaps / 24 edit slots**, with preview duration **246.7s**.
+The increased counts include the previously discarded tiny boundary intervals;
+they are not newly missing full shots. Tab 15 is the active deliverable; older
+tabs hold stale arrangements and must not overwrite this save.
 Entering rounded 246.7 as the final Story end also fails strict duration
 validation; the actual duration above was entered through the UI. Legacy source
 captions still contain wardrobe/pronoun/identity errors; this focused revision
