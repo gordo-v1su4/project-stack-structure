@@ -24,9 +24,12 @@ describe("MatchTab combined scoring", () => {
 
     expect(markup).toContain("Balanced multi-signal match");
     expect(markup).toContain("Lyrics + captions");
-    expect(markup).toContain("Motion edges");
+    expect(markup).toContain("Scene motion");
     expect(markup).toContain("Color continuity");
     expect(markup).toContain("Repeat control");
+    expect(markup).toContain("Model scores are advisory");
+    expect(markup).toContain("Selected footage still needs review");
+    expect(markup).not.toContain("eligibility first");
     expect(markup).not.toContain("Match / shuffle strategy");
     expect(markup).not.toContain(">Semantic</button>");
     expect(markup).not.toContain(">Motion</button>");

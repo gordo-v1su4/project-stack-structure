@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { ParamSlider } from "../ParamSlider";
-import { CollapsibleSection } from "../ui";
+import { CollapsibleSection, StatusDot } from "../ui";
 import type { BeatJoinAnalysis, UploadedVideoSource } from "../types";
 import { buildAdaptiveCueMap } from "../adaptiveCueMap";
 import { placementInputSignature, type MusicVideoProject } from "../musicVideoProject";
@@ -77,21 +77,21 @@ export function MatchTab({
 
   return (
     <div className="space-y-3">
-      <section className="rounded-[2px] border border-[#1a1a1a] bg-[#0b0b0b] p-3">
+      <section className="rounded-[2px] border border-line bg-ink-2 p-3">
         <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
           <div>
-            <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Match lyrics, story, music cues, and captioned clips</div>
-            <div className="mt-1 max-w-4xl text-[11px] leading-5 text-[#6d6d6d]">
-              Match chooses what belongs where. Split proves scene cuts; this board compares story/lyrics, captions, motion edges, color continuity, and section-level music cues before Join assembles the sequence.
+            <div className="text-[10px] uppercase tracking-[0.18em] text-accent">Match lyrics, story, music cues, and captioned clips</div>
+            <div className="mt-1 max-w-4xl text-[11px] leading-5 text-fg-3">
+              Review suggested footage against the confirmed story. Scene frames, captions, available motion and color analysis, and music cues help you judge the choices before assembling the edit.
             </div>
           </div>
           <div className="flex gap-2">
-            <button type="button" onClick={onSelectStory} className="rounded-[2px] border border-[#242424] px-3 py-2 text-[9px] uppercase tracking-[0.14em] text-[#9a9a9a] hover:border-[#e05c00] hover:text-[#e05c00]">Story</button>
-            <button type="button" onClick={onSelectSplit} className="rounded-[2px] border border-[#242424] px-3 py-2 text-[9px] uppercase tracking-[0.14em] text-[#9a9a9a] hover:border-[#e05c00] hover:text-[#e05c00]">Split</button>
+            <button type="button" onClick={onSelectStory} className="rounded-[2px] border border-line-2 px-3 py-2 text-[9px] uppercase tracking-[0.14em] text-fg-2 hover:border-accent hover:text-accent">Story</button>
+            <button type="button" onClick={onSelectSplit} className="rounded-[2px] border border-line-2 px-3 py-2 text-[9px] uppercase tracking-[0.14em] text-fg-2 hover:border-accent hover:text-accent">Split</button>
           </div>
         </div>
 
-        <CollapsibleSection title="Readiness · sections, lyrics, captions" defaultOpen={false} className="rounded-[2px] border-[#171717] bg-[#070707]">
+        <CollapsibleSection title="Readiness · sections, lyrics, captions" defaultOpen={false} className="rounded-[2px] border-line bg-ink-0">
           <div className="grid gap-2 p-2 md:grid-cols-5">
             <GateCard label="Story" ready={storyGenerated} value={storyGenerated ? `${project?.storySections.length ?? 0} sections` : "Generate Story"} />
             <GateCard label="Lyrics" ready={hasLyrics} value={hasLyrics ? `${project?.lyricChunks.length ?? 0} SRT chunks` : "Waiting for stem"} />
@@ -102,11 +102,11 @@ export function MatchTab({
         </CollapsibleSection>
       </section>
 
-      <section className="rounded-[2px] border border-[#1a1a1a] bg-[#0b0b0b] p-3">
+      <section className="rounded-[2px] border border-line bg-ink-2 p-3">
         <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
           <div>
-            <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Adaptive music + lyric cut blocks</div>
-            <div className="mt-1 text-[11px] text-[#6d6d6d]">Orange markers are music onsets. Cyan markers are SRT phrase boundaries. Density and blend snap in 5% steps. The merge window snaps in 0.5s steps so lyric cuts can lock to nearby music cuts without double-counting.</div>
+            <div className="text-[10px] uppercase tracking-[0.18em] text-accent">Adaptive music + lyric cut blocks</div>
+            <div className="mt-1 text-[11px] text-fg-3">Orange markers are music onsets. Cyan markers are SRT phrase boundaries. Density and blend snap in 5% steps. The merge window snaps in 0.5s steps so lyric cuts can lock to nearby music cuts without double-counting.</div>
           </div>
           <div className="grid min-w-[320px] flex-1 gap-2 md:min-w-[640px] md:grid-cols-3 md:gap-3">
             <ParamSlider label="Cut Density" value={onsetDensity} min={5} max={100} step={5} unit="%" layout="stack" onChange={onOnsetDensity} />
@@ -117,17 +117,17 @@ export function MatchTab({
         <MatchMusicCueTimeline cueMap={cueMap} project={project} />
       </section>
 
-      <section className="rounded-[2px] border border-[#1a1a1a] bg-[#0b0b0b] p-3">
+      <section className="rounded-[2px] border border-line bg-ink-2 p-3">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Balanced multi-signal match</div>
-            <div className="mt-1 text-[11px] text-[#6d6d6d]">Visible subjects, actions, and setting determine eligibility first. Music, duration, motion, and color rank supported footage. Unsupported requirements stay empty.</div>
+            <div className="text-[10px] uppercase tracking-[0.18em] text-accent">Balanced multi-signal match</div>
+            <div className="mt-1 text-[11px] text-fg-3">Musical timing and compatible movement lead; broad story fit guides selection, with color secondary. Model scores are advisory. Selected footage still needs review, and an empty slot may have suitable alternatives.</div>
           </div>
-          <div className="font-mono text-[10px] uppercase text-[#777]">Evidence before ranking</div>
+          <div className="font-mono text-[10px] uppercase text-fg-3">Suggestions for review</div>
         </div>
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
-          {["Lyrics + captions", "Story intent", "Motion edges", "Music energy", "Duration fit", "Color continuity", "Repeat control"].map((signal) => (
-            <div key={signal} className="rounded-[2px] border border-[#203022] bg-[#071007] px-3 py-2 text-center text-[9px] uppercase tracking-[0.12em] text-[#79a879]">
+          {["Lyrics + captions", "Story intent", "Scene motion", "Music energy", "Duration fit", "Color continuity", "Repeat control"].map((signal) => (
+            <div key={signal} className="rounded-[2px] border border-line bg-ink-1 px-3 py-2 text-center text-[9px] uppercase tracking-[0.12em] text-fg-2">
               {signal}
             </div>
           ))}
@@ -138,7 +138,7 @@ export function MatchTab({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 className="text-sm text-fg-0">{policy === "faithful" ? "Faithful draft" : "Best-effort edit"}</h3>
-            <p className="mt-1 text-xs text-fg-2">{coverage.summary.semanticGapDuration.toFixed(1)}s have no selected footage · {coverage.summary.durationGapDuration.toFixed(1)}s need more footage</p>
+            <p className="mt-1 text-xs text-fg-2">{coverage.summary.semanticGapDuration.toFixed(1)}s have no selected footage · {coverage.summary.durationGapDuration.toFixed(1)}s lack placed footage</p>
           </div>
           {onCoveragePolicyChange && project ? policy === "best-effort" ? (
             <button type="button" className="rounded-md border border-line px-3 py-2 text-xs text-fg-1" onClick={() => { onCoveragePolicyChange("faithful"); setPolicyReview(null); }}>Restore faithful draft</button>
@@ -160,34 +160,34 @@ export function MatchTab({
       {[...sectionCounts.values()].every((count) => count === 1) ? <CollapsibleSection title="Source lane overview" defaultOpen={false}><TrackLaneStackBoard stack={laneStack} onSelectCandidate={onSelectCandidate} /></CollapsibleSection> : null}
 
       {!ready ? (
-        <section className="rounded-[2px] border border-dashed border-[#252525] bg-[#080808] p-6 text-center">
-          <div className="text-[10px] uppercase tracking-[0.18em] text-[#d24b3f]">Match is locked</div>
-          <div className="mt-3 text-[11px] leading-5 text-[#777]">
+        <section className="rounded-[2px] border border-dashed border-line bg-ink-1 p-6 text-center">
+          <div className="text-[10px] uppercase tracking-[0.18em] text-danger">Match is locked</div>
+          <div className="mt-3 text-[11px] leading-5 text-fg-3">
             Choose a story and review video evidence first. Missing footage remains visible as story gaps. Lyrics can help timing when a vocal stem is available.
           </div>
         </section>
       ) : null}
 
-      <section className="rounded-[2px] border border-[#1a1a1a] bg-[#0b0b0b] p-3">
+      <section className="rounded-[2px] border border-line bg-ink-2 p-3">
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
-            <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Story requirement matches</div>
-            <div className="mt-1 text-[11px] text-[#6d6d6d]">Cards show the chosen candidate, first/middle/last frames, clip-edge labels, and the weighted reasons behind the match.</div>
+            <div className="text-[10px] uppercase tracking-[0.18em] text-accent">Story requirement matches</div>
+            <div className="mt-1 text-[11px] text-fg-3">Cards show provisional selections, available first/middle/last frames, scene flow estimates, and ranking advice. Review actual cuts to judge continuity.</div>
           </div>
           <div className="flex items-center gap-2">
-            <div className="rounded-[2px] border border-[#202020] bg-[#070707] p-1">
+            <div className="rounded-[2px] border border-line bg-ink-0 p-1">
               {(["thumbs", "detail"] as const).map((view) => (
                 <button
                   key={view}
                   type="button"
                   onClick={() => setBoardView(view)}
-                  className={`px-2 py-1 text-[8px] uppercase tracking-[0.12em] ${boardView === view ? "bg-[#e05c00] text-white" : "text-[#666] hover:text-[#d0d0d0]"}`}
+                  className={`px-2 py-1 text-[8px] uppercase tracking-[0.12em] ${boardView === view ? "bg-accent text-white" : "text-fg-3 hover:text-fg-0"}`}
                 >
                   {view === "thumbs" ? "Thumb board" : "Detail"}
                 </button>
               ))}
             </div>
-            <div className="font-mono text-[10px] text-[#777]">{matchedItems.length} slots · balanced score</div>
+            <div className="font-mono text-[10px] text-fg-3">{matchedItems.length} slots · balanced score</div>
           </div>
         </div>
 
@@ -218,7 +218,7 @@ export function MatchTab({
             })}
           </div>
         ) : (
-          <div className="rounded-[2px] border border-dashed border-[#202020] bg-[#070707] px-3 py-8 text-center text-[10px] uppercase tracking-[0.14em] text-[#4f4f4f]">Generate Story to create match slots.</div>
+          <div className="rounded-[2px] border border-dashed border-line bg-ink-0 px-3 py-8 text-center text-[10px] uppercase tracking-[0.14em] text-fg-3">Generate Story to create match slots.</div>
         )}
       </section>
     </div>
@@ -227,12 +227,12 @@ export function MatchTab({
 
 function GateCard({ label, value, ready }: { label: string; value: string; ready: boolean }) {
   return (
-    <div className={`rounded-[2px] border px-3 py-2 ${ready ? "border-[#245c2c] bg-[#081108]" : "border-[#252525] bg-[#080808]"}`}>
+    <div className={`rounded-[2px] border px-3 py-2 ${ready ? "border-line-2 bg-ink-2" : "border-line bg-ink-1"}`}>
       <div className="mb-1 flex items-center justify-between gap-2">
-        <span className="text-[8px] uppercase tracking-[0.16em] text-[#5c5c5c]">{label}</span>
-        <span className={`h-2 w-2 rounded-full ${ready ? "bg-[#3a8a3a]" : "bg-[#454545]"}`} />
+        <span className="text-[8px] uppercase tracking-[0.16em] text-fg-3">{label}</span>
+        <StatusDot tone={ready ? "ready" : "waiting"} />
       </div>
-      <div className={`font-mono text-[10px] ${ready ? "text-[#79c779]" : "text-[#777]"}`}>{value}</div>
+      <div className={`font-mono text-[10px] ${ready ? "text-fg-1" : "text-fg-3"}`}>{value}</div>
     </div>
   );
 }
