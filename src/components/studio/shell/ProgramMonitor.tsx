@@ -87,7 +87,7 @@ export function ProgramMonitor({
         collapsed ? "h-10 border border-line" : focused || gate ? "min-h-0 flex-1" : showBrowserPreview || showFfmpegPreview ? "aspect-video max-h-[36vh]" : "h-[clamp(140px,22vh,240px)]"
       }`}
     >
-      <div id={contentId} className={`absolute inset-0 ${collapsed ? "hidden" : ""}`}>
+      <div id={contentId} className={`absolute inset-0 z-0 ${collapsed ? "hidden" : ""}`}>
         {showBrowserPreview ? (
           <PreviewPlayer
             variant="monitor"
@@ -106,7 +106,7 @@ export function ProgramMonitor({
         )}
       </div>
 
-      <div className={`absolute inset-x-0 top-0 flex h-10 items-center gap-2 px-3 ${collapsed ? "bg-ink-2" : ""}`}>
+      <div className={`absolute inset-x-0 top-0 z-20 flex h-10 items-center gap-2 px-3 ${collapsed ? "bg-ink-2" : ""}`}>
         <span className="min-w-0 flex-1 truncate rounded-md px-2 py-1 font-mono text-[10.5px] text-fg-2">
           Preview{hud ? ` · ${hud}` : ""}
           {browserPreviewState.status === "error" ? " · Playback error" : ""}

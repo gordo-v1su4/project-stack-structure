@@ -50,3 +50,19 @@ build passed. The literal `bun run check` command encountered seven pre-existing
 lint errors in ignored `.tmp/save-recovery-20260908/rebuild-recovery.ts`; that
 recovery artifact was preserved. Lint, typecheck and the complete test script were
 then run separately. Production browser acceptance follows deployment.
+
+## Production findings
+
+Deployment `89e199b` was Ready on the main alias. The preserved saved project
+showed one Intro, Verse 1–5, Chorus 1–6 and Bridge 1–2 (plus the returned Part A).
+Match's graph dropped from 135 blocks at the prior saved settings to 45 with
+cue density reduced to 30%; lyric influence 75% and combine-nearby-cues 5s were
+restored after pointer/keyboard checks. No placement was rebuilt.
+
+Combined Intro playback loaded, played source footage, reached its trailing gap
+and stopped both video buffers and master audio. Browser testing then uncovered
+a separate return-control defect: the full-size gap placeholder had `z-10`,
+above the monitor toolbar. `elementsFromPoint` at the Return button returned the
+placeholder first; pointer clicks were swallowed, while Enter worked. The media
+container now establishes its own lower stacking layer and the toolbar stays
+above all media/placeholder overlays. Verify real pointer return after deployment.

@@ -13,6 +13,7 @@ import type { VideoSceneUpdate } from "./studio/mediaUpload";
 import { buildCaptionRevisionKey, createCaptionRevisionGuard } from "./studio/mediaEvidence";
 import { applySceneEvidenceReview, type SceneEvidenceReview } from "./studio/sceneEvidenceReview";
 import { buildStudioSourceContextSignature } from "./studio/studioSourceContext";
+import { buildSongSectionReview } from "./studio/songSectionReview";
 import { isPlacementPlanCurrent, storyProjectInputSignature, prepareApprovedPlacements, buildEditPlanPreviewSegments, normalizeStoryEditSettings, type EditPlanPreviewSegment, type MusicVideoProject } from "./studio/musicVideoProject";
 import { clearRoughCutPlacement, applyRoughCutSwap, proposeRoughCutSwap, proposeRoughCutReplacement, type RoughCutSwapProposal } from "./studio/roughCutArrangement";
 import { selectStorySectionCandidate } from "./studio/musicVideoProjectSelection";
@@ -2254,7 +2255,7 @@ export default function StudioApp() {
   const monitorEmpty = beatJoinAnalysis
     ? {
         headline: beatJoinAnalysis.sourceLabel,
-        meta: `${displayBpm} BPM · ${fmt(beatJoinAnalysis.duration)} · ${beatJoinAnalysis.sections.length} sections${videoSources.length ? ` · ${videoSources.length} clips` : ""}`,
+        meta: `${displayBpm} BPM · ${fmt(beatJoinAnalysis.duration)} · ${buildSongSectionReview(beatJoinAnalysis.sections.map((section, index) => ({ ...section, id: String(index) }))).length} sections${videoSources.length ? ` · ${videoSources.length} clips` : ""}`,
         next: null,
       }
     : {
