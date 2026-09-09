@@ -83,7 +83,7 @@ export function RampTab({
       <div className="overflow-hidden rounded-md border border-line bg-ink-1">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-3 py-2">
           <span className="text-xs font-medium text-fg-2">Effects timeline</span>
-          <span className="font-mono text-[10px] text-fg-3">{segmentPreviews.length} placements · {arrangementDuration.toFixed(1)}s · {segmentPreviews.filter(preview => preview.kind === "gap").length} gaps</span>
+          <span className="font-mono text-[10px] text-fg-3">{segmentPreviews.length} placements · {arrangementDuration.toFixed(1)}s</span>
         </div>
         <div className="relative h-16 bg-ink-0">
           {segmentPreviews.map((preview, index) => {

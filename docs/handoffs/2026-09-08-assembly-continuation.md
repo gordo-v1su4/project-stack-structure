@@ -4,6 +4,53 @@ The user requested a fresh task because the old conversation became too large. C
 
 ## Goal and authorization
 
+### Verified playback and downstream review
+
+The ten-block rough story below is now saved and playable across the full
+246.6999546-second master. This is a rough blocking checkpoint, not a polished
+or fully covered video. Keep the placeholders; do not generate or add filler.
+
+- Production browser tab 15 played the entire song uninterrupted, from opening
+  footage through the solo/meeting placeholders, dancing, destruction, escape
+  and ending placeholder. The master audio reached 246.699954s and paused at
+  the end; no media errors were reported. Source videos stayed muted.
+- Removing the S3 dancing cut at 89.29–101.343s made that exact interval empty
+  without moving later cuts or changing song duration. Undo restored it. An
+  explicit successful Save followed by reload retained 35 placements, 24 edit
+  slots and 21 uncovered Story/music windows (209.9 seconds needing footage).
+  The coverage-window count is not the number of individual empty placement
+  segments; tiny boundary intervals remain in the saved preview.
+- Section 6 preview showed the labeled `Chorus 1 · Diego Approaches Valentina`
+  placeholder. The requested meeting remains provisional at the first chorus;
+  exact synchronization to the first title lyric is still unverified.
+- Effects had incorrectly displayed all 57 source scenes and their 176-second
+  inventory duration. Commit `3b2bafd` projects the same saved song placements
+  used in Join, including source trims and empty windows, onto its layout.
+  Production deployment `dpl_HaBJnvXbz8JHPnFovTJjjBJ6vwhh` was Ready on the main
+  alias, and the browser showed 35 placements / 246.7s. Regression coverage
+  includes repeated source identities, source-gap-source order, trim bounds,
+  unavailable media and input immutability: 34 affected tests passed, plus
+  typecheck, focused lint (three existing warnings) and production build.
+- The speed curve is currently a visual study only: its dragged nodes do not
+  drive playback or export. The UI now states that limitation explicitly.
+  Existing shader preview cues are separate. The production Effects preview
+  played the opening sources into the named gap with the master audio advancing,
+  both source videos muted and no media errors. Do not claim functional speed
+  retiming or a rendered final export was verified.
+- Export correctly displayed the 21-gap prerequisite and offered Generate;
+  final export controls were not available. No export or generation was sent.
+- Commit `9ca6012` labels missing-footage previews and replaces italic serif
+  section labels and oversized inspector titles with Geist sans-serif. All
+  eight inspector headings were checked at desktop and 768px viewport width:
+  24px, weight 600, with no page-width overflow. The browser viewport override
+  was reset. This implements issue #66's typography request; broader UI polish
+  and the user's subjective style acceptance remain open.
+
+The existing `632b` worktree remains the implementation checkout. Tab 15 and
+the saved recovery project remain authoritative; stale tabs must not overwrite
+them. Remaining creative work is review/filling of deliberately empty beats and
+precise lyric/trim polish when desired, not another Story regeneration.
+
 ### Latest checkpoint: ten-block rough story saved
 
 The user explicitly prioritized **blocking everything in and getting the logic
@@ -60,8 +107,9 @@ Entering rounded 246.7 as the final Story end also fails strict duration
 validation; the actual duration above was entered through the UI. Legacy source
 captions still contain wardrobe/pronoun/identity errors; this focused revision
 did not recaption the library. Do not mistake those legacy captions for approved
-new generation prose. Exact trim polish, broader playback acceptance, FX/export
-and deferred typography remain outstanding.
+new generation prose. The newer verification checkpoint above supersedes the
+playback, Effects-layout and typography tasks; exact trim polish and final
+export with complete footage remain outstanding.
 
 Current objective: finish the editable whole-song rough cut in **Assembly recovery · 2026-09-08** (`5fc48d59-01e4-4bfb-90c1-e054a0307575`). The Diego story is confirmed, footage is already split into scenes, and saving is repaired. **First review actual footage and automatic matching suggestions; exact video matches remain provisional.** Assess broad establishing, solo, together, crowd/performance, destruction and ending roles. Prioritize musical timing and compatible subject/camera motion, then loose story fit, with color secondary. Scores advise rather than block technically valid choices. Do not assume an unselected window proves footage is absent, or treat saved selections as final user approval.
 
@@ -109,7 +157,7 @@ Read AGENTS.md, DESIGN.md, docs/protocols/music-video-editing.md, docs/protocols
 - Split reviews already detected scenes. Original uploads stay intact; scene boundaries identify available shots. Actual assembly automatically takes a whole shot or trims it further to beats/onsets. Users should not have to fit all the pieces manually. Support both a long take and these unusual 15-second uploads containing several existing cuts.
 - Exact character names throughout captions/prompts; do not replace with pronouns or re-describe wardrobe/appearance. Character sheets define identity. Only actual visible clothing actions warrant mention. Separate singer is unnamed, never mislabeled Valentina. Describe only visible action, no meta statements such as absent leads.
 - Master song audio default; global Use clip audio Off with per-source inheritance/overrides. Preserve originals.
-- Deferred UI issue #66: remove serif/italic section typography and oversized Story title. Not completed.
+- UI issue #66: serif/italic section typography and oversized Story title were replaced in `9ca6012`; desktop/narrow checks are recorded above. User style acceptance remains open.
 
 ## Checkout and deployment
 

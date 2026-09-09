@@ -15,7 +15,7 @@ export const STAGE_DESCRIPTIONS: Record<Tab, string> = {
   shuffle: "Review provisional footage selections and alternatives. Model support does not confirm an exact match.",
   generate: "Fill missing shots, or continue to Join to review the whole-song rough cut with visible gaps. Short and weak matches are optional quality reviews.",
   join: "Play the whole-song rough cut, including visible gaps. Swap or reorder shots, fill missing footage, and replay your changes.",
-  ramp: "Speed ramps and transition curves over the joined edit. Defaults are tuned for music video pacing.",
+  ramp: "Review the saved cut with visual effects. Explore speed ideas in the study below; speed changes are not applied to playback or export.",
   compose: "Pick a shader treatment, preview the final edit, and export the MP4.",
 };
 
