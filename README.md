@@ -1,18 +1,28 @@
 # Project Stack Structure
 
-Upload a song and your footage → get a **musically aligned rough cut**, then optionally fill gaps with AI-generated shots.
+Web studio for music videos: upload a song and your clips, get a beat-aligned rough cut, optionally fill gaps with AI shots, then preview and export.
 
-**Live app:** https://project-stack-structure.vercel.app · **Status:** [docs/roadmap.md](docs/roadmap.md)
+**Live app:** https://project-stack-structure.vercel.app (GitHub sign-in) · **Status:** [docs/roadmap.md](docs/roadmap.md)
+
+## Stack
+
+- **UI:** Next.js 16, React 19, Bun (deployed on Vercel)
+- **Jobs:** [Trigger.dev](https://trigger.dev) orchestration to GPU workers
+- **Audio:** Essentia API (beats, sections, waveform)
+- **Video:** media gateway (storage, scene detect), FFmpeg gateway (previews, export)
+- **Captions:** LFM-2.5-VL (fast) and Qwen3-VL (smart scene captions)
+- **Cloud generation:** Higgsfield (Nano Banana Pro stills, Seedance with audio reference)
+- **Local generation:** SwarmUI and ComfyUI (MiniMax H3 image-to-video for gap fill)
 
 ## What it does
 
-1. **Analyze** your master track — beats, sections, waveform (Essentia on server GPU).
-2. **Ingest** your clips — scene detection + vision captions (LFM / Qwen3-VL).
-3. **Match** real footage to song sections and lyrics with motion continuity.
+1. **Analyze** the master track (beats, sections, waveform).
+2. **Ingest** clips (scene detection and vision captions).
+3. **Match** uploaded moments to story sections and lyrics, with motion continuity.
 4. **Generate** filler shots only where coverage is missing (optional).
 5. **Join** approved clips into section previews and export.
 
-Upload-first: most of the edit comes from footage you already shot. AI generation is a gap-fill lane, not a replacement.
+Upload-first: real footage drives the edit. AI generation is a gap-fill lane, not a replacement.
 
 ## Quick start
 
