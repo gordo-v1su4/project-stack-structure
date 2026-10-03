@@ -6,7 +6,7 @@
 
 ## The problem we own
 
-```mermaid
+``mermaid
 flowchart TB
     LP((Local product))
     subgraph MT[Musical truth]
@@ -33,7 +33,7 @@ flowchart TB
     LP --> FT
     LP --> EI
     LP --> PD
-```
+``
 
 
 
@@ -172,9 +172,9 @@ Local codebase is **clean IP** for a hosted smart editor. References with AGPL g
 
 ## Strength 9 — Test-encoded product law
 
-```bash
+``bash
 bun run test  # motionRanking, semanticEditPlanner, musicVideoProject
-```
+``
 
 Product rules are **executable tests**, not README promises:
 

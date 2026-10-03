@@ -48,7 +48,7 @@ fallback. The old smart prompt inherited “single video frame” wording and fo
 uncertainty from the fast model prompt. The new prompt states the actual input
 kind and timestamps, asks for factual structured evidence, and retains unknowns.
 
-The gateway source `proxmox-home/infra/rustfs/caption-gateway/app.py` discarded all
+The gateway source the private ops runbook discarded all
 but legacy caption fields. The app's Trigger batch merge also ignored gateway
 `meta` and attempted to parse the already-clean natural-language text as JSON.
 Both adapters now preserve structured evidence. Source ranges and durable frame

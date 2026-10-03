@@ -7,7 +7,7 @@ AGENTS.md. Deployment details and the task inventory live in
 
 ## Required production path
 
-```text
+``text
 Visible app action
   → authenticated Next.js route: validate and dispatch
   → Trigger task: queue, trace stages, invoke authenticated service
@@ -15,7 +15,7 @@ Visible app action
   → Trigger task: validate required stages and return final output
   → authenticated run lookup: terminal status and output
   → app: validate domain result, present proposal, persist accepted state
-```
+``
 
 All production model and heavy processing requests, including verification runs,
 must use their Trigger task. Do not put inference in a Next.js request, silently
@@ -49,7 +49,7 @@ ComfyUI backend, as specified in AGENTS.md.
 Story uses `POST /api/story/treatments` for both generation and revision. The
 optional `x-story-request-id` header must be a UUID. Its HTTP 202 response is:
 
-```json
+``json
 {
   "success": true,
   "queued": true,
@@ -57,7 +57,7 @@ optional `x-story-request-id` header must be a UUID. Its HTTP 202 response is:
   "runId": "run_...",
   "model": "configured-model"
 }
-```
+``
 
 See [the route](../../src/app/api/story/treatments/route.ts) and
 [dispatch/idempotency helpers](../../src/lib/triggerOrchestration.ts).
@@ -115,7 +115,7 @@ bypass a rejection, and never trust a marker returned by authoring.
 
 The final successful Trigger output has this shape (camelCase at this boundary):
 
-```json
+``json
 {
   "ok": true,
   "loglineReview": {"version": 1, "status": "passed"},
@@ -123,7 +123,7 @@ The final successful Trigger output has this shape (camelCase at this boundary):
   "output": {"treatment": {}},
   "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 }
-```
+``
 
 `usage` is optional and currently reports authoring usage, not combined review
 usage. The abbreviated `treatment` above must contain the full domain schema;
@@ -178,7 +178,7 @@ Then verify through the signed-in app:
 On 2026-09-08, worker source `1419904` published as `20260908.3`, deployment
 `atibuyuz`, image digest
 `sha256:50a7e27afe716d2b37ad6b47bcea39e2c711a390e4bfe431b7e1c5088b8167d7`.
-Gateway stage changes are in sibling `proxmox-home` commit `ac396f8`; both deployed
+Gateway stage changes are tracked in the private ops repository; deploy gateway and worker together
 stage endpoints rejected unauthenticated requests. The production dashboard
 confirmed `20260908.3` as Current with 17 tasks. Web source `039c766` reached Ready
 on the production alias with the visible-writing instructions.

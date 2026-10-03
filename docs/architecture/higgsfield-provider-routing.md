@@ -10,10 +10,10 @@ Do not move credentials, sessions, or credits between them.
 
 ## Lane 1: Trigger.dev API/CLI
 
-- Account: `gordo@v1su4.com`
-- Runtime: Next.js dispatch -> Trigger.dev on VM100 -> Bun task -> official `@higgsfield/cli`
+- Account: `the configured Higgsfield service account`
+- Runtime: Next.js dispatch -> Trigger.dev on production worker host -> Bun task -> official `@higgsfield/cli`
 - Credentials: `HIGGSFIELD_CREDENTIALS_JSON` in BWS (`STACK_STRUCTURE_HIGGSFIELD_CREDENTIALS_JSON`),
-  synced into the VM100 Trigger production environment. The worker materializes
+  synced into the production worker host Trigger production environment. The worker materializes
   that JSON at runtime; there is no workstation credential file.
 - `HIGGSFIELD_ACCESS_TOKEN` stays blank; short-lived OAuth tokens are managed by
   the official CLI inside the Trigger worker image.
@@ -27,7 +27,7 @@ estimate the generation cost before a paid rehearsal.
 ## Lane 2: Chrome manual Nano Banana Pro Unlimited
 
 - Browser: Chrome only, using the dedicated signed-in Work profile.
-- Higgsfield profile: `gordo` (verify the stored login identity before recovery).
+- Higgsfield profile: configured Chrome login (verify the stored identity before recovery).
 - URL: `https://higgsfield.ai/ai/image?model=nano-banana-pro`
 - Model: Nano Banana Pro.
 - Aspect ratio: `16:9`.
@@ -117,7 +117,7 @@ Do not substitute a paid model or shorten the requested 15-second output.
 State each asset's role explicitly before describing action, then repeat the
 identity and environment locks inside the shot beats. For example:
 
-```text
+``text
 Use @Image_1 only for LEAD_A identity, face, hair, body proportions, and
 wardrobe. Use @Image_2 only for LEAD_B identity and wardrobe. Use @Image_3 only
 for the location, architecture, red practical lighting, and atmosphere. Do not
@@ -127,7 +127,7 @@ Create one coherent 15-second scene in @Image_3. LEAD_A and LEAD_B remain the
 same people from @Image_1 and @Image_2 in every shot. [Then describe a small
 number of ordered actions and camera moves.] Preserve exact identity and spatial
 continuity. No montage of unrelated locations; no duplicate people.
-```
+``
 
 Start with one simple action and three or four coherent shots. A loose director
 prompt is appropriate only after identity and environment have been assigned
@@ -149,7 +149,7 @@ references to 4K, assign each input one role, and then generate a simpler scene.
 Browser-only Unlimited work is an operator step, not an untracked side channel.
 The durable workflow should be:
 
-```text
+``text
 Next.js request
   -> Trigger.dev manual-provider queue
   -> durable prompt/reference/settings bundle
@@ -158,7 +158,7 @@ Next.js request
   -> result uploaded to RustFS
   -> authenticated completion callback
   -> Trigger.dev resumes downstream split/caption/media tasks
-```
+``
 
 The manual queue should have concurrency `1`, an idempotency key derived from the
 prompt/reference/settings bundle, no automatic provider submission retry, and an
@@ -176,7 +176,7 @@ repository, Obsidian, Docker env files, or browser-cookie exports. Create distin
 entries for:
 
 - `Higgsfield - Robert Manual Unlimited`
-- `Higgsfield - Gordo API CLI and Chrome Unlimited Images`
+- `Higgsfield - API CLI and Chrome Unlimited Images`
 
 Each entry should contain the login URL, account email, password or passkey, and
 the approved MFA recovery method. BWS remains the source of truth for service/API

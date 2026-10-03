@@ -95,7 +95,7 @@ that assembly review. Section playback remains a quick way to test a local edit.
   effects/export use that same accepted sequence. No new image/video generation
   is needed for this test.
 
-```mermaid
+``mermaid
 flowchart LR
     A[Upload song, refs, six videos] --> B[Analyze music and visible footage]
     B --> C[Three story cards]
@@ -106,7 +106,7 @@ flowchart LR
     G --> H[Generate or supply missing shots]
     H --> I[Review exact placements]
     I --> J[Join, effects, export]
-```
+``
 
 ### September 8 clarification: mixed footage, unnamed performers, and trimming
 
@@ -495,8 +495,8 @@ captioned scenes; the original user project remains available. Deployment and th
 new authenticated walkthrough, manual image import/split, and video-creation
 handoff remain open. No new image or video generation is part of this gate.
 
-Infrastructure lookup: `../proxmox-home/docs/endpoint-index.md` and
-`../proxmox-home/docs/operator-source-of-truth.md` identify VM100 `app-vm` as the
+Infrastructure lookup: `../private ops documentation` and
+`../private ops documentation` identify production worker host `production worker VM` as the
 caption gateway and Trigger host. `../hermes-notebook-vault` is the Obsidian operator
 index. Public service responses were healthy during deployment preparation; SSH
 access must be re-established before deploying the updated Trigger worker.
@@ -524,9 +524,9 @@ access must be re-established before deploying the updated Trigger worker.
   backend context. Both observed replies finished below the cap, so truncation
   is not established as their cause. The expanded contract requests 7,000 output
   tokens; the proposed bounded 16,384-token context still needs live verification.
-  Source changes and rollout checks are in the canonical proxmox-home gateway
+  Source changes and rollout checks are in the canonical private ops gateway
   directory. No new gateway deployment or restart has occurred at this checkpoint.
-- The documented Hostinger SSH jump reaches app-vm, but Tailscale requires an
+- The documented Hostinger SSH jump reaches production worker VM, but Tailscale requires an
   additional interactive sign-in. That check is open in the browser. The updated
   worker, corrected live authoring, faithful/best-effort walkthrough, manual 3×3
   import/split, and video-creation handoff remain outstanding.
@@ -534,7 +534,7 @@ access must be re-established before deploying the updated Trigger worker.
   exact repeated caption fields without rewriting footage observations. The
   selected-story revision operation now reaches the gateway. Dialog assessment
   labels also withhold legacy coverage claims pending review.
-- Gateway source is committed and pushed as proxmox-home `a434ab6`, with 12
+- Gateway source is committed and pushed in the private ops repo (`a434ab6`), with 12
   tests passing. This is source readiness only; production is unchanged.
 - Web follow-up checks: 37 affected tests / 133 assertions pass, typecheck
   and production build pass, and scoped lint has no errors (one existing unused test argument
@@ -547,7 +547,7 @@ The user correctly identified the displayed legacy pitch as a plot recap. Those
 saved cards now explicitly distinguish earlier summaries from reviewed loglines.
 The existing field-presence validator alone was insufficient: unrelated prose
 could pass with populated five-element fields. New gateway source in
-proxmox-home `5c1c7ab` therefore runs a separate, bounded semantic review after
+Private ops commit `5c1c7ab` therefore runs a separate, bounded semantic review after
 generation or revision. It evaluates the actual sentence against explicit user
 constraints and ordered moments, with exact quoted spans and valid supporting
 moment IDs. Unsupported or unclear elements and disclosed resolutions fail
@@ -565,7 +565,7 @@ Local follow-up verification: 50 web tests / 171 assertions, typecheck and produ
 gateway 22 story and 4 evidence tests pass. The gateway tests exercise mocked
 review responses and evidence validation, not live model quality. Production
 gateway/worker rollout, new valid treatments, faithful gaps, 3×3 import/split,
-and video creation handoff remain outstanding behind app-vm SSH authentication.
+and video creation handoff remain outstanding behind production worker VM SSH authentication.
 
 ### Authenticated rollout and live transport follow-up
 
@@ -734,7 +734,7 @@ Current local evidence lives in the canonical `.tmp/studio-resume-20260907/`.
 
 Web SHA `349d5e489d7a144acd1bd7960fe667943990b6ec` completed its Git-triggered
 Vercel production deployment. Trigger worker `20260907.3` deployed with 17 tasks
-from the same source in an isolated VM100 checkout; its registry image digest is
+from the same source in an isolated production worker host checkout; its registry image digest is
 `sha256:517dd8b73c0a730cab21e0f931a332386830b541673110bfa9c648710047f146`.
 All eleven videos finished and saved with 57 captioned scenes. Caption completion
 is not factual acceptance: the opening's first caption calls the cave glow an
@@ -772,7 +772,7 @@ typecheck passed. The corrective run and deployed acceptance remain pending.
 ### September 8 — edited contest premise reconciled on 8B
 
 Web commit `dcaeaf2` deployed Ready as
-`project-stack-structure-fepxolqcv-gordo-v1su4s-projects.vercel.app` with the
+a Vercel preview deployment with the
 production alias verified. Pending/legacy revision input now excludes stale
 derived summaries and matching constraints while preserving edited prose,
 requested shots, IDs, and timing. The request parser preserves pending status.

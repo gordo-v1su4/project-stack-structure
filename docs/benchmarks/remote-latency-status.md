@@ -1,11 +1,7 @@
 # Remote Latency Status
 
 ## Current status
-A real remote benchmark comparison now exists, and the remote run was executed from a repo copy under:
-
-```text
-C:/Users/Gordo/Documents/Github/project-stack-structure
-```
+A real remote benchmark comparison now exists, and the remote run was executed from a local clone of this repository on the operator workstation.
 
 ## Local lane
 - hardware lane: `local-macos`
@@ -18,7 +14,7 @@ C:/Users/Gordo/Documents/Github/project-stack-structure
 - probe duration: `0.05` ms
 - preview generation duration: `173.53` ms
 - ready-to-play duration: `173.53` ms
-- input path: `C:/Users/Gordo/Documents/Github/project-stack-structure/.local-fixtures/media/A_mermaid_discovery_202601202346_ttgv4.mp4`
+- input path: `.local-fixtures/media/A_mermaid_discovery_202601202346_ttgv4.mp4` (on the remote machine)
 
 ## Comparison
 - probe delta (local - remote): `112.93` ms

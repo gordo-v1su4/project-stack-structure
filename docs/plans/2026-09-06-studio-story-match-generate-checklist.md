@@ -67,7 +67,7 @@ Use this as the overall plan. Check items off as you go. **E2E is last** — onl
 
 Test in this order; same role split as ADR-0002.
 
-1. [ ] **Qwen Image Edit 2511 still** — sheets + composition ref from cut; no grab-as-quality (`docs/local-generation.md`, racknerd5 runbooks)
+1. [ ] **Qwen Image Edit 2511 still** — sheets + composition ref from cut; no grab-as-quality (`docs/local-generation.md`, operator server runbooks)
 2. [ ] **Still-first Seedance packet** — fresh 2K still → R2V on one fixture slot
 3. [ ] **R2V direct** — only if (2) proves refs survive without intermediate still
 

@@ -90,13 +90,13 @@ Before every submission, inspect the actual Higgsfield input tray in its current
 order and write a fresh role manifest. Adding, deleting or reordering an image
 invalidates copied numeric references.
 
-```text
+``text
 Image 1 = LA_CASA_ROJA_MAIN_CHAMBER; geometry and location only.
 Image 2 = OPTICAL_ANCHOR_A; grade, lens response and atmosphere only.
 Image 3 = OPTICAL_ANCHOR_B; grade, lens response and atmosphere only.
 Image 4 = CROWD_STYLE; crowd diversity and wardrobe range only.
 Image 5 = DIEGO; exact identity and wardrobe lock.
-```
+``
 
 Preflight must fail if:
 
@@ -169,14 +169,14 @@ prompts.
 
 Example for the current three canonical references plus a source frame:
 
-```text
+``text
 Image 1 is the character sheet for Diego. Use the exact identity and wardrobe lock.
 Image 2 is the character sheet for Valentina. Use the exact identity and wardrobe lock.
 Image 3 is the master location reference for Underground Latin Club.
 Image 4 guides character blocking and placement in the environment only. Do not copy texture, image quality or facial detail.
 
 Create a new 3x3 cinematic anamorphic grid of shots. Diego and Valentina dance together in the crowded Underground Latin Club. Dark red and amber light, a little darker and hazy. Capture the sequence with dynamic camera movement and varied compositions.
-```
+``
 
 For a fresh standalone frame, retain the same role declarations and ask for one
 new cinematic photograph from the composition reference, with sharp character

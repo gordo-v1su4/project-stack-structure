@@ -69,7 +69,7 @@ revertible.
 
 ## Layout
 
-```
+``
 ┌──────┬───────────────────────────────────────────────┬──────────────┐
 │ acts │  program monitor (16:9, ≤ 42vh, cinematic)     │  inspector   │
 │ rail │───────────────────────────────────────────────│  act title   │
@@ -80,7 +80,7 @@ revertible.
 ├──────┴───────────────────────────────────────────────┴──────────────┤
 │ transport ⏮ ⏯ ⏭ · 00:00.00 / 03:12 · 132 BPM   status · save · ⌘K    │
 └─────────────────────────────────────────────────────────────────────┘
-```
+``
 
 Ingest is the exception: no spine yet, the monitor is the drop zone
 ("Drop the song. Then the footage.") and the inspector is the checklist.

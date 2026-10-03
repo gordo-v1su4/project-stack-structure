@@ -43,29 +43,11 @@ grabs may guide blocking only and cannot become texture or likeness authorities.
 
 ## Desktop pickup
 
-The binary bundle is transferred separately by the Syncthing-backed Hermes Obsidian vault. On Windows it appears at:
-
-```text
-C:\Users\Gordo\Documents\Github\hermes-notebook-vault\04-Projects\Project Stack Structure\E2E Handoffs\2026-08-30\transfer-bundle
-```
-
-In PowerShell:
-
-```powershell
-Set-Location C:\Users\Gordo\Documents\Github\project-stack-structure
-git status --short --branch
-git fetch origin
-git rev-list --left-right --count main...origin/main
-git pull --ff-only origin main
-
-& "C:\Users\Gordo\Documents\Github\hermes-notebook-vault\04-Projects\Project Stack Structure\E2E Handoffs\2026-08-30\transfer-bundle\install-on-desktop.ps1"
-```
+The binary bundle is transferred separately (operator sync or vault handoff). Run `install-on-desktop.ps1` from the bundle against a clean clone of this repository on `main`.
 
 Do not pull over unprotected desktop changes. The installer verifies all 29 files against `manifest.sha256`, archives prior active references/videos, installs the bundle into the ignored fixture tree, and verifies the installed hashes again.
 
-For a new Codex desktop task, use this pickup instruction:
-
-> Read `04-Projects/Project Stack Structure/Session Handoff 2026-08-30.md` in the Hermes Obsidian vault, then continue its active E2E goal in `C:\Users\Gordo\Documents\Github\project-stack-structure` on `main`.
+For a new desktop task, open the operator session handoff note for 2026-08-30, then continue the active E2E goal in this repository on `main`.
 
 ## Execution order
 

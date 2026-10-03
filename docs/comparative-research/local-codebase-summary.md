@@ -23,7 +23,7 @@ The user supplies a **song** and **video clips**; the app analyzes musical struc
 
 ## Architecture overview
 
-```mermaid
+``mermaid
 flowchart TB
     subgraph Browser["Next.js Studio (browser)"]
         StudioApp[StudioApp.tsx]
@@ -49,14 +49,14 @@ flowchart TB
     end
 
     subgraph Cloud["Hosted services"]
-        EssentiaSvc[essentia.v1su4.dev]
-        FFmpegGw[ffmpeg.v1su4.dev]
+        EssentiaSvc[Essentia service (`ESSENTIA_API_URL`)]
+        FFmpegGw[FFmpeg gateway (`FFMPEG_GATEWAY_URL`)]
     end
 
     StudioApp --> Panels --> Contracts
     Contracts --> Proxies --> Cloud
     Preview --> FFmpegGw
-```
+``
 
 ### Execution model today
 
@@ -98,7 +98,7 @@ flowchart TB
 
 ### Input package (from creative brief)
 
-```text
+``text
 audio/song.wav
 lyrics/deepgram.json or lyrics.srt
 clips/raw/*
@@ -107,17 +107,17 @@ analysis/beat_grid.json
 analysis/lyric_chunks.json
 analysis/clip_moments.json
 brief/style.md
-```
+``
 
 ### Output package
 
-```text
+``text
 story/treatment.md
 edit/edit_plan.json
 edit/timeline.json
 review/qa_report.md
 renders/preview.mp4
-```
+``
 
 ### Core types (conceptual)
 
@@ -148,7 +148,7 @@ This is fundamentally different from VRGDG's in-graph Gemma chains or ComfyStudi
 
 ## Music-video workflow (current user journey)
 
-```mermaid
+``mermaid
 sequenceDiagram
     participant U as User
     participant S as Studio
@@ -165,7 +165,7 @@ sequenceDiagram
     U->>S: Tune section / density / story prompts
     S->>P: Recompute section preview (FFmpeg)
     P-->>U: Ready preview (or stale/recomputing state)
-```
+``
 
 **Not in journey today:** keyframe generation, per-shot LTX render, lip-sync, timeline multi-track polish.
 
@@ -184,21 +184,21 @@ sequenceDiagram
 
 | Service | URL | Used for |
 |---------|-----|----------|
-| Essentia API | `essentia.v1su4.dev` | Full audio analysis |
-| FFmpeg Gateway | `ffmpeg.v1su4.dev` | Preview, concat, split, thumbnails, FFglitch |
+| Essentia API | `ESSENTIA_API_URL` | Full audio analysis |
+| FFmpeg Gateway | `FFMPEG_GATEWAY_URL` | Preview, concat, split, thumbnails, FFglitch |
 | Deepgram (optional) | via API route | Transcription / lyric timing |
 
 ---
 
 ## Test and verification surface
 
-```bash
+``bash
 bun run check
 bun run test          # includes musicVideoProject, semanticEditPlanner, motionRanking
 bun run preview:section
 bun run probe:media
 bun run bench:latency
-```
+``
 
 Tests encode product law — e.g. motion continuity must not outrank musical alignment.
 

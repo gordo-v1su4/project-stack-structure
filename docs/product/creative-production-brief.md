@@ -28,7 +28,7 @@ The app should feel like a small production team built into a web studio.
 # 1. Brownfield Starting Point
 
 ## Active app
-`/root/Github/project-stack-structure`
+`this repository checkout`
 
 Keep this as the main app. Do not restart greenfield.
 
@@ -199,7 +199,7 @@ Use for:
 - Deepgram/SRT/Kimi/auto-edit path from the M3 copy.
 
 Important staged copy:
-`/root/Github/_incoming/m3/svelte-video-shaders`
+`donor checkout: svelte-video-shaders`
 
 Important donor files from the M3 state:
 - `src/lib/deepgram-utils.js`
@@ -271,9 +271,9 @@ Use for:
 - restrained UI where the footage stays central.
 
 Important docs:
-- `/root/Github/review-room/init-docs/00-Creative-Brief.md`
-- `/root/Github/review-room/init-docs/01-PRD.md`
-- `/root/Github/review-room/init-docs/02-Design-Spec.md`
+- donor checkout `review-room/init-docs/00-Creative-Brief.md` (external repo, not shipped here)
+- donor checkout `review-room/init-docs/01-PRD.md` (external repo, not shipped here)
+- donor checkout `review-room/init-docs/02-Design-Spec.md` (external repo, not shipped here)
 
 Do not copy its “not an editor” limitation into this project. For this project, copy the review/workflow feel and media browsing patterns, then combine them with the editor/runtime donors below.
 
@@ -293,10 +293,10 @@ Use for:
 - optical flow / scene detection reference.
 
 Important areas:
-- `/root/Github/freecut/src/runtime/`
-- `/root/Github/freecut/src/features/timeline/`
-- `/root/Github/freecut/src/shared/state/playback/`
-- `/root/Github/freecut/src/features/export/`
+- donor checkout `freecut/src/runtime/` (external repo, not shipped here)
+- donor checkout `freecut/src/features/timeline/` (external repo, not shipped here)
+- donor checkout `freecut/src/shared/state/playback/` (external repo, not shipped here)
+- donor checkout `freecut/src/features/export/` (external repo, not shipped here)
 
 ## `MasterSelects`
 Role: successful high-end preview/playback/render-target donor.
@@ -312,11 +312,11 @@ Use for:
 - native helper contingency patterns.
 
 Important areas:
-- `/root/Github/MasterSelects/docs/Features/Preview.md`
-- `/root/Github/MasterSelects/src/engine/`
-- `/root/Github/MasterSelects/src/services/ramPreviewEngine.ts`
-- `/root/Github/MasterSelects/src/components/preview/`
-- `/root/Github/MasterSelects/tools/native-helper/`
+- donor checkout `MasterSelects/docs/Features/Preview.md` (external repo, not shipped here)
+- donor checkout `MasterSelects/src/engine/` (external repo, not shipped here)
+- donor checkout `MasterSelects/src/services/ramPreviewEngine.ts` (external repo, not shipped here)
+- donor checkout `MasterSelects/src/components/preview/` (external repo, not shipped here)
+- donor checkout `MasterSelects/tools/native-helper/` (external repo, not shipped here)
 
 MasterSelects is evidence that the preview/rendering side can be treated as a serious engine, not just a React component.
 
@@ -529,7 +529,7 @@ Minimum for story generation:
 
 Best input package:
 
-```text
+``text
 audio/song.wav
 lyrics/deepgram.json or lyrics.srt
 clips/raw/*
@@ -538,17 +538,17 @@ analysis/beat_grid.json
 analysis/lyric_chunks.json
 analysis/clip_moments.json
 brief/style.md
-```
+``
 
 The AI should produce:
 
-```text
+``text
 story/treatment.md
 edit/edit_plan.json
 edit/timeline.json
 review/qa_report.md
 renders/preview.mp4
-```
+``
 
 ---
 

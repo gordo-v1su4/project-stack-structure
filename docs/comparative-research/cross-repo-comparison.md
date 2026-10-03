@@ -14,7 +14,7 @@
 
 ## Product class at a glance
 
-```mermaid
+``mermaid
 quadrantChart
     title Product positioning
     x-axis User-supplied footage --> Generative-first
@@ -23,7 +23,7 @@ quadrantChart
     Inline: [0.55, 0.25]
     VRGDG: [0.85, 0.45]
     ComfyStudio: [0.75, 0.90]
-```
+``
 
 | Dimension | Local | Inline | VRGDG | ComfyStudio |
 |-----------|-------|--------|-------|-------------|
@@ -89,7 +89,7 @@ Legend: ✅ strong · ⚠️ partial · ❌ absent
 
 ## Architecture comparison
 
-```mermaid
+``mermaid
 flowchart LR
     subgraph L["Local (Next.js)"]
         L1[Essentia spine]
@@ -120,7 +120,7 @@ flowchart LR
     L -->|"gap: assistant"| I
     V --> C
     I --> C
-```
+``
 
 ### Integration boundary patterns
 
@@ -163,7 +163,7 @@ Local: **no ComfyUI layer today** — Generate tab is UI shell over coverage slo
 
 ## Music-video workflow comparison
 
-```mermaid
+``mermaid
 sequenceDiagram
     participant Song as Song + lyrics
     participant Plan as Planning
@@ -187,7 +187,7 @@ sequenceDiagram
     Plan->>Gen: Keyframes → LTX shots
     Gen->>Edit: Multi-track timeline
     Edit->>Out: Export panel render
-```
+``
 
 ---
 

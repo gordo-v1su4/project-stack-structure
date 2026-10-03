@@ -14,7 +14,7 @@ The first child services are:
   over the Compose network.
 - `media-worker` — optional profile for the existing RustFS video-worker image;
   the temporary Windows profile defaults to CPU-safe FFmpeg (`REQUIRE_GPU=false`,
-  `FFMPEG_HWACCEL=none`) so it does not depend on VM100's damaged-RAM host.
+  `FFMPEG_HWACCEL=none`) so it does not depend on production worker host's damaged-RAM host.
 
 Trigger.dev is the durable parent above these services. It owns task queues,
 idempotency, retries, and terminal run state. SwarmUI and standalone ComfyUI
@@ -26,11 +26,11 @@ in `.env.example`; do not restore the retired unversioned `ggerganov` alias.
 Build the media-worker image from the existing Proxmox Home source checkout
 before enabling the profile:
 
-```powershell
+``powershell
 docker build -t stack-structure-video-worker:staging `
-  C:\Users\Gordo\Documents\Github\proxmox-home\infra\rustfs\video-worker
+  the private ops repository
 docker compose --env-file .env --profile media up -d media-worker
-```
+``
 
 The worker still polls the shared RustFS video-job queue, but the staging
 defaults use CPU decode/encode for compatibility. Set

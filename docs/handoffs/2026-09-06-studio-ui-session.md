@@ -8,23 +8,23 @@
 
 ## Resume in 30 seconds
 
-```bash
+``bash
 # Terminal 1 — dev server (Trigger env if needed)
 bun run dev -- -p 3000
 
 # Browser — auth + draft restore (hard reload after)
 http://localhost:3000/api/dev/e2e-session
 # then F5 on http://localhost:3000/
-```
+``
 
 **Local draft:** `.tmp/studio-drafts/default.json`  
 **Fixture:** Love Me Tonight — 5 videos, 34 scenes/captions, 6 refs, vocal stem + Deepgram transcript
 
 **Re-seed story without Qwen** (if treatments cleared):
 
-```bash
+``bash
 bun run scripts/seed-studio-story-draft.ts
-```
+``
 
 ---
 

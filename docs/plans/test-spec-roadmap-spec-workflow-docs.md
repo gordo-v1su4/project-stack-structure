@@ -18,7 +18,7 @@
 
 Use the smallest relevant set for a story; broader changes should run the full check.
 
-```bash
+``bash
 bun run lint
 bun run typecheck
 bun run test
@@ -28,7 +28,7 @@ bun run probe:media
 bun run preview:section
 bun run bench:latency
 bun run bench:compare -- <local-json> <remote-json>
-```
+``
 
 Agents must report actual command output or the concrete blocker. Do not claim a pass without running the command.
 

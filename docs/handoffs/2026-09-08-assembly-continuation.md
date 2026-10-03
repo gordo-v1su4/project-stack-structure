@@ -196,7 +196,7 @@ Read AGENTS.md, DESIGN.md, docs/protocols/music-video-editing.md, docs/protocols
 
 ## Checkout and deployment
 
-Work so far was performed in canonical `/Users/robertspaniolo/Documents/Github/project-stack-structure`, main. The older `/Users/robertspaniolo/.codex/worktrees/6111/project-stack-structure` is untouched at 62d8819 on codex/studio-reconstruction-e2e. Do not reset either checkout. A new Codex task may start in its own checkpoint-derived worktree; verify its cwd and source commit. Ignored fixtures and .tmp evidence remain in the canonical checkout and are not transferred by Git.
+Work so far was performed in the operator's canonical clone on `main`. Older worktrees may still exist at pinned commits; do not reset them without intent. A new agent task should verify its working directory and source commit. Ignored fixtures and `.tmp` evidence are not transferred by Git.
 
 Completed and pushed before this handoff:
 
@@ -205,7 +205,7 @@ Completed and pushed before this handoff:
 - fa21f10: opening saved Story drafts refreshes stale candidate assessments from current captions; preserves selected sources and deliberate null choices.
 - The commit containing this document simplifies Split: fixed detected-scene inventory for new/restored Studio projects; removes Scene/Rhythm/Scene+Rhythm choices and redundant source pace controls; musical trims remain in placement assembly. Legacy utility modes remain for compatibility, but Studio doesn't select them.
 
-Last verified Ready production before this handoff's commit: fa21f10, deployment `project-stack-structure-2im2xhe4f-gordo-v1su4s-projects.vercel.app`, id dpl_6LgFByXcbAtqwwMNCnfarfkVuVmQ. Main pushes auto-deploy. Verify the handoff commit's new Ready alias and visible UI; do not assume this older browser tab refreshed itself.
+Last verified Ready production before this handoff's commit: fa21f10 on a Vercel production deployment (see deployment id in operator notes). Main pushes auto-deploy. Verify the handoff commit's new Ready alias and visible UI; do not assume this older browser tab refreshed itself.
 
 ## Current browser checkpoint and FIRST unresolved issue
 
@@ -262,7 +262,7 @@ Many old saved 4B captions still violate wardrobe/name rules; only specifically 
 
 Prior live checkpoint (not reverified at handoff): Trigger20260908.3,17tasks, SDK4.5.16, gateway author/review ac396f8. Production Qwen3-VL-8B-Instruct-GGUF Q4_K_M, all GPU layers on RTX4090, ctx16384,parallel1; prior sample9010MiB97% GPU. No Thinking model switched/downloaded. Successful story review run run_cmtt4kfw100r83is0xxqkg0rl took15.1s. Latest web authoring instructions flow in Trigger payload; no worker code changed in these edits.
 
-Sibling proxmox-home main46f9204 previously had unrelated dirty gateway app/tests: preserve and recheck. Root SSH100.118.78.13 via BatchMode was available, Tailscale already authorized, don't change shared security settings casually. Secrets BWS process-local only. Follow Trigger execution contract for dispatch, result envelope, persistence and GPU assertions.
+Sibling private ops repo had unrelated dirty gateway app/tests: preserve and recheck. Worker SSH via VPN was available when last checked; do not change shared security settings casually. Secrets stay process-local via BWS. Follow Trigger execution contract for dispatch, result envelope, persistence and GPU assertions.
 
 Current motion comparison is aggregate per scene, not actual trim-boundary subject/camera separation. Farneback worker average flow + coherence approximation does not prove eyelines/action axis. Do not claim precise boundary continuity solved. MatchCards still has old caption-derived direction and synthetic palette fallbacks; audit before presenting these as measurements. musicVideoProject builds beat/onset musical cue windows and chooses source motion near best before variety. User shouldn't choose scoring modes.
 

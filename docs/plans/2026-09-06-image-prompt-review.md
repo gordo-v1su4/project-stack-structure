@@ -4,14 +4,14 @@ Status: user approved one browser generation on 2026-09-06 using Nano Banana Pro
 
 Nano Banana image template only; Seedance prompts are unchanged. Resolution 2K, aspect ratio 16:9, section/placement, billing, and attachment URLs remain job metadata. The four attachments are Diego, Valentina, Underground Latin Club, and the selected source composition, in that order. No crowd sheet.
 
-```text
+``text
 Image 1 is the character sheet for Diego. Use the exact identity and wardrobe lock.
 Image 2 is the character sheet for Valentina. Use the exact identity and wardrobe lock.
 Image 3 is the master location reference for Underground Latin Club.
 Image 4 guides character blocking and placement in the environment only. Do not copy texture, image quality or facial detail.
 
 Create a new 3x3 cinematic anamorphic grid of shots. Diego and Valentina dance close together in the crowded Underground Latin Club, exchanging an intent look as other couples sway, turn and brush past. Deep reddish smoke hangs between concrete columns, catching amber cage lights above a glistening dance floor. Keep the atmosphere dark, intimate and electric, with red haze, never white smoke. Capture the unfolding moment with dynamic camera movement and varied compositions.
-```
+``
 
 134 words. The former panel-by-panel cut list and timing instructions are removed.
 
@@ -29,12 +29,12 @@ The user reports that adding two environment/crowd-location images helped the
 following prompt succeed. Preserve this example verbatim for later comparison;
 it is not an established consistency formula or a replacement default.
 
-```text
+``text
 use Image 1, for Diego, preserve his exact look, and style and wardrobe lock and image 2 for Valentina use this for her exact look and and wardrobe lock. image 3 is the master location reference for Underground Latin Club.
 and image 4, 5 show the crowd and specific location in the environment.
 
 Create a new sequence of shots in a 3x3 cinematic anamorphic grid. use image 1 for Diego and image 2 for Valentina as they dance close together in the crowded Underground Latin Club like image 3, exchanging an intent look as other couples try to out perform, turn and brush past. It should be a little darker and thicker Deep reddish smoke/haze hangs in the aor, catching amber cage lights above a glistening dance floor. Keep the atmosphere dark, intimate and electric. Capture the unfolding moment with dynamic camera movement and varied compositions.
-```
+``
 
 Observed reference roles for this reported example:
 

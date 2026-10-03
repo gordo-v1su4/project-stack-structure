@@ -12,16 +12,16 @@
 
 ## Current Context / Facts Already Verified
 
-- Running project: `/root/Github/project-stack-structure`
-- Current server URL: `http://100.94.7.10:3000`
-- M3 Mac user: `robertspaniolo`
+- Running project: `this repository checkout`
+- Current server URL: `http://127.0.0.1:3000`
+- Operator Mac user: (redacted; local QA account)
 - Recent audio copied from M3 Downloads:
-  - `/Users/robertspaniolo/Downloads/clean_seedance_instrumental_133bpm_14_95s.mp3`
+  - `<local operator path>`
   - local project copy: `public/qa-media/audio.mp3`
 - Recent video clips copied from M3 Downloads:
-  - `/Users/robertspaniolo/Downloads/hf_20260613_193743_2854e5a3-cc1e-4cbd-83ed-1a47dcd70fcc.mp4`
-  - `/Users/robertspaniolo/Downloads/hf_20260613_193857_b2ce10c8-1aaa-4ad1-9f3d-e9a2203154d7.mp4`
-  - `/Users/robertspaniolo/Downloads/hf_20260613_193547_b6f7603e-a4da-41de-9e16-04ccaafe4b39.mp4`
+  - `<local operator path>`
+  - `<local operator path>`
+  - `<local operator path>`
   - local project copies: `public/qa-media/clip-1.mp4`, `clip-2.mp4`, `clip-3.mp4`
 - Browser QA already proved those real assets can load into the current UI:
   - audio duration: `14.95s`
@@ -377,8 +377,8 @@ bun run build
 
 **Command:**
 ```bash
-ssh -o BatchMode=yes -o ConnectTimeout=8 robertspaniolo@m3 \
-  '/usr/bin/open -a "Google Chrome" http://100.94.7.10:3000?scene-split-ready=1 && echo opened_chrome'
+ssh -o BatchMode=yes -o ConnectTimeout=8 <operator>@<host> \
+  '/usr/bin/open -a "Google Chrome" http://127.0.0.1:3000?scene-split-ready=1 && echo opened_chrome'
 ```
 
 **Final user handoff should include:**

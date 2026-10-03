@@ -11,9 +11,9 @@
 
 An **experimentation layer for visual artists** who already run ComfyUI. It is **not** a music-video-specific product. Its core metaphor:
 
-```text
+``text
 Workflow → Shot → Layer → Pipeline
-```
+``
 
 A **Frame** is the atomic unit with immutable **Takes**. The **Moodboard** is a free-form node canvas (Figma/Miro-like) where frames, layers, previews, and text notes connect visually. ComfyUI renders linked workflows per frame.
 
@@ -23,7 +23,7 @@ A **Frame** is the atomic unit with immutable **Takes**. The **Moodboard** is a 
 
 ## Architecture
 
-```mermaid
+``mermaid
 flowchart LR
     subgraph Electron["Electron main process"]
         DB[(SQLite project DB)]
@@ -43,7 +43,7 @@ flowchart LR
     ComfyClient --> ComfyUI
     Assistant --> Claude
     Claude -->|propose_actions| Moodboard
-```
+``
 
 ### Engine isolation rule (from CLAUDE.md)
 

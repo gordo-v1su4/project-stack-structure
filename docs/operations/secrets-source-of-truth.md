@@ -12,9 +12,9 @@ Bitwarden Secrets Manager project `hermes_keys` is the canonical store for Proje
 
 The preflight checks names only and deliberately does not print or compare secret values:
 
-```powershell
+``powershell
 bun run secrets:check
-```
+``
 
 The current GitHub/Auth.js mappings are:
 

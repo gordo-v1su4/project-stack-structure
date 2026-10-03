@@ -1,6 +1,6 @@
 # Retired local Trigger.dev fallback
 
-The Windows-local Trigger.dev stack was retired after the VM100 production
+The Windows-local Trigger.dev stack was retired after the production worker host production
 cutover completed on 2026-07-13. Its old v4.5.2 control plane and ClickHouse
 25.8 override are migration history, not a supported recovery path.
 
@@ -12,12 +12,12 @@ checkout, and the local Higgsfield credential file were removed on
 2026-09-05. Local development uses `.env.local` materialized from BWS through
 `bun run scripts/sync-local-env.ts`.
 
-The active control plane is `https://trigger.v1su4.dev`. Production operations,
+The active control plane is `TRIGGER_API_URL`. Production operations,
 backup requirements, version pins, ClickHouse checks, credential pointers, and
 rollback instructions live in
-`proxmox-home/docs/triggerdev-vm100-runbook.md`.
+the private ops runbook.
 
-If VM100 ever requires an emergency replacement, treat it as a fresh controlled
+If production worker host ever requires an emergency replacement, treat it as a fresh controlled
 deployment: use the currently approved Trigger.dev and ClickHouse releases,
 create fresh credentials in BWS, restore only from a reviewed checksummed
 backup, align every application SDK/build/hooks/CLI version, and complete a

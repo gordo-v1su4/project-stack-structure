@@ -37,7 +37,7 @@ Without that, Match must guess placement from semantics alone. With it, clips ca
 
 ## How it would work (technical)
 
-```mermaid
+``mermaid
 flowchart TB
     subgraph Master["Already in project"]
         M1[Full mix waveform Essentia]
@@ -66,7 +66,7 @@ flowchart TB
     C3 --> R3
     C3 --> R4
     M3 --> R1
-```
+``
 
 ### Algorithm (recommended v1)
 
@@ -98,7 +98,7 @@ flowchart TB
 
 ### Proposed fields
 
-```typescript
+``typescript
 // On clip or per scene segment
 audioSync?: {
   masterStartSec: number;
@@ -116,7 +116,7 @@ creativeLane?: "performance" | "beauty" | "broll" | "narrative" | "unsorted";
 // Timeline visibility (UX)
 laneVisible?: boolean;        // default false until user confirms placement
 timelineLocked?: boolean;     // locked to song grid when true
-```
+``
 
 Persist in project export alongside existing analysis artifacts, e.g. `analysis/audio_sync/<clipId>.json`.
 
@@ -126,7 +126,7 @@ Persist in project export alongside existing analysis artifacts, e.g. `analysis/
 
 This is **not** primarily an end-of-project pass. It belongs **early**, right after upload — so Match, lanes, and Generate see grounded positions.
 
-```mermaid
+``mermaid
 flowchart TD
     A[Upload master song] --> B[Essentia + vocal stem + lyrics]
     B --> C[User uploads clips with muxed audio]
@@ -143,7 +143,7 @@ flowchart TD
 
     M[In-app generated clips] --> N[Skip sync — offset known from job]
     N --> J
-```
+``
 
 ### Pass ordering (ironed out)
 

@@ -5,13 +5,13 @@
 > [Trigger.dev production operations](../operations/trigger-production.md).
 
 This is the temporary Windows RTX 5090 staging path for Project Stack Structure.
-The physical apps/VM100 server remains read-only until its replacement RAM is
+The physical production worker host server remains read-only until its replacement RAM is
 installed and stable. This document is the handoff for the Windows workstation
 and the eventual Linux move.
 
 ## Verified topology
 
-```text
+``text
 Next.js/Vercel API
         |
         v
@@ -28,12 +28,12 @@ Trigger.dev queues, retries, idempotency, terminal state
                 \--> optional RustFS video worker :18090
 
 FFmpeg preview/export and FFglitch use the separate authenticated
-`https://ffmpeg.v1su4.dev` gateway from BWS. That service is not hosted on the
-unhealthy VM100 Trigger control plane; its `/health` endpoint was HTTP 200 on
+FFmpeg gateway (`FFMPEG_GATEWAY_URL`) from BWS. That service is not hosted on the
+unhealthy production worker host Trigger control plane; its `/health` endpoint was HTTP 200 on
 the latest staging check.
 
 All generated media and image-split panels -> RustFS media gateway
-```
+``
 
 The local provider is an API adapter from the task worker's point of view. It
 does not call a browser UI, shell out to a batch file, or rely on provider-local
@@ -64,13 +64,13 @@ llama.cpp, and NVENC share the workstation GPU.
   Hugging Face source before a Windows staging run is accepted.
 - Docker Compose pins the verified upstream `ggml-org/llama.cpp` CUDA server
   image digest and mounts the existing `D:\models` model directory read-only.
-- The external FFmpeg gateway is a separate dependency from VM100; its health
+- The external FFmpeg gateway is a separate dependency from production worker host; its health
   check and BWS API-key injection are part of the pending Trigger E2E gate.
 - The caption gateway has a bearer-token hook and the GPU lock is shared with
   future local media workers.
 - The temporary media profile uses the existing Proxmox Home video-worker
   source with CPU-safe FFmpeg defaults (`REQUIRE_GPU=false`,
-  `FFMPEG_HWACCEL=none`) because VM100's host runtime is not a valid staging
+  `FFMPEG_HWACCEL=none`) because production worker host's host runtime is not a valid staging
   dependency while its RAM repair is pending. Enable GPU mode only after the
   worker `/health` proves CUDA/NVENC capability.
 - Route-boundary tests cover all nine Trigger-backed Next endpoints and verify
@@ -122,23 +122,22 @@ Create/store the development value in BWS under a project-specific key such as
 `STACK_STRUCTURE_TRIGGER_DEV_SECRET_KEY`, then inject it only into the local
 Next.js and Trigger-dev worker processes. Do not commit it, print it, or put it
 under a `NEXT_PUBLIC_` name. The production worker keeps
-`TRIGGER_API_URL=https://trigger.v1su4.dev`; `-LocalTrigger` overrides that URL
-for the temporary local project.
+`TRIGGER_API_URL` from BWS; `-LocalTrigger` overrides that URL for a temporary local project.
 
 Inject `FFMPEG_GATEWAY_API_KEY`, `MEDIA_GATEWAY_TOKEN`, and the other provider
 keys from BWS into the Trigger worker environment as well. Do not allow an
 older local `.env` value to override those BWS values.
 
 The checked-in helper `scripts/load-trigger-staging-env.ps1` performs this
-injection without printing secret values and always targets the VM100 production
-control plane at `https://trigger.v1su4.dev`.
+injection without printing secret values and always targets the production worker host production
+control plane at `TRIGGER_API_URL`.
 
-After VM100's Trigger control plane is healthy, start a local Trigger dev worker
+After production worker host's Trigger control plane is healthy, start a local Trigger dev worker
 with:
 
-```powershell
+``powershell
 .\scripts\load-trigger-staging-env.ps1 -Start trigger
-```
+``
 
 It reads the BWS project by secret name, so the local `.env` cannot override
 the development Trigger key or provider credentials.
@@ -147,18 +146,9 @@ Use `scripts/verify-trigger-staging.ps1 -LocalOnly` for the local service
 health pass. After starting Next and the Trigger worker with the BWS loader,
 run `scripts/verify-trigger-staging.ps1 -RunLocalGeneration` for a local
 generation smoke test, or add `-Production` for the production control plane.
-recovered VM100 control plane.
+recovered production worker host control plane.
 
-For the Windows rehearsal, the worker environment should also resolve:
-
-```text
-SWARMUI_URL=http://100.73.126.36:7861
-SCENE_CAPTION_SMART_GATEWAY_URL=http://127.0.0.1:18091
-MEDIA_GATEWAY_URL=<BWS media gateway URL>
-MEDIA_GATEWAY_TOKEN=<BWS media gateway token>
-TRIGGER_API_URL=https://trigger.v1su4.dev
-TRIGGER_SECRET_KEY=<BWS development key>
-```
+For the Windows rehearsal, materialize worker env from BWS (including `SWARMUI_URL`, caption gateway URL, `MEDIA_GATEWAY_*`, `TRIGGER_API_URL`, and the development `TRIGGER_SECRET_KEY`). Set values in `.env.local` (git-ignored); do not commit them.
 
 The current production key remains appropriate only for a deployed production
 version. No deployment was performed during this staging pass.
@@ -166,7 +156,7 @@ version. No deployment was performed during this staging pass.
 ## Final E2E checklist
 
 1. Inject the BWS development key without changing the committed files.
-2. Start the Trigger dev worker against `https://trigger.v1su4.dev`.
+2. Start the Trigger dev worker against `TRIGGER_API_URL`.
 3. Start Next.js with the same development key and local caption URL.
 4. POST one small image request to `/api/generate/local` with provider
    `swarmui`.
@@ -199,9 +189,9 @@ silently treating a browser poll as a Convex write.
 
 ## Current remote staging status
 
-The VM100 RAM repair and remote cutover were completed on 2026-07-13. Trigger,
+The production worker host RAM repair and remote cutover were completed on 2026-07-13. Trigger,
 Essentia, the RustFS media gateway, and the caption/Qwen gateway are healthy.
-The Trigger dashboard uses GitHub OAuth at `https://trigger.v1su4.dev`, and the
+The Trigger dashboard uses GitHub OAuth at `TRIGGER_API_URL`, and the
 production worker completed a real `stack-structure-service-health` run with
 all four services ready.
 

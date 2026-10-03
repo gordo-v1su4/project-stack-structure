@@ -1,14 +1,13 @@
 # Trigger.dev production operations
 
-Project Stack Structure uses its own Trigger.dev project at
-`https://trigger.v1su4.dev`.
+Project Stack Structure uses its own Trigger.dev project. Configure `TRIGGER_API_URL` and `TRIGGER_PROJECT_REF` in `.env.local` (git-ignored).
 
 Before implementing a task or consumer, read the [Trigger execution contract](../protocols/trigger-execution-contract.md). This runbook covers deployment and operations; that contract covers dispatch, progress, validation, return shapes, and acceptance.
 
 - Project ref: `proj_wlrcsfnmovzmdwzojzfe`
-- Production dashboard: `https://trigger.v1su4.dev/orgs/v1su4-91d9/projects/project-stack-structure-C5T7/env/prod`
-- Platform, CLI, SDK, build, and React hooks: `4.5.16` (VM100 Docker image must match)
-- Production deployment host: VM100 Linux
+- Production dashboard: Trigger.dev UI for the configured project ref
+- Platform, CLI, SDK, build, and React hooks: `4.5.16` (production worker host Docker image must match)
+- Production deployment host: production worker host Linux
 - Authoritative application data: RustFS project JSON, analysis manifests, and generated objects
 
 Pindeck is a separate Trigger project. Never reuse its task IDs, queues, keys,
@@ -46,10 +45,10 @@ Verified through the production worker API on 2026-09-07: worker
 `20260907.2` (`worker_cmtqvhk7x00me3is05myhu6b6`) uses SDK/CLI `4.5.16`
 and exposes exactly the 17 local task IDs above. Deployment `pqu9v2i8` was built
 on Linux from detached source commit `a07cd1ea24f30ad856db0e00cfae651ea2684ddc`
-and published to the VM100 registry with image digest
+and published to the production worker host registry with image digest
 `sha256:c2fd98ff0c3cb044f7a60ace5a019f9603d76e6d84377dcb9f8aad30c92b941c`.
 The canonical VM checkout remains clean on `fix/caption-gateway-three-references`
-at `50a62f82`; deployment used `/home/gordo/.cache/project-stack-structure-trigger/a07cd1e`.
+at `50a62f82`; deployment used `paths on the worker host`.
 Inventory and build provenance are verified; real story authoring/revision and
 persisted caption evidence require their separate browser acceptance checks.
 
@@ -94,11 +93,11 @@ returning a run.
 `config/secrets.manifest.json` is the machine-readable mapping. Values remain
 in BWS project `hermes_keys`; tracked files contain names only.
 
-```powershell
+``powershell
 bun run trigger:env:check
 bun run trigger:env:sync -- -DryRun
 bun run trigger:env:sync
-```
+``
 
 The sync script imports only the `triggerProduction` mappings into the Project
 Stack Structure `prod` environment and never prints values. The Next production
@@ -108,62 +107,34 @@ uses the separate development key.
 Vercel production variables, or one explicitly named preview branch, can be
 converged from the same pointers without printing values:
 
-```powershell
+``powershell
 bun run vercel:env:sync
 bun run vercel:env:sync -- -Environment preview -GitBranch codex/example
-```
+``
 
 Preview synchronization requires a branch name so production credentials are
 never granted to every preview deployment.
 
 ## Deployment
 
-Production task images must be built on VM100 Linux so the worker supervisor
-can pull them from its loopback registry. Do not deploy from Docker Desktop.
+Production task images must be built on the Linux worker host so the worker supervisor can pull them from its loopback registry. Do not deploy from Docker Desktop.
 
-The production checkout is `/home/gordo/project-stack-structure`. Deploy as
-`gordo`; non-login shells can call Bun explicitly as `/home/gordo/.bun/bin/bun`.
-The deploy environment is already materialized at
-`/home/gordo/.config/project-stack-structure/trigger-deploy.env` with mode
-`600`. BWS remains the canonical secret source; the VM file is the deployment
-runtime copy, and `proxmox-home/secrets/credentials.private.md` is only the
-gitignored bootstrap/recovery fallback. Never print either file.
+Use the private ops runbook for checkout paths, SSH entry points, and registry URLs. BWS remains the canonical secret source; a mode-`600` deploy env file on the worker is the runtime copy. Never print secret files.
 
-1. Fetch the intended branch in `/home/gordo/project-stack-structure` and
-   verify its commit.
-2. Materialize the BWS deployment pointers into mode-`600`
-   `~/.config/project-stack-structure/trigger-deploy.env` with
-   `bun run trigger:deploy:env` from the trusted workstation.
+1. Fetch the intended branch on the worker checkout and verify its commit.
+2. Materialize BWS deployment pointers into `~/.config/project-stack-structure/trigger-deploy.env` (mode `600`) with `bun run trigger:deploy:env` from a trusted workstation.
 3. Run `bun run trigger:deploy -- --dry-run`.
 4. Run `bun run trigger:deploy`.
-5. Confirm the emitted image was pushed to `localhost:5000`.
-6. Query the current production worker and compare all 17 task IDs with the
-   table above before triggering acceptance runs.
+5. Confirm the emitted image was pushed to the worker's local registry.
+6. Query the current production worker and compare all 17 task IDs with the table above before triggering acceptance runs.
 
-The deploy script refuses non-Linux hosts, verifies that SDK, build, and React
-hooks use one exact version, derives the CLI version from that shared pin, runs
-the Trigger CLI through `bunx`, uses `--local-build`, identifies the deployed
-version/code, and pushes that exact image to VM100's Trigger registry.
+The deploy script refuses non-Linux hosts, verifies SDK/build/React hooks share one pin, runs the Trigger CLI through `bunx`, uses `--local-build`, and pushes the built image to the production registry.
 
-### VM100 access and failure triage
+### Worker host access and failure triage
 
-Use the first working path; they all reach the same VM and are not independent
-service replicas:
+Use the first working SSH path documented in the private ops runbook (VPN, LAN, or hypervisor guest exec). They reach the same worker; they are not independent service replicas.
 
-1. `tailscale ssh root@app-vm` (`100.118.78.13`)
-2. LAN SSH `gordo@192.168.8.222` (private credential fallback until the
-   workstation key is installed)
-3. `tailscale ssh root@pve-node0`, then `qm guest exec 100 -- ...`
-4. Hostinger Dockhand environment `3` (`app-vm`) for container inventory
-
-If SSH resets or times out while `qm guest exec 100 -- /bin/true` returns
-`Input/output error`, stop retrying credentials. That combination means the
-guest execution/filesystem layer is unhealthy even though Proxmox, Tailscale,
-and stored credentials may all be correct. Follow
-`proxmox-home/docs/app-vm-boot-recovery.md`: capture diagnostics, take a
-protective snapshot, attempt a normal reboot, then use the documented forced
-stop/start or offline filesystem repair only as required. Recheck Trigger,
-Essentia, NocoDB, SSH, and `systemctl is-system-running` before deploying.
+If guest exec returns I/O errors while the hypervisor looks healthy, treat the VM filesystem layer as unhealthy: capture diagnostics, snapshot, reboot or repair per runbook, then recheck Trigger, Essentia, and SSH before deploying.
 
 Pindeck shares the Trigger control plane but not this checkout, project,
 credentials, task inventory, queues, or deployment. A Stack Structure recovery
@@ -177,14 +148,14 @@ Static checks are prerequisites, not completion. Record separately:
 - current worker version, deployment code, and exact 17-task inventory;
 - one authenticated browser input and its application user/project ID;
 - parent and child run IDs with queue/start/end timing;
-- VM100 service responses for the exercised path;
+- production worker host service responses for the exercised path;
 - RustFS object IDs/URLs and successful byte reads;
 - saved project JSON containing the resulting analysis/generated asset;
 - Work Activity and visible Studio result after a hard refresh;
 - one controlled terminal failure;
 - one identical replay returning the same run/object without a duplicate.
 
-Follow `proxmox-home/docs/triggerdev-vm100-runbook.md` for platform health and
+Follow the private ops runbook for platform health and
 registry recovery. Do not start the retired local Trigger or staging Compose
 stacks.
 

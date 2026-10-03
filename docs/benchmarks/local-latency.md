@@ -7,7 +7,7 @@
 - `local-macos`
 
 ## Input
-- `/Users/robertspaniolo/Documents/Github/project-stack-structure/.local-fixtures/media/A_mermaid_discovery_202601202346_ttgv4.mp4`
+- `.local-fixtures/media/A_mermaid_discovery_202601202346_ttgv4.mp4`
 - section window: `0`s -> `1`s
 
 ## Result

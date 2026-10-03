@@ -4,18 +4,18 @@ This repository can run in a Cursor-hosted Ubuntu VM while offloading private ge
 
 ## Verified topology
 
-```text
+``text
 Cursor Cloud Agent VM
   ├─ checks out project-stack-structure
   ├─ installs Bun, Tailscale, and optional bws
   ├─ receives environment-scoped Runtime Secrets from Cursor
   └─ Tailscale userspace proxy
-       └─ desktop-q20uuvd / 100.73.126.36
-            ├─ SwarmUI  :7861  (the app-facing generation API)
-            └─ ComfyUI  :7821  (Swarm-managed backend; do not call directly)
-```
+       └─ operator GPU desktop (Tailscale)
+            ├─ SwarmUI  :7861  (the app-facing generation API; `SWARMUI_URL`)
+            └─ ComfyUI  (Swarm-managed backend; do not call directly)
+``
 
-Public services such as Essentia, FFmpeg, media, and caption gateways use their normal HTTPS URLs. Only private Tailnet services need Tailscale.
+Public HTTPS gateways (Essentia, FFmpeg, media, captions) and private SwarmUI both use env vars from `.env.local` (git-ignored) or Cursor Runtime Secrets. Only the desktop generation path needs Tailscale.
 
 SwarmUI is intentionally the only generation endpoint exposed to this app. The desktop startup and recovery procedure is documented in [`docs/local-generation.md`](../docs/local-generation.md).
 
@@ -75,7 +75,7 @@ Do not add a Tailscale API-management key. Use a reusable, tagged auth key restr
 ## Tailscale policy
 
 1. Add `tag:cursor-agent` to the tailnet policy.
-2. Permit that tag to reach `desktop-q20uuvd:7861` only.
+2. Permit that tag to reach your SwarmUI host on port `7861` only (see ACL example).
 3. Create a reusable auth key carrying `tag:cursor-agent`.
 4. Save the auth key as Cursor Runtime Secret `TS_AUTHKEY`.
 
@@ -85,14 +85,14 @@ Start from [`docs/tailscale-acl.example.json`](docs/tailscale-acl.example.json),
 
 ### Repository checks
 
-```bash
+``bash
 python3 -m json.tool .cursor/environment.json >/dev/null
 bash -n .cursor/install-cloud-tools.sh
 bash -n scripts/cloud-agent-start.sh
 shellcheck .cursor/install-cloud-tools.sh scripts/cloud-agent-start.sh
 bun run check
 bun run build
-```
+``
 
 The test runner skips fixture-dependent media tests when `.local-fixtures/media` is unavailable and reports those skips explicitly; mount real fixtures before running the full media E2E lane.
 
@@ -104,7 +104,7 @@ Start a setup run from the Cursor dashboard and confirm:
 2. Tailscale reports userspace networking ready.
 3. The startup script selects the intended secret mode.
 4. Next.js listens on port 3000.
-5. `GET /api/generate/local` reaches SwarmUI at `http://100.73.126.36:7861`.
+5. `GET /api/generate/local` succeeds when `SWARMUI_URL` in Runtime Secrets points at reachable SwarmUI.
 
 ### Desktop prerequisite
 

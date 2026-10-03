@@ -6,7 +6,7 @@ all credential values remain in BWS.
 
 ## Deployment and inventory
 
-- Control plane: `https://trigger.v1su4.dev`
+- Control plane: `TRIGGER_API_URL`
 - Project ref: `proj_wlrcsfnmovzmdwzojzfe`
 - Worker version: `20260714.2`
 - Deployment code: `c9t444ze`
@@ -27,7 +27,7 @@ The active worker exposes:
 
 The production health run `run_cmrjztyux00243fn154kkjts5` completed with HTTP
 200 responses from Trigger, Essentia 4.0.2, the media/RustFS gateway, and the
-CUDA-backed Qwen caption gateway on VM100.
+CUDA-backed Qwen caption gateway on production worker host.
 
 ## Correlated successful journey
 

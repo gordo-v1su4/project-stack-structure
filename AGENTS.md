@@ -40,6 +40,7 @@ Scale local checks to the change: diff/links/commands for docs, affected tests a
 
 ## Secrets
 
+- Backend and hosting URLs (Trigger.dev, gateways, SwarmUI, RustFS, and similar) come from environment variables and your local `.env.local` (git-ignored); never hardcode or commit them in source or docs.
 - Values live in Bitwarden Secrets Manager, project `hermes_keys`. Never in chat, git, or client bundles.
 - Machine bootstrap: `BWS_ACCESS_TOKEN` in `~/.hermes/.env` (mode 0600). Fetch pattern: `bws secret list/get` with that token exported.
 - `config/secrets.manifest.json` maps runtime env names → BWS names. `.env.example` lists every name with values blank.
@@ -62,7 +63,7 @@ Scale local checks to the change: diff/links/commands for docs, affected tests a
 - Caption and prompt prose describes visible subjects, action, and setting only. Keep absence, uncertainty, reference bookkeeping, and coverage notes in structured metadata. Read [visible writing and output rules](docs/protocols/higgsfield-nano-banana-reference-continuity.md#visible-writing-and-output-rules); do not emit notes such as “no named leads required” as shot prose.
 - UI work: [DESIGN.md](DESIGN.md). Preserve musical alignment first, motion continuity second, prepared previews, and user approval of what enters the timeline.
 - Pipeline or service work: [product infrastructure](docs/architecture/product-infrastructure.md), [Trigger production](docs/operations/trigger-production.md), and [local generation](docs/local-generation.md), as relevant. Pushes to `main` auto-deploy the web app to Vercel.
-- Homelab runbooks, endpoints, shared skills, adapters, and scripts: sibling `proxmox-home` (`C:\Users\Gordo\Documents\Github\proxmox-home` on Windows). Consult relevant guidance for homelab work; its Git policy applies to changes there.
+- Homelab runbooks, endpoints, shared skills, adapters, and scripts live in a private sibling ops repository (not shipped in this repo). Consult that guidance for infrastructure work; its Git policy applies to changes there.
 
 ## Agent skills
 

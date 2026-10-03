@@ -9,30 +9,18 @@ The Generate tab talks to the desktop **SwarmUI** server through the server-side
 
 SwarmUI is the only app-facing API surface. ComfyUI is the backend engine that Swarm starts/manages; we do not treat ComfyUI as a separate provider from this Mac app.
 
-## Actual desktop topology
+## Desktop topology
 
-Hermes/runbook topology:
+Private generation runs on an operator-controlled Windows desktop (or similar GPU box) reachable from the Next.js server over VPN or LAN.
 
-- Windows desktop over Tailscale: `desktop-q20uuvd` / `100.73.126.36`
-- SSH transport to desktop: `ssh -p 2222 Gordo@desktop-q20uuvd`
-- SwarmUI on the desktop: `http://127.0.0.1:7861`
-- Swarm-managed Comfy backend on the desktop: `http://127.0.0.1:7821`
+- Set `SWARMUI_URL` in your local `.env.local` (git-ignored). The app server calls SwarmUI; browsers never talk to the desktop directly.
+- On the desktop, SwarmUI typically listens on port `7861`. ComfyUI runs as Swarm's managed backend on a separate loopback port. Do **not** point `SWARMUI_URL` at the raw ComfyUI port.
 
-From this Mac, the app should use only SwarmUI over Tailscale:
-
-```bash
-SWARMUI_URL=http://100.73.126.36:7861
+``bash
+# .env.local (git-ignored) — names only; set values on your machine
+SWARMUI_URL=
 SWARMUI_MODEL=
-```
-
-If MagicDNS is healthy, this can also be:
-
-```bash
-SWARMUI_URL=http://desktop-q20uuvd:7861
-SWARMUI_MODEL=
-```
-
-Do **not** configure the app to call `http://100.73.126.36:7821` directly. SwarmUI owns the backend lifecycle and provides the front-end/API gateway.
+``
 
 ## SwarmUI API model
 
@@ -56,13 +44,7 @@ The app mirrors the useful Swarm/Hermes image presets as selectable options:
 - `Z Image Turbo Quality 2` — `Z_Image_Turbo_BF16`, 12 steps, `euler` / `beta`, CFG 1, sigma shift 7, IMAX LoRA weight 1. Recommended trigger words from Civitai: `CINEMATIC FILM STYLE`, `IMAX70MM STYLE`, `FILMSTRIP STYLE`, `65MM FILM STYLE`, `POLAROID`.
 - `FLUX 2 Klein Distilled 8 Steps - 260422` — `FLUX-2-Klein-Distilled-9b-Quant-FP8-Scaled`, 8 steps, `seeds_2` / `bong_tangent`, CFG 1.
 
-The Windows-side Hermes preset file is:
-
-```text
-D:\SwarmUI_Model_Downloader_v140\hermes_presets.json
-```
-
-Do not duplicate the same Krea2 workflow in multiple visible entries; keep one Krea2 preset/workflow target and update that entry when settings change.
+Operator-specific SwarmUI preset JSON may live on the desktop install path. Do not duplicate the same Krea2 workflow in multiple visible entries; keep one Krea2 preset/workflow target and update that entry when settings change.
 
 ## Current Next.js routes
 
@@ -74,37 +56,14 @@ The browser never needs direct access to the Windows host; the Next.js route pro
 
 ## Network checklist
 
-For Mac -> Windows API access, make sure:
+Before calling `/api/generate/local` from a remote app server:
 
-1. SwarmUI is actually running on the Windows desktop.
-2. SwarmUI is bound to a network-reachable interface. Current detached start uses `--host 0.0.0.0 --port 7861`.
-3. Windows firewall allows inbound TCP on `7861` for Tailscale/LAN.
-4. The Mac can reach SwarmUI:
+1. SwarmUI is running on the desktop.
+2. SwarmUI is bound to a network-reachable interface (for example `--host 0.0.0.0 --port 7861`).
+3. Firewall rules allow inbound TCP on the SwarmUI port from the app server's VPN/LAN path.
+4. From the app server, `SWARMUI_URL` responds to `GET /` and `POST /API/GetNewSession`.
 
-```bash
-nc -vz 100.73.126.36 7861
-curl http://100.73.126.36:7861/
-curl -H "Content-Type: application/json" -d "{}" http://100.73.126.36:7861/API/GetNewSession
-```
-
-The Comfy backend can still be inspected through Swarm's gateway when needed, for diagnostics only, for example:
-
-```bash
-curl http://100.73.126.36:7861/ComfyBackendDirect/system_stats
-```
-
-## Hermes references on RackNerd
-
-Relevant runbooks are on `racknerd5`:
-
-- `/root/.hermes/skills/creative/visual-storyline-review-pipeline/SKILL.md`
-- `/root/.hermes/skills/creative/visual-storyline-review-pipeline/references/swarmui-harness-patterns.md`
-- `/root/.hermes/skills/creative/visual-storyline-review-pipeline/references/swarmui-end-to-end-smoke-review.md`
-- `/root/.hermes/skills/creative/visual-storyline-review-pipeline/references/qwen-image-edit-2511-native-comfy-api.md`
-- `/root/.hermes/skills/creative/comfyui/SKILL.md`
-- `/root/.hermes/skills/creative/comfyui/references/swarmui-api-wrapper.md`
-- `/root/.hermes/skills/creative/comfyui/references/swarmui-visual-storyline-image-sequence.md`
-- `/root/.hermes/plans/swarmui-comfy-qwenvl3-first-path.md`
+For diagnostics, Comfy stats are available through Swarm's gateway (for example `/ComfyBackendDirect/system_stats` on the same `SWARMUI_URL` base).
 
 ## Image grid splitting and RustFS naming
 
@@ -127,30 +86,30 @@ Flow:
 
 Durable RustFS folder convention:
 
-```text
+``text
 media-uploads/image-splits/{source-slug}/{split-id}/
-```
+``
 
 Panel filename convention:
 
-```text
+``text
 {source-slug}__grid-{rows}x{cols}__r{row}c{col}__p{NN}.png
-```
+``
 
 Example:
 
-```text
+``text
 media-uploads/image-splits/krea-hero-grid-00023/split-abc/krea-hero-grid-00023__grid-2x2__r1c1__p01.png
-```
+``
 
 Panel UI labels use the same coordinate system:
 
-```text
+``text
 R1C1 · Panel 01
 R1C2 · Panel 02
 R2C1 · Panel 03
 R2C2 · Panel 04
-```
+``
 
 ## Higgsfield / Nano Banana Pro generated grids
 
@@ -158,7 +117,7 @@ The app exposes a server-side route at `/api/generate/higgsfield`.
 
 - `GET /api/generate/higgsfield` verifies the active account through the official Higgsfield CLI and the configured `HIGGSFIELD_CREDENTIALS_PATH`.
 - `POST /api/generate/higgsfield` queues a Trigger.dev task that uses the official CLI to create a `nano_banana_2` job, waits for completion, downloads the full grid, uploads the full grid to RustFS, runs the fixed image splitter, and uploads split panels to RustFS.
-- Browser-only Unlimited Nano Banana Pro and Seedance work follows the separate Chrome operator runbook in [Higgsfield provider routing](architecture/higgsfield-provider-routing.md); it must not replace or overwrite the Gordo CLI identity.
+- Browser-only Unlimited Nano Banana Pro and Seedance work follows the separate Chrome operator runbook in [Higgsfield provider routing](architecture/higgsfield-provider-routing.md); it must not replace or overwrite the Trigger/API CLI identity.
 
 Default generation settings:
 

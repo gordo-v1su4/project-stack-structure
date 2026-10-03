@@ -7,7 +7,7 @@
 
 ## Current workflow (baseline)
 
-```mermaid
+``mermaid
 flowchart LR
     A[Upload song] --> B[Essentia analysis]
     C[Upload clips] --> D[Scene split + caption]
@@ -21,7 +21,7 @@ flowchart LR
     style I fill:#333,stroke:#666
     style Gen fill:#333,stroke:#666
     Gen[Generate tab<br/>shell only] -.-> G
-```
+``
 
 **Pain points today:**
 
@@ -36,7 +36,7 @@ flowchart LR
 
 **Principle:** Keep local product class — **auto editor for user-supplied clips** — add **optional generative lane** for gaps only.
 
-```mermaid
+``mermaid
 flowchart TB
     subgraph Phase1["Phase 1 — Musical edit brain (keep)"]
         S1[Song + Essentia]
@@ -73,7 +73,7 @@ flowchart TB
     S4 --> J1
     C3 --> J1
     J1 --> J2
-```
+``
 
 ---
 
@@ -122,7 +122,7 @@ Match remains the **approval gate** for all footage (imported or generated).
 
 Transform from read-only coverage shell to **gap-fill command center**:
 
-```mermaid
+``mermaid
 flowchart LR
     subgraph GenerateTab["Generate tab (target)"]
         TL[Coverage timeline]
@@ -138,7 +138,7 @@ flowchart LR
     SLOT --> REF
     SLOT --> PR
     PR --> Q
-```
+``
 
 | Area | v0 today | v1 target | v2 target |
 |------|----------|-----------|-----------|
@@ -217,7 +217,7 @@ No Comfy integration required in app — preserves web-first posture.
 
 Extend creative brief packages (from `local-codebase-summary.md`):
 
-```text
+``text
 analysis/coverage_slots.json      # slot id, section, window, status, needs[]
 analysis/generative/
   segment_map.json
@@ -226,18 +226,18 @@ analysis/generative/
   i2v_prompts.json
 analysis/comfy_jobs.json          # job id, slot id, status, outputs
 edit/generative_moments.json      # approved generated moment links
-```
+``
 
 Timeline items gain optional fields:
 
-```json
+``json
 {
   "momentId": "...",
   "source": "imported | generated",
   "coverageSlotId": "...",
   "comfyJobId": "..."
 }
-```
+``
 
 ---
 

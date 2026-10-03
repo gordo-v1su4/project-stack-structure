@@ -201,13 +201,13 @@ Verification:
 
 A safe first commit is documentation-only:
 
-```bash
+``bash
 git add docs/plans/deep-interview-roadmap-spec-workflow-docs.md \
   docs/plans/prd-roadmap-spec-workflow-docs.md \
   docs/plans/test-spec-roadmap-spec-workflow-docs.md \
   docs/plans/prd-implementation-buildout.md
 
 git commit -m "docs: refresh music video product specs"
-```
+``
 
 Only commit after user review or explicit approval.

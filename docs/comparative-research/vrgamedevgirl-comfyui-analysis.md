@@ -20,7 +20,7 @@ Unlike the local product, VRGDG assumes **generation is the default path**. The 
 
 ## Architecture
 
-```mermaid
+``mermaid
 flowchart TB
     subgraph ComfyUI["ComfyUI runtime"]
         BuilderUI["VRGDG Music Video Builder UI<br/>(JS in-graph panel)"]
@@ -48,7 +48,7 @@ flowchart TB
     BuilderUI --> Render
     Render --> SceneMedia
     Render --> PostFX
-```
+``
 
 ### Submodule layout (`__init__.py`)
 
@@ -90,7 +90,7 @@ Add node **`VRGDG Music Video Builder UI`** in ComfyUI. Opens a full-screen in-g
 
 Projects persist under ComfyUI output folders:
 
-```text
+``text
 {project}/
 ├── session JSON (builder state)
 ├── global audio + per-scene audio copies
@@ -100,13 +100,13 @@ Projects persist under ComfyUI output folders:
 ├── generated scene images
 ├── rendered scene videos
 └── stitched final export
-```
+``
 
 This is a **folder-based portable project**, similar in spirit to ComfyStudio's `project.comfystudio` + assets — but entirely ComfyUI-local.
 
 ### Scene lifecycle
 
-```mermaid
+``mermaid
 sequenceDiagram
     participant U as User
     participant B as Video Builder
@@ -127,7 +127,7 @@ sequenceDiagram
     U->>B: Generate video per scene
     B->>R: Queue render workflows
     R-->>B: Scene clips → stitch final
-```
+``
 
 ---
 

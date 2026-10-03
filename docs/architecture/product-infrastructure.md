@@ -14,7 +14,7 @@ The user uploads a **song** and **their own footage** (plus optional character s
 
 ## How a project flows
 
-```mermaid
+``mermaid
 flowchart LR
     subgraph Ingest
         A[Song upload]
@@ -46,7 +46,7 @@ flowchart LR
     H --> I
     H --> J
     I --> J
-```
+``
 
 | Stage | User action | System behavior |
 | --- | --- | --- |
@@ -121,7 +121,7 @@ When clips contain the same master track (full mix or vocal stem muxed in), extr
 
 ## Architecture diagram (services)
 
-```mermaid
+``mermaid
 graph TB
     subgraph Client["Browser studio"]
         UI[StudioApp]
@@ -158,7 +158,7 @@ graph TB
     P --> FF
     UI -.-> API
     UI -.-> COMFY
-```
+``
 
 ---
 

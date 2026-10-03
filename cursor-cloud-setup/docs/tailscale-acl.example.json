@@ -1,16 +1,16 @@
 {
-  "//": "Merge this fragment into the existing Tailscale policy; do not replace the whole policy.",
+  "//": "Merge this fragment into the existing Tailscale policy; do not replace the whole policy. Replace SWARMUI_HOST and SWARMUI_TAILNET_IP with your desktop values.",
   "tagOwners": {
     "tag:cursor-agent": ["autogroup:admin"]
   },
   "hosts": {
-    "desktop-q20uuvd": "100.73.126.36"
+    "SWARMUI_HOST": "SWARMUI_TAILNET_IP"
   },
   "acls": [
     {
       "action": "accept",
       "src": ["tag:cursor-agent"],
-      "dst": ["desktop-q20uuvd:7861"]
+      "dst": ["SWARMUI_HOST:7861"]
     }
   ]
 }

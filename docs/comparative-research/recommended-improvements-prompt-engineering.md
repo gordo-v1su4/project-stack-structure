@@ -20,7 +20,7 @@ The gap is not "better adjectives" — it is **structured multi-stage planning f
 
 ## Design principles (synthesized from references)
 
-```mermaid
+``mermaid
 flowchart TD
     A[Musical ground truth<br/>Essentia + lyrics] --> B[Structured intermediate artifacts]
     B --> C[Stage N LLM with validation]
@@ -30,7 +30,7 @@ flowchart TD
     D -->|yes| F[Next stage]
     F --> G[Human propose-then-apply]
     G --> H[EditPlan / coverage slot update]
-```
+``
 
 1. **Musical ground truth stays local** — beats, sections, lyric chunks from Essentia/Deepgram; never let LLM invent BPM or section boundaries.
 2. **Separate creative LLM from execution LLM** — Inline Studio splits chat assistant from Comfy JSON authoring; apply same split for treatment vs T2V prompts.
@@ -46,7 +46,7 @@ flowchart TD
 
 **What to do:** Define a **local Director Script variant** for gap-fill shots only (not whole MV replacement):
 
-```text
+``text
 Section: chorus-2
 Start at: 1:04.500
 Duration: 3.2s
@@ -56,7 +56,7 @@ Keyframe intent: neon alley, rain, wide
 Motion intent: slow push-in, subject walking away
 Coverage slot id: slot-abc123
 Reference frames: moment-42-first, moment-42-last
-```
+``
 
 **Why:** ComfyStudio proved clipboard LLM handoff with strict format reduces parse failures. Local can reuse field names for familiarity.
 
@@ -170,10 +170,10 @@ Surface as Generate tab banner (amber/red), same UX language as ComfyStudio warn
 
 **Upgrade when song context present:**
 
-```text
+``text
 System: You caption footage for music-video editing. Describe visible truth first.
 User: Section=chorus, energy=high, lyrics="...", shot_need=b_roll|performance
-```
+``
 
 Add **action intent** field aligned with `semanticEditPlanner` INTENT_SYNONYMS — improves match without extra LLM call.
 
@@ -223,7 +223,7 @@ Add **action intent** field aligned with `semanticEditPlanner` INTENT_SYNONYMS �
 
 ## Phased rollout
 
-```mermaid
+``mermaid
 gantt
     title Prompt engineering rollout
     dateFormat YYYY-MM-DD
@@ -236,7 +236,7 @@ gantt
     section Phase C
     Comfy capability grounding :c1, after b2, 14d
     Stages 3-5 Comfy JSON suggest :c2, after c1, 21d
-```
+``
 
 | Phase | Deliverable | User-visible outcome |
 |-------|-------------|---------------------|

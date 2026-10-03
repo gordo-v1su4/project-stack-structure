@@ -22,7 +22,7 @@ Positioning (README):
 
 ## Architecture
 
-```mermaid
+``mermaid
 flowchart TB
     subgraph ElectronApp["ComfyStudio Electron"]
         UI[React UI: Generate / Create / Timeline / Export]
@@ -43,18 +43,18 @@ flowchart TB
     ComfySvc -->|WebSocket| ComfyUI
     ComfyUI -->|outputs| Stores
     Export --> FFmpeg
-```
+``
 
 ### Project folder contract
 
-```text
+``text
 MyProject/
 ├── project.comfystudio    # timeline, assets, settings JSON
 ├── assets/video|audio|images/
 ├── cache/                 # playback + render cache
 ├── renders/
 └── autosave/
-```
+``
 
 Portable, single-folder projects — similar spirit to Inline `.inlinestudio` export.
 
@@ -153,7 +153,7 @@ Each type carries: LoRA flags, `promptSuffix`, `needsVocalAlignment`, default im
 
 Structured text shots:
 
-```text
+``text
 Shot N: Title
 Start at: 0:00
 Shot type: performance | b_roll | ...
@@ -163,7 +163,7 @@ Keyframe prompt: ...
 Motion prompt: ...
 Camera: ...
 Length: 3
-```
+``
 
 Template provided as `MUSIC_VIDEO_SCRIPT_TEMPLATE`.
 

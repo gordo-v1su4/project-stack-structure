@@ -20,7 +20,7 @@ For direct Cursor mode, sensitive values are environment-scoped **Runtime Secret
 | `ESSENTIA_API_KEY` | `VITE_ESSENTIA_API_KEY` | `src/app/api/essentia/full/route.ts` |
 | `ESSENTIA_API_URL` | `ESSENTIA_API_BASE_URL`, `VITE_ESSENTIA_API_*` | same |
 
-Default URL if unset: `https://essentia.v1su4.dev`.
+Set `ESSENTIA_API_URL` in `.env.local` (git-ignored); there is no public default in the repo.
 
 ## Preview and export
 
@@ -71,7 +71,7 @@ Source: `src/app/api/caption/scene/route.ts`.
 
 | Name | Notes |
 | --- | --- |
-| `SWARMUI_URL` | Use `http://100.73.126.36:7861` for the Cursor VM; MagicDNS hostname is optional |
+| `SWARMUI_URL` | Set in `.env.local` (git-ignored); VPN/Tailscale reachability to the desktop SwarmUI port |
 | `LOCAL_SWARMUI_URL` | Optional alias used by generation routes |
 
 Sources: `src/app/api/generate/local/route.ts`, `src/app/api/generate/local/view/route.ts`, and `docs/local-generation.md`.
@@ -82,7 +82,7 @@ Do not point the app at ComfyUI port `7821`; SwarmUI owns the API and backend li
 
 Never print `env` or `bws run ... env` in CI logs. Check names only:
 
-```bash
+``bash
 python3 - <<'PY'
 import os
 required = [
@@ -99,4 +99,4 @@ required = [
 for name in required:
     print(f"{name}={'SET' if os.environ.get(name) else 'MISSING'}")
 PY
-```
+``

@@ -30,7 +30,7 @@ Requirements: [Bun](https://bun.sh) ≥ 1.3, Node ≥ 24.5, ffmpeg/ffprobe on PA
 
 ```bash
 bun install
-cp .env.example .env        # fill in values — see Configuration
+cp .env.example .env.local  # names only — set values locally (git-ignored)
 bun run dev                 # http://localhost:3000
 ```
 
@@ -38,7 +38,7 @@ Sign in with GitHub when prompted — every API route requires a session.
 
 ## Configuration
 
-All settings come from environment variables. `.env.example` documents every name; real values live in **Bitwarden Secrets Manager** (project `hermes_keys`) and are pulled per machine — never commit `.env`.
+All settings come from environment variables. `.env.example` lists names only; set URLs and secrets in your local `.env.local` (git-ignored). Production values are materialized from **Bitwarden Secrets Manager** (project `hermes_keys`) on operator machines — never commit `.env` or `.env.local`.
 
 Key groups: `AUTH_*` (GitHub OAuth + session signing), `TRIGGER_*` (background orchestration), `MEDIA_GATEWAY_*` (RustFS storage), `ESSENTIA_API_*`, `FFMPEG_GATEWAY_*`, `DEEPGRAM_API_KEY`, `SCENE_CAPTION_SMART_*`.
 
@@ -56,21 +56,21 @@ Tests use synthetic fixtures in `.local-fixtures/media/` (gitignored). The e2e r
 
 ## How it fits together
 
-| Layer | Runs on |
+| Layer | Role |
 | --- | --- |
 | Studio UI | Browser (Next.js on Vercel) |
-| Song analysis | Essentia API — `essentia.v1su4.dev` |
-| Clip storage / scene detect | Media gateway — `media.v1su4.dev` |
-| Scene captions | Qwen gateway — `caption.v1su4.dev` |
-| Preview / export | FFmpeg gateway — `ffmpeg.v1su4.dev` |
-| Background jobs | Trigger.dev control plane on VM100 |
+| Song analysis | Essentia API (beats, sections, waveform) |
+| Clip storage / scene detect | Media gateway (RustFS, PySceneDetect jobs) |
+| Scene captions | Caption gateway (LFM fast path, Qwen3-VL smart path) |
+| Preview / export | FFmpeg gateway (section previews, final export) |
+| Background jobs | Self-hosted Trigger.dev control plane and GPU workers |
 
-Every heavy step dispatches through [Trigger.dev](https://trigger.v1su4.dev) to GPU workers; the Next.js routes only authenticate, validate, and queue.
+Every heavy step dispatches through Trigger.dev to GPU workers. Next.js routes authenticate, validate, and queue. Service base URLs are configured with `TRIGGER_API_URL`, `MEDIA_GATEWAY_URL`, `ESSENTIA_API_URL`, and related env vars (see `.env.example`).
 
 ## Deployment
 
 - **Web app:** push to `main` → auto-deploys to Vercel. Env vars sync from BWS (`scripts/sync-vercel-production-env.ps1` from the ops machine).
-- **Workers:** Trigger.dev tasks on VM100 — see `docs/operations/trigger-production.md`.
+- **Workers:** Trigger.dev tasks on the production GPU host — see `docs/operations/trigger-production.md`.
 - **Security posture + hardening history:** [docs/security/api-hardening.md](docs/security/api-hardening.md).
 
 ## Documentation

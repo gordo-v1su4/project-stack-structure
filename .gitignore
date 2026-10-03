@@ -35,9 +35,10 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (the value-free template is intentionally tracked)
+# env files (.env.local and other secrets; the value-free template is intentionally tracked)
 .env*
 !.env.example
+.env.local
 
 # vercel
 .vercel

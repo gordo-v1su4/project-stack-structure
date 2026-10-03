@@ -25,11 +25,11 @@ These documents synthesize:
 
 Shallow clones used for this research live under:
 
-```text
+``text
 .research/inline-studio/
 .research/comfyui-vrgamedevgirl/   # branch: dev/music-video-builder-ui-test-v9
 .research/comfystudio/
-```
+``
 
 Note: the user-requested branch name `test_v9` maps to `dev/music-video-builder-ui-test-v9` on the remote. Verified on clone at commit `1676f53`.
 
@@ -55,7 +55,7 @@ Public VRGDG docs may reference v8 imagery; v9 extends the same Video Builder + 
 
 ## Executive synthesis
 
-```mermaid
+``mermaid
 graph TB
     subgraph Local["project-stack-structure (local)"]
         A[Essentia audio spine]
@@ -89,7 +89,7 @@ graph TB
     Local -->|"production shell gap"| CS
     Local -->|"assistant + pipeline UX"| Inline
     VRGDG --> CS
-```
+``
 
 ### Layering insight
 

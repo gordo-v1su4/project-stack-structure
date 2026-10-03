@@ -99,7 +99,7 @@ applies outside production.
   FFmpeg/Deepgram variables. Without them, sign-in and dispatch fail closed.
 - After rotating `FFMPEG_GATEWAY_API_KEY`, restart consumers so they pick up the
   new value: ffmpeg-gateway service (Hostinger VM) and the Trigger worker env
-  (VM100). Both read their key at boot; BWS is the source of truth.
+  (production worker host). Both read their key at boot; BWS is the source of truth.
 
 ## Known follow-ups (non-blocking)
 

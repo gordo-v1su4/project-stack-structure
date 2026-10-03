@@ -20,7 +20,7 @@
 
 ## Reference architecture (target)
 
-```mermaid
+``mermaid
 flowchart TB
     subgraph Browser["Next.js Studio"]
         GenTab[Generate tab]
@@ -47,7 +47,7 @@ flowchart TB
     ComfyUI -.-> VRGDGOpt
     ComfyUI -->|history/view| ComfyProxy
     ComfyProxy -->|import moment| Contracts
-```
+``
 
 ---
 
@@ -81,12 +81,12 @@ Renderer/components call **typed functions only** — no scattered fetch URLs.
 
 Before first queue job per session:
 
-```text
+``text
 1. GET /system_stats → reachable
 2. GET /object_info → cache node catalog + models
 3. Check required class_types for selected workflow template
 4. Surface missing nodes/models in Generate tab (blocking or warning)
-```
+``
 
 **Required nodes for v1 gap-fill lane (suggested minimum):**
 
@@ -119,14 +119,14 @@ Before first queue job per session:
 
 Store in `public/workflows/comfy/` or repo `workflows/comfy/` with manifest:
 
-```json
+``json
 {
   "id": "gap-i2v-ltx23-audio",
   "label": "Gap fill: LTX 2.3 + audio",
   "requiredNodes": ["..."],
   "endpointTitles": ["LOCAL_PROMPT", "LOCAL_INPUT_IMAGE"]
 }
-```
+``
 
 **Action items:**
 
@@ -142,7 +142,7 @@ Store in `public/workflows/comfy/` or repo `workflows/comfy/` with manifest:
 
 ComfyStudio uses `_meta.title` matching `COMFYSTUDIO_*`. Local should define **`LOCAL_*` or `STACK_*`** equivalents to avoid collision:
 
-```text
+``text
 STACK_INPUT_IMAGE
 STACK_PROMPT
 STACK_SEED
@@ -150,7 +150,7 @@ STACK_WIDTH / STACK_HEIGHT
 STACK_FPS / STACK_DURATION
 STACK_AUDIO
 STACK_OUTPUT_VIDEO
-```
+``
 
 Injection before queue:
 
@@ -174,7 +174,7 @@ Injection before queue:
 
 **Job model:**
 
-```typescript
+``typescript
 // conceptual
 ComfyJob {
   id: string
@@ -187,11 +187,11 @@ ComfyJob {
   error?: string
   createdAt, updatedAt
 }
-```
+``
 
 **Flow:**
 
-```mermaid
+``mermaid
 sequenceDiagram
     participant UI as Generate tab
     participant API as /api/comfy/queue
@@ -207,7 +207,7 @@ sequenceDiagram
     API->>C: GET /view
     API->>API: import to VideoMoment candidate
     API-->>UI: job completed → review in Match
-```
+``
 
 **Action items:**
 
@@ -311,12 +311,12 @@ For MVP, **manual JSON import** of workflow templates is sufficient.
 
 ## Testing checklist
 
-```bash
+``bash
 # After implementation (conceptual)
 bun run test -- comfyCapabilities
 bun run test -- workflowPatch
 bun run test -- comfyJobLifecycle
-```
+``
 
 Integration tests with **mock ComfyUI** HTTP server returning fixed object_info/history.
 

@@ -12,7 +12,7 @@ This runbook covers the verified local MiniMax H3 paths used by Stack Structure:
 - **SwarmUI** at `http://127.0.0.1:7861` as the stable frontend and API boundary.
 - **Standalone ComfyUI** at `http://127.0.0.1:8188` for manual canvas development and debugging only.
 
-The verified Tailscale address for remote/cloud access is `http://100.73.126.36:7861`. On September 1, 2026, both `GetNewSession` and `/ComfyBackendDirect/system_stats` succeeded through that address. Keep the standalone `:8188` backend private and manual-only; remote clients must use SwarmUI.
+Remote/cloud access uses `SWARMUI_URL` from `.env.local` (git-ignored) over VPN. Keep the standalone `:8188` backend private and manual-only; remote clients must use SwarmUI.
 
 No application route, Trigger task, test harness, or remote worker may call standalone `:8188` or a Swarm-managed Comfy port directly. A Swarm-managed backend port can change after a restart. All programmatic Comfy API traffic must use `SWARMUI_URL` on `:7861` plus SwarmUI's `/ComfyBackendDirect/*` proxy.
 
@@ -42,9 +42,9 @@ Observed peak use was about 26.5 GB VRAM. Host RAM briefly reached about 102 GB 
 
 `ComfyUI-MiniMax-H3-Extend` monkey-patches MiniMax H3 packing to add continuation context. Its older ordinary-keyframe branch rejected native FL2VA last-frame anchors on current ComfyUI with:
 
-```text
+``text
 ValueError: only first/last keyframe anchors are supported
-```
+``
 
 The installed fix keeps the extension's `kind=context` and `kind=context_audio` handling, but delegates ordinary image/audio keyframes to the same positional logic as stock ComfyUI:
 
@@ -59,9 +59,9 @@ The fix is installed in both local copies:
 
 Restart the affected Comfy runtime after changing this file. Startup must include:
 
-```text
+``text
 [ComfyUI-MiniMax-H3-Extend] Patched PackedLayout + MiniMaxH3.extra_conds
-```
+``
 
 An extension update may overwrite the local compatibility fix. Re-run the FL2VA boundary pilot after any update to ComfyUI or this node pack.
 
@@ -69,7 +69,7 @@ An extension update may overwrite the local compatibility fix. Re-run the FL2VA 
 
 The builder repairs stale embedded-subgraph UUIDs, binds a first and last frame, applies the verified model stack, and deploys the same workflow and images to any supplied runtime roots.
 
-```powershell
+``powershell
 bun run scripts/build-minimax-h3-fl2va-workflow.ts `
   --source "D:\user\default\workflows\822-GORDO-VIDEO-GEN-MiniMax_H3-KAI-FL-INT8-20STEP.json" `
   --first "F:\__comfyui-workflows-master\Benji\references\love-me-tonight-bar-trio-1344x768.png" `
@@ -81,7 +81,7 @@ bun run scripts/build-minimax-h3-fl2va-workflow.ts `
   --prefix "h3/love-me-tonight-fl2va-boundary" `
   --duration 5.17 `
   --seed 424242
-```
+``
 
 The canonical first frame was the only new still needed for the original gap. The FL2VA last frame was extracted from frame 123 of the accepted Ref2VA base clip; no Grok/Juanito or Nano Banana image was generated for this pilot.
 
@@ -89,13 +89,13 @@ The canonical first frame was the only new still needed for the original gap. Th
 
 SwarmUI owns and may renumber its Comfy backend. Application and automation code must use:
 
-```text
+``text
 http://127.0.0.1:7861/ComfyBackendDirect/system_stats
 http://127.0.0.1:7861/ComfyBackendDirect/object_info
 http://127.0.0.1:7861/ComfyBackendDirect/prompt
 http://127.0.0.1:7861/ComfyBackendDirect/history/{prompt_id}
 http://127.0.0.1:7861/ComfyBackendDirect/view
-```
+``
 
 The app's Swarm path already transports durable `initImage`, `videoEndImage`, and `promptImages` references from RustFS and hydrates them only inside the Trigger task. Never expose local drive paths or data URLs in the browser request.
 
@@ -105,13 +105,13 @@ For Comfy prompt submission through SwarmUI, send API-format prompt JSON, not ed
 
 Run this after every model, node-pack, ComfyUI, Torch, or workflow change:
 
-```powershell
+``powershell
 bun run scripts/benchmark-minimax-h3-video.ts `
   --video "D:\ComfyUI_V89\ComfyUI\output\h3\love-me-tonight-fl2va-boundary-swarm_00001_.mp4" `
   --first "F:\__comfyui-workflows-master\Benji\references\love-me-tonight-bar-trio-1344x768.png" `
   --last "F:\__comfyui-workflows-master\Benji\references\love-me-tonight-bar-trio-ref2va-endframe-0123.png" `
   --audit-dir ".tmp\e2e-validation\love-me-tonight-ref2va-pilot-20260901\benchmark-swarm"
-```
+``
 
 Automated gates:
 
