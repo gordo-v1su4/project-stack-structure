@@ -2,6 +2,8 @@
 
 Web studio for music videos: upload a song and your clips, get a beat-aligned rough cut, optionally fill gaps with AI shots, then preview and export.
 
+![Project Stack Structure footage and music timeline](docs/images/project-stack-workspace.png)
+
 **Live app:** https://project-stack-structure.vercel.app (GitHub sign-in) · **Status:** [docs/roadmap.md](docs/roadmap.md)
 
 ## Stack
