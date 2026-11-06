@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 // Verified from this application's actual 4.5.16 production controller bundle.
 // Pin the whole input and output: an SDK or bundler change needs explicit review.
@@ -44,10 +43,19 @@ export async function patchTriggerControllerFile(file: string): Promise<void> {
   }
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+async function main() {
   if (process.argv.length !== 4 || process.argv[2] !== "--file") {
     throw new Error("Usage: bun scripts/patch-trigger-controller.ts --file CONTROLLER");
   }
   await patchTriggerControllerFile(process.argv[3]);
   console.log("Trigger controller attempt logging: metadata allowlist verified.");
+}
+
+// Trigger 4.5.16 loads config imports through a CommonJS transform. Keep the
+// imported module inert, without top-level await or evaluating import.meta.url.
+if ((import.meta as ImportMeta & { main?: boolean }).main) {
+  void main().catch(error => {
+    console.error(error instanceof Error ? error.message : "Trigger controller containment failed.");
+    process.exitCode = 1;
+  });
 }

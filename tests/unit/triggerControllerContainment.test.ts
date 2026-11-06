@@ -2,12 +2,21 @@ import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import type { BuildContext, BuildLayer } from "@trigger.dev/core/v3/build";
 import { controllerLogContainment } from "../../trigger.controller-containment";
 import { patchTriggerControllerSource, replaceAttemptLogStatement, SAFE_ATTEMPT_LOG,
   TRIGGER_CONTROLLER_SOURCE_SHA256, TRIGGER_CONTROLLER_PATCHED_SHA256, UNSAFE_ATTEMPT_LOG } from "../../scripts/patch-trigger-controller";
 
 describe("app-image Trigger controller log containment", () => {
+  (process.env.STACK_TRIGGER_CONFIG_LOADER_CLI_ROOT ? test : test.skip)("actual pinned 4.5.16 c12/jiti config loader imports the containment script without executing its CLI main", () => {
+    const result = spawnSync(process.execPath, ["tests/helpers/loadTriggerConfig.mjs", process.env.STACK_TRIGGER_CONFIG_LOADER_CLI_ROOT!, process.cwd()],
+      { encoding: "utf8", timeout: 30_000 });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('"pinnedCliConfigLoaded":true');
+    expect(result.stdout).toContain('"containmentExtensionCount":1');
+    expect(result.stdout).not.toContain("attempt logging: metadata allowlist verified");
+  });
   test("nested credentials and execution payload never reach the attempt log, while execution receives the original object", () => {
     const source = `const attemptNumber = start.data.run.attemptNumber; ${UNSAFE_ATTEMPT_LOG} return start.data;`;
     const patched = replaceAttemptLogStatement(source);
