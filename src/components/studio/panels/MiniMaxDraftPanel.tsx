@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { GeneratedStudioAsset } from "../generatedAssets";
 import type { GeneratedDraftReview, GeneratedDraftSelection } from "../generatedDraft";
-import { enqueueH3DraftRequest, findH3TargetSegment, h3DraftBatchStorageKey, h3RequestWindowKey, h3WindowKey, nextH3Attempt, parseH3DraftBatch, planH3DraftWindows, selectH3ReferenceAssetIds, type H3DraftBatch } from "../h3DraftPlan";
+import { createH3PickupWindow, enqueueH3DraftRequest, findH3TargetSegment, h3DraftBatchStorageKey, h3RequestWindowKey, h3WindowKey, nextH3Attempt, parseH3DraftBatch, planH3DraftWindows, selectH3PickupWindow, selectH3ReferenceAssetIds, type H3DraftBatch } from "../h3DraftPlan";
 import { isH3JobTerminal, type H3GenerationJob, type H3GenerationRequest } from "../h3Generation";
 import type { EditPlanPreviewSegment } from "../musicVideoProject";
 import type { ReferenceAsset } from "../referenceAssets";
@@ -38,11 +38,14 @@ export function MiniMaxDraftPanel(props: Props) {
   const [review, setReview] = useState<GeneratedDraftReview | null>(null);
   const [revisionText, setRevisionText] = useState<Record<string, string>>({});
   const [batch, setBatch] = useState<H3DraftBatch | null>(null);
+  const [pickupKey, setPickupKey] = useState("");
+  const [pickupEdits, setPickupEdits] = useState<Record<string, { direction?: string; duration?: string }>>({});
   const latest = useRef(props);
   const mounted = useRef(true);
   const delivered = useRef(new Set<string>());
   const batchRef = useRef<H3DraftBatch | null>(null);
   const running = useRef(false);
+  const preparingPickup = useRef(false);
   const continueBatch = useRef<(() => Promise<void>) | null>(null);
   const recoveryIntents = useRef(new Map<string, string>());
   useEffect(() => { latest.current = props; }, [props]);
@@ -209,6 +212,37 @@ export function MiniMaxDraftPanel(props: Props) {
     finally { if (mounted.current && !running.current) setBusy(false); }
   }
 
+  async function generateOneShot() {
+    if (!pickupWindow || preparingPickup.current || running.current || batchRef.current?.requests.length) return;
+    preparingPickup.current = true;
+    const chosenKey = h3WindowKey(pickupWindow);
+    const direction = pickupDirection.trim();
+    const duration = Number(pickupDuration);
+    setBusy(true); setError(null); setMessage("Saving this shot's story and references…");
+    try {
+      if (!direction) throw new Error("Describe the visible shot before creating it.");
+      // Validate before saving, then bind again to the latest current hole after the await.
+      createH3PickupWindow(pickupWindow, duration);
+      const projectId = await props.onEnsureSavedProject();
+      latest.current = { ...latest.current, projectId };
+      const existingJobs = await readJobs(projectId);
+      const currentWindow = planH3DraftWindows(latest.current.segments).find(window => h3WindowKey(window) === chosenKey);
+      if (!currentWindow) throw new Error("This song window changed while saving. Select its current missing window.");
+      const segment = createH3PickupWindow(currentWindow, duration);
+      const previous = existingJobs.filter(job => h3RequestWindowKey(job.request) === h3WindowKey(segment)).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+      if (previous && !isH3JobTerminal(previous)) throw new Error("This exact shot already has a submission. Check its existing render in Generation progress.");
+      const input: H3GenerationRequest = previous ? nextH3Attempt(previous, existingJobs, latest.current.draft?.revision ?? 0, direction) : {
+        projectId, planSignature: segment.planSignature!, requirementId: segment.requirementId, timelineItemId: segment.timelineItemId,
+        sectionId: segment.sectionId, songStart: segment.musicStart, songEnd: segment.musicEnd, prompt: direction,
+        requestIntentId: crypto.randomUUID(), attempt: 0, referenceAssetIds: [], draftRevision: latest.current.draft?.revision ?? 0,
+      };
+      const request = { ...input, referenceAssetIds: selectH3ReferenceAssetIds(latest.current.referenceAssets, direction) };
+      persistBatch({ version: 1, projectId, planSignature: request.planSignature, requests: [request], paused: false });
+      setReview(null); await runBatch();
+    } catch (failure) { setError(failure instanceof Error ? failure.message : "Could not create this shot."); }
+    finally { preparingPickup.current = false; if (mounted.current && !running.current) setBusy(false); }
+  }
+
   async function recoverJob(job: H3GenerationJob, action: "resume" | "cancel" | "retry") {
     setBusy(true); setError(null);
     try {
@@ -233,6 +267,13 @@ export function MiniMaxDraftPanel(props: Props) {
   }
 
   const missing = planH3DraftWindows(props.segments);
+  const pickupWindow = selectH3PickupWindow(missing, pickupKey);
+  const pickupEditKey = `${props.projectId ?? "unsaved"}:${pickupWindow ? h3WindowKey(pickupWindow) : ""}`;
+  const pickupDirection = pickupEdits[pickupEditKey]?.direction ?? pickupWindow?.storyDirection?.trim() ?? pickupWindow?.label ?? "";
+  const pickupMaximum = pickupWindow ? Math.min(12, pickupWindow.musicEnd - pickupWindow.musicStart) : 0;
+  const pickupDuration = pickupEdits[pickupEditKey]?.duration ?? String(Math.min(3, pickupMaximum));
+  const pickupDurationValid = pickupMaximum > 0 && pickupDuration.trim() !== "" && Number.isFinite(Number(pickupDuration))
+    && Number(pickupDuration) >= Math.min(1, pickupMaximum) && Number(pickupDuration) <= pickupMaximum;
   const activeJobs = jobs.filter(job => !isH3JobTerminal(job));
   const attemptsLeft = (job: H3GenerationJob) => 2 - Math.max(job.request.attempt ?? 0, ...jobs.filter(candidate => candidate.request.requestIntentId === job.request.requestIntentId).map(candidate => candidate.request.attempt ?? 0));
   const selectedIds = new Set(props.draft?.assetIds ?? []);
@@ -253,6 +294,31 @@ export function MiniMaxDraftPanel(props: Props) {
           onClick={() => void generateMissing()}>{busy ? "Creating draft…" : activeJobs.length ? "Generation in progress" : "Create missing shots"}</Button>
       </div>
       {unavailable ? <p className="mt-3 text-sm text-fg-3">{unavailable}</p> : null}
+      <details className="mt-3 rounded-md border border-line p-3">
+        <summary className="cursor-pointer text-sm text-fg-2">Create one shot · advanced</summary>
+        <div className="mt-3 space-y-3">
+          <label className="block text-xs text-fg-3">Missing story window<select aria-label="One shot story window"
+            value={pickupWindow ? h3WindowKey(pickupWindow) : ""} disabled={busy || accepting}
+            onChange={event => setPickupKey(event.target.value)} className="mt-1 block w-full rounded-md border border-line bg-ink-1 p-2 text-sm text-fg-1">
+            {!pickupWindow ? <option value="">Select a missing window</option> : null}
+            {missing.map(window => <option key={h3WindowKey(window)} value={h3WindowKey(window)}>{window.label} · {preciseClock(window.musicStart)}–{preciseClock(window.musicEnd)}{window.musicEnd - window.musicStart < 1 ? " · short boundary sliver" : ""}</option>)}
+          </select></label>
+          {pickupWindow ? <>
+            <label className="block text-xs text-fg-3">Edit duration (seconds)<input aria-label="One shot edit duration" type="number" step="any"
+              min={Math.min(1, pickupMaximum)} max={pickupMaximum} value={pickupDuration} disabled={busy || accepting}
+              onChange={event => setPickupEdits(current => ({ ...current, [pickupEditKey]: { ...current[pickupEditKey], duration: event.target.value } }))}
+              className="mt-1 block w-32 rounded-md border border-line bg-ink-1 p-2 text-sm text-fg-1" /></label>
+            <p className="text-xs text-fg-3">{pickupDurationValid ? `This shot fills ${preciseClock(pickupWindow.musicStart)}–${preciseClock(pickupWindow.musicStart + Number(pickupDuration))}.` : `Choose ${Math.min(1, pickupMaximum)}–${pickupMaximum.toFixed(3)} seconds.`} The rest of the draft stays in place.{pickupMaximum < 1 ? " This explicitly selected boundary sliver uses its full duration." : ""}</p>
+            <label className="block text-xs text-fg-3">Shot direction<textarea aria-label="One shot direction" rows={4} maxLength={6000}
+              value={pickupDirection} disabled={busy || accepting}
+              onChange={event => setPickupEdits(current => ({ ...current, [pickupEditKey]: { ...current[pickupEditKey], direction: event.target.value } }))}
+              className="mt-1 block w-full rounded-md border border-line bg-ink-1 p-2 text-sm text-fg-1" /></label>
+          </> : <p className="text-xs text-fg-3">Select a short boundary sliver explicitly, or prepare a missing story window.</p>}
+          {batch?.requests.length ? <p className="text-xs text-fg-3">Continue or clear the saved requests before creating one shot.</p> : null}
+          <Button disabled={busy || accepting || Boolean(unavailable) || !pickupWindow || !pickupDurationValid || !pickupDirection.trim() || activeJobs.length > 0 || Boolean(batch?.requests.length)}
+            reason={unavailable} onClick={() => void generateOneShot()}>Create this shot</Button>
+        </div>
+      </details>
       {message ? <p role="status" className="mt-3 text-sm text-fg-2">{message}</p> : null}
       {error ? <p role="alert" className="mt-3 text-sm text-danger">{error}</p> : null}
       {batch?.requests.length ? <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-fg-3">
@@ -311,3 +377,4 @@ export function MiniMaxDraftPanel(props: Props) {
 }
 
 function clock(seconds: number) { return `${Math.floor(seconds / 60)}:${Math.floor(seconds % 60).toString().padStart(2, "0")}`; }
+function preciseClock(seconds: number) { return `${Math.floor(seconds / 60)}:${(seconds % 60).toFixed(2).padStart(5, "0")}`; }

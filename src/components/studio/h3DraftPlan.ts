@@ -43,6 +43,27 @@ export function h3RequestWindowKey(request: H3GenerationRequest) {
   return h3WindowKey({ ...request, musicStart: request.songStart, musicEnd: request.songEnd });
 }
 
+/** A pilot defaults to a substantive hole; tiny boundary slivers require explicit selection. */
+export function selectH3PickupWindow(windows: EditPlanPreviewSegment[], key: string) {
+  return windows.find(window => h3WindowKey(window) === key)
+    ?? windows.find(window => window.musicEnd - window.musicStart >= 1)
+    ?? null;
+}
+
+/** Editorial coverage is a prefix of one current placement, independent of native render handles. */
+export function createH3PickupWindow(window: EditPlanPreviewSegment, duration: number): EditPlanPreviewSegment {
+  const available = window.musicEnd - window.musicStart;
+  const minimum = Math.min(1, available);
+  const maximum = Math.min(H3_MAX_SHOT_SECONDS, available);
+  if (!window.planSignature || !Number.isFinite(window.musicStart) || window.musicStart < 0
+    || !Number.isFinite(available) || available <= 0 || !Number.isFinite(duration)
+    || duration < minimum - 0.000001 || duration > maximum + 0.000001) {
+    throw new Error("Choose an edit duration within the selected missing window (1–12 seconds, or the full shorter sliver).");
+  }
+  const musicEnd = Math.min(window.musicStart + duration, window.musicEnd);
+  return { ...window, musicEnd, startTime: 0, endTime: musicEnd - window.musicStart };
+}
+
 /** A response loss retries transport with the same intent; existing submissions are never re-enqueued. */
 export async function enqueueH3DraftRequest(request: H3GenerationRequest, jobs: H3GenerationJob[], fetchImpl: typeof fetch = fetch): Promise<H3GenerationJob> {
   const existing = jobs.find(job => job.request.requestIntentId === request.requestIntentId && (job.request.attempt ?? 0) === (request.attempt ?? 0));

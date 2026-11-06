@@ -1,7 +1,7 @@
 import { GetObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { createHash } from "node:crypto";
 import type { H3GenerationJob, H3ReferenceSnapshot } from "@/components/studio/h3Generation";
-import { buildMediaGatewayFileUrl, getMediaGatewayConfig } from "./mediaGateway";
+import { getMediaGatewayConfig } from "./mediaGateway";
 import { normalizeStudioOwnerSegment, normalizeStudioProjectId } from "./studioStoragePaths";
 import { h3GenerationJobId, H3RequestError } from "./h3GenerationServer";
 
@@ -42,23 +42,35 @@ function status(error: unknown) {
 
 /** Pin the actual stored bytes, rather than assuming a filename can never be overwritten. */
 export async function pinH3JobReferences(job: H3GenerationJob): Promise<H3GenerationJob> {
-  const config = getMediaGatewayConfig();
-  if (!config) throw new Error("Durable reference storage is not configured.");
-  const bucket = config.bucket;
+  const { client, bucket } = storage();
   const references: H3ReferenceSnapshot[] = [];
   for (const reference of job.references) {
     if (reference.bucket !== bucket) throw new H3RequestError("Reference bucket changed.", 403);
-    // This deployment rejects signed S3 HeadObject. Use the same trusted gateway
-    // HEAD as completed-upload verification; the bucket and key are server-derived.
-    const head = await fetch(buildMediaGatewayFileUrl(config, bucket, reference.objectKey), {
-      method: "HEAD", headers: { Authorization: `Bearer ${config.token}` }, redirect: "error",
-      signal: AbortSignal.timeout(15_000), cache: "no-store",
-    });
-    if (!head.ok) throw new H3RequestError(`Reference metadata is unavailable (HTTP ${head.status}).`, 503);
-    const etag = head.headers.get("etag");
-    const size = Number(head.headers.get("content-length"));
+    // Signed HEAD is rejected here, and gateway HEAD redirects to object storage.
+    // A signed one-byte GET pins authoritative metadata without following redirects.
+    let metadata;
+    try {
+      metadata = await client.send(new GetObjectCommand({ Bucket: bucket, Key: reference.objectKey, Range: "bytes=0-0" }),
+        { abortSignal: AbortSignal.timeout(15_000) });
+    } catch (error) {
+      const httpStatus = status(error);
+      throw new H3RequestError(httpStatus ? `Reference metadata lookup failed (storage HTTP ${httpStatus}).`
+        : "Reference metadata lookup could not reach durable storage.", 503);
+    }
+    const etag = metadata.ETag;
+    const range = metadata.ContentRange?.match(/^bytes 0-0\/(\d+)$/);
+    const size = range ? Number(range[1]) : 0;
+    if (metadata.$metadata.httpStatusCode !== 206 || metadata.ContentLength !== 1 || !range || !metadata.Body) {
+      // Never consume a full image if a proxy ignores Range.
+      if (metadata.Body && "destroy" in metadata.Body && typeof metadata.Body.destroy === "function") metadata.Body.destroy();
+      throw new H3RequestError("Reference metadata lookup did not return the requested one-byte range.", 503);
+    }
+    let bytes;
+    try { bytes = await metadata.Body.transformToByteArray(); }
+    catch { throw new H3RequestError("Reference metadata lookup was interrupted while reading durable storage.", 503); }
+    if (bytes.length !== 1) throw new H3RequestError("Reference metadata lookup returned an incomplete byte range.", 503);
     if (!etag || !size || size > 32 * 1024 * 1024
-      || !/^image\/(?:png|jpeg|webp)(?:;|$)/.test(head.headers.get("content-type") ?? "")) {
+      || !/^image\/(?:png|jpeg|webp)(?:;|$)/.test(metadata.ContentType ?? "")) {
       throw new H3RequestError("H3 references must be PNG, JPEG or WebP images smaller than 32 MiB.");
     }
     references.push({ ...reference, etag,

@@ -68,3 +68,6 @@ story-state.jpeg
 
 # Cursor: repo MCP overrides (remote Higgsfield etc.) — copy from proxmox-home/cursor/templates/mcp-higgsfield.json locally
 .cursor/mcp.json
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/

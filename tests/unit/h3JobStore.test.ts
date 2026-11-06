@@ -5,21 +5,27 @@ import { h3ProjectFixture } from "../helpers/h3Project";
 const objects = new Map<string, { body: string; etag: string }>();
 let serial = 0, conditionalFailures = 0;
 let sourceEtag = "image-version-1";
+let metadataOverride: Record<string, unknown> = {};
+let metadataError: Error | undefined;
 const originalFetch = globalThis.fetch;
 const names = ["RUSTFS_S3_ENDPOINT", "RUSTFS_ACCESS_KEY", "RUSTFS_SECRET_KEY"] as const;
 const previous = Object.fromEntries(names.map(name => [name, process.env[name]]));
 class GetObjectCommand { constructor(public input: Record<string, unknown>) {} }
-class HeadObjectCommand { constructor(public input: Record<string, unknown>) {} }
 class PutObjectCommand { constructor(public input: Record<string, unknown>) {} }
 class ListObjectsV2Command { constructor(public input: Record<string, unknown>) {} }
 function failure(code: number) { return Object.assign(new Error(`S3 ${code}`), { $metadata: { httpStatusCode: code } }); }
 class S3Client {
-  async send(command: GetObjectCommand | HeadObjectCommand | PutObjectCommand | ListObjectsV2Command) {
+  async send(command: GetObjectCommand | PutObjectCommand | ListObjectsV2Command) {
     const input = command.input;
     const key = String(input.Key);
-    if (command instanceof HeadObjectCommand) return { ETag: sourceEtag, ContentLength: 3, ContentType: "image/png" };
     if (command instanceof GetObjectCommand) {
       if (key.endsWith(".png")) {
+        if (input.Range) {
+          expect(input.Range).toBe("bytes=0-0");
+          if (metadataError) throw metadataError;
+          return { ETag: sourceEtag, ContentType: "image/png", ContentLength: 1, ContentRange: "bytes 0-0/3",
+            $metadata: { httpStatusCode: 206 }, Body: { transformToByteArray: async () => new Uint8Array([1]) }, ...metadataOverride };
+        }
         if (input.IfMatch !== sourceEtag) throw failure(412);
         return { ContentType: "image/png", ContentLength: 3, Body: { transformToByteArray: async () => new Uint8Array([1, 2, 3]) } };
       }
@@ -38,22 +44,17 @@ class S3Client {
     return { Contents: [...objects.keys()].filter(key => key.startsWith(String(input.Prefix))).map(Key => ({ Key })) };
   }
 }
-mock.module("@aws-sdk/client-s3", () => ({ GetObjectCommand, HeadObjectCommand, PutObjectCommand, ListObjectsV2Command, S3Client }));
-mock.module("@/lib/mediaGateway", () => ({ getMediaGatewayConfig: () => ({ bucket: "studio", url: "https://media.example", token: "test-only" }),
-  buildMediaGatewayFileUrl: (_config: unknown, bucket: string, key: string) => `https://media.example/files/${bucket}/${key}`,
-}));
+mock.module("@aws-sdk/client-s3", () => ({ GetObjectCommand, PutObjectCommand, ListObjectsV2Command, S3Client }));
+mock.module("@/lib/mediaGateway", () => ({ getMediaGatewayConfig: () => ({ bucket: "studio", url: "https://media.example", token: "test-only" }) }));
 const { createH3Job, readH3Job, updateH3Job, listH3Jobs, pinH3JobReferences, downloadH3ReferenceImage, claimH3GenerationIntent } = await import("@/lib/h3JobStore");
 
 function setup() {
   objects.clear(); serial = 0; conditionalFailures = 0; sourceEtag = "image-version-1";
+  metadataOverride = {}; metadataError = undefined;
   process.env.RUSTFS_S3_ENDPOINT = "https://storage.example";
   process.env.RUSTFS_ACCESS_KEY = "test-only-access";
   process.env.RUSTFS_SECRET_KEY = "test-only-secret";
-  globalThis.fetch = (async (url: string | URL | Request, options?: RequestInit) => {
-    expect(String(url).startsWith("https://media.example/files/studio/media-uploads/github-test/")).toBe(true);
-    expect(options?.method).toBe("HEAD");
-    return new Response(null, { headers: { etag: sourceEtag, "content-length": "3", "content-type": "image/png" } });
-  }) as typeof fetch;
+  globalThis.fetch = (() => { throw new Error("Reference metadata must use signed S3, not a redirecting gateway."); }) as typeof fetch;
   const { saved, request } = h3ProjectFixture();
   return materializeH3Job("github-test", saved, request, "studio");
 }
@@ -100,6 +101,32 @@ describe("conditional durable H3 job records", () => {
     sourceEtag = "image-version-2";
     expect((await pinH3JobReferences(initial)).id).not.toBe(pinned.id);
     await expect(downloadH3ReferenceImage(pinned.references[0])).rejects.toThrow("412");
+  });
+
+  test("reference metadata requires bounded partial bytes and authoritative image metadata", async () => {
+    const job = setup();
+    let consumed = false, destroyed = false;
+    metadataOverride = { $metadata: { httpStatusCode: 200 }, ContentLength: 3,
+      Body: { transformToByteArray: async () => { consumed = true; return new Uint8Array([1, 2, 3]); }, destroy: () => { destroyed = true; } } };
+    await expect(pinH3JobReferences(job)).rejects.toThrow("one-byte range");
+    expect(consumed).toBe(false); expect(destroyed).toBe(true);
+    metadataOverride = { ContentRange: "bytes 0-0/33554433" };
+    await expect(pinH3JobReferences(job)).rejects.toThrow("smaller than 32 MiB");
+    metadataOverride = { ContentType: "text/html" };
+    await expect(pinH3JobReferences(job)).rejects.toThrow("PNG, JPEG or WebP");
+    metadataOverride = { Body: { transformToByteArray: async () => new Uint8Array() } };
+    await expect(pinH3JobReferences(job)).rejects.toThrow("incomplete byte range");
+  });
+
+  test("reference lookup failures identify the safe storage boundary without exposing transport details", async () => {
+    const job = setup();
+    metadataError = failure(403);
+    await expect(pinH3JobReferences(job)).rejects.toThrow("Reference metadata lookup failed (storage HTTP 403)");
+    metadataError = new Error("fetch failed secret transport detail");
+    await expect(pinH3JobReferences(job)).rejects.toThrow("Reference metadata lookup could not reach durable storage.");
+    metadataError = undefined;
+    metadataOverride = { Body: { transformToByteArray: async () => { throw new Error("secret body detail"); } } };
+    await expect(pinH3JobReferences(job)).rejects.toThrow("interrupted while reading durable storage");
   });
 
   test("one intent/attempt is immutable even if the payload or pinned image changes", async () => {

@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { enqueueH3DraftRequest, findH3TargetSegment, h3RequestWindowKey, nextH3Attempt, parseH3DraftBatch, planH3DraftWindows, selectH3ReferenceAssetIds, type H3DraftBatch } from "../../src/components/studio/h3DraftPlan";
+import { createH3PickupWindow, enqueueH3DraftRequest, findH3TargetSegment, h3RequestWindowKey, nextH3Attempt, parseH3DraftBatch, planH3DraftWindows, selectH3PickupWindow, selectH3ReferenceAssetIds, h3WindowKey, type H3DraftBatch } from "../../src/components/studio/h3DraftPlan";
 import type { H3GenerationJob } from "@/components/studio/h3Generation";
 import { prepareApprovedPlacements } from "@/components/studio/musicVideoProject";
 import { materializeH3Job, parseH3Request } from "@/lib/h3GenerationServer";
+import { compileH3Prompt } from "@/lib/h3Workflow";
 import { h3ProjectFixture } from "../helpers/h3Project";
 import type { EditPlanPreviewSegment } from "../../src/components/studio/musicVideoProject";
 
@@ -12,6 +13,39 @@ const gap = (start: number, end: number, patch: Partial<EditPlanPreviewSegment> 
 });
 
 describe("H3 draft coverage planning", () => {
+  test("one-shot defaults skip boundary slivers while an explicit selection retains them", () => {
+    const windows = [gap(0, 0.03), gap(14.77, 20), gap(20, 20.4)];
+    expect(selectH3PickupWindow(windows, "")).toBe(windows[1]);
+    expect(selectH3PickupWindow(windows, "stale-key")).toBe(windows[1]);
+    expect(selectH3PickupWindow(windows, h3WindowKey(windows[0]))).toBe(windows[0]);
+    expect(selectH3PickupWindow([windows[0], windows[2]], "")).toBeNull();
+    expect(createH3PickupWindow(windows[0], 0.03).musicEnd).toBe(0.03);
+    expect(() => createH3PickupWindow(windows[0], 0.02)).toThrow("duration");
+  });
+
+  test("one-shot pickup fills exactly 14.77–17.27 without changing saved placement identity", () => {
+    const original = gap(14.77, 23, { placementId: "diego-entry", storyDirection: "Diego enters." });
+    const pickup = createH3PickupWindow(original, 2.5);
+    expect(pickup).toMatchObject({ musicStart: 14.77, musicEnd: 17.27, startTime: 0, endTime: 2.5,
+      placementId: original.placementId, planSignature: original.planSignature, sectionId: original.sectionId,
+      requirementId: original.requirementId, timelineItemId: original.timelineItemId });
+    expect(original.musicEnd).toBe(23);
+    for (const duration of [NaN, Infinity, 0, -1, 0.9, 8.231, 13]) expect(() => createH3PickupWindow(original, duration)).toThrow("duration");
+    expect(createH3PickupWindow(original, 8.23).musicEnd).toBe(23);
+  });
+
+  test("one-shot prefix target binds to the saved plan and keeps native handles outside song coverage", () => {
+    const { saved, request } = h3ProjectFixture();
+    const signature = saved.draft.musicVideoProject!.placementPlan!.inputSignature;
+    const pickup = createH3PickupWindow(gap(request.songStart, request.songEnd, { planSignature: signature,
+      sectionId: request.sectionId, requirementId: request.requirementId, timelineItemId: request.timelineItemId }), 2.5);
+    const input = parseH3Request({ ...request, songStart: pickup.musicStart, songEnd: pickup.musicEnd });
+    const job = materializeH3Job("github-test", saved, input, "studio");
+    expect(job.target.songStart).toBe(request.songStart);
+    expect(job.target.songEnd).toBe(request.songStart + 2.5);
+    expect(compileH3Prompt(job).frames / 24).toBeGreaterThan(2.5);
+  });
+
   test("covers a long gap exactly without touching existing footage or creating a tiny tail", () => {
     const windows = planH3DraftWindows([gap(0, 3, { kind: "source", videoUrl: "https://media.test/source.mp4" }), gap(3, 28)]);
     expect(windows).toHaveLength(3);

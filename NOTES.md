@@ -49,7 +49,18 @@ Engineering defaults can be resolved without additional product interviews: reus
 - Work continues on `codex/minimax-completion`, based on fetched `origin/main` at `646b66e`, in a separate worktree.
 - Original checkout has unrelated local changes and is preserved. It is 59 commits behind upstream; its local screenshot addition is already represented upstream.
 - Production browser restored `Assembly recovery · 2026-09-08`: Love Me Tonight, 246.7 seconds, 11 clips, 57 captions, confirmed story, and 21 unfilled timeline windows.
-- Navigation to Generate showed the external Seedance handoff and manual import flow. No generation or story/timeline edit was submitted.
-- Local SwarmUI on port 7861 refused the audit connection. Its current model/backend availability is unverified.
+- Initial navigation to Generate showed the external Seedance handoff and manual import flow; this was replaced by the integrated MiniMax draft flow in the released completion branch.
+- SwarmUI is running through its existing persistent task on port 7861. The production VM worker reached its managed backend through SwarmUI and verified CUDA on the RTX 5090; no raw backend provider was introduced.
+
+## Release and live evidence, 2026-11-06
+
+- Saved a recoverable public-app finishing copy: `75101b25-fea6-42b1-b2c6-85a9d1deb8eb`, **Love Me Tonight · Finishing revision · 2026-11-06**. Original story/project and all 11 sources remain preserved.
+- Release `a810e1c` passed the full check (786 pass, 21 fixture-dependent skips, zero failures) and production build. The Next auth-helper tests run in an isolated process because their console patch otherwise breaks unrelated Bun audio tests.
+- Deployed the app-only Trigger bundle `20261106.1`, deployment `g2zgqouw`, 17 existing task IDs, image digest `sha256:f777033074523219258757e1e1ca7a9d1f382045f0727409a26c4f80d6115d93`. The canonical VM100 checkout was preserved; an isolated SHA-pinned build worktree was used.
+- Released the same web commit to the existing public app. Initial deployment `dpl_WbzvXaMpCkUeEaKH9ykux6QRX7yC`; configuration refresh `dpl_B9ykeN1bMWxWARiarnoYU1ZRMQh6`. Browser restored the finishing copy with Setup → Story → Draft → Finish and the real signed-in session.
+- The main checkout at `C:/Users/Gordo/Documents/Github/project-stack-structure` remains the source for `.env` and `.env.local`; local commands explicitly load that configuration. `.env.example` is the blank inventory. BWS provides canonical values when needed. Only the three existing RustFS S3 variables were synchronized from exact BWS pointers into local/Vercel/Trigger configuration; no auth settings changed. RustFS endpoint is `s3.v1su4.dev`.
+- Vercel CLI unexpectedly created an automation bypass during a staged HTTP check. It was immediately revoked without regeneration; API verification showed zero bypass entries, with deployment protection retained. Do not repeat `vercel curl` if it would create another persistent bypass.
+- Public H3 job-list reads now return 200. First exact Diego pickup request (14.77–17.27; native 124 frames at 24 FPS) passed strict prompt lint, then failed before dispatch because a new reference HEAD check rejected the media gateway's normal 302 redirect. No inference or generated-video acceptance has occurred yet. Follow-up uses a conditional, server-owned direct RustFS reference read rather than following arbitrary redirects.
+- The caption server's existing `--cache-ram 0`, full GPU offload, and idle-unload mechanisms were located in proxmox-home and explained to Robert. These are separate from the 5090 video worker. No caption/shared-platform service settings were changed.
 
 See [the workflow spec](workflows/finish-music-video.md) for the completion contract and checklist.

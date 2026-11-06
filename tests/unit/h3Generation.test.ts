@@ -73,6 +73,17 @@ describe("owned plan-bound H3 generation", () => {
     expect(() => materializeH3Job("github-test", saved, { ...request, referenceAssetIds: ["club"] }, "studio")).toThrow("identity reference for Diego");
   });
 
+  test("the saved wide establishing direction keeps its framing when adding a camera command", () => {
+    const { saved, request } = h3ProjectFixture();
+    const prompt = "Wide shot of jungle and cave entrance to the Underground Latin Club.";
+    const job = materializeH3Job("github-test", saved, { ...request, referenceAssetIds: ["club"], prompt }, "studio");
+    const compiled = compileH3Prompt(job);
+    expect(compiled.frameSchedule["0"]).toBe(`[Tracking] ${prompt} CLUB_MAIN.`);
+    expect(compiled.prompt).not.toContain("Medium shot");
+    job.request.prompt = `[Static] ${prompt}`;
+    expect(compileH3Prompt(job).frameSchedule["0"]).toBe(`[Static] ${prompt} CLUB_MAIN.`);
+  });
+
   test("single-shot preflight rejects negative prose, camera conflicts and oversized action budgets", () => {
     for (const body of ["[Static] Medium shot. Diego tracks backward.", "[Tracking] Close-up. Diego's entire body fills the frame.",
       "[Tracking] Medium shot. Diego moves without stopping.", `[Tracking] Medium shot. ${"Diego moves. ".repeat(50)}`]) {
