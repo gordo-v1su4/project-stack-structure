@@ -20,7 +20,6 @@ import { clearRoughCutPlacement, applyRoughCutSwap, proposeRoughCutSwap, propose
 import { selectStorySectionCandidate } from "./studio/musicVideoProjectSelection";
 import { buildAutoShaderCues, describeMusicVideoShaderPreset, MUSIC_VIDEO_SHADER_PRESETS, type ShaderAccentKinds } from "./studio/shaderEffectPlan";
 import {
-  ACTIVE_STUDIO_PROJECT_KEY,
   STUDIO_AUTOSAVE_INTERVAL_MS,
   buildVideoMediaKey,
   createPersistableStudioProjectDraft,
@@ -32,6 +31,7 @@ import {
   type PersistedCommittedSplit,
   type RuntimeStudioProjectDraft,
 } from "./studio/projectPersistence";
+import { loadStudioProjectSelection, readStudioProjectSelection, rememberStudioProjectSelection } from "./studio/projectSelection";
 import type { StudioProjectSummary } from "@/lib/studioProjectStore";
 import { applyApprovedGeneratedAssets, buildGeneratedAssetContextPreview, buildGeneratedAssetPlaybackUrl, mergeGeneratedAssetDelivery, type GeneratedStudioAsset } from "./studio/generatedAssets";
 import { applyDraftGeneratedAssets, approveGeneratedDraft, captureGeneratedDraftReview, createGeneratedDraftSelection, prepareGeneratedDraftApprovalEvidence, rejectGeneratedDraftAsset, selectGeneratedDraftAsset, type GeneratedDraftReview, type GeneratedDraftSelection } from "./studio/generatedDraft";
@@ -259,37 +259,50 @@ export default function StudioApp() {
   useEffect(() => {
     let cancelled = false;
 
-    const activeId = window.localStorage.getItem(ACTIVE_STUDIO_PROJECT_KEY);
-    const restore = activeId
-      ? loadSavedStudioProject(activeId).then((saved) => {
-          setActiveProjectId(saved.project.id);
-          setActiveProjectName(saved.project.name);
-          return hydrateStudioProjectDraft({ draft: saved.draft });
-        }).catch(() => loadStudioProjectDraft())
-      : loadStudioProjectDraft();
+    const selection = readStudioProjectSelection();
+    type RestoredSelection = { project: StudioProjectSummary | null; draft: RuntimeStudioProjectDraft };
+    const restore = loadStudioProjectSelection<RestoredSelection>(selection, {
+      named: async (id) => {
+        // A late/cancelled restore cannot change this tab's current selection.
+        const saved = await loadSavedStudioProject(id, { cache: false });
+        return { project: saved.project, draft: hydrateStudioProjectDraft({ draft: saved.draft }) };
+      },
+      local: async () => {
+        const draft = await loadStudioProjectDraft();
+        return draft ? { project: null, draft } : null;
+      },
+    });
 
     restore
-      .then((draft) => {
+      .then((restored) => {
         if (cancelled) return;
-        if (!draft) {
+        if (!restored) {
           setDraftRestored(true);
           return;
         }
 
+        const { project, draft } = restored;
+        if (project) {
+          rememberStudioProjectSelection(project.id);
+          setActiveProjectId(project.id);
+          setActiveProjectName(project.name);
+        }
         applyRestoredProjectDraft(draft);
         skipNextDirtyMarkRef.current = true;
         setSaveState({
           kind: "restored",
           at: Date.now(),
-          scope: activeId ? "project" : "local",
-          detail: activeId ? "Restored saved project from RustFS." : "Restored the draft saved in this browser.",
+          scope: project ? "project" : "local",
+          detail: project ? "Restored saved project from RustFS." : "Restored the draft saved in this browser.",
         });
         setDraftRestored(true);
       })
       .catch((error) => {
         console.warn("[Studio] Could not restore local project draft", error);
         if (!cancelled) {
-          setSaveState({ kind: "error", at: null, scope: "local", detail: "Could not restore the local draft; starting fresh." });
+          setSaveState({ kind: "error", at: null, scope: selection.projectId ? "project" : "local", detail: selection.projectId
+            ? "Could not restore this tab's saved project. Choose it again from the project library; another project was not substituted."
+            : "Could not restore the local draft; starting fresh." });
           setDraftRestored(true);
         }
       });
@@ -576,7 +589,7 @@ export default function StudioApp() {
     // Existing named projects are never cleared or overwritten by this action.
     await createBlankNamedStudioProject(name, createDefaultStoryTabState());
     pendingAutosaveRef.current = null;
-    window.localStorage.setItem("svs.studio.activeTab", "review");
+    try { window.localStorage.setItem("svs.studio.activeTab", "review"); } catch { /* New durable project still exists if browser storage is blocked. */ }
     window.location.reload();
     return true;
   }

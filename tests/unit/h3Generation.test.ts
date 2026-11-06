@@ -5,6 +5,13 @@ import { assertH3ShotProfile, buildH3Workflow, compileH3Prompt } from "@/lib/h3W
 import { h3ProjectFixture } from "../helpers/h3Project";
 
 describe("owned plan-bound H3 generation", () => {
+  test("reviewed Story directions still require exact-name language at H3 submission and compilation", () => {
+    const { saved, request } = h3ProjectFixture();
+    const prompt = "Diego enters. He scans the crowd and raises his eyes.";
+    expect(() => parseH3Request({ ...request, prompt })).toThrow(/exact character name/);
+    const job = materializeH3Job("github-test", saved, request, "studio");
+    expect(() => compileH3Prompt({ ...job, request: { ...job.request, prompt } })).toThrow(/exact character name/);
+  });
   test("an explicit supported screen family creates a new job without changing historical requests", () => {
     const { saved, request } = h3ProjectFixture();
     const historical = parseH3Request(request);

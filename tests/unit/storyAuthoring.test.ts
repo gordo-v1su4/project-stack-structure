@@ -61,12 +61,13 @@ describe("story authoring revisions", () => {
     expect(() => validateStoryAuthoring({ ...story, loglineElements: undefined })).toThrow(/five logline/i);
     expect(() => validateStoryAuthoring({ ...story, synopsis: "A vague mood description." })).toThrow(/three short sentences/i);
   });
-  test("new story generation directions must respect reference names and visible actions", () => {
+  test("story cards preserve reviewed prose and future directions without applying a submission gate", () => {
     const story = fixture();
+    story.logline = "When the storm traps Diego, he must find shelter despite a locked entrance, or remain outside.";
     story.anchors[0].generationPrompt = "Diego enters. He scans the crowd.";
-    expect(() => validateStoryAuthoring(story)).toThrow(/exact character name/);
-    story.anchors[0].generationPrompt = "Diego pulls off Diego's shirt and runs toward the exit.";
+    const before = JSON.stringify(story);
     expect(validateStoryAuthoring(story)).toEqual(story);
+    expect(JSON.stringify(story)).toBe(before);
   });
   test("revision requests retain edited prose but strip client coverage assertions", () => {
     const story = fixture(); story.anchors[0].resolution = "source"; story.anchors[0].selectedCandidateId = "fake-coverage";

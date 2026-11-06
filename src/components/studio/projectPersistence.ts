@@ -13,7 +13,8 @@ import type { StoryBrief, StoryGenerationMeta, StoryTreatment } from "./storyTre
 import { encodeStudioJsonRequest, STUDIO_JSON_TRANSPORT_HEADERS } from "@/lib/studioJsonTransport";
 
 export const STUDIO_PROJECT_STORAGE_KEY = "project-stack-structure:studio-project:v1";
-export const ACTIVE_STUDIO_PROJECT_KEY = "project-stack-structure:active-project:v1";
+export { ACTIVE_STUDIO_PROJECT_KEY } from "./projectSelection";
+import { rememberStudioProjectSelection } from "./projectSelection";
 export const STUDIO_AUTOSAVE_INTERVAL_MS = 5 * 60 * 1_000;
 const MEDIA_DB_NAME = "project-stack-structure-studio-media";
 const MEDIA_STORE_NAME = "media";
@@ -366,11 +367,11 @@ export async function listSavedStudioProjects(): Promise<StudioProjectSummary[]>
   return payload.projects ?? [];
 }
 
-export async function loadSavedStudioProject(projectId: string): Promise<SavedStudioProject> {
+export async function loadSavedStudioProject(projectId: string, options: { cache?: boolean } = {}): Promise<SavedStudioProject> {
   const response = await fetch(`/api/studio/projects/${encodeURIComponent(projectId)}`, { cache: "no-store", headers: STUDIO_JSON_TRANSPORT_HEADERS });
   const payload = await readProjectApiResponse<{ saved?: SavedStudioProject }>(response);
   if (!response.ok || !payload.success || !payload.saved) throw new Error(payload.error || `Project load failed (${response.status})`);
-  cacheSavedStudioProject(payload.saved);
+  if (options.cache !== false) cacheSavedStudioProject(payload.saved);
   return payload.saved;
 }
 
@@ -392,7 +393,7 @@ export async function saveNamedStudioProject(params: {
 
 /** The durable save/load succeeded even if a large optional browser mirror exceeds its quota. */
 function cacheSavedStudioProject(saved: SavedStudioProject) {
-  try { window.localStorage.setItem(ACTIVE_STUDIO_PROJECT_KEY, saved.project.id); } catch { /* Storage may be unavailable. */ }
+  rememberStudioProjectSelection(saved.project.id);
   try { window.localStorage.setItem(STUDIO_PROJECT_STORAGE_KEY, JSON.stringify(saved.draft)); }
   catch {
     // Do not leave another project's stale draft behind the newly saved project pointer.

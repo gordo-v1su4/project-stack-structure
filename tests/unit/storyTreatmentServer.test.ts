@@ -10,6 +10,10 @@ const request: StoryTreatmentRequest = {
 };
 
 describe("story treatment Qwen service", () => {
+  test("exact-name instructions apply to future generation prompts rather than narrative prose", () => {
+    expect(STORY_DIRECTOR_INSTRUCTIONS).toContain("For generationPrompt fields only:");
+    expect(STORY_DIRECTOR_INSTRUCTIONS).toContain("Other story prose, including loglines, synopses and purposes, may use unambiguous pronouns.");
+  });
   test("pending user edits survive request parsing without obsolete derived facts in the model input", () => {
     const treatment = hydrateTreatmentCoverage(parseGeneratedTreatments(buildValidPayload()), [])[0]!;
     treatment.reconciliation = { status: "pending" };

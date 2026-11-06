@@ -121,7 +121,8 @@ Each requirement has id, momentId (the anchor ID), description, optional, constr
 For ordinary visible shots, omit constraints.intent. Put partnership, attraction, contest goals and survival meaning in purpose. For example, two named people dancing requires their names and actions:["dancing"], not intent:"They move together rhythmically" or intent:"Their connection grows". A fracturing floor requires physicalStates:["damaged"], not intent:"The world is collapsing". Include intent only if the user explicitly requires the shot itself to establish an otherwise unobservable condition. Never manufacture such a condition from the logline or purpose.
 Optional songWindow {start,end} is an explicit desired interval in song seconds; only include it when the user's timing instruction specifies one. Music labels and story moments are separate.
 All names and IDs must be stable and internally consistent. Every anchor MUST include a nonempty requirements array, even for a missing shot. Do not omit requirements to save tokens. Keep prose, moments, and requirements in agreement. Keep fields concise.
-${REFERENCE_LANGUAGE_RULE}
+For generationPrompt fields only: ${REFERENCE_LANGUAGE_RULE}
+Other story prose, including loglines, synopses and purposes, may use unambiguous pronouns. A generationPrompt is a future shot direction; keep its meaning consistent with the story.
 ${VISIBLE_WRITING_RULE}
 Return only the specified JSON object. Keep internal checks out of every prose field.`;
 
