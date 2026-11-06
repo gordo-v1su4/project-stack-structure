@@ -9,6 +9,7 @@ import { getH3PolicyFamily, type H3IdentityPolicyPreflightInput, type H3Identity
   type H3IssuedDraftPolicy, type H3PolicyRawReference } from "@/components/studio/issuedIdentityPolicy";
 import { downloadH3ReferenceImage } from "./h3JobStore";
 import { assertIssuedH3DraftPolicyMatchesJob, identityPolicyPreflightBinding, issueH3DraftPolicy, readIssuedH3DraftPolicy } from "./h3DraftPolicyStore";
+import { H3_FIRST_FRAME_PROFILE } from "@/components/studio/h3FirstFrame";
 
 const execute = promisify(execFile);
 const EXTENSIONS: Record<string, string> = { "image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp" };
@@ -32,7 +33,7 @@ export async function prepareH3IdentityPolicy(job: H3GenerationJob, tempFolder: 
     policy: H3IssuedDraftPolicy; references: PreparedH3PolicyReference[];
   }> {
   const family = getH3PolicyFamily(job.request.identityPolicyFamily ?? "");
-  if (!family || job.profile !== "h3-ref2va-int8-v3" || job.references.filter(ref => ref.role === "identity").length !== family.scope.requiredIdentityCount) {
+  if (!family || !["h3-ref2va-int8-v3",H3_FIRST_FRAME_PROFILE].includes(job.profile) || job.references.filter(ref => ref.role === "identity").length !== family.scope.requiredIdentityCount) {
     throw new Error("This job does not match a supported identity screen family.");
   }
   const references: PreparedH3PolicyReference[] = [];

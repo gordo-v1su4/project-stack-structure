@@ -4,6 +4,10 @@ import type { ProbedMediaFile } from "@/components/studio/mediaProbe";
 import { materializeH3Job } from "@/lib/h3GenerationServer";
 import { h3ProjectFixture } from "../helpers/h3Project";
 import { FakeSwarmSocket } from "../helpers/fakeSwarmSocket";
+import { H3_FIRST_FRAME_PROFILE, H3_FIRST_FRAME_PREPARATION, h3FirstFrameBinding } from "@/components/studio/h3FirstFrame";
+import { firstFrameArtifactFixture, firstFrameAssessmentFixture } from "../helpers/h3FirstFrame";
+import { issuedPolicyFixture } from "../helpers/issuedIdentityPolicy";
+import { identityPolicySha256 } from "@/components/studio/issuedIdentityPolicy";
 
 const fixture = h3ProjectFixture();
 let job: H3GenerationJob;
@@ -17,13 +21,20 @@ const previousLocal = process.env.LOCAL_SWARMUI_URL;
 const uploads: string[] = [];
 let persisted = 0;
 let preflightCalls = 0;
+let allowPolicyPreflight=false,allowStillPreflight=false,stillPreflightCalls=0;
 mock.module("@/lib/h3DraftPolicyPreparation", () => ({ prepareH3IdentityPolicy: async () => {
-  preflightCalls++; throw new Error("Reference preflight needs a clear coherent frontal authority; no GPU render was submitted.");
+  preflightCalls++;
+  if(allowPolicyPreflight){const f=issuedPolicyFixture(job);f.policy.body.generationModel=H3_FIRST_FRAME_PROFILE;f.policy.body.firstFrame=h3FirstFrameBinding(job.firstFrame!);f.policy.sha256=identityPolicySha256(f.policy.body);f.policy.id=`h3-policy-${f.policy.sha256}`;
+    return{policy:f.policy,references:f.references.map(raw=>({raw,imagePath:"trusted-local",mime:"image/png",bytes:new Uint8Array([1])}))};}
+  throw new Error("Reference preflight needs a clear coherent frontal authority; no GPU render was submitted.");
 } }));
+mock.module("@/lib/h3FirstFramePreflight",()=>({prepareH3FirstFrame:async(_job:H3GenerationJob,policy:ReturnType<typeof issuedPolicyFixture>["policy"])=>{
+  stillPreflightCalls++;if(!allowStillPreflight)throw new Error("The first-frame spatial similarity screen did not pass. No GPU video was submitted.");
+  return{artifact:job.firstFrame!,assessment:firstFrameAssessmentFixture(job.firstFrame!,policy),bytes:new Uint8Array([9,8,7])};}}));
 const videoProbe = { duration: 124 / 24, primaryVideoStream: { codecName: "h264", width: 1344, height: 768, frameRate: 24 } } as ProbedMediaFile;
 
 mock.module("@/lib/h3JobStore", () => ({
-  pinH3JobReferences: async (job: H3GenerationJob) => job,
+  pinH3JobReferences: async (candidate: H3GenerationJob) => candidate.profile===H3_FIRST_FRAME_PROFILE?{...candidate,references:job.references,id:job.id}:candidate,
   downloadH3ReferenceImage: async () => ({ bytes: new Uint8Array([1, 2, 3]).buffer, mime: "image/png" }),
   readH3Job: async () => structuredClone(job),
   updateH3Job: async (_owner: string, _project: string, _id: string, change: (job: H3GenerationJob) => H3GenerationJob) => {
@@ -65,6 +76,7 @@ function setup() {
   process.env.SWARMUI_URL = "http://swarm.test:7861";
   delete process.env.LOCAL_SWARMUI_URL;
   uploads.length = 0; persisted = 0; preflightCalls = 0;
+  allowPolicyPreflight=allowStillPreflight=false;stillPreflightCalls=0;
   sockets.length = 0; registrationMode = "normal"; failPromptIdSaveOnce = false;
   globalThis.WebSocket = class extends FakeSwarmSocket {
     constructor(url: string | URL) {
@@ -81,6 +93,7 @@ function providerFetch(failAfterSubmission = false, providerError = false, ackno
     expect(url.startsWith("http://swarm.test:7861/ComfyBackendDirect/")).toBe(true);
     if (url.endsWith("system_stats")) return json({ system: { comfyui_version: "test" } });
     if (url.endsWith("object_info/MiniMaxH3ReferenceToVideo")) return json({ MiniMaxH3ReferenceToVideo: {} });
+    if (url.endsWith("object_info/MiniMaxH3ImageToVideo")) return json({ MiniMaxH3ImageToVideo: {} });
     if (url.endsWith("upload/image")) {
       const form = init!.body as FormData;
       const image = form.get("image") as File;
@@ -94,7 +107,7 @@ function providerFetch(failAfterSubmission = false, providerError = false, ackno
       expect(sockets.at(-1)!.readyState).toBe(1);
       expect(sockets.at(-1)!.closeCalls).toBe(0);
       expect(submitted.extra_data.stack_structure_h3_job).toBe(job.id);
-      expect(submitted.prompt.cond.inputs["ref_images.ref_image_0"]).toEqual(["reference_0", 0]);
+      expect(submitted.prompt.cond.inputs[job.profile===H3_FIRST_FRAME_PROFILE?"first_frame":"ref_images.ref_image_0"]).toEqual(["reference_0", 0]);
       if (closeBeforeAck) sockets.at(-1)!.disconnect();
       if (failAfterSubmission) throw new Error("Connection closed after submission");
       if (acknowledgement === "missing") return json({});
@@ -110,6 +123,23 @@ function providerFetch(failAfterSubmission = false, providerError = false, ackno
 }
 
 describe("durable native H3 execution", () => {
+  function setupFirstFrame(){
+    setup();job.request.identityPolicyFamily="sface-yunet-foreground-frontal-v2";
+    job.firstFrame=firstFrameArtifactFixture(job);job.references=job.firstFrame.body.references;job.profile=H3_FIRST_FRAME_PROFILE;job.conditioningPreparationVersion=H3_FIRST_FRAME_PREPARATION;
+    job.request.conditioning={kind:"first-frame",artifactId:job.firstFrame.id,expectedSha256:job.firstFrame.body.pngSha256};allowPolicyPreflight=true;
+  }
+  test("a failed first-frame screen opens no socket and makes zero provider requests",async()=>{
+    setupFirstFrame();let calls=0;globalThis.fetch=(async()=>{calls++;throw new Error("Unexpected provider request");}) as typeof fetch;
+    await expect(runH3Generation({ownerId:job.ownerId,projectId:job.projectId,jobId:job.id},"run-1",{wait:async()=>{},stage:()=>{}})).rejects.toThrow("No GPU video");
+    expect(stillPreflightCalls).toBe(1);expect(calls).toBe(0);expect(sockets).toHaveLength(0);expect(job.state).toBe("failed");
+  });
+  test("only a screened native PNG is uploaded for I2VA while raw authority hashes remain separate",async()=>{
+    setupFirstFrame();allowStillPreflight=true;const count=providerFetch();
+    await runH3Generation({ownerId:job.ownerId,projectId:job.projectId,jobId:job.id},"run-1",{wait:async()=>{},stage:()=>{}});
+    expect(count()).toBe(1);expect(uploads).toHaveLength(1);expect(job.conditioningReferenceHashes).toEqual([job.firstFrame!.body.pngSha256]);expect(job.referenceHashes).toHaveLength(2);
+    expect(job.firstFrameAssessment?.kind).toBe("single-image");expect(job.compiledPrompt).toContain("integrated_multimodal_description:");expect(job.conditioningPreparations).toBe(undefined);
+    expect(sockets[0].closeCalls).toBe(1);expect(job.state).toBe("ready");
+  });
   test("unsuitable opted-in references stop before any Swarm request or GPU submission", async () => {
     setup(); job.request.identityPolicyFamily = "sface-yunet-foreground-frontal-v1";
     const originalId = job.id;

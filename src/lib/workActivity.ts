@@ -94,6 +94,14 @@ export function groupActivityRuns(runs: ActivityRunInput[], now = Date.now()) {
   return roots.sort((a, b) => b.timestamp - a.timestamp);
 }
 
+/** Keep live work visible even when many newer completed runs arrive. */
+export function recentActivityRuns(items: WorkActivityItem[], settledLimit = 3) {
+  const pending = (item: WorkActivityItem): boolean => item.active || item.children.some(pending);
+  const ordered = [...items].sort((a, b) => b.timestamp - a.timestamp);
+  const visible = [...ordered.filter(pending), ...ordered.filter((item) => !pending(item)).slice(0, settledLimit)];
+  return { visible, hiddenCount: items.length - visible.length };
+}
+
 export function summarizeActivityRuns(items: WorkActivityItem[]): WorkActivitySummary {
   const summary: WorkActivitySummary = {
     completed: 0,

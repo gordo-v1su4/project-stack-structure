@@ -2,6 +2,7 @@ import type { GeneratedStudioAsset } from "./generatedAssets";
 import { resolveH3DraftSimilarityPolicy } from "./identityDraftPolicy";
 import { copyForegroundFrameEvidence, foregroundEvidenceBlockReason, validForegroundFrameEvidence, type ForegroundFrameEvidence } from "./foregroundDraftEvidence";
 import { getH3PolicyFamily, normalizeH3PublicIssuedDraftPolicy, type H3PublicIssuedDraftPolicy } from "./issuedIdentityPolicy";
+import { H3_FIRST_FRAME_PROFILE, h3FirstFrameBinding, h3FirstFrameDigest, normalizeH3FirstFrameReceipt } from "./h3FirstFrame";
 
 export type IdentityFrameSample = {
   timeSeconds: number;
@@ -194,6 +195,17 @@ export function generatedAssetIdentityBlockReason(asset: GeneratedStudioAsset): 
 
 /** Draft-only model eligibility; explicit whole-draft approval remains separate. */
 export function generatedAssetDraftIdentityBlockReason(asset: GeneratedStudioAsset): string | null {
+  if(asset.model===H3_FIRST_FRAME_PROFILE){
+    const receipt=normalizeH3FirstFrameReceipt(asset.firstFrame),policy=asset.identityVerification?.issuedPolicy;
+    if(!receipt||receipt.assessment.status!=="eligible"||!policy||h3FirstFrameDigest(policy.body.firstFrame??null)!==h3FirstFrameDigest(h3FirstFrameBinding(receipt.artifact))
+      ||receipt.assessment.familyId!==policy.familyId||!sameHashes(receipt.assessment.spatialEvidence.assignments.map(a=>a.referenceHash),policy.body.identityReferenceHashes)
+      ||receipt.assessment.policyId!==policy.id||receipt.assessment.policySha256!==policy.sha256||receipt.assessment.galleryProfileSha256!==policy.body.galleryProfileSha256
+      ||receipt.assessment.modelSha256!==getH3PolicyFamily(policy.familyId)?.model.recognitionSha256
+      ||receipt.artifact.body.ownerId!==policy.body.ownerId||receipt.artifact.body.projectId!==policy.body.projectId
+      ||receipt.artifact.body.planSignature!==asset.target?.planSignature||receipt.artifact.body.target.timelineItemId!==asset.target?.timelineItemId
+      ||receipt.artifact.body.target.songStart!==asset.target?.songStart||receipt.artifact.body.target.songEnd!==asset.target?.songEnd
+      ||h3FirstFrameDigest(receipt.artifact.body.references)!==h3FirstFrameDigest(policy.body.references.map(ref=>{const {rawSha256,...snapshot}=ref;void rawSha256;return snapshot;})))return "First-frame evidence is missing or does not match this take";
+  }
   if (asset.identityAssessmentId && !/^h3-assessment-[a-f0-9]{64}$/.test(asset.identityAssessmentId)) return "Invalid range assessment";
   if (asset.identityAssessmentId && (!Number.isFinite(asset.identityAssessmentTrimStart) || asset.identityAssessmentTrimStart !== (asset.trimStart ?? 0))) return "Similarity filter does not cover this trim";
   const strictBlock = generatedAssetIdentityBlockReason(asset);

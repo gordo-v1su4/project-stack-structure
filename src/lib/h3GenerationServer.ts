@@ -9,6 +9,7 @@ import type { SavedStudioProject } from "./studioProjectStore";
 import { normalizeStudioOwnerSegment, normalizeStudioProjectId } from "./studioStoragePaths";
 import { assertH3ConditioningProfile } from "./h3ReferenceConditioning";
 import { getH3PolicyFamily } from "@/components/studio/issuedIdentityPolicy";
+import { H3_FIRST_FRAME_PROFILE, isH3FirstFrameId, firstFrameHash, normalizeH3FirstFrameArtifact } from "@/components/studio/h3FirstFrame";
 
 export class H3RequestError extends Error {
   constructor(message: string, public status = 400) { super(message); }
@@ -24,6 +25,14 @@ function text(value: unknown, name: string, max = 500) {
 export function parseH3Request(value: unknown): H3GenerationRequest {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new H3RequestError("A shot request is required.");
   const v = value as Record<string, unknown>;
+  let conditioning: H3GenerationRequest["conditioning"];
+  if (v.conditioning !== undefined) {
+    const c = v.conditioning as Record<string, unknown> | null;
+    if (!c || typeof c !== "object" || Array.isArray(c) || c.kind !== "first-frame" || !isH3FirstFrameId(c.artifactId) || !firstFrameHash(c.expectedSha256)
+      || Object.keys(c).some(key => !["kind","artifactId","expectedSha256"].includes(key))) throw new H3RequestError("Choose a valid owned first-frame artifact.");
+    if (!["sface-yunet-joint-frontal-v2","sface-yunet-foreground-frontal-v2"].includes(String(v.identityPolicyFamily))) throw new H3RequestError("First-frame shots require an explicit frontal v2 screen.");
+    conditioning = { kind: "first-frame", artifactId: c.artifactId, expectedSha256: c.expectedSha256 };
+  }
   const requestIntentId = text(v.requestIntentId, "request intent");
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestIntentId)) {
     throw new H3RequestError("The request intent must be a UUID.");
@@ -56,7 +65,8 @@ export function parseH3Request(value: unknown): H3GenerationRequest {
     songStart, songEnd, prompt, referenceAssetIds: v.referenceAssetIds.map(id => text(id, "reference asset")),
     requestIntentId: requestIntentId.toLowerCase(), attempt, seed: v.seed as number | undefined,
     draftRevision: v.draftRevision as number | undefined,
-    ...(v.identityPolicyFamily === undefined ? {} : { identityPolicyFamily: v.identityPolicyFamily as H3GenerationRequest["identityPolicyFamily"] }) };
+    ...(v.identityPolicyFamily === undefined ? {} : { identityPolicyFamily: v.identityPolicyFamily as H3GenerationRequest["identityPolicyFamily"] }),
+    ...(conditioning ? { conditioning } : {}) };
 }
 
 function digest(value: unknown) { return createHash("sha256").update(JSON.stringify(value)).digest("hex"); }
@@ -64,6 +74,12 @@ function digest(value: unknown) { return createHash("sha256").update(JSON.string
 export function h3GenerationJobId(ownerId: string, request: H3GenerationRequest, references: H3ReferenceSnapshot[],
   options: H3GenerationProfileOptions = { profile: H3_LEGACY_PROFILE }) {
   assertH3ConditioningProfile(options);
+  if (options.profile === H3_FIRST_FRAME_PROFILE) {
+    const artifact = normalizeH3FirstFrameArtifact(options.firstFrame);
+    if (!artifact || request.conditioning?.artifactId !== artifact.id || request.conditioning.expectedSha256 !== artifact.body.pngSha256) throw new H3RequestError("The first-frame job has no immutable artifact binding.",409);
+    return `h3-${digest([options.profile, ownerId, request, references, options.conditioningPreparationVersion, artifact])}`;
+  }
+  if (request.conditioning) throw new H3RequestError("First-frame conditioning cannot fall back to a reference-only profile.");
   // Legacy bytes must remain identical for durable jobs submitted before preparation existed.
   return `h3-${digest(options.profile === H3_LEGACY_PROFILE
     ? [H3_LEGACY_PROFILE, ownerId, request, references]
@@ -74,6 +90,8 @@ export function h3GenerationJobId(ownerId: string, request: H3GenerationRequest,
 export function materializeH3Job(ownerId: string, saved: SavedStudioProject, request: H3GenerationRequest, bucket: string,
   options: H3GenerationProfileOptions = { profile: H3_PROFILE, conditioningPreparationVersion: H3_CONDITIONING_PREPARATION_VERSION }): H3GenerationJob {
   assertH3ConditioningProfile(options);
+  if (Boolean(request.conditioning) !== (options.profile === H3_FIRST_FRAME_PROFILE)) throw new H3RequestError("First-frame conditioning requires its explicit generation profile.");
+  if(options.profile===H3_FIRST_FRAME_PROFILE&&!["sface-yunet-foreground-frontal-v2","sface-yunet-joint-frontal-v2"].includes(request.identityPolicyFamily??""))throw new H3RequestError("First-frame conditioning requires a frontal v2 screen.");
   if (saved.project.ownerId !== normalizeStudioOwnerSegment(ownerId) || saved.project.id !== normalizeStudioProjectId(request.projectId)) {
     throw new H3RequestError("Project not found.", 404);
   }
@@ -137,7 +155,7 @@ export function materializeH3Job(ownerId: string, saved: SavedStudioProject, req
   }
   if (request.identityPolicyFamily) {
     const family = getH3PolicyFamily(request.identityPolicyFamily);
-    if (!family || options.profile !== "h3-ref2va-int8-v3" || references.filter(reference => reference.role === "identity").length !== family.scope.requiredIdentityCount) {
+    if (!family || !["h3-ref2va-int8-v3", H3_FIRST_FRAME_PROFILE].includes(options.profile) || references.filter(reference => reference.role === "identity").length !== family.scope.requiredIdentityCount) {
       throw new H3RequestError("The selected identity screen does not match this generation profile and named reference count.");
     }
   }
@@ -145,6 +163,7 @@ export function materializeH3Job(ownerId: string, saved: SavedStudioProject, req
   const now = new Date().toISOString();
   return { version: 1, id, ownerId, projectId: request.projectId, profile: options.profile,
     ...(options.conditioningPreparationVersion ? { conditioningPreparationVersion: options.conditioningPreparationVersion } : {}), request, references,
+    ...(options.profile === H3_FIRST_FRAME_PROFILE ? { firstFrame: options.firstFrame } : {}),
     target: { planSignature: request.planSignature, timelineItemId: item.id, requirementId: item.requirementId,
       narrativeMomentId: item.narrativeMomentId, sectionId: item.sectionId, sectionLabel: item.label,
       songStart: request.songStart, songEnd: request.songEnd }, state: "queued", createdAt: now, updatedAt: now };

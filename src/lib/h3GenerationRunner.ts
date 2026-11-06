@@ -21,6 +21,9 @@ import { canonicalIdentityPolicyJson, identityPolicySha256 } from "@/components/
 import { assertH3IdentityAssessmentScope, identityAssessmentAsset, type H3IdentityAssessmentScope, type H3IdentityAssessment } from "@/components/studio/h3IdentityAssessment";
 import { readH3IdentityAssessment, writeH3IdentityAssessment } from "./h3IdentityAssessmentStore";
 import { openSwarmComfyClient, SwarmComfyClientUnavailable } from "./swarmComfyClient";
+import { H3_FIRST_FRAME_PROFILE } from "@/components/studio/h3FirstFrame";
+import { prepareH3FirstFrame } from "./h3FirstFramePreflight";
+import { assertH3FirstFrameMatchesJob } from "./h3FirstFrameStore";
 
 export type H3JobReference = { ownerId: string; projectId: string; jobId: string; mode?: "identity-recheck"; assessment?: H3IdentityAssessmentScope };
 
@@ -166,8 +169,9 @@ export async function runH3Generation(reference: H3JobReference, runId: string,
     if (!saved || !config) throw new Error("The saved project is unavailable.");
     if (!job.promptId && job.state !== "submitting" && job.state !== "submission_unknown" && !cancellationRequested(job)) {
       const current = await pinH3JobReferences(materializeH3Job(ownerId, saved, job.request, config.bucket, {
-        profile: job.profile, conditioningPreparationVersion: job.conditioningPreparationVersion,
+        profile: job.profile, conditioningPreparationVersion: job.conditioningPreparationVersion, ...(job.firstFrame?{firstFrame:job.firstFrame}:{}),
       }));
+      if(job.firstFrame)assertH3FirstFrameMatchesJob(job.firstFrame,current);
       if (current.id !== job.id) throw new Error("The story plan or reference package changed before generation.");
     }
     if (!job.promptId && (job.state === "submitting" || job.state === "submission_unknown" || cancellationRequested(job))) {
@@ -188,6 +192,7 @@ export async function runH3Generation(reference: H3JobReference, runId: string,
       options.stage("Hydrating the named H3 references");
       await update({ state: "preparing" });
       let policyReferences: PreparedH3PolicyReference[] | undefined;
+      let firstFrameBytes: Uint8Array | undefined;
       if (job.request.identityPolicyFamily) {
         options.stage("Checking the declared raw references before video generation");
         const prepared = await prepareH3IdentityPolicy(job, temp);
@@ -195,14 +200,29 @@ export async function runH3Generation(reference: H3JobReference, runId: string,
         const { version, id, sha256, familyId, familySha256 } = prepared.policy;
         await update({ identityPolicy: { version, id, sha256, familyId, familySha256 },
           referenceHashes: prepared.references.map(reference => reference.raw.rawSha256) });
+        if(job.profile===H3_FIRST_FRAME_PROFILE){
+          options.stage("Screening the actual first-frame PNG before video generation");
+          const first=await prepareH3FirstFrame(job,prepared.policy,prepared.references,temp);
+          firstFrameBytes=first.bytes;await update({firstFrameAssessment:first.assessment});
+        }
       }
+      if(job.profile===H3_FIRST_FRAME_PROFILE&&!firstFrameBytes)throw new Error("I2VA requires a successful first-frame screen before provider access.");
       // Health/schema probes do not enqueue GPU work.
       await providerJson(baseUrl, "system_stats");
-      const contract = await providerJson(baseUrl, "object_info/MiniMaxH3ReferenceToVideo");
-      if (!contract.MiniMaxH3ReferenceToVideo) throw new Error("The native H3 Ref2VA node is unavailable.");
+      const node=job.profile===H3_FIRST_FRAME_PROFILE?"MiniMaxH3ImageToVideo":"MiniMaxH3ReferenceToVideo";
+      const contract = await providerJson(baseUrl, `object_info/${node}`);
+      if (!contract[node]) throw new Error("The native H3 conditioning node is unavailable.");
       const paths: string[] = [], hashes: string[] = [], conditioningHashes: string[] = [];
       const preparations: NonNullable<H3GenerationJob["conditioningPreparations"]> = [];
-      for (let index = 0; index < job.references.length; index++) {
+      if(firstFrameBytes){
+        const hash=job.firstFrame!.body.pngSha256,form=new FormData();form.set("subfolder",`stack-structure/${job.id}`);form.set("type","input");form.set("overwrite","true");
+        form.set("image",new File([new Uint8Array(firstFrameBytes)],`${hash}.png`,{type:"image/png"}));
+        const response=await fetch(buildSwarmComfyDirectUrl(baseUrl,"upload/image"),{method:"POST",body:form,signal:AbortSignal.timeout(120_000)});
+        if(!response.ok)throw new Error("SwarmUI first-frame upload failed.");
+        const uploaded=await response.json() as {name?:string;subfolder?:string};
+        if(uploaded.name!==`${hash}.png`||uploaded.subfolder!==`stack-structure/${job.id}`)throw new Error("SwarmUI returned an invalid first-frame binding.");
+        paths.push(`${uploaded.subfolder}/${uploaded.name}`);hashes.push(...job.referenceHashes!);conditioningHashes.push(hash);
+      }else for (let index = 0; index < job.references.length; index++) {
         const uploaded = await uploadReference(baseUrl, job, index, temp, policyReferences?.[index]);
         paths.push(uploaded.path); hashes.push(uploaded.hash);
         conditioningHashes.push(uploaded.conditioningHash); preparations.push(uploaded.preparation);
@@ -212,7 +232,7 @@ export async function runH3Generation(reference: H3JobReference, runId: string,
       try {
         client.assertOpen();
         await update({ state: "submitting", compiledPrompt: built.prompt, frames: built.frames, referenceHashes: hashes,
-          conditioningReferenceHashes: conditioningHashes, conditioningPreparations: preparations });
+          conditioningReferenceHashes: conditioningHashes, ...(firstFrameBytes?{}:{conditioningPreparations: preparations}) });
         options.stage("Submitting the native H3 reference shot");
         client.assertOpen();
         const response = await providerJson(baseUrl, "prompt", { prompt: built.workflow, client_id: client.clientId,

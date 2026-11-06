@@ -3,8 +3,10 @@ import type { ComfyWorkflow } from "@/components/studio/localGeneration";
 import { assertReferenceLanguage } from "@/components/studio/referenceLanguage";
 import { h3StableSeed } from "./h3GenerationServer";
 import { assertH3ConditioningProfile } from "./h3ReferenceConditioning";
+import { H3_FIRST_FRAME_PROFILE } from "@/components/studio/h3FirstFrame";
 
 export const H3_MODEL = "minimax_h3_ref2va_pruned_int8_convrot.safetensors";
+export const H3_I2VA_MODEL = "minimax_h3_fl2va_pruned_int8_convrot.safetensors";
 export const H3_CLIP = "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors";
 export const H3_VIDEO_VAE = "minimax_h3_video_vae_fp16.safetensors";
 export const H3_AUDIO_VAE = "minimax_h3_audio_vae_fp32.safetensors";
@@ -40,6 +42,12 @@ export function compileH3Prompt(job: H3GenerationJob) {
   }
   const hasShotSize = /\b(?:wide shot|medium(?:[- ]tight| full)?(?: shot| framing)?|close[- ]up|full[- ]body|full shot|tight framing|upper body|overhead view)\b/i.test(direction.slice(0, 160));
   const body = /^\[[^\]]+\]/.test(direction) ? direction : `[Tracking] ${hasShotSize ? "" : "Medium shot. "}${direction}`;
+  if (job.profile === H3_FIRST_FRAME_PROFILE) {
+    if (!job.firstFrame || !job.request.conditioning) throw new Error("I2VA requires its frozen first frame.");
+    assertH3ShotProfile(body,h3FrameCount(job.request.songEnd-job.request.songStart)/H3_FPS);
+    const prompt = `For the target video, at 0.00 seconds into the target video, <Picture 1> (from [Shot 1]) is fully referenced.\n\nintegrated_multimodal_description: [Shot 1] ${body}\n\noverall_soundscape: Environmental room tone and movement sounds.\n\nnon_diegetic_music: N/A`;
+    return {prompt,frameSchedule:{"0":body},frames:h3FrameCount(job.request.songEnd-job.request.songStart)};
+  }
   const definitions = job.references.map((ref, i) => `<Subject ${i + 1}> is ${ref.canonicalName} from <Picture ${i + 1}>, the ${ref.role === "identity" ? "identity and wardrobe" : ref.role} authority.`);
   const retention = job.references.map((ref, i) => `<Subject ${i + 1}> (appears in [Shot 1]): fully_preserved - preserve ${ref.canonicalName}'s ${ref.role === "identity" ? "identity and wardrobe" : ref.role} reference.`);
   const environment = job.references.find(ref => ref.role === "environment")!.canonicalName;
@@ -56,18 +64,20 @@ export function compileH3Prompt(job: H3GenerationJob) {
  */
 export function buildH3Workflow(job: H3GenerationJob, inputPaths: string[]) {
   assertH3ConditioningProfile(job);
-  if (inputPaths.length !== job.references.length) throw new Error("H3 reference mapping changed.");
+  const firstFrame=job.profile===H3_FIRST_FRAME_PROFILE;
+  if (inputPaths.length !== (firstFrame ? 1 : job.references.length)) throw new Error("H3 reference mapping changed.");
   const compiled = compileH3Prompt(job);
   const conditioning: Record<string, unknown> = { clip: ["clip", 0], vae: ["vae", 0], audio_vae: ["audio_vae", 0],
     prompt: compiled.prompt, width: H3_WIDTH, height: H3_HEIGHT, length: compiled.frames, ref_image_size: "match" };
+  if(firstFrame){delete conditioning.audio_vae;delete conditioning.ref_image_size;}
   const workflow: ComfyWorkflow = {
-    model: { class_type: "UNETLoader", inputs: { unet_name: H3_MODEL, weight_dtype: "default" } },
+    model: { class_type: "UNETLoader", inputs: { unet_name: firstFrame?H3_I2VA_MODEL:H3_MODEL, weight_dtype: "default" } },
     attention: { class_type: "PathchSageAttentionKJ", inputs: { model: ["model", 0], sage_attention: "auto", allow_compile: false } },
     shift: { class_type: "MiniMaxH3SigmaShift", inputs: { model: ["attention", 0], shift_video: 12, shift_audio: 3 } },
     clip: { class_type: "CLIPLoader", inputs: { clip_name: H3_CLIP, type: "minimax", device: "default" } },
     vae: { class_type: "VAELoader", inputs: { vae_name: H3_VIDEO_VAE } },
     audio_vae: { class_type: "VAELoader", inputs: { vae_name: H3_AUDIO_VAE } },
-    cond: { class_type: "MiniMaxH3ReferenceToVideo", inputs: conditioning },
+    cond: { class_type: firstFrame?"MiniMaxH3ImageToVideo":"MiniMaxH3ReferenceToVideo", inputs: conditioning },
     guider: { class_type: "BasicGuider", inputs: { model: ["shift", 0], conditioning: ["cond", 0] } },
     noise: { class_type: "RandomNoise", inputs: { noise_seed: h3StableSeed(job) } },
     sampler: { class_type: "KSamplerSelect", inputs: { sampler_name: "res_multistep" } },
@@ -82,7 +92,7 @@ export function buildH3Workflow(job: H3GenerationJob, inputPaths: string[]) {
   inputPaths.forEach((path, i) => {
     const id = `reference_${i}`;
     workflow[id] = { class_type: "LoadImage", inputs: { image: path } };
-    conditioning[`ref_images.ref_image_${i}`] = [id, 0];
+    conditioning[firstFrame?"first_frame":`ref_images.ref_image_${i}`] = [id, 0];
   });
   return { workflow, ...compiled };
 }

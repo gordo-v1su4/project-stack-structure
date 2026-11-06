@@ -9,6 +9,7 @@ import foregroundFamilyV2 from "../../../scripts/identity/families/sface-yunet-f
 import jointFamilyV2 from "../../../scripts/identity/families/sface-yunet-joint-frontal-v2.json";
 import type { GeneratedStudioAsset } from "./generatedAssets";
 import type { ReferenceAsset } from "./referenceAssets";
+import { H3_FIRST_FRAME_PROFILE, normalizeH3FirstFrameBinding, type H3FirstFrameBinding } from "./h3FirstFrame";
 
 export type H3IdentityPolicyFamilyId = "sface-yunet-foreground-frontal-v1" | "sface-yunet-joint-frontal-v1"
   | "sface-yunet-foreground-frontal-v2" | "sface-yunet-joint-frontal-v2";
@@ -67,11 +68,12 @@ export type H3IdentityPolicyPreflightResult = {
   reason?: "no-frontal-anchor" | "ambiguous-gallery" | "incoherent-gallery" | "invalid-reference" | "model-unavailable";
 };
 export type H3IssuedDraftPolicyBody = {
-  version: 1; ownerId: string; projectId: string; generationModel: "h3-ref2va-int8-v3";
+  version: 1; ownerId: string; projectId: string; generationModel: "h3-ref2va-int8-v3" | typeof H3_FIRST_FRAME_PROFILE;
   familyId: H3IdentityPolicyFamilyId; familySha256: Sha256;
   references: H3PolicyRawReference[]; // Exact immutable refs/ETags/order/version; no temp paths.
   identityReferenceHashes: Sha256[]; galleries: H3PolicyGallery[];
   galleryProfileSha256: Sha256; preprocessVersion: string;
+  firstFrame?: H3FirstFrameBinding;
 };
 export type H3IssuedDraftPolicyBinding = {
   version: 1; id: string; // h3-policy-<sha256> derived from canonical body bytes.
@@ -187,7 +189,9 @@ export function normalizeH3PublicIssuedDraftPolicy(value: unknown): H3PublicIssu
   const binding = normalizeH3IssuedDraftPolicyBinding(value);
   if (!binding || !object(value) || !object(value.body)) return undefined;
   const raw = value.body, family = getH3PolicyFamily(binding.familyId)!;
-  if (raw.version !== 1 || !segment(raw.ownerId) || !segment(raw.projectId) || raw.generationModel !== "h3-ref2va-int8-v3"
+  const firstFrame=raw.firstFrame===undefined?undefined:normalizeH3FirstFrameBinding(raw.firstFrame);
+  if ((raw.generationModel===H3_FIRST_FRAME_PROFILE && (!firstFrame || !["sface-yunet-joint-frontal-v2","sface-yunet-foreground-frontal-v2"].includes(family.id))) || (raw.generationModel!==H3_FIRST_FRAME_PROFILE && raw.firstFrame!==undefined)) return undefined;
+  if (raw.version !== 1 || !segment(raw.ownerId) || !segment(raw.projectId) || !["h3-ref2va-int8-v3",H3_FIRST_FRAME_PROFILE].includes(String(raw.generationModel))
     || raw.familyId !== family.id || raw.familySha256 !== family.sha256 || !Array.isArray(raw.references) || !count(raw.references.length, 9)
     || !Array.isArray(raw.identityReferenceHashes) || !Array.isArray(raw.galleries) || !isIdentityPolicySha256(raw.galleryProfileSha256)
     || raw.preprocessVersion !== `${family.model.preprocessBaseVersion}-gallery-v2-${raw.galleryProfileSha256}`) return undefined;
@@ -201,9 +205,10 @@ export function normalizeH3PublicIssuedDraftPolicy(value: unknown): H3PublicIssu
   const galleries = raw.galleries.map((gallery, index) => normalizeGallery(gallery, identities[index], family));
   if (galleries.some(gallery => !gallery)) return undefined;
   if (issuedGalleryProfileSha256(galleries as H3PolicyGallery[]) !== raw.galleryProfileSha256) return undefined;
-  const body: H3IssuedDraftPolicyBody = { version: 1, ownerId: raw.ownerId, projectId: raw.projectId, generationModel: raw.generationModel,
+  const body: H3IssuedDraftPolicyBody = { version: 1, ownerId: raw.ownerId, projectId: raw.projectId, generationModel: raw.generationModel as H3IssuedDraftPolicyBody["generationModel"],
     familyId: family.id, familySha256: family.sha256, references: refs, identityReferenceHashes: identities.map(ref => ref.rawSha256),
-    galleries: galleries as H3PolicyGallery[], galleryProfileSha256: raw.galleryProfileSha256, preprocessVersion: raw.preprocessVersion as string };
+    galleries: galleries as H3PolicyGallery[], galleryProfileSha256: raw.galleryProfileSha256, preprocessVersion: raw.preprocessVersion as string,
+    ...(firstFrame?{firstFrame}:{}) };
   if (identityPolicySha256(body) !== binding.sha256) return undefined;
   return { ...binding, body };
 }
@@ -213,9 +218,10 @@ export function normalizeH3IssuedDraftPolicy(value: unknown): H3IssuedDraftPolic
   return { ...policy, issuedAt: value.issuedAt };
 }
 
-export function identityApprovalPayload(asset: Pick<GeneratedStudioAsset, "id" | "jobId" | "model" | "mediaSha256" | "target" | "trimStart" | "identityVerification" | "identityAssessmentId" | "identityAssessmentTrimStart">) {
+export function identityApprovalPayload(asset: Pick<GeneratedStudioAsset, "id" | "jobId" | "model" | "mediaSha256" | "target" | "trimStart" | "identityVerification" | "identityAssessmentId" | "identityAssessmentTrimStart" | "firstFrame">) {
   return { id: asset.id, jobId: asset.jobId, model: asset.model, mediaSha256: asset.mediaSha256,
     target: asset.target, trimStart: asset.trimStart ?? 0, identityVerification: asset.identityVerification,
+    ...(asset.firstFrame?{firstFrame:asset.firstFrame}:{}),
     ...(asset.identityAssessmentId ? { identityAssessmentId: asset.identityAssessmentId, identityAssessmentTrimStart: asset.identityAssessmentTrimStart } : {}) };
 }
 export const currentIdentityEvidenceSha256 = (asset: Parameters<typeof identityApprovalPayload>[0]) => identityPolicySha256(identityApprovalPayload(asset));

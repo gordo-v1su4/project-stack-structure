@@ -170,3 +170,42 @@ Studio persistence:
 - Browser draft key: `project-stack-structure:studio-project:v1`
 - Generated assets are now part of the autosaved draft as `generatedAssets`.
 - This is still browser-local persistence, not a multi-user/server project database. If the browser local storage is cleared, the workflow draft disappears even though RustFS assets remain.
+## Explicit first-frame H3 mode
+
+`h3-i2va-fl2va-int8-v1` is a separate, explicit mode. A request includes
+`conditioning: {kind: "first-frame", artifactId, expectedSha256}` and chooses
+the existing foreground-frontal-v2 or joint-frontal-v2 family for one or two
+named identity authorities. Missing conditioning retains the original Ref2VA
+profiles; an invalid supplied discriminator is rejected.
+
+The advanced one-shot controls upload an opaque 1344×768 PNG using authenticated
+direct upload, then register it with `POST /api/generate/h3/first-frame-artifacts`:
+`{shot, upload: {bucket, objectKey}, expectedSha256}`. `shot` is the usual saved-plan
+request without conditioning. Registration validates current story/target and
+owned reference versions, copies the original PNG into a write-once artifact,
+and returns its descriptor. It neither creates a generation job nor changes
+project references, footage, placements or draft revision. GET uses projectId
+and artifactId and requires the same authenticated owner. The advanced control
+can also capture a native frame near the end of the selected trim of the closest
+earlier eligible take in the same project and plan, then use the same upload,
+registration and fresh CPU screen. No external image creation or resizing is
+needed for that reuse path. Automatic creative recovery remains a separate step.
+
+The worker rehashes the canonical artifact and raw authority files, prepares the
+same issued gallery, and runs `scripts/identity/verify_still.py` on CPU before
+any provider probe, image upload or websocket registration. A negative or missing
+still screen submits no GPU work. The separate single-image report makes no
+temporal, video eligibility, identity accuracy or creative approval claim.
+
+The native graph uses the original FL2VA INT8 checkpoint and
+`MiniMaxH3ImageToVideo.first_frame` only. Raw authority hashes remain distinct
+from the actual first-frame conditioning hash. The resulting video still needs
+the unchanged every-intended-frame numerical screen and explicit draft review.
+Its approval fingerprint and final export reconcile the owned artifact, still
+assessment, issued policy and actual PNG bytes. Old requests, IDs and receipts
+retain their previous serialization.
+
+Artifact PNGs, descriptors and bounded score metadata use the existing media
+bucket, whose public-read policy also applies to this namespace. This is not a
+private store. No embedding vectors, application environment, credentials or
+private story diagnostics are written to the descriptor or still assessment.

@@ -4,6 +4,7 @@ import type { EditPlanPreviewSegment, TimelineItem } from "./musicVideoProject";
 import type { StoryboardJob, VideoFrameRole } from "./storyboardGeneration";
 import { generatedAssetDraftIdentityBlockReason, normalizeGeneratedAssetIdentityVerification, type GeneratedAssetIdentityVerification } from "./generatedAssetIdentity";
 import { currentIdentityEvidenceSha256, isIdentityPolicySha256 } from "./issuedIdentityPolicy";
+import { normalizeH3FirstFrameReceipt, type H3FirstFrameReceipt } from "./h3FirstFrame";
 export { generatedAssetIdentityBlockReason, generatedAssetDraftIdentityBlockReason } from "./generatedAssetIdentity";
 export type { GeneratedAssetIdentityVerification } from "./generatedAssetIdentity";
 
@@ -58,6 +59,7 @@ export type GeneratedStudioAsset = {
   generationReferenceHashes?: string[];
   identityReferenceHashes?: string[];
   identityVerification?: GeneratedAssetIdentityVerification;
+  firstFrame?: H3FirstFrameReceipt;
   /** Explicit canonical append-only assessment of this exact selected source trim. */
   identityAssessmentId?: string;
   identityAssessmentTrimStart?: number;
@@ -206,6 +208,7 @@ export function sanitizeGeneratedStudioAssetForStorage(asset: GeneratedStudioAss
     generationReferenceHashes: Array.isArray(asset.generationReferenceHashes) ? [...asset.generationReferenceHashes] : undefined,
     identityReferenceHashes: Array.isArray(asset.identityReferenceHashes) ? [...asset.identityReferenceHashes] : undefined,
     identityVerification: normalizeGeneratedAssetIdentityVerification(asset.identityVerification),
+    ...(asset.firstFrame?{firstFrame:normalizeH3FirstFrameReceipt(asset.firstFrame)}:{}),
     identityAssessmentId: asset.identityAssessmentId,
     identityAssessmentTrimStart: asset.identityAssessmentTrimStart,
   };

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   groupActivityRuns,
+  recentActivityRuns,
   summarizeActivityRuns,
   workActivityReconnectDelay,
   workActivityTokenRefreshDelay,
@@ -10,6 +11,23 @@ import {
 import { workActivityReadScopeForUser, workActivityTagForUser } from "@/lib/workActivityAuth";
 
 describe("work activity", () => {
+  test("recent history never buries old running, queued or active child work", () => {
+    const items = groupActivityRuns([
+      ...Array.from({ length: 40 }, (_, i) => ({ id: `done-${i}`, taskIdentifier: "local-ai-generation", status: i === 39 ? "FAILED" : "COMPLETED", createdAt: new Date(10_000 + i * 1000) })),
+      { id: "old-running", taskIdentifier: "local-ai-generation", status: "EXECUTING", createdAt: new Date(1000) },
+      { id: "old-queued", taskIdentifier: "local-ai-generation", status: "QUEUED", createdAt: new Date(2000) },
+      { id: "parent", taskIdentifier: "media-video-pipeline", status: "COMPLETED", createdAt: new Date(3000) },
+      { id: "child", taskIdentifier: "qwen-scene-caption-batch", status: "EXECUTING", metadata: { parentRunId: "parent" }, createdAt: new Date(4000) },
+    ]);
+    const before = JSON.stringify(items);
+    const recent = recentActivityRuns(items);
+    expect(recent.visible.map((item) => item.id)).toEqual(["parent", "old-queued", "old-running", "done-39", "done-38", "done-37"]);
+    expect(recent.visible[0]?.children[0]?.id).toBe("child");
+    expect(recent.visible[3]?.failed).toBe(true);
+    expect(recent.hiddenCount).toBe(37);
+    expect(items).toHaveLength(43);
+    expect(JSON.stringify(items)).toBe(before);
+  });
   test("scopes realtime reads to exactly the authenticated user tag", () => {
     expect(workActivityTagForUser("github-123")).toBe("user:github-123");
     expect(workActivityReadScopeForUser("github-123")).toEqual({

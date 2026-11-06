@@ -130,7 +130,7 @@ export async function pinH3JobReferences(job: H3GenerationJob): Promise<H3Genera
       version: createHash("sha256").update(JSON.stringify([reference.version, etag])).digest("hex") });
   }
   return { ...job, references, id: h3GenerationJobId(job.ownerId, job.request, references, {
-    profile: job.profile, conditioningPreparationVersion: job.conditioningPreparationVersion,
+    profile: job.profile, conditioningPreparationVersion: job.conditioningPreparationVersion, ...(job.firstFrame ? { firstFrame: job.firstFrame } : {}),
   }) };
 }
 

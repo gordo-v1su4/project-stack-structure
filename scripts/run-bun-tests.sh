@@ -6,6 +6,9 @@ readonly isolated_tests=(
   # Next's experimental server test helpers patch global console methods.
   "tests/unit/authRequest.test.ts"
   "tests/unit/h3GenerationRunner.test.ts"
+  "tests/unit/h3FirstFrameStore.test.ts"
+  "tests/unit/h3FirstFrameRoute.test.ts"
+  "tests/unit/h3FirstFramePreflight.test.ts"
   "tests/unit/h3IdentityVerification.test.ts"
   "tests/unit/h3IdentityRecheck.test.ts"
   "tests/unit/h3IdentityAssessmentStore.test.ts"

@@ -8,6 +8,8 @@ import { compileH3Prompt } from "@/lib/h3Workflow";
 import { retrieveTriggerRun, triggerH3Generation, triggerH3IdentityRecheck } from "@/lib/triggerOrchestration";
 import { assertH3IdentityAssessmentScope, buildH3IdentityAssessmentScope, identityAssessmentAsset, isH3IdentityAssessmentId } from "@/components/studio/h3IdentityAssessment";
 import { claimH3IdentityAssessment, readH3IdentityAssessment } from "@/lib/h3IdentityAssessmentStore";
+import { H3_FIRST_FRAME_PROFILE, H3_FIRST_FRAME_PREPARATION } from "@/components/studio/h3FirstFrame";
+import { readH3FirstFrame, assertH3FirstFrameMatchesJob } from "@/lib/h3FirstFrameStore";
 
 export const runtime = "nodejs";
 
@@ -41,14 +43,18 @@ export async function POST(request: Request) {
     if (!project) throw new H3RequestError("Project not found.", 404);
     const config = getMediaGatewayConfig();
     if (!config) throw new H3RequestError("Generation storage is not configured.", 503);
-    let proposed = await pinH3JobReferences(materializeH3Job(user.id, project, input, config.bucket));
+    const firstFrame = input.conditioning ? await readH3FirstFrame(user.id,input.projectId,input.conditioning.artifactId) : undefined;
+    if (input.conditioning && (!firstFrame || firstFrame.body.pngSha256 !== input.conditioning.expectedSha256)) throw new H3RequestError("The owned first-frame artifact does not match this request.",409);
+    let proposed = await pinH3JobReferences(materializeH3Job(user.id, project, input, config.bucket,
+      firstFrame ? {profile:H3_FIRST_FRAME_PROFILE,conditioningPreparationVersion:H3_FIRST_FRAME_PREPARATION,firstFrame} : undefined));
+    if (firstFrame) assertH3FirstFrameMatchesJob(firstFrame,proposed);
     // A release may change the default profile between durable creation and
     // dispatch. Only an exact existing request may retain its historical profile.
     const historicalProfiles: H3GenerationProfileOptions[] = [
       { profile: H3_LEGACY_PROFILE },
       { profile: H3_V2_PROFILE, conditioningPreparationVersion: H3_V2_CONDITIONING_PREPARATION_VERSION },
     ];
-    for (const options of historicalProfiles) {
+    for (const options of input.conditioning ? [] : historicalProfiles) {
       const legacyId = h3GenerationJobId(user.id, input, proposed.references, options);
       const legacy = await readH3Job(user.id, input.projectId, legacyId);
       if (!legacy) continue;

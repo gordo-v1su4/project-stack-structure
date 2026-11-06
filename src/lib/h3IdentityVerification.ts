@@ -11,6 +11,7 @@ import { downloadH3ReferenceImage } from "./h3JobStore";
 import { resolveH3IdentityGallery, type H3IdentityFaceRegion } from "./h3IdentityGallery";
 import { canonicalIdentityPolicyJson, type H3PublicIssuedDraftPolicy } from "@/components/studio/issuedIdentityPolicy";
 import { assertIssuedH3DraftPolicyMatchesJob, readIssuedH3DraftPolicy } from "./h3DraftPolicyStore";
+import { h3FirstFrameBinding, type H3FirstFrameBinding } from "@/components/studio/h3FirstFrame";
 
 const execute = promisify(execFile);
 const sha256 = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
@@ -24,6 +25,7 @@ export type H3IdentityInput = {
   projectId: string;
   ownerId?: string;
   issuedPolicy?: H3PublicIssuedDraftPolicy;
+  firstFrame?: H3FirstFrameBinding;
   draftSimilarityPolicyId?: string;
   draftSimilarityPolicySha256?: string;
   videoPath: string;
@@ -67,6 +69,7 @@ export async function assessH3Identity(params: {
     mediaFrameCount: job.frames, mediaFrameRate: H3_FPS, generationReferenceHashes: [...(job.referenceHashes ?? [])],
     identityReferenceHashes: job.references.flatMap((ref, index) => ref.role === "identity" && job.referenceHashes?.[index] ? [job.referenceHashes[index]] : []),
     identityVerification: undefined };
+  if(job.firstFrame&&job.firstFrameAssessment)asset.firstFrame={artifact:job.firstFrame,assessment:job.firstFrameAssessment};
   try {
     if (!job.frames || !asset.durationSeconds || job.referenceHashes?.length !== job.references.length) {
       throw new Error("Reference hashes or the media probe are incomplete.");
@@ -103,6 +106,7 @@ export async function assessH3Identity(params: {
     if (params.pinnedDraftPolicy && (draftFilter?.id !== params.pinnedDraftPolicy.id || draftFilter.sha256 !== params.pinnedDraftPolicy.sha256)) throw new Error("The pinned assessment policy changed.");
     const input: H3IdentityInput = { version: 1, assetId: asset.id, jobId: job.id, generationModel: job.profile, projectId: job.projectId,
       ownerId: job.ownerId, ...(issuedPolicy ? { issuedPolicy } : {}),
+      ...(job.firstFrame?{firstFrame:h3FirstFrameBinding(job.firstFrame)}:{}),
       ...(draftFilter ? { draftSimilarityPolicyId: draftFilter.id,
         draftSimilarityPolicySha256: draftFilter.sha256 } : {}),
       videoPath: outputPath, mediaSha256: asset.mediaSha256!, frameCount: job.frames, fps: H3_FPS,

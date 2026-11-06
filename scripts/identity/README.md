@@ -120,3 +120,19 @@ These reference views and a single rejected video do not validate a production t
 - [OpenCV 4.13 implementation defining alignment and RGB feature preprocessing](https://github.com/opencv/opencv/blob/4.13.0/modules/objdetect/src/face_recognize.cpp).
 
 Worker-internal CLI integration is preferred: it reuses the Trigger task's trusted media and reference files, has no new service or Swarm backend restart, and persists a report beside the job. The installed Swarm backend has an InsightFace loader and face-editing tools but no numeric comparison/report node; a custom node would add installation/restart and provenance work without improving the deterministic algorithm.
+## Single-image I2VA preflight
+
+`verify_still.py --input input.json --output NEW-report.json --model-dir MODELS`
+runs with the same pinned offline uv/Python runtime as `verify.py`. Trusted input
+binds the owned first-frame descriptor, actual PNG SHA, issued policy, raw image
+paths/hashes and ordered gallery regions. Only native opaque 1344×768 PNGs are
+accepted; decoding never crops, scales or redraws pixels. Reports are bounded
+single-image spatial evidence, with no fabricated FPS, frame count, repeated
+samples, temporal pass or identity certificate.
+
+One identity reuses foreground-frontal-v2's unique-largest lead, size, pose,
+detector, cosine and background dominance/margin checks. Two identities reuse
+joint-frontal-v2's two bijections and assignment margins. Video continuity and
+every-frame requirements remain separate and unchanged in `verify.py`. An
+eligible still permits only the later video submission, not selection/export.
+No family JSON, model pins or numerical cutoff changes are introduced by I2VA.

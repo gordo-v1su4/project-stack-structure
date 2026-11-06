@@ -14,11 +14,19 @@ import { currentIdentityEvidenceSha256, type H3IssuedDraftPolicy } from "@/compo
 import { issuedPolicyFixture, issuedProofFixture } from "../helpers/issuedIdentityPolicy";
 import { buildH3IdentityAssessmentScope, identityAssessmentAsset, type H3IdentityAssessment } from "@/components/studio/h3IdentityAssessment";
 import { identityPolicySha256 } from "@/components/studio/issuedIdentityPolicy";
+import { H3_FIRST_FRAME_PROFILE, H3_FIRST_FRAME_PREPARATION, h3FirstFrameBinding } from "@/components/studio/h3FirstFrame";
+import { firstFrameArtifactFixture, firstFrameAssessmentFixture } from "../helpers/h3FirstFrame";
 
 let signedIn = true, dispatches: Array<Record<string, unknown>> = [], reads = 0;
 let saved: SavedStudioProject, job: H3GenerationJob, projectId = "project-1";
 let issuedPolicy: H3IssuedDraftPolicy | undefined;
 let rangeRecord:H3IdentityAssessment|undefined;
+let firstFrameBytesIntact=true,firstFrameAvailable=true,firstFrameScreenAvailable=true,firstFrameReads=0;
+const {assertH3FirstFrameMatchesJob}=await import("@/lib/h3FirstFrameStore");
+mock.module("@/lib/h3FirstFrameStore",()=>({assertH3FirstFrameMatchesJob,
+  readH3FirstFrame:async()=>firstFrameAvailable?job.firstFrame:null,
+  readH3FirstFrameAssessment:async()=>firstFrameScreenAvailable?job.firstFrameAssessment:null,
+  downloadH3FirstFrame:async()=>{firstFrameReads++;if(!firstFrameBytesIntact)throw new Error("Canonical image SHA differs");return new Uint8Array([1,2,3]);}}));
 mock.module("@/lib/h3IdentityAssessmentStore",()=>({readH3IdentityAssessment:async(owner:string,project:string,jobId:string,id:string)=>
   rangeRecord&&owner===rangeRecord.scope.ownerId&&project===rangeRecord.scope.projectId&&jobId===rangeRecord.scope.jobId&&id===rangeRecord.scope.id?rangeRecord:null}));
 const { assertIssuedH3DraftPolicyMatchesJob } = await import("@/lib/h3DraftPolicyStore");
@@ -48,6 +56,7 @@ const mediaHash = createHash("sha256").update(new Uint8Array([1, 2, 3])).digest(
 
 function reset(idForProject = "project-1", duration = 3) {
   signedIn = true; dispatches = []; reads = 0; issuedPolicy = undefined;rangeRecord=undefined;
+  firstFrameBytesIntact=firstFrameAvailable=firstFrameScreenAvailable=true;firstFrameReads=0;
   projectId = idForProject; key = `media-uploads/projects/github-test/generated/${projectId}/${id}/shot.mp4`;
   const analysis: BeatJoinAnalysis = { sourceLabel: "master.wav", audioUrl: "", duration, waveform: [], energy: [], beats: [], onsets: [], sections: [],
     storageBucket: "studio", storagePath: "media-uploads/github-test/source-audio/master.wav", storageUrl: "https://media.test/master.wav" };
@@ -157,6 +166,25 @@ describe("final export canonical identity and ownership boundary", () => {
     const asset = job.result!.asset; asset.model = job.profile;
     asset.identityVerification = issuedProofFixture(job, asset, issuedPolicy);
     saved.draft.generatedAssets![0] = { ...structuredClone(asset), reviewStatus: "approved", approvedIdentityEvidenceSha256: currentIdentityEvidenceSha256(asset) };
+  }
+  function firstFrameSetup(){
+    issuedSetup(2);const artifact=firstFrameArtifactFixture(job);job.firstFrame=artifact;job.profile=H3_FIRST_FRAME_PROFILE;job.conditioningPreparationVersion=H3_FIRST_FRAME_PREPARATION;
+    job.conditioningReferenceHashes=[artifact.body.pngSha256];
+    job.request.conditioning={kind:"first-frame",artifactId:artifact.id,expectedSha256:artifact.body.pngSha256};
+    issuedPolicy!.body.generationModel=job.profile;issuedPolicy!.body.firstFrame=h3FirstFrameBinding(artifact);issuedPolicy!.sha256=identityPolicySha256(issuedPolicy!.body);issuedPolicy!.id=`h3-policy-${issuedPolicy!.sha256}`;
+    job.identityPolicy={version:1,id:issuedPolicy!.id,sha256:issuedPolicy!.sha256,familyId:issuedPolicy!.familyId,familySha256:issuedPolicy!.familySha256};
+    const asset=job.result!.asset;asset.model=job.profile;asset.identityVerification=issuedProofFixture(job,asset,issuedPolicy!);
+    job.firstFrameAssessment=firstFrameAssessmentFixture(artifact,issuedPolicy!);asset.firstFrame={artifact,assessment:job.firstFrameAssessment};
+    saved.draft.generatedAssets![0]={...structuredClone(asset),reviewStatus:"approved",approvedIdentityEvidenceSha256:currentIdentityEvidenceSha256(asset)};
+  }
+  test("first-frame export requires both canonical still evidence and every intended video frame",async()=>{
+    firstFrameSetup();expect((await post(form())).status).toBe(202);expect(firstFrameReads).toBe(1);expect(dispatches).toHaveLength(1);
+    firstFrameSetup();job.result!.asset.identityVerification!.draftSimilarityFilter!.status="ineligible";expect((await post(form())).status).toBe(409);expect(dispatches).toHaveLength(0);
+  });
+  for(const failure of ["changed PNG bytes","missing artifact","missing still screen","changed browser receipt"]){
+    test(`first-frame canonical export rejects ${failure}`,async()=>{firstFrameSetup();if(failure==="changed PNG bytes")firstFrameBytesIntact=false;else if(failure==="missing artifact")firstFrameAvailable=false;else if(failure==="missing still screen")firstFrameScreenAvailable=false;
+      else{saved.draft.generatedAssets![0].firstFrame!.assessment.decodedPixelSha256="f".repeat(64);saved.draft.generatedAssets![0].approvedIdentityEvidenceSha256=currentIdentityEvidenceSha256(saved.draft.generatedAssets![0]);}
+      expect((await post(form())).status).toBe(409);expect(dispatches).toHaveLength(0);});
   }
   function rangeSetup() {
     issuedSetup(2);const original=job.result!.asset;

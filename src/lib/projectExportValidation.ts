@@ -14,6 +14,8 @@ import { canonicalIdentityPolicyJson, currentIdentityEvidenceSha256, normalizeH3
 import { assertIssuedH3DraftPolicyMatchesJob, readIssuedH3DraftPolicy } from "./h3DraftPolicyStore";
 import { readH3IdentityAssessment } from "./h3IdentityAssessmentStore";
 import { identityAssessmentAsset } from "@/components/studio/h3IdentityAssessment";
+import { H3_FIRST_FRAME_PROFILE, h3FirstFrameDigest, normalizeH3FirstFrameReceipt } from "@/components/studio/h3FirstFrame";
+import { assertH3FirstFrameMatchesJob, downloadH3FirstFrame, readH3FirstFrame, readH3FirstFrameAssessment } from "./h3FirstFrameStore";
 
 export class ProjectExportError extends Error { constructor(message: string, readonly status: 400 | 403 | 409 = 409) { super(message); } }
 export type ProjectExportContext = { projectId: string; planSignature: string; placementRevision: number; draftRevision: number };
@@ -105,6 +107,20 @@ export async function reconcileProjectFinalExport(params: {
     const authoritative: GeneratedStudioAsset = { ...canonical, id: canonical.id, jobId: job.id, provider: "swarmui", model: job.profile,
       target: job.target, trimStart: asset.trimStart ?? 0, reviewStatus: "approved", approvedAt: asset.approvedAt,
       approvedIdentityEvidenceSha256: asset.approvedIdentityEvidenceSha256 };
+    if(job.profile===H3_FIRST_FRAME_PROFILE){
+      try{
+        const receipt=normalizeH3FirstFrameReceipt(canonical.firstFrame);
+        if(!receipt||!job.firstFrame||!job.firstFrameAssessment||!job.identityPolicy||h3FirstFrameDigest(receipt)!==h3FirstFrameDigest({artifact:job.firstFrame,assessment:job.firstFrameAssessment})
+          ||h3FirstFrameDigest(job.conditioningReferenceHashes??null)!==h3FirstFrameDigest([job.firstFrame.body.pngSha256])
+          ||h3FirstFrameDigest(asset.firstFrame??null)!==h3FirstFrameDigest(receipt))throw new Error("Receipt differs");
+        const artifact=await readH3FirstFrame(ownerId,context.projectId,job.firstFrame.id);
+        if(!artifact||h3FirstFrameDigest(artifact)!==h3FirstFrameDigest(job.firstFrame))throw new Error("Artifact differs");
+        assertH3FirstFrameMatchesJob(artifact,job);
+        const still=await readH3FirstFrameAssessment(artifact,job.identityPolicy.sha256);
+        if(!still||still.status!=="eligible"||h3FirstFrameDigest(still)!==h3FirstFrameDigest(job.firstFrameAssessment))throw new Error("Still evidence differs");
+        await downloadH3FirstFrame(artifact);
+      }catch{throw new ProjectExportError("The approved first-frame artifact or its canonical still screen changed. This take cannot enter export.");}
+    }
     if (asset.identityAssessmentId && asset.approvedIdentityEvidenceSha256 !== currentIdentityEvidenceSha256(authoritative)) {
       throw new ProjectExportError("The range evidence changed after approval. Review and accept the exact assembled draft again.");
     }

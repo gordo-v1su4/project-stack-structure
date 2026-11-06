@@ -13,6 +13,10 @@ import { isH3JobTerminal, type H3GenerationJob, type H3GenerationRequest } from 
 import type { EditPlanPreviewSegment } from "../musicVideoProject";
 import type { ReferenceAsset } from "../referenceAssets";
 import { Button, StatusDot, Surface } from "../ui";
+import { uploadFileDirectlyToRustFs } from "../directUploadClient";
+import { normalizeH3FirstFrameArtifact } from "../h3FirstFrame";
+import { captureH3FirstFrame } from "../captureH3FirstFrame";
+import { earlierH3FirstFrameSource } from "../h3FirstFrameSource";
 
 type Props = {
   projectId: string | null;
@@ -46,6 +50,8 @@ export function MiniMaxDraftPanel(props: Props) {
   const [pickupKey, setPickupKey] = useState("");
   const [pickupEdits, setPickupEdits] = useState<Record<string, { direction?: string; duration?: string }>>({});
   const [handleFrames,setHandleFrames] = useState<Record<string,number>>({});
+  const [pickupMode,setPickupMode] = useState<"references"|"first-frame">("references");
+  const [preparedFirstFrame,setPreparedFirstFrame] = useState<{file:File;context:string}|null>(null);
   const handleFramesRef = useRef<Record<string,number>>({});
   const latest = useRef(props);
   const mounted = useRef(true);
@@ -250,17 +256,41 @@ export function MiniMaxDraftPanel(props: Props) {
       const segment = createH3PickupWindow(currentWindow, duration);
       const previous = existingJobs.filter(job => h3RequestWindowKey(job.request) === h3WindowKey(segment)).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
       if (previous && !isH3JobTerminal(previous)) throw new Error("This exact shot already has a submission. Check its existing render in Generation progress.");
-      const input: H3GenerationRequest = previous ? nextH3Attempt(previous, existingJobs, latest.current.draft?.revision ?? 0, direction) : {
+      const sameModePrevious=previous&&Boolean(previous.request.conditioning)===(pickupMode==="first-frame")?previous:undefined;
+      const input: H3GenerationRequest = sameModePrevious ? nextH3Attempt(sameModePrevious, existingJobs, latest.current.draft?.revision ?? 0, direction) : {
         projectId, planSignature: segment.planSignature!, requirementId: segment.requirementId, timelineItemId: segment.timelineItemId,
         sectionId: segment.sectionId, songStart: segment.musicStart, songEnd: segment.musicEnd, prompt: direction,
         requestIntentId: crypto.randomUUID(), attempt: 0, referenceAssetIds: [], draftRevision: latest.current.draft?.revision ?? 0,
       };
       const referenceAssetIds = selectH3ReferenceAssetIds(latest.current.referenceAssets, direction);
-      const request = { ...input, ...(!previous ? identityPolicyChoiceForReferences(latest.current.referenceAssets, referenceAssetIds) : {}), referenceAssetIds };
+      const request: H3GenerationRequest = { ...input, ...(!sameModePrevious ? identityPolicyChoiceForReferences(latest.current.referenceAssets, referenceAssetIds) : {}), referenceAssetIds };
+      if(pickupMode==="first-frame"){
+        if(!firstFrameFile)throw new Error("Choose a prepared native-size first-frame PNG. It will receive a CPU similarity screen before rendering.");
+        if(firstFrameFile.type!=="image/png"||firstFrameFile.size>32*1024*1024)throw new Error("Choose a PNG smaller than 32 MiB.");
+        if(!request.identityPolicyFamily)throw new Error("First-frame shots require one or two named character authorities.");
+        setMessage("Uploading and freezing this shot's first frame…");
+        const expectedSha256=Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",await firstFrameFile.arrayBuffer())),byte=>byte.toString(16).padStart(2,"0")).join("");
+        const upload=await uploadFileDirectlyToRustFs(firstFrameFile,"media-uploads/h3-first-frames");
+        const {conditioning:_,...shot}=request;void _;
+        const response=await fetch("/api/generate/h3/first-frame-artifacts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({shot,upload:{bucket:upload.bucket,objectKey:upload.objectKey},expectedSha256}),signal:AbortSignal.timeout(120_000)});
+        const result=await response.json();if(!response.ok)throw new Error(result.error||"Could not freeze the first frame.");
+        const artifact=normalizeH3FirstFrameArtifact(result.artifact);if(!artifact||artifact.body.projectId!==projectId||artifact.body.pngSha256!==expectedSha256)throw new Error("First-frame registration returned a different image.");
+        request.conditioning={kind:"first-frame",artifactId:artifact.id,expectedSha256};
+      }
       persistBatch({ version: 1, projectId, planSignature: request.planSignature, requests: [request], paused: false });
       setReview(null); await runBatch();
     } catch (failure) { setError(failure instanceof Error ? failure.message : "Could not create this shot."); }
     finally { preparingPickup.current = false; if (mounted.current && !running.current) setBusy(false); }
+  }
+
+  async function captureEarlierFirstFrame(){
+    if(!earlierFrame||!pickupWindow||busy)return;
+    const projectId=props.projectId,windowKey=h3WindowKey(pickupWindow);setBusy(true);setError(null);
+    try{const url=buildGeneratedAssetPlaybackUrl(earlierFrame.asset);if(!url)throw new Error("The earlier take has no playable media.");const file=await captureH3FirstFrame(url,earlierFrame.timeSeconds);
+      if(!mounted.current||latest.current.projectId!==projectId||!planH3DraftWindows(latest.current.segments).some(w=>h3WindowKey(w)===windowKey))return;
+      setPreparedFirstFrame({file,context:firstFrameContext});setPickupMode("first-frame");setMessage(`Prepared a native frame from ${earlierFrame.asset.title||"the earlier shot"}. It will be screened again for this new shot.`);
+    }catch(failure){if(mounted.current&&latest.current.projectId===projectId)setError(failure instanceof Error?failure.message:"Could not prepare an earlier frame.");}
+    finally{if(mounted.current)setBusy(false);}
   }
 
   async function recoverJob(job: H3GenerationJob, action: "resume" | "cancel" | "retry") {
@@ -318,8 +348,13 @@ export function MiniMaxDraftPanel(props: Props) {
   const pickupDirection = pickupEdits[pickupEditKey]?.direction ?? pickupWindow?.storyDirection?.trim() ?? pickupWindow?.label ?? "";
   const pickupMaximum = pickupWindow ? Math.min(12, pickupWindow.musicEnd - pickupWindow.musicStart) : 0;
   const pickupDuration = pickupEdits[pickupEditKey]?.duration ?? String(Math.min(3, pickupMaximum));
+  const firstFrameContext=`${pickupEditKey}:${pickupWindow?.planSignature??""}:duration:${Number(pickupDuration)}`;
+  const firstFrameFile=preparedFirstFrame?.context===firstFrameContext?preparedFirstFrame.file:null;
   const pickupDurationValid = pickupMaximum > 0 && pickupDuration.trim() !== "" && Number.isFinite(Number(pickupDuration))
     && Number(pickupDuration) >= Math.min(1, pickupMaximum) && Number(pickupDuration) <= pickupMaximum;
+  const pickupReferenceIds=selectH3ReferenceAssetIds(props.referenceAssets,pickupDirection);
+  const pickupIdentityIds=props.referenceAssets.filter(ref=>pickupReferenceIds.includes(ref.id)&&(ref.kind==="character"||ref.role.startsWith("character"))).map(ref=>ref.id);
+  const earlierFrame=pickupWindow?earlierH3FirstFrameSource(props.assets,props.projectId,pickupWindow.planSignature,pickupWindow.musicStart,pickupIdentityIds):undefined;
   const activeJobs = jobs.filter(job => !isH3JobTerminal(job));
   const attemptsLeft = (job: H3GenerationJob) => 2 - Math.max(job.request.attempt ?? 0, ...jobs.filter(candidate => candidate.request.requestIntentId === job.request.requestIntentId).map(candidate => candidate.request.attempt ?? 0));
   const selectedIds = new Set(props.draft?.assetIds ?? []);
@@ -351,6 +386,15 @@ export function MiniMaxDraftPanel(props: Props) {
             {missing.map(window => <option key={h3WindowKey(window)} value={h3WindowKey(window)}>{window.label} · {preciseClock(window.musicStart)}–{preciseClock(window.musicEnd)}{window.musicEnd - window.musicStart < 1 ? " · short boundary sliver" : ""}</option>)}
           </select></label>
           {pickupWindow ? <>
+            <label className="block text-xs text-fg-3">Shot input<select aria-label="One shot input mode" value={pickupMode} disabled={busy||accepting}
+              onChange={event=>setPickupMode(event.target.value as "references"|"first-frame")} className="mt-1 block w-full rounded-md border border-line bg-ink-1 p-2 text-sm text-fg-1">
+              <option value="references">Named reference images</option><option value="first-frame">Continue from a first frame</option>
+            </select></label>
+            {pickupMode==="first-frame"?<div className="space-y-2"><Button disabled={busy||accepting||!earlierFrame} onClick={()=>void captureEarlierFirstFrame()}>Use frame from earlier shot</Button>
+              <p className="text-xs text-fg-3">{earlierFrame?`Uses the selected native trim of ${earlierFrame.asset.title||"the closest earlier eligible take"}.`:"An earlier eligible native take in this project and plan can supply the first frame."}</p>
+              <label className="block text-xs text-fg-3">Or choose a native first frame · 1344×768 opaque PNG<input key={firstFrameContext} aria-label="Prepared first-frame PNG" type="file" accept="image/png" disabled={busy||accepting}
+              onChange={event=>{const file=event.target.files?.[0];setPreparedFirstFrame(file?{file,context:firstFrameContext}:null);}} className="mt-1 block w-full text-sm text-fg-1" />
+              <span className="mt-1 block">{firstFrameFile?`Prepared: ${firstFrameFile.name}. `:""}The actual image receives a provisional one-image numerical screen before GPU video generation. Every intended video frame must then pass separately. Switching input type starts a new take and keeps earlier results.</span></label></div>:null}
             <label className="block text-xs text-fg-3">Edit duration (seconds)<input aria-label="One shot edit duration" type="number" step="any"
               min={Math.min(1, pickupMaximum)} max={pickupMaximum} value={pickupDuration} disabled={busy || accepting}
               onChange={event => setPickupEdits(current => ({ ...current, [pickupEditKey]: { ...current[pickupEditKey], duration: event.target.value } }))}

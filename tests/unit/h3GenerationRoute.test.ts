@@ -1,10 +1,13 @@
 import { describe, expect, mock, test } from "bun:test";
 import { H3_LEGACY_PROFILE, H3_PROFILE, H3_V2_PROFILE, H3_V2_CONDITIONING_PREPARATION_VERSION, type H3GenerationJob } from "@/components/studio/h3Generation";
 import { h3ProjectFixture } from "../helpers/h3Project";
+import { H3_FIRST_FRAME_PROFILE, type H3FirstFrameArtifact } from "@/components/studio/h3FirstFrame";
+import { firstFrameArtifactFixture } from "../helpers/h3FirstFrame";
 
 const fixture = h3ProjectFixture();
 let signedIn = true, dispatches = 0;
 let stored: H3GenerationJob | null = null;
+let firstFrameArtifact:H3FirstFrameArtifact|null=null;
 mock.module("@/lib/session", () => ({
   getSessionUser: async () => signedIn ? { id: "github-test" } : null,
   unauthorizedResponse: () => Response.json({ success: false }, { status: 401 }),
@@ -16,12 +19,14 @@ mock.module("@/lib/studioProjectStore", () => ({
   },
 }));
 mock.module("@/lib/mediaGateway", () => ({ getMediaGatewayConfig: () => ({ bucket: "studio" }), normalizeMediaPath: (value: string) => value }));
+const {assertH3FirstFrameMatchesJob}=await import("@/lib/h3FirstFrameStore");
+mock.module("@/lib/h3FirstFrameStore",()=>({assertH3FirstFrameMatchesJob,readH3FirstFrame:async()=>firstFrameArtifact}));
 mock.module("@/lib/h3JobStore", () => ({
   claimH3GenerationIntent: async (job: H3GenerationJob) => {
     if (stored && stored.request.requestIntentId === job.request.requestIntentId
       && stored.request.attempt === job.request.attempt && stored.id !== job.id) throw new H3RequestError("Intent conflict", 409);
   },
-  pinH3JobReferences: async (job: H3GenerationJob) => job,
+  pinH3JobReferences: async (job: H3GenerationJob) => job.firstFrame?{...job,references:job.firstFrame.body.references,id:h3GenerationJobId(job.ownerId,job.request,job.firstFrame.body.references,job)}:job,
   createH3Job: async (job: H3GenerationJob) => { if (!stored) stored = job; return stored; },
   readH3Job: async (_owner: string, _project: string, id: string) => stored?.id === id ? stored : null,
   listH3Jobs: async () => stored ? [stored] : [],
@@ -35,11 +40,19 @@ mock.module("@/lib/triggerOrchestration", () => ({
   retrieveTriggerRun: async () => ({ isCompleted: true, isFailed: true }),
 }));
 const { POST, GET, PATCH } = await import("@/app/api/generate/h3/route");
-const { H3RequestError, materializeH3Job, parseH3Request } = await import("@/lib/h3GenerationServer");
+const { H3RequestError, h3GenerationJobId, materializeH3Job, parseH3Request } = await import("@/lib/h3GenerationServer");
 function post(body: unknown) { return new Request("http://app.test/api/generate/h3", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }); }
-function reset() { signedIn = true; stored = null; dispatches = 0; fixture.saved.draft.generatedAssets = []; }
+function reset() { signedIn = true; stored = null; dispatches = 0; firstFrameArtifact=null; fixture.saved.draft.generatedAssets = []; }
 
 describe("authenticated H3 dispatch and recovery route", () => {
+  test("explicit first-frame requests resolve an owned immutable artifact and never silently dispatch Ref2VA",async()=>{
+    reset();const shot={...fixture.request,identityPolicyFamily:"sface-yunet-foreground-frontal-v2" as const};
+    firstFrameArtifact=firstFrameArtifactFixture(materializeH3Job("github-test",fixture.saved,shot,"studio"));
+    const input={...shot,conditioning:{kind:"first-frame",artifactId:firstFrameArtifact.id,expectedSha256:firstFrameArtifact.body.pngSha256}};
+    const response=await POST(post(input));expect(response.status).toBe(202);expect(stored!.profile).toBe(H3_FIRST_FRAME_PROFILE);expect(stored!.firstFrame).toEqual(firstFrameArtifact);expect(dispatches).toBe(1);
+    await POST(post(input));expect(dispatches).toBe(1);
+    reset();expect((await POST(post(input))).status).toBe(409);expect(dispatches).toBe(0);
+  });
   test("a new no-range identity recheck cannot dispatch legacy overwrite work and still respects rejection", async () => {
     reset(); await POST(post(fixture.request));
     stored = { ...stored!, state: "ready", result: { asset: { id: stored!.id, jobId: stored!.id,

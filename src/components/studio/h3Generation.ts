@@ -1,5 +1,6 @@
 import type { GeneratedStudioAsset, GeneratedStudioAssetTarget } from "./generatedAssets";
 import type { H3IdentityPolicyFamilyId, H3IssuedDraftPolicyBinding } from "./issuedIdentityPolicy";
+import { H3_FIRST_FRAME_PROFILE, H3_FIRST_FRAME_PREPARATION, type H3FirstFrameChoice, type H3FirstFrameArtifact, type H3FirstFrameAssessment } from "./h3FirstFrame";
 
 /** Browser input contains project identities, never provider paths or workflow JSON. */
 export type H3GenerationRequest = {
@@ -19,6 +20,7 @@ export type H3GenerationRequest = {
   draftRevision?: number;
   /** Explicit new-job opt-in; historical missing-field requests remain immutable. */
   identityPolicyFamily?: H3IdentityPolicyFamilyId;
+  conditioning?: H3FirstFrameChoice;
 };
 
 export type H3ReferenceSnapshot = {
@@ -40,11 +42,12 @@ export const H3_V2_PROFILE = "h3-ref2va-int8-v2" as const;
 export const H3_V2_CONDITIONING_PREPARATION_VERSION = "canonical-front-crop-v1" as const;
 export const H3_PROFILE = "h3-ref2va-int8-v3" as const;
 export const H3_CONDITIONING_PREPARATION_VERSION = "canonical-front-crops-v2" as const;
-export type H3GenerationProfile = typeof H3_LEGACY_PROFILE | typeof H3_V2_PROFILE | typeof H3_PROFILE;
-export type H3ConditioningPreparationVersion = typeof H3_V2_CONDITIONING_PREPARATION_VERSION | typeof H3_CONDITIONING_PREPARATION_VERSION;
+export type H3GenerationProfile = typeof H3_LEGACY_PROFILE | typeof H3_V2_PROFILE | typeof H3_PROFILE | typeof H3_FIRST_FRAME_PROFILE;
+export type H3ConditioningPreparationVersion = typeof H3_V2_CONDITIONING_PREPARATION_VERSION | typeof H3_CONDITIONING_PREPARATION_VERSION | typeof H3_FIRST_FRAME_PREPARATION;
 export type H3GenerationProfileOptions = {
   profile: H3GenerationProfile;
   conditioningPreparationVersion?: H3ConditioningPreparationVersion;
+  firstFrame?: H3FirstFrameArtifact;
 };
 export type H3ConditioningPreparation = {
   version: "original-v1" | H3ConditioningPreparationVersion;
@@ -82,6 +85,8 @@ export type H3GenerationJob = {
   result?: { asset: GeneratedStudioAsset };
   /** Server-issued immutable reference/gallery screen, never client-provided policy JSON. */
   identityPolicy?: H3IssuedDraftPolicyBinding;
+  firstFrame?: H3FirstFrameArtifact;
+  firstFrameAssessment?: H3FirstFrameAssessment;
 };
 
 export const H3_FPS = 24;

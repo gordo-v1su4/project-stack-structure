@@ -49,8 +49,17 @@ def validate_issued_policy(value, metadata, manifest, gallery):
         or body.get("familySha256") != family["sha256"]): raise ValueError("Issued policy family differs")
     if (body.get("ownerId") != value.get("ownerId") or not body.get("ownerId")
         or body.get("projectId") != value.get("projectId") or not body.get("projectId")
-        or body.get("generationModel") != value.get("generationModel") or body.get("generationModel") != "h3-ref2va-int8-v3"):
+        or body.get("generationModel") != value.get("generationModel") or body.get("generationModel") not in ("h3-ref2va-int8-v3", "h3-i2va-fl2va-int8-v1")):
         raise ValueError("Issued policy owner, project or model differs")
+    if body["generationModel"] == "h3-i2va-fl2va-int8-v1":
+        binding = body.get("firstFrame")
+        if (family["id"] not in ("sface-yunet-joint-frontal-v2", "sface-yunet-foreground-frontal-v2") or not isinstance(binding, dict)
+            or binding != value.get("firstFrame") or binding.get("preparationVersion") != "first-frame-native-v1"
+            or binding.get("artifactId") != "h3-frame-" + str(binding.get("descriptorSha256"))
+            or any(not isinstance(binding.get(k), str) or len(binding[k]) != 64 or any(c not in "0123456789abcdef" for c in binding[k]) for k in ("descriptorSha256", "pngSha256"))):
+            raise ValueError("Issued first-frame binding differs")
+    elif "firstFrame" in body or "firstFrame" in value:
+        raise ValueError("Reference-only policy cannot gain first-frame conditioning")
     references = body.get("references", [])
     identities = [ref for ref in references if ref.get("role") == "identity"]
     if (len(identities) != family["scope"]["requiredIdentityCount"]

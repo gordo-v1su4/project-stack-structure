@@ -6,6 +6,7 @@ import { canonicalIdentityPolicyJson, getH3PolicyFamily, normalizeH3IssuedDraftP
 import type { H3GenerationJob } from "@/components/studio/h3Generation";
 import { getMediaGatewayConfig } from "./mediaGateway";
 import { normalizeStudioOwnerSegment, normalizeStudioProjectId } from "./studioStoragePaths";
+import { H3_FIRST_FRAME_PROFILE, h3FirstFrameBinding } from "@/components/studio/h3FirstFrame";
 
 let cached: { fingerprint: string; client: S3Client } | undefined;
 const MAX_POLICY_BYTES = 256 * 1024;
@@ -32,13 +33,15 @@ export function identityPolicyPreflightBinding(job: H3GenerationJob, rawReferenc
   const family = getH3PolicyFamily(job.request.identityPolicyFamily ?? "");
   if (!family) throw new Error("A fixed identity policy family must be chosen for this job.");
   return identityPolicySha256({ ownerId: job.ownerId, projectId: job.projectId, generationModel: job.profile,
-    familyId: family.id, familySha256: family.sha256, references: rawReferences });
+    familyId: family.id, familySha256: family.sha256, references: rawReferences,
+    ...(job.firstFrame?{firstFrame:h3FirstFrameBinding(job.firstFrame)}:{}) });
 }
 
 /** Exact canonical job references, including their pinned storage versions, anchor issuance. */
 export function assertIssuedH3DraftPolicyMatchesJob(policy: H3IssuedDraftPolicy, job: H3GenerationJob, rawReferenceHashes: readonly string[]) {
   const family = getH3PolicyFamily(job.request.identityPolicyFamily ?? "");
   const body = policy.body;
+  if(canonicalIdentityPolicyJson(body.firstFrame??null)!==canonicalIdentityPolicyJson(job.firstFrame?h3FirstFrameBinding(job.firstFrame):null))throw new Error("Issued first-frame artifact binding differs.");
   if (!family || policy.familyId !== family.id || policy.familySha256 !== family.sha256
     || body.ownerId !== job.ownerId || body.projectId !== job.projectId || body.generationModel !== job.profile
     || rawReferenceHashes.length !== job.references.length || body.references.length !== job.references.length
@@ -88,16 +91,17 @@ export async function readIssuedH3DraftPolicy(ownerId: string, projectId: string
 export async function issueH3DraftPolicy(input: { job: H3GenerationJob; rawReferences: H3PolicyRawReference[]; preflight: H3IdentityPolicyPreflightResult }): Promise<H3IssuedDraftPolicy> {
   const { job, rawReferences, preflight } = input;
   const family = getH3PolicyFamily(job.request.identityPolicyFamily ?? "");
-  if (!family || job.profile !== "h3-ref2va-int8-v3" || preflight.version !== 1 || preflight.status !== "ready"
+  if (!family || !["h3-ref2va-int8-v3",H3_FIRST_FRAME_PROFILE].includes(job.profile) || preflight.version !== 1 || preflight.status !== "ready"
     || preflight.bindingSha256 !== identityPolicyPreflightBinding(job, rawReferences)
     || preflight.familyId !== family.id || preflight.familySha256 !== family.sha256
     || canonicalIdentityPolicyJson(preflight.model) !== canonicalIdentityPolicyJson(family.model)
     || !/^[a-f0-9]{64}$/.test(preflight.galleryProfileSha256 ?? "")) throw new Error("Reference preflight did not establish a usable fixed-family gallery.");
-  const body: H3IssuedDraftPolicyBody = { version: 1, ownerId: job.ownerId, projectId: job.projectId, generationModel: job.profile,
+  const body: H3IssuedDraftPolicyBody = { version: 1, ownerId: job.ownerId, projectId: job.projectId, generationModel: job.profile as H3IssuedDraftPolicyBody["generationModel"],
     familyId: family.id, familySha256: family.sha256, references: rawReferences,
     identityReferenceHashes: rawReferences.filter(reference => reference.role === "identity").map(reference => reference.rawSha256),
     galleries: preflight.galleries, galleryProfileSha256: preflight.galleryProfileSha256!,
-    preprocessVersion: `${family.model.preprocessBaseVersion}-gallery-v2-${preflight.galleryProfileSha256}` };
+    preprocessVersion: `${family.model.preprocessBaseVersion}-gallery-v2-${preflight.galleryProfileSha256}`,
+    ...(job.firstFrame?{firstFrame:h3FirstFrameBinding(job.firstFrame)}:{}) };
   const sha256 = identityPolicySha256(body);
   const candidate = { version: 1, id: `h3-policy-${sha256}`, sha256, familyId: family.id, familySha256: family.sha256, body, issuedAt: new Date().toISOString() };
   const policy = normalizeH3IssuedDraftPolicy(candidate);

@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   formatActivityDuration,
   groupActivityRuns,
+  recentActivityRuns,
   summarizeActivityRuns,
   workActivityReconnectDelay,
   workActivityTokenRefreshDelay,
@@ -28,6 +29,7 @@ type ActiveActivityCredentials = ActivityCredentials & {
 
 export function WorkActivity({ layout = "popover" }: { layout?: "popover" | "inline" }) {
   const [open, setOpen] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const close = useCallback(() => setOpen(false), []);
   useDismiss(rootRef, open, close);
@@ -99,6 +101,7 @@ export function WorkActivity({ layout = "popover" }: { layout?: "popover" | "inl
     }
   }, []);
   const activity = useMemo(() => groupActivityRuns(runs, now), [runs, now]);
+  const recent = useMemo(() => recentActivityRuns(activity), [activity]);
   const summary = useMemo(() => summarizeActivityRuns(activity), [activity]);
   const summaryLabel = summary.total
     ? `${summary.completed}/${summary.total} complete · ${summary.active} active · ${summary.queued} queued${summary.failed ? ` · ${summary.failed} failed` : ""}`
@@ -123,8 +126,15 @@ export function WorkActivity({ layout = "popover" }: { layout?: "popover" | "inl
       ) : activity.length === 0 ? (
         <div className="py-3 text-[11px] text-fg-3">No production runs in the last 24 hours.</div>
       ) : (
-        <div className={layout === "inline" ? "max-h-56 overflow-y-auto" : "max-h-[420px] overflow-y-auto"}>
-          {activity.map((item) => <ActivityRow key={item.id} item={item} />)}
+        <div>
+          <div className={layout === "inline" ? "max-h-56 overflow-y-auto" : "max-h-[420px] overflow-y-auto"}>
+            {(showHistory ? activity : recent.visible).map((item) => <ActivityRow key={item.id} item={item} />)}
+          </div>
+          {recent.hiddenCount > 0 ? (
+            <button type="button" onClick={() => setShowHistory((value) => !value)} className="mt-2 text-[11px] text-fg-3 hover:text-fg-1">
+              {showHistory ? "Hide earlier work" : `Show earlier work (${recent.hiddenCount})`}
+            </button>
+          ) : null}
         </div>
       )}
     </>
@@ -147,8 +157,10 @@ export function WorkActivity({ layout = "popover" }: { layout?: "popover" | "inl
         {subscription}
         <section aria-label="Work activity" className="shrink-0 border-b border-line px-5 py-3">
           <div className="mb-2 flex items-baseline justify-between gap-2">
-            <div className="text-[10px] uppercase tracking-[0.14em] text-fg-3">Production runs</div>
-            <div className="font-mono text-[10px] text-fg-4">{summaryLabel}</div>
+            <div className="text-[10px] uppercase tracking-[0.14em] text-fg-3">Recent account work</div>
+            <div className="font-mono text-[10px] text-fg-4">
+              {summary.active || summary.queued ? `${summary.active} running · ${summary.queued} waiting` : "Last 24 hours"}
+            </div>
           </div>
           {panelBody}
         </section>
