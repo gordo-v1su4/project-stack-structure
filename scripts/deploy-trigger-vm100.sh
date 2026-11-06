@@ -9,23 +9,17 @@ fi
 export BUN_INSTALL="${BUN_INSTALL:-$HOME/.bun}"
 export PATH="$BUN_INSTALL/bin:/usr/local/bin:$PATH"
 
+# Build this application's checkout, including when invoked from another cwd.
+cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
 deploy_env="${STACK_STRUCTURE_TRIGGER_DEPLOY_ENV:-$HOME/.config/project-stack-structure/trigger-deploy.env}"
-trigger_stack="${TRIGGER_STACK_DIR:-/opt/triggerdev/trigger.dev/hosting/docker}"
 
 [[ -f "$deploy_env" ]] || {
   echo "ERROR: Missing $deploy_env (sync the BWS deployment pointers first)." >&2
   exit 1
 }
-[[ -f "$trigger_stack/.env" ]] || {
-  echo "ERROR: Trigger stack environment is missing at $trigger_stack/.env." >&2
-  exit 1
-}
-
 set -a
 # shellcheck disable=SC1090
 source "$deploy_env"
-# shellcheck disable=SC1090
-source "$trigger_stack/.env"
 set +a
 
 [[ "${TRIGGER_ACCESS_TOKEN:-}" == tr_pat_* ]] || {
@@ -45,7 +39,7 @@ bun install --frozen-lockfile
 # The higgsfield CLI ships its platform binary via a postinstall script that
 # bun blocks by default — fetch it explicitly or the image build copies nothing.
 if [ -d node_modules/@higgsfield/cli ]; then
-  (cd node_modules/@higgsfield/cli && node install.js) || echo "WARN: higgsfield CLI vendor install failed; grid generation will not run" >&2
+  (cd node_modules/@higgsfield/cli && bun install.js) || echo "WARN: higgsfield CLI vendor install failed; grid generation will not run" >&2
 fi
 
 trigger_version="$(

@@ -1,4 +1,5 @@
-import { runs, tasks } from "@trigger.dev/sdk";
+import { idempotencyKeys, runs, tasks } from "@trigger.dev/sdk";
+import type { H3GenerationJob } from "@/components/studio/h3Generation";
 
 import { auth as applicationAuth } from "@/auth";
 import type { LocalGenerationPayload, localGenerationTask } from "@/trigger/localGeneration";
@@ -188,6 +189,7 @@ export async function triggerLocalGeneration(payload: LocalGenerationPayload) {
   });
   return tasks.trigger<typeof localGenerationTask>(STACK_STRUCTURE_TRIGGER_TASKS.localGeneration, payload, {
     idempotencyKey: createTriggerIdempotencyKey("local-generation", [
+      dispatch.userId,
       request.provider,
       request.kind ?? "image",
       request.prompt,
@@ -201,6 +203,9 @@ export async function triggerLocalGeneration(payload: LocalGenerationPayload) {
       request.action ?? "",
       request.batchSize ?? "",
       JSON.stringify(request.swarmParams ?? {}),
+      JSON.stringify(request.initImage ?? null),
+      JSON.stringify(request.videoEndImage ?? null),
+      JSON.stringify(request.promptImages ?? []),
       request.workflow ? JSON.stringify(request.workflow) : "swarm-api",
       payload.outputFolder ?? "",
       payload.timeoutSeconds ?? "",
@@ -210,6 +215,21 @@ export async function triggerLocalGeneration(payload: LocalGenerationPayload) {
     tags: dispatch.tags,
     metadata: dispatch.metadata,
   }) as Promise<{ id: string }>;
+}
+
+/** The durable job ID hashes owner, project, plan, ordered refs, profile and revision intent. */
+export async function triggerH3Generation(job: H3GenerationJob, resumeIntentId?: string) {
+  assertTriggerConfigured();
+  const dispatch = await buildDispatchContext(["stack-structure", "local-generation", "h3", "vm100-heavy"], {
+    stageLabel: resumeIntentId ? "Reconciling the existing H3 job" : "Waiting for local H3 video capacity", progressMode: "provider",
+  });
+  if (dispatch.userId !== job.ownerId) throw new Error("Generation job belongs to another user.");
+  const idempotencyKey = await idempotencyKeys.create(["h3-job-v1", job.id, resumeIntentId ?? "initial"], { scope: "global" });
+  return tasks.trigger<typeof localGenerationTask>(STACK_STRUCTURE_TRIGGER_TASKS.localGeneration, {
+    request: { provider: "swarmui", kind: "video", prompt: job.request.prompt },
+    h3Job: { ownerId: job.ownerId, projectId: job.projectId, jobId: job.id },
+  }, { idempotencyKey, idempotencyKeyTTL: "30d", maxAttempts: 1,
+    tags: [...dispatch.tags, `project:${job.projectId}`, `h3:${job.id}`], metadata: dispatch.metadata }) as Promise<{ id: string }>;
 }
 
 export async function triggerHiggsfieldGeneration(payload: HiggsfieldGenerationPayload) {

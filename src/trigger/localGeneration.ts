@@ -14,12 +14,15 @@ import {
   type LocalGenerationRequest,
 } from "@/components/studio/localGeneration";
 import { downloadMediaGatewayFile, uploadFileToMediaGateway, type MediaGatewayUploadResult } from "@/lib/mediaGateway";
+import { runH3Generation, type H3JobReference } from "@/lib/h3GenerationRunner";
+import type { GeneratedStudioAsset } from "@/components/studio/generatedAssets";
 
 import { vm100HeavyQueue } from "./queues";
 import { markWorkCompleted, markWorkRunning } from "./workMetadata";
 
 export type LocalGenerationPayload = {
   request: LocalGenerationRequest;
+  h3Job?: H3JobReference;
   outputFolder?: string;
   timeoutSeconds?: number;
 };
@@ -41,6 +44,8 @@ export type LocalGenerationOutput = {
   sessionId?: string;
   promptId?: string;
   assets: LocalGeneratedAsset[];
+  jobId?: string;
+  generatedAsset?: GeneratedStudioAsset;
 };
 
 export const localGenerationTask = task({
@@ -52,6 +57,15 @@ export const localGenerationTask = task({
   retry: { maxAttempts: 1 },
   run: async (payload: LocalGenerationPayload, { ctx }): Promise<LocalGenerationOutput> => {
     validatePayload(payload);
+    if (payload.h3Job) {
+      const result = await runH3Generation(payload.h3Job, ctx.run.id, {
+        wait: seconds => wait.for({ seconds }),
+        stage: label => markWorkRunning("generating", label, { progressMode: "provider" }),
+        timeoutSeconds: Math.max(30, Math.min(payload.timeoutSeconds ?? 1500, 1700)),
+      });
+      markWorkCompleted("H3 shot persisted for draft review", { completedItems: 1, totalItems: 1 });
+      return result;
+    }
     assertReferenceLanguage(payload.request.prompt);
     const provider = payload.request.provider === "comfyui" ? "comfyui" : "swarmui";
     markWorkRunning("generating", `Generating with ${provider}`, { progressMode: "provider" });

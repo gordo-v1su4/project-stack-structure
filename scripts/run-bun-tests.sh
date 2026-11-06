@@ -3,6 +3,11 @@
 set -euo pipefail
 
 readonly isolated_tests=(
+  # Next's experimental server test helpers patch global console methods.
+  "tests/unit/authRequest.test.ts"
+  "tests/unit/h3GenerationRunner.test.ts"
+  "tests/unit/h3JobStore.test.ts"
+  "tests/unit/h3GenerationRoute.test.ts"
   "tests/unit/storyTreatmentTask.test.ts"
   "tests/unit/sceneCaptionServer.test.ts"
   "tests/unit/triggerRoutes.test.ts"

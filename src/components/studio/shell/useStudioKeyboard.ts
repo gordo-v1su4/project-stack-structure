@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { NAV } from "../constants";
+import { WORKFLOW_STEPS } from "../workflowNavigation";
 import type { Tab } from "../types";
 
 type KeyboardHandlers = {
@@ -71,8 +71,8 @@ export function useStudioKeyboard(handlers: KeyboardHandlers) {
           break;
       }
       const digit = Number(event.key);
-      if (Number.isInteger(digit) && digit >= 1 && digit <= NAV.length) {
-        const item = NAV[digit - 1];
+      if (Number.isInteger(digit) && digit >= 1 && digit <= WORKFLOW_STEPS.length) {
+        const item = WORKFLOW_STEPS[digit - 1];
         if (item) handlers.onSelectTab(item.key);
       }
     }

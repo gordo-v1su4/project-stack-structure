@@ -2,6 +2,7 @@ import { NAV } from "../constants";
 import type { StageHeaderModel } from "../stageActions";
 import type { PipelineStage } from "../studioPipeline";
 import type { Tab } from "../types";
+import { WORKFLOW_STEPS, workflowStepForTab } from "../workflowNavigation";
 
 /**
  * Pure model for the command palette and keyboard map. Everything the shell
@@ -85,16 +86,18 @@ export function buildStudioCommands(input: CommandInput): StudioCommand[] {
   }
 
   const stagesByKey = new Map(input.stages.map((stage) => [stage.key, stage]));
-  NAV.forEach((item, index) => {
+  const activeStep = workflowStepForTab(input.activeTab);
+  const destinations = [...WORKFLOW_STEPS, ...NAV.filter((item) => !WORKFLOW_STEPS.some((step) => step.key === item.key))];
+  destinations.forEach((item, index) => {
     const stage = stagesByKey.get(item.key);
     const isActive = item.key === input.activeTab;
     commands.push({
       id: `go:${item.key}`,
       label: `Go to ${item.label}`,
-      hint: isActive ? "Current act" : stage?.status ?? item.sub,
+      hint: isActive ? "Current tool" : stage?.status ?? ("sub" in item ? item.sub : item.label),
       group: "navigate",
-      shortcut: String(index + 1),
-      disabledReason: isActive ? "Already here" : null,
+      shortcut: index < WORKFLOW_STEPS.length ? String(index + 1) : null,
+      disabledReason: isActive || (index < WORKFLOW_STEPS.length && item.key === activeStep.key) ? "Already here" : null,
       run: () => input.onSelectTab(item.key),
     });
   });

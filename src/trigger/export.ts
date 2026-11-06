@@ -1,4 +1,4 @@
-import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -9,7 +9,8 @@ import {
   generateShaderCaptureMp4Export,
 } from "@/components/studio/exportGeneration";
 import { probeMediaFile } from "@/components/studio/mediaProbe";
-import { downloadMediaGatewayFile, uploadFileToMediaGateway, type MediaGatewayUploadResult } from "@/lib/mediaGateway";
+import { downloadMediaGatewayFile, getMediaGatewayConfig, type uploadFileToMediaGateway, type MediaGatewayUploadResult } from "@/lib/mediaGateway";
+import { uploadWorkerFileToStorage } from "@/lib/workerStorageUpload";
 
 import { MEDIA_ASSEMBLY_MACHINE, mediaAssemblyQueue } from "./queues";
 import { markWorkCompleted, markWorkRunning } from "./workMetadata";
@@ -180,55 +181,29 @@ async function materializeStoredInput(input: StoredExportInput, workspace: strin
   return target;
 }
 
-async function persistExport(
+export async function persistExport(
   outputPath: string,
   requestKey: string,
   fileName: string,
   metadata: Pick<DurableExportAsset, "duration" | "hasAudio" | "hasVideo" | "effectCues" | "effectFilter" | "shaderPresetId" | "shaderRenderSource">,
+  upload?: typeof uploadFileToMediaGateway,
+  env: Record<string, string | undefined> = process.env,
 ): Promise<DurableExportAsset> {
-  const output = await readFile(outputPath);
-
-  let storage: MediaGatewayUploadResult;
-  let videoUrl: string;
+  // Worker-local files are not a downloadable final product. Upload failures
+  // must remain failed jobs so the project can retry persistence explicitly.
+  const folder = `media-uploads/generated/exports/${sanitize(requestKey)}`;
+  const storage = upload
+    ? await upload({ file: new File([await readFile(outputPath)], fileName, { type: "video/mp4" }), folder, env })
+    : await uploadWorkerFileToStorage({ filePath: outputPath, fileName, folder, env });
+  const videoUrl = storage.mediaUrl || storage.publicUrl;
+  const configuredBucket = getMediaGatewayConfig(env)?.bucket;
+  let downloadable = false;
   try {
-    storage = await uploadFileToMediaGateway({
-      file: new File([output], fileName, { type: "video/mp4" }),
-      folder: `media-uploads/generated/exports/${sanitize(requestKey)}`,
-    });
-    videoUrl = storage.mediaUrl || storage.publicUrl;
-  } catch (uploadError) {
-    // Gateway Multer limits can reject large renders. Preserve the file
-    // locally on VM100 so it remains accessible over Tailscale.
-    logger.warn("Gateway upload rejected; preserving output locally", {
-      error: String(uploadError).slice(0, 300),
-      outputPath,
-      sizeBytes: output.byteLength,
-    });
-    const fallbackPath = path.join("/tmp", fileName);
-    await writeFile(fallbackPath, output);
-    videoUrl = `http://100.118.78.13:8090/${fileName}`;
-    return {
-      requestKey,
-      assetKey: videoUrl,
-      duration: metadata.duration,
-      generatedAt: new Date().toISOString(),
-      videoUrl,
-      downloadFileName: fileName,
-      hasAudio: metadata.hasAudio,
-      hasVideo: metadata.hasVideo,
-      effectCues: metadata.effectCues,
-      effectFilter: metadata.effectFilter,
-      shaderPresetId: metadata.shaderPresetId,
-      shaderRenderSource: metadata.shaderRenderSource,
-      storage: {
-        bucket: "local-fallback",
-        publicUrl: videoUrl,
-        mediaUrl: videoUrl,
-        storagePath: fallbackPath,
-        objectKey: fallbackPath,
-        mime: "video/mp4",
-      },
-    };
+    const parsedUrl = new URL(videoUrl);
+    downloadable = parsedUrl.protocol === "https:" && Boolean(parsedUrl.hostname) && !parsedUrl.username && !parsedUrl.password;
+  } catch { /* An invalid URL is not a downloadable export. */ }
+  if (!configuredBucket || storage.bucket !== configuredBucket || !storage.objectKey?.trim() || !downloadable) {
+    throw new Error("Final export was rendered but durable storage did not return a downloadable HTTPS asset.");
   }
 
   return {

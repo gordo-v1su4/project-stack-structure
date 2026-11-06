@@ -3,6 +3,7 @@ import { compactProjectMatches } from "./compactProjectMatches";
 import type { DeepgramTranscriptSummary } from "./deepgramUtils";
 import { getDefaultStorySectionDrafts, type MusicVideoProject, type StoryEditSettings, type StoryPlanDraft } from "./musicVideoProject";
 import { hydrateGeneratedStudioAssets, sanitizeGeneratedStudioAssetForStorage, type GeneratedStudioAsset } from "./generatedAssets";
+import { sanitizeGeneratedDraftSelection, type GeneratedDraftSelection } from "./generatedDraft";
 import { hydrateReferenceAssets, sanitizeReferenceAssetForStorage, type ReferenceAsset } from "./referenceAssets";
 import { SHADER_CUE_KINDS, type ShaderAccentKinds, type ShaderCueKind } from "./shaderEffectPlan";
 import type { BeatJoinAnalysis, ColorGradient, SceneCaptionSettings, Tab, UploadedVideoSource } from "./types";
@@ -79,6 +80,7 @@ export interface PersistedStudioProjectDraft {
   musicVideoProject: MusicVideoProject | null;
   referenceAssets?: ReferenceAsset[];
   generatedAssets?: GeneratedStudioAsset[];
+  generatedDraft?: GeneratedDraftSelection | null;
   clipAudioSettings?: ClipAudioSettings;
   captionSettings?: SceneCaptionSettings;
   workflowUiSettings?: PersistedWorkflowUiSettings;
@@ -91,6 +93,7 @@ export interface RuntimeStudioProjectDraft {
   musicVideoProject: MusicVideoProject | null;
   referenceAssets: ReferenceAsset[];
   generatedAssets: GeneratedStudioAsset[];
+  generatedDraft?: GeneratedDraftSelection | null;
   clipAudioSettings?: ClipAudioSettings;
   captionSettings?: SceneCaptionSettings;
   workflowUiSettings?: PersistedWorkflowUiSettings;
@@ -103,6 +106,7 @@ export function createPersistableStudioProjectDraft(params: {
   musicVideoProject: MusicVideoProject | null;
   referenceAssets?: ReferenceAsset[];
   generatedAssets?: GeneratedStudioAsset[];
+  generatedDraft?: GeneratedDraftSelection | null;
   clipAudioSettings?: ClipAudioSettings;
   captionSettings?: SceneCaptionSettings;
   workflowUiSettings?: PersistedWorkflowUiSettings;
@@ -165,6 +169,7 @@ export function createPersistableStudioProjectDraft(params: {
     musicVideoProject: params.musicVideoProject ? sanitizeMusicVideoProjectForStorage(params.musicVideoProject) : null,
     referenceAssets: (params.referenceAssets ?? []).map(sanitizeReferenceAssetForStorage),
     generatedAssets: (params.generatedAssets ?? []).map(sanitizeGeneratedStudioAssetForStorage),
+    generatedDraft: sanitizeGeneratedDraftSelection(params.generatedDraft),
     clipAudioSettings: normalizeClipAudioSettings(params.clipAudioSettings),
     captionSettings: sanitizeCaptionSettings(params.captionSettings),
     workflowUiSettings: sanitizeWorkflowUiSettings(params.workflowUiSettings),
@@ -216,6 +221,7 @@ export function hydrateStudioProjectDraft(params: {
     musicVideoProject: params.draft.musicVideoProject ? compactProjectMatches(params.draft.musicVideoProject) : null,
     referenceAssets: hydrateReferenceAssets(params.draft.referenceAssets ?? []),
     generatedAssets: hydrateGeneratedStudioAssets(params.draft.generatedAssets ?? []),
+    generatedDraft: sanitizeGeneratedDraftSelection(params.draft.generatedDraft),
     clipAudioSettings: normalizeClipAudioSettings(params.draft.clipAudioSettings),
     captionSettings: sanitizeCaptionSettings(params.draft.captionSettings),
     workflowUiSettings: sanitizeWorkflowUiSettings(params.draft.workflowUiSettings),

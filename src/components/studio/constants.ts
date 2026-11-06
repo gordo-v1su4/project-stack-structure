@@ -25,8 +25,8 @@ export const GATE_HEADLINE: Record<Tab, string> = {
 };
 
 export const NAV: { key: Tab; label: string; sub: string }[] = [
-  { key: "review", label: "Ingest", sub: "media ready" },
-  { key: "story", label: "Story", sub: "SRT · sections" },
+  { key: "review", label: "Setup", sub: "song · references" },
+  { key: "story", label: "Story", sub: "direction · sections" },
   { key: "split", label: "Split", sub: "scene · rhythm" },
   { key: "shuffle", label: "Match", sub: "lyrics · clips" },
   { key: "generate", label: "Generate", sub: "fill gaps" },

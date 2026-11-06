@@ -1,6 +1,6 @@
 # CONTEXT — Project Stack Structure
 
-Living domain glossary for agents and implementers. Co-canonical with `docs/product/creative-production-brief.md` and `docs/product/music-video-ui-workflow-overhaul.md`. The June 2026 PRD (`docs/plans/prd-roadmap-spec-workflow-docs.md` §3) seeded this file; when terms conflict, **this file wins**.
+Living domain glossary for agents and implementers. Current workflow authority: [finish-music-video](workflows/finish-music-video.md) and [ADR-0003](docs/adr/0003-minimax-draft-first-completion.md). The older product briefs and June/September plans remain background; their upload-first gates and provider defaults are historical. Implementation status and actual acceptance evidence remain separate from the agreed product contract.
 
 ---
 
@@ -22,9 +22,9 @@ Playback uses only **ready** preview assets. The UI shows explicit readiness (wa
 
 Rank and assign **post-cut segments** and caption-backed **video moments**, not whole-clip guessing.
 
-### Upload-first, generate-to-fill
+### Preserve existing footage, generate missing footage
 
-Real uploaded footage is primary. **Generate** fills gaps or weak slots only after the user has reviewed matches — it does not replace approved real footage by default.
+A master song, creative brief, and named identity/location references are enough to begin. Uploaded footage, vocal stems, and timed lyrics are optional. Preserve suitable approved footage when supplied; local MiniMax H3 generates genuinely missing coverage. Zero-footage projects follow the same story, draft-review, and export flow. Automatic draft selection never silently approves media for final export.
 
 ### Web-first studio
 
@@ -34,24 +34,20 @@ Browser UI + server GPU workers (Essentia, scene detect, captions, FFmpeg, Trigg
 
 ## Workflow stages
 
-Eight guided stages. **Tab key** is the internal `Tab` enum value in code; **UI label** is what users see. Legacy tab keys still exist in types and persistence but are **not** in the nav.
+Four primary steps. Detailed editing tools retain stable internal `Tab` keys and persisted data; they are available inside the primary steps rather than eight mandatory ceremonies.
 
 | Step | UI label | Tab key | Panel component | Ready when |
 | --- | --- | --- | --- | --- |
-| 1 | Ingest | `review` | `IngestTab` | **All lanes complete:** song analyzed, vocal stem/SRT transcribed, character + location reference sheets uploaded to RustFS, clips uploaded, scenes detected, smart captions ready (with named characters/locations in context), storage synced |
-| 2 | Story | `story` | `StoryTab` | Treatment chosen + all anchors resolved + story plan confirmed + section map ready |
-| 3 | Split | `split` | `SplitTab` | Source-window strategy chosen (commits automatically while the stage is open) |
-| 4 | Match | `shuffle` | `MatchTab` | Every edit slot has a reviewed semantic match |
-| 5 | Generate | `generate` | `GenerateTab` | No required coverage gaps (purple short-source and yellow weak-match review are optional) |
-| 6 | Join | `join` | `JoinTab` | Approved match timeline assembled in song order |
-| 7 | Effects | `ramp` | `RampTab` | Join timeline exists; effects reviewed |
-| 8 | Export | `compose` | `ComposeTab` | Final preview/export assets usable |
+| 1 | Setup | `review` | `IngestTab` | Master song analyzed + named Character 1 and Environment references durably uploaded; other lanes optional |
+| 2 | Story | `story` | `StoryTab` | Treatment chosen, anchors resolved, and timed story plan confirmed; music sections supply timing when lyrics are absent |
+| 3 | Draft | `generate` | `GenerateTab` | Current source/generation requirements visible; jobs and selected ready candidates form a reviewable saved draft, including explicit unresolved holes |
+| 4 | Finish | `compose` | `ComposeTab` | Reviewed current selection covers the full song and durable preview/export is usable |
 
-Pipeline gating: `src/components/studio/studioPipeline.ts` (`buildPipelineState`). **Story hard gate:** lyrics/transcript required — the API cannot reliably extract vocals from the master mix; Deepgram needs the vocal stem for phrasing and SRT chunks that drive story sections.
+Draft tools: Join (`join`), Match (`shuffle`), Split (`split`). Finish tools: Export (`compose`) and Effects (`ramp`). `workflowNavigation.ts` owns the grouping. Split/Match/Join remain useful detailed tools, not required visits before generation or incomplete-cut review.
 
-**Ingest UX:** show per-lane readiness (green/orange/red) while the user works, but **do not unlock Story** until every required lane is complete. The user may browse later tabs, but story map generation and captioning that names characters depend on reference assets + lyrics being present first.
+Pipeline gating: `studioPipeline.ts`, `buildStudioPipelineInput.ts`, and `ingestLanes.ts`. Show honest per-lane waiting/processing/ready/failed states. Do not fabricate clips, scenes, captions, or lyric chunks to clear readiness. Caption only footage actually supplied, with the named reference context available.
 
-**Pipeline gating (code):** `buildStudioPipelineInput` + `isIngestReady` require vocal stem, Char 1 + environment refs, clips, scenes, and smart captions before Story unlocks (`tests/unit/studioPipeline.test.ts`). Remaining gaps are **runtime** (caption jobs firing before `isCaptionContextReady`, soft-gate browse vs hard-block messaging) — not missing `ingestReady` checks.
+The master mix supplies duration, beats, onsets, and sections. Optional vocal-stem transcription or imported SRT adds lyric grounding; absence of lyrics cannot block story planning, generation, or review. Narrative/performance footage is cut to the master song; accurate generated singing/lip-sync is deferred.
 
 ### Match / shuffle naming (current truth)
 
@@ -112,7 +108,7 @@ PySceneDetect output: time range, keyframes, optional color/motion analysis, cap
 
 ### Committed split
 
-Persisted source-window cut strategy (`SplitMode`: scene, onset/rhythm, scene+rhythm). Required before Match unlocks. Aliases in UI: “Rhythm” = onset; “Scene + Rhythm” = scene-onset. Legacy aliases `beat`, `scene-beat` still parse in `sourceTimeline.ts`.
+Persisted source-window cut strategy (`SplitMode`: scene, onset/rhythm, scene+rhythm) for uploaded footage. Optional detailed editing tool, not a readiness prerequisite for a generated draft. Aliases in UI: “Rhythm” = onset; “Scene + Rhythm” = scene-onset. Legacy aliases `beat`, `scene-beat` still parse in `sourceTimeline.ts`.
 
 ### Semantic match
 
@@ -124,7 +120,11 @@ Join-stage timeline item (`EditPlanPreviewSegment`): the saved sequence in song 
 
 ### Generated studio asset
 
-AI-generated clip (Higgsfield, Seedance, etc.) used as gap-fill or replacement. Lives in Generate stage; may map to footage lane `generated`.
+Durable generated media bound to its owner/project, current plan signature, shot requirement, song interval, actual reference versions, and generation configuration. Local MiniMax H3 through SwarmUI is the primary video path. A ready candidate may be automatically selected into a draft while its review state remains `pending`; stale, rejected, failed, or undersized assets cannot clear unsupported coverage.
+
+### Draft selection / approval snapshot
+
+Persisted exact candidate IDs and trims for a particular plan and selection revision. Prepared playback hashes that selection. **Use this draft** approves the snapshot actually reviewed after readiness, bindings, and measured duration validation. Changed candidates, references, timing, or story invalidate affected approval; late job completions cannot replace a newer selection. Final export uses the approved selection, while rough-cut review may show explicit holes.
 
 ### Footage lane
 
@@ -184,38 +184,36 @@ Durable object storage for uploads, scene manifests, and caption artifacts (`src
 
 **Detail presets (v1):** length only — `concise` | `standard` | `cinematic` — same instruct model, different system prompt (ComfyUI-style detail level first; style tags deferred).
 
-**Caption timing:** block smart caption jobs until **Char 1 + Environment + vocal stem/SRT** are uploaded; run captions once with full character, location, and lyric context. Do not auto-caption immediately after scene detect when refs or stem are missing.
+**Caption timing:** caption actual supplied scenes after **Char 1 + Environment** references are available. Include lyric context when supplied, but do not wait for a vocal stem/SRT. Zero-footage projects have no source-caption work to perform.
 
 **Story treatments** reuse the same Qwen3-VL stack (multimodal, not a second cloud LLM). See **Story treatment** under workflow stages.
 
 ### Vocal stem / SRT
 
-Required before **Story** unlocks (product intent: complete during Ingest). Deepgram cannot extract vocals from the master mix. Provides lyric phrasing, timed chunks, and metadata for story sections.
+Optional source of lyric phrasing, timed chunks, and metadata for story sections. Deepgram transcription uses an available vocal stem; imported SRT is another option. The app must work from the analyzed master song and section timing alone without inventing lyric text.
 
 ### Reference asset / Character bible
 
-Required **before smart captions and Story**. Uploaded in Ingest (`ReferenceLibrary` in `IngestTab`). Slots:
+Named references are required **before smart captions and Story**. Uploaded in Setup (`ReferenceLibrary` in `IngestTab`). Slots:
 
 - **Character 1** (`character-1`) — primary named character; `displayName` feeds captions and story (**required**)
 - **Character 2** (`character-2`) — secondary character when applicable (optional unless duet / two-character video)
 - **Environment / location** (`environment`) — recurring set/world (**required**)
 - **Supplementary slots** — additional uploads use a **category dropdown** (crowd, environment, style/look, custom, etc.) so the user labels what each sheet is for
 
-Smart captions receive character names, location continuity, and reference images via `buildSceneCaptionSettings()` in `StudioApp.tsx`. Names in captions must match names used in the story map. Minimum reference-asset gate: **Char 1 + Environment**; Char 2 and supplementary sheets depend on the video. Smart captions additionally wait for the **vocal stem/SRT** (see *Caption timing* above); Story requires the same reference gate plus the stem.
+Smart captions receive character names, location continuity, and reference images via `buildSceneCaptionSettings()` in `StudioApp.tsx`. Names in captions, story, and generation must match declared names. Minimum reference gate: **Char 1 + Environment**; Char 2 and supplementary sheets depend on the video. H3 jobs carry actual owner-scoped reference bytes and roles through the managed SwarmUI backend, not merely names or browser-supplied workflow paths.
 
 ### Story treatment (director pass)
 
-**Required before Split.** Top of `StoryTab` via `StoryTreatmentPlanner` (`StoryTreatmentPlanner.tsx`, `storyTreatments.ts`).
+**Confirmed before generating the draft.** Top of `StoryTab` via `StoryTreatmentPlanner` (`StoryTreatmentPlanner.tsx`, `storyTreatments.ts`). Existing confirmed stories are reused rather than restarted.
 
-**Provider (target — replace OpenAI):** local **Qwen3-VL Instruct** on the homelab stack — same model and gateway as smart captions. One model: **scene captions** (multimodal, per scene storyboard) then **story treatments** (text-in, JSON-out).
+**Provider:** local **Qwen3-VL Instruct** on the homelab stack — same gateway as smart captions. Story authoring and independent semantic review run through the existing `qwen-story-treatment` Trigger task. Deployment and live inference evidence remain separate acceptance gates.
 
-**Grounding rule (lyric-led structure, caption-grounded execution):** Lyrics and song structure define the narrative arc; scene captions are the evidence catalog of what exists in the rushes. Treatments may propose beats from lyrics + brief, but every **story anchor** must show coverage (`covered` | `weak` | `missing`) against `VideoMoment` captions before the plan is confirmed — never silently pretend footage exists. The director pass reads **caption text + user brief + lyrics/sections**; it does **not** re-send video frames. Unsupported beats resolve as `generate` or `omit` anchors, not invented imagery in the story text.
+**Grounding:** the approved brief and music sections define the narrative/timing; supplied lyrics add optional meaning, and actual captions describe existing footage. Each anchor exposes `covered` / `weak` / `missing` evidence. With no source footage, anchors can honestly require generation. Do not invent lyrics, footage, or evidence. Resolving an anchor as `generate` records missing work; resolving an anchor as `omit` does not erase the need to cover its song time with an intentional visual.
 
-**Three treatments (existing UI):** `faithful` (user brief is canon), `bold` (location/system as antagonist), `wildcard` (late reveal). User picks one; `hydrateTreatmentCoverage` then ranks anchors against `VideoMoment` captions.
+**Three treatments:** `faithful`, `bold`, and `wildcard` vary proposals within supplied constraints. The chosen/confirmed treatment becomes canon; no variant or later generation may silently replace approved identities, beat order, or physical continuity. `hydrateTreatmentCoverage` ranks available caption-backed moments.
 
-**Trigger.dev path:** new `qwen-story-treatment` task on `vm100-heavy` → caption gateway text route → same llama.cpp backend. Do not change scene detection, caption batches, or match/join pipelines.
-
-**Current code gap:** Story treatments now dispatch through Trigger + local Qwen (`qwen-story-treatment` → gateway `/story/treatments`). Deploy the updated caption gateway to homelab before production use.
+**Trigger.dev path:** `qwen-story-treatment` on `vm100-heavy` → gateway `/story/treatments/author` then `/story/treatments/review` → local backend. A saved approved story does not require re-authoring to finish its film.
 
 **Storyboard replacement** (Generate stage): `StoryboardPlanner` plans 2K Nano Banana boards and whole-shot replacement from the resolved edit. See `docs/plans/2026-08-30-storyboard-replacement-workflow.md` and `docs/protocols/higgsfield-nano-banana-reference-continuity.md` for creative protocol (canonical over older plans).
 
@@ -227,7 +225,9 @@ Smart captions receive character names, location continuity, and reference image
 | **Short source** (primary assigned but shorter than slot) | Purple | **No** | Optional whole-shot replacement review; user may continue; UI should surface the issue clearly |
 | **Weak match** (score &lt; 45%) | Yellow | **No** | Optional quality reroll in Generate; not a workflow blocker |
 
-**Seedance external handoff order** (whole-shot replacement): select resolved cut → **2×2 storyboard frame grid** for that section (Nano Banana) → prepare Video_1 timing reference → copy operator packet → generate externally → import completed clip → approve exactly one candidate for Join. Storyboard is the first creative step; the current Generate UI buries this flow and needs clearer step-by-step guidance (see GitHub issue #61). ADR: `docs/adr/0001-generate-join-coverage-gating.md`.
+**Primary H3 path:** current shot requirement → reference-bound durable job → local MiniMax H3 through SwarmUI → measured durable candidate → automatic draft selection → assembled-draft review → exact snapshot approval. The existing `local-ai-generation` Trigger task carries this job; no separate provider or new task ID is required.
+
+**Optional Seedance handoff:** storyboard → timing reference → external operator packet → import → review remains an advanced alternative. It is not a prerequisite for local H3 generation or finishing the film. Historical issue #61 describes that older replacement path.
 
 **Continuity review (current):** Match, Generate, Join, Effects, and Export consume the same saved arrangement. Join plays the whole song or a selected section, including timed placeholders for missing shots. Final export requires complete coverage. See ADR-0001 for the distinction between review availability and export readiness.
 
@@ -238,7 +238,7 @@ Smart captions receive character names, location continuity, and reference image
 | **Storyboard / composition boards** | Higgsfield Nano Banana Pro (canonical protocol) | 2×2 / 3×3 grids for whole-shot replacement; grid split via fixed splitter only |
 | **Gap-fill stills (local)** | SwarmUI → ComfyUI, **Qwen Image Edit 2511** (see `docs/local-generation.md`) | Reference-conditioned stills without Nano Banana; same ingest **reference assets**, different API surface |
 
-Validate the Qwen 2511 reference contract in a **separate test pass** from this studio cleanup. Do not assume Nano Banana prompt/manifest wording ports verbatim to Comfy.
+Qwen 2511 reference validation is an optional separate track; it cannot block H3 draft completion. Do not assume Nano Banana prompt/manifest wording ports verbatim to Comfy.
 
 ### Composition reference vs quality authority
 
@@ -256,28 +256,26 @@ The environment sheet may describe the club in general; the composition referenc
 
 **Whole-shot replacement** means **re-create the shot** from sheets + composition context, not match, enhance, or continue the muddy frame. Prompts must say: re-render from scratch; do not copy low-res texture or identity from the video grab.
 
-**Two paths to video:**
+**Video paths:**
 
 | Path | Status | Steps |
 | --- | --- | --- |
-| **Manual Seedance (current MVP)** | **Active now** | Generate tab builds packet (text + ordered sheet refs + composition ref + `Video_1` timing) → operator copies prompt/refs → runs Seedance externally → imports completed clip → approves for Join |
-| **Still-first (default product path)** | Target UI default | Composition ref → fresh 2K still (sheets + optional grid) → Seedance R2V |
-| **R2V direct** | After validation | Text + sheets + timing; skip intermediate still |
-| **Local SwarmUI / Qwen 2511** | **Next session** | Prove image conditioning with same role split; homelab workflows already exist, need workflow wiring + API tests (order: 2511 still → Seedance still-first packet → R2V direct if still step optional) |
+| **Local MiniMax H3 Ref2VA** | Primary integrated video path; requires fresh live acceptance | Requirement + actual named reference images → managed SwarmUI render → durable candidate → draft review |
+| **Manual Seedance** | Optional advanced alternative | Operator packet → external generation → import → review |
+| **Still-first / composition boards** | Optional preparation | Fresh sheet-driven still or board when useful; not a mandatory H3 dependency |
+| **Local Qwen 2511** | Deferred separate validation | Reference-conditioned still experiments; not a film-completion gate |
 
-Match ranks by **captions and timing**, not thumbnail sharpness. Output quality today is “decent enough” via Nano Banana → Seedance; wrong creative intent → regenerate, not pick a sharper frame in Match.
-
-**Code gap (2026-09):** ~~`referenceAssets.buildGenerationReferenceInputs` anchor copy~~ — updated to composition-reference wording (ADR-0002). Remaining B work: see [checklist](plans/2026-09-06-studio-story-match-generate-checklist.md).
+Match ranks by **captions and timing**, not thumbnail sharpness. Output quality and identity require viewing actual rendered media. Wrong creative intent requires a revised candidate rather than a sharper source thumbnail. ADR-0002's reference-authority rules continue to apply to every provider.
 
 ### Story → Match → Generate acceptance (Love Me Tonight fixtures)
 
-Checklist before calling the loop trustworthy (manual + unit tests first; `bun run e2e:media` only after A+B land):
+Current acceptance is [finish-music-video](workflows/finish-music-video.md), with the existing-film shot audit in [Love Me Tonight finish plan](docs/plans/2026-11-06-love-me-tonight-finish.md).
 
-1. Story treatment cites **real caption content**, not generic boilerplate.
-2. Match assignments are musically and visually plausible on fixture rushes.
-3. Generate shows correct **red / purple / yellow** with no false blocking reds.
-4. One **whole-shot replacement** completes on a purple short-source slot (storyboard → packet → import → approve).
-5. Local SwarmUI/Qwen 2511 gap-fill stills work with ingest reference sheets (own test track).
+1. Preserve the existing analyzed master, approved ten-beat Diego/Valentina story, captions, named references, and useful source placements in a safe project copy.
+2. Reuse suitable footage; show true gaps distinctly from optional weak/short review. Fast pacing permits intentional rhythmic 1–3s cuts; Balanced retains its 4s minimum. Never create coverage by replaying the same completed action or source frames.
+3. Prove one real public-app H3 job with actual references, durable job/result correlation, measured playable bytes, and visual identity/action/continuity review before batching the song.
+4. Prove recovery/reload, exact draft approval, complete approved coverage, and durable full-song export. A zero-footage/master-only fixture must also reach the generation/review path without source-caption or lyric gates.
+5. Watch the actual full-song MP4 for musical timing, dynamic high-energy narrative progression, continuity, and unwanted gaps. Tests, task inventories, metadata probes, and technical export success alone do not satisfy creative acceptance.
 
 ---
 
@@ -297,8 +295,8 @@ Not scheduled. Capture product intent here so agents do not re-litigate in sessi
 | **Project database (Convex-style)** | Maybe | Evaluate a proper DB for project metadata, ingest lanes, media catalog, reference assets, scene/caption manifests, and pipeline job state — similar to **Pindac** and **review-room** (both Convex). Today: RustFS blobs + `project.json` + in-browser state; works for solo use but caused orphaned clips and weak catalog queries. Convex is preferred if we pursue this; not committed — migration cost and dual-write period need a spec first. |
 | **Ingest parallelism tuning** | Maybe | Investigate whether current parallelism helps or hurts wall-clock time. Today: up to 3 scene-detect children at once, but Qwen captioning is globally serial (`vm100-heavy` concurrency 1) and batches run scenes sequentially inside each child. Parallel scene detect can pile work into the GPU queue and increase wait time vs a simpler one-clip-at-a-time flow. Measure queue wait vs runtime before changing limits. **Out of scope:** routing work to a second remote GPU — the production caption worker stays a single queue to avoid ops confusion. |
 | **Section-level preview** | Implemented; browser acceptance in progress | Join plays a selected song section or the full saved arrangement; Generate retains cut and section audition. |
-| **Qwen Image Edit 2511 reference validation** | Next session | Prove SwarmUI/Comfy local stills honor ingest reference sheets + composition ref role split. Workflows/APIs exist on homelab; wire and test in order: 2511 still → Seedance still-first packet → R2V direct. |
-| **Studio cleanup (2026-09)** | In progress | Phased checklist: [2026-09-06-studio-story-match-generate-checklist.md](plans/2026-09-06-studio-story-match-generate-checklist.md). **A** docs done → **B** gating/UX/manual Seedance → **C** e2e after B. |
+| **Qwen Image Edit 2511 reference validation** | Deferred | Separate still-conditioning experiments; not required for MiniMax H3 film completion. |
+| **Studio cleanup (2026-09)** | Historical plan | [September checklist](docs/plans/2026-09-06-studio-story-match-generate-checklist.md) records the earlier manual-provider scope. Current work follows `workflows/finish-music-video.md`. |
 
 ---
 
@@ -307,7 +305,10 @@ Not scheduled. Capture product intent here so agents do not re-litigate in sessi
 | Doc | Role |
 | --- | --- |
 | `docs/product/creative-production-brief.md` | Vision, creative roles, donor research |
-| `docs/product/music-video-ui-workflow-overhaul.md` | UI layout + gating (7 stages; Generate added in code as stage 5) |
+| `workflows/finish-music-video.md` | Current agreed workflow, scope, and end-to-end acceptance |
+| `docs/adr/0003-minimax-draft-first-completion.md` | Four-step, master-first, local-H3 and draft-review decision |
+| `docs/plans/2026-11-06-love-me-tonight-finish.md` | Preserve-existing shot coverage and creative acceptance plan |
+| `docs/product/music-video-ui-workflow-overhaul.md` | Historical detailed-tool layout; original stage gates superseded |
 | `docs/plans/prd-roadmap-spec-workflow-docs.md` | Historical PRD + requirements index |
 | `docs/roadmap.md` | Phased delivery phases 0–5 |
 | `DESIGN.md` | UI language + Match evidence rules |

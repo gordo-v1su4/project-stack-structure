@@ -45,6 +45,16 @@ Final export defaults on in `trigger-smoke` mode and off in `studio` mode; set `
 
 JWT-based E2E bypasses OAuth. After any `AUTH_*` environment change, also verify interactive sign-in by clicking through the production browser flow, as required by [AGENTS.md](../AGENTS.md).
 
+## Saved-project H3 verification
+
+`bun run scripts/verify-h3-draft-flow.ts --project-id ID` inspects an authenticated local app and its saved project/H3 jobs without dispatching work. Supply the session through the private `STACK_STRUCTURE_E2E_COOKIE` process environment; the harness never prints or saves cookies. No 21-video fixture bundle is required.
+
+Add `--zero-footage` to prepare a master-only, lyric-free variant locally. Add `--run --limit 1` to save a new `[H3 verification]` project copy, generate at most one planned missing shot through the real H3 route/Trigger path, replay its identical intent, poll its job, read durable media bytes, and verify that the pending candidate survives a saved-project reload. The original project remains unchanged. Each render is real GPU work; `--run` is explicit authorization to execute the chosen bounded lane. `--limit 0` saves a copy without rendering. `--reuse-copy` continues a previously saved verification copy and refuses an ordinary original project.
+
+Reports/checkpoints under `.tmp/h3-verification/` correlate project, plan, run, job, asset, approval counts, remaining approved gaps, and any saved export. This harness never approves candidates or dispatches final export. Playback, identity/continuity review, actual whole-song export, downloaded-artifact inspection, and interactive sign-in remain separate acceptance evidence. Default inspection of `--zero-footage` keeps source-project job observations distinct from the unsaved variant.
+
+On Windows, shell scripts are checked out with LF through `.gitattributes`. Run the test command with Git Bash on PATH and Bun available there; the Windows `system32/bash` WSL shim may not share the workstation's Bun installation. Keep the normal `bun run test` runner so isolated module-mock tests retain separate processes.
+
 ## Probe command
 Use the local fixture lane to generate a canonical probe manifest:
 

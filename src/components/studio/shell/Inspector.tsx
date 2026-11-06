@@ -93,7 +93,7 @@ export function Inspector({
         {model ? (
           <section className="border-b border-line px-5 pb-5 pt-5">
             <div className="flex items-center gap-3">
-              <Kicker tone={blocked ? "waiting" : "accent"}>Act {model.step} of {model.total}</Kicker>
+              <Kicker tone={blocked ? "waiting" : "accent"}>Step {model.step} of {model.total}</Kicker>
             </div>
             <h1 className="vt-act-title mt-2 font-sans text-2xl font-semibold leading-tight text-fg-0">{model.title}</h1>
             <p className="mt-2 font-mono text-[11.5px] text-fg-2" title={model.status}>{model.status}</p>

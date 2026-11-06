@@ -1,5 +1,6 @@
 import type { PipelineStage } from "./studioPipeline";
 import type { Tab } from "./types";
+import { WORKFLOW_STEPS, workflowStepForTab } from "./workflowNavigation";
 
 /**
  * Pure model for the stage header: what the stage is for, whether it is
@@ -9,7 +10,7 @@ import type { Tab } from "./types";
  */
 
 export const STAGE_DESCRIPTIONS: Record<Tab, string> = {
-  review: "Upload the song, vocal stem, character and location references, and footage. Scenes are detected and captioned automatically.",
+  review: "Add the master song and character and location references. Footage and timed lyrics are optional; missing shots can be generated.",
   story: "Pick a director treatment, resolve its story anchors against your footage, and confirm the plan that drives every section.",
   split: "Review the detected scenes and captions. The rough cut trims shots to the music and favors compatible motion.",
   shuffle: "Review provisional footage selections and alternatives. Model support does not confirm an exact match.",
@@ -55,8 +56,11 @@ export interface StageActionInput {
 export function buildStageHeaderModel(input: StageActionInput): StageHeaderModel | null {
   const stage = input.stages.find((candidate) => candidate.key === input.activeTab);
   if (!stage) return null;
-  const index = input.stages.indexOf(stage);
-  const next = input.stages[index + 1] ?? null;
+  const workflowStep = workflowStepForTab(stage.key);
+  const index = WORKFLOW_STEPS.indexOf(workflowStep);
+  const nextKey = WORKFLOW_STEPS[index + 1]?.key;
+  const next = input.stages.find((candidate) => candidate.key === nextKey) ?? null;
+  const nextLabel = next ? workflowStepForTab(next.key).label : null;
   const prerequisite = stage.prerequisiteKey ? input.stages.find((candidate) => candidate.key === stage.prerequisiteKey) ?? null : null;
 
   const blocked = !stage.available
@@ -78,7 +82,7 @@ export function buildStageHeaderModel(input: StageActionInput): StageHeaderModel
   } else if (next) {
     primary = {
       kind: "continue",
-      label: `Continue to ${next.label}`,
+      label: `Continue to ${nextLabel}`,
       targetTab: next.key,
       // A stage can have unfinished coverage while the next review screen is usable.
       disabledReason: next.available ? null : continueBlockedReason(stage, next),
@@ -99,9 +103,9 @@ export function buildStageHeaderModel(input: StageActionInput): StageHeaderModel
     : null;
 
   return {
-    step: stage.step,
-    total: input.stages.length,
-    title: stage.label,
+    step: index + 1,
+    total: WORKFLOW_STEPS.length,
+    title: workflowStep.label,
     description: STAGE_DESCRIPTIONS[stage.key] ?? "",
     status: stage.status,
     blocked,
@@ -113,7 +117,7 @@ export function buildStageHeaderModel(input: StageActionInput): StageHeaderModel
 function continueBlockedReason(stage: PipelineStage, next: PipelineStage): string {
   switch (stage.key) {
     case "review":
-      return `Ingest not complete · ${stage.status}`;
+      return `Setup not complete · ${stage.status}`;
     case "story":
       return stage.status;
     case "split":

@@ -60,9 +60,9 @@ const STEP_ORDER: IngestStepKey[] = ["song", "references", "footage", "stem", "c
 
 const STEP_TITLES: Record<IngestStepKey, string> = {
   song: "Master song",
-  stem: "Vocal stem",
+  stem: "Vocal stem · optional",
   references: "References",
-  footage: "Footage",
+  footage: "Footage · optional",
   captions: "Scenes & captions",
 };
 
@@ -160,7 +160,7 @@ export function IngestTab({
         tone: footageTone,
         status: videoError
           ?? (videoSources.length === 0
-            ? "Upload source clips"
+            ? "Optional · generate the planned shots"
             : `${videoSources.length} clip${videoSources.length === 1 ? "" : "s"} · ${scenes?.ready ? `${stats.sceneCount} scenes` : stats.detecting > 0 ? `detecting ${stats.detecting}…` : "scenes pending"} · ${stats.storageUploaded}/${videoSources.length} stored`),
       },
       captions: {
@@ -213,7 +213,10 @@ export function IngestTab({
   }, [characterNames, videoSources]);
 
   function scrollToStep(key: IngestStepKey) {
-    document.getElementById(`ingest-step-${key}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    const element = document.getElementById(`ingest-step-${key}`);
+    const optionalTools = element?.closest("details");
+    if (optionalTools) optionalTools.open = true;
+    element?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   return (
@@ -251,7 +254,10 @@ export function IngestTab({
         />
       </IngestStep>
 
-      <IngestStep step={3} id="footage" title={STEP_TITLES.footage} tone={steps.footage.tone} status={steps.footage.status} hint="Clips upload to RustFS and scene detection starts automatically.">
+      <details className="rounded-md border border-line bg-ink-2 p-3">
+      <summary className="cursor-pointer text-sm font-medium text-fg-1">Optional footage and timed lyrics</summary>
+      <div className="mt-3 space-y-4">
+      <IngestStep step={3} id="footage" title={STEP_TITLES.footage} tone={steps.footage.tone} status={steps.footage.status} hint="Supply footage you want to reuse, or leave this empty and generate the planned shots.">
         {videoSources.length ? (
           <SourceVideoLibrary clipAudioSettings={clipAudioSettings}
             sources={videoSources}
@@ -267,7 +273,7 @@ export function IngestTab({
             accept="video/*"
             multiple
             title="Drop source footage here"
-            detail="One or more clips. Scenes are detected and captioned once the song, stem, and references are in."
+            detail="Optional clips. Supplied footage is detected and captioned using your named references; no vocal stem is needed."
             actionLabel={isPreparingVideos ? "Processing…" : "Choose clips"}
             disabled={isPreparingVideos}
             isProcessing={isPreparingVideos}
@@ -286,7 +292,7 @@ export function IngestTab({
         ) : null}
       </IngestStep>
 
-      <IngestStep step={4} id="stem" title={STEP_TITLES.stem} tone={steps.stem.tone} status={steps.stem.status} hint="Deepgram transcribes the isolated vocal for timed lyrics. Story and smart captions use these lines.">
+      <IngestStep step={4} id="stem" title={STEP_TITLES.stem} tone={steps.stem.tone} status={steps.stem.status} hint="Optionally transcribe an isolated vocal for timed lyrics. Story planning also works from the master song's music sections.">
         <IngestVocalStemLane
           analysis={analysis}
           vocalStemName={vocalStemName}
@@ -306,7 +312,7 @@ export function IngestTab({
         status={steps.captions.status}
         hint={captionContextReady
           ? "Qwen3-VL captions every detected scene with the named characters and location so Match can search them."
-          : "Captions wait for the vocal stem and the Character 1 + Environment sheets so scenes are described with the right names."}
+          : "Captions for supplied footage wait for Character 1 + Environment sheets so scenes use the right names."}
         actions={
           <div className="flex flex-wrap items-center gap-2">
             {FAST_CAPTIONS_ENABLED ? (
@@ -328,7 +334,7 @@ export function IngestTab({
               variant="secondary"
               onClick={() => onRerunSceneAnalysis("all")}
               disabled={isRerunningSceneAnalysis || isPreparingVideos || stats.captionTotal === 0 || !captionContextReady}
-              reason={!captionContextReady ? "Upload vocal stem + Char 1 + Environment first" : stats.captionTotal === 0 ? "No scenes to caption yet" : null}
+              reason={!captionContextReady ? "Upload Char 1 + Environment first" : stats.captionTotal === 0 ? "No scenes to caption yet" : null}
             >
               {isRerunningSceneAnalysis ? "Recaptioning…" : "Recaption all"}
             </Button>
@@ -402,24 +408,26 @@ export function IngestTab({
           </div>
         ) : (
           <div className="rounded-md border border-dashed border-line-2 bg-ink-0 px-3 py-8 text-center text-[12px] text-fg-3">
-            Scene cuts and captions appear here once footage finishes detection.
+            Optional source footage is captioned here. No source clips are needed to generate a draft.
           </div>
         )}
       </IngestStep>
       {reviewTarget ? <SceneEvidenceDialog useClipAudio={usesClipAudio(clipAudioSettings, clipAudioKey(reviewTarget.source))} characterNames={referenceAssets.filter(asset => asset.role.startsWith("character")).map(asset => asset.displayName)} source={reviewTarget.source} scene={reviewTarget.scene}
         onClose={() => setReviewTarget(null)}
         onSave={review => { onReviewScene(reviewTarget.source.id, reviewTarget.scene.id, review); setReviewTarget(null); }} /> : null}
+      </div>
+      </details>
     </div>
   );
 }
 
 function IngestChecklist({ steps, onSelect }: { steps: Record<IngestStepKey, { tone: ReadinessTone; status: string }>; onSelect: (key: IngestStepKey) => void }) {
-  const readyCount = STEP_ORDER.filter((key) => steps[key].tone === "ready").length;
+  const readyCount = (["song", "references"] as const).filter((key) => steps[key].tone === "ready").length;
   return (
-    <nav aria-label="Ingest checklist" className="rounded-md border border-line bg-ink-2 px-3 py-2.5">
+    <nav aria-label="Setup checklist" className="rounded-md border border-line bg-ink-2 px-3 py-2.5">
       <div className="mb-1.5 flex items-center justify-between">
         <Kicker>Checklist</Kicker>
-        <span className="font-mono text-[11px] text-fg-3">{readyCount}/{STEP_ORDER.length} ready</span>
+        <span className="font-mono text-[11px] text-fg-3">{readyCount}/2 required ready</span>
       </div>
       <ol className="grid gap-1 md:grid-cols-5">
         {STEP_ORDER.map((key, index) => {

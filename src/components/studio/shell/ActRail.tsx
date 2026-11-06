@@ -3,6 +3,7 @@
 import { NAV } from "../constants";
 import type { PipelineStage } from "../studioPipeline";
 import type { Tab } from "../types";
+import { buildWorkflowNavigation, workflowStepForTab } from "../workflowNavigation";
 import { ACT_ICONS, CheckIcon, LockIcon } from "./icons";
 
 type ActRailProps = {
@@ -28,24 +29,24 @@ function stateFor(stage: PipelineStage | undefined, active: boolean): ActState {
  * inspector explains what is missing.
  */
 export function ActRail({ tab, stages, onSelectTab }: ActRailProps) {
-  const stagesByKey = new Map(stages.map((stage) => [stage.key, stage]));
-  const completeCount = stages.filter((stage) => stage.complete).length;
-  const ratio = stages.length ? completeCount / stages.length : 0;
+  const workflow = buildWorkflowNavigation(stages, tab);
+  const activeStep = workflowStepForTab(tab);
+  const completeCount = workflow.filter((stage) => stage.complete).length;
+  const ratio = completeCount / workflow.length;
 
   return (
-    <nav aria-label="Acts" className="flex w-[72px] shrink-0 flex-col items-center border-r border-line bg-ink-0 py-3">
+    <nav aria-label="Workflow" className="flex w-[88px] shrink-0 flex-col items-center border-r border-line bg-ink-0 py-3">
       <Brand />
       <ol className="mt-4 flex flex-1 flex-col items-center gap-[2px]">
-        {NAV.map((item, index) => {
-          const stage = stagesByKey.get(item.key);
-          const state = stateFor(stage, tab === item.key);
+        {workflow.map((item, index) => {
+          const state = stateFor(item, item.active);
           const Icon = ACT_ICONS[item.key];
-          const status = stage?.status ?? item.sub;
+          const status = item.status;
           return (
             <li key={item.key} className="relative">
               <button
                 type="button"
-                onClick={() => onSelectTab(item.key)}
+                onClick={() => onSelectTab(item.active ? tab : item.key)}
                 aria-current={state === "current" ? "step" : undefined}
                 aria-label={`${index + 1}. ${item.label} — ${status}`}
                 title={`${item.label} · ${status}  (${index + 1})`}
@@ -70,7 +71,13 @@ export function ActRail({ tab, stages, onSelectTab }: ActRailProps) {
           );
         })}
       </ol>
-      <ProgressRing ratio={ratio} label={`${completeCount}/${stages.length}`} />
+      {activeStep.tabs.length > 1 ? <details key={activeStep.key} className="mb-3 w-full px-1 text-center text-[10px] text-fg-2">
+        <summary className="cursor-pointer rounded-md py-2 hover:bg-ink-2">Tools</summary>
+        <div className="mt-1 flex flex-col gap-1">
+          {activeStep.tabs.map((key) => <button key={key} type="button" aria-current={tab === key ? "page" : undefined} onClick={() => onSelectTab(key)} className={`rounded-md px-1 py-1.5 ${tab === key ? "bg-accent-tint text-accent" : "hover:bg-ink-2"}`}>{NAV.find((item) => item.key === key)?.label}</button>)}
+        </div>
+      </details> : null}
+      <ProgressRing ratio={ratio} label={`${completeCount}/${workflow.length}`} />
     </nav>
   );
 }
@@ -100,7 +107,7 @@ function ProgressRing({ ratio, label }: { ratio: number; label: string }) {
   const r = 13;
   const c = 2 * Math.PI * r;
   return (
-    <div className="relative mt-2 flex h-10 w-10 items-center justify-center" title={`${label} acts complete`} aria-label={`${label} acts complete`}>
+    <div className="relative mt-2 flex h-10 w-10 items-center justify-center" title={`${label} steps complete`} aria-label={`${label} steps complete`}>
       <svg width="40" height="40" viewBox="0 0 40 40" className="absolute inset-0 -rotate-90" aria-hidden>
         <circle cx="20" cy="20" r={r} fill="none" stroke="oklch(1 0 0 / 0.1)" strokeWidth="2" />
         <circle

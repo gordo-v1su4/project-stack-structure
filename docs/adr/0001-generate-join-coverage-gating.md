@@ -3,6 +3,8 @@
 **Status:** revised (2026-09-08), following the whole-song rough-cut request
 **Context:** `CONTEXT.md` · GitHub issue #61
 
+**2026-11-06 supersession:** [ADR-0003](0003-minimax-draft-first-completion.md) removes the mandatory Split visit and makes local H3 plus assembled-draft snapshot review the primary route. The review-versus-export coverage distinction below remains valid; September implementation formulas/provider guidance describe the earlier version.
+
 ## Decision
 
 Edit-plan **coverage signals** drive Generate completion and final export readiness. Join remains available once Story is confirmed, Split is committed, and a saved song timeline exists. True gaps play as visible placeholders at their original song times; they block final export until filled with eligible footage or an approved replacement.

@@ -62,16 +62,16 @@ describe("studio pipeline state", () => {
     const state = buildPipelineState(makeInput());
 
     expect(state.stages).toHaveLength(8);
-    expect(state.stages[0]).toMatchObject({ key: "review", step: 1, ready: false, status: "Upload song + stem + clips", isNext: true });
+    expect(state.stages[0]).toMatchObject({ key: "review", step: 1, ready: false, status: "Upload song", isNext: true });
     expect(state.nextStage?.key).toBe("review");
-    expect(state.nextHint).toContain("Upload song + stem + clips");
+    expect(state.nextHint).toContain("Upload song");
   });
 
-  test("ingest remains active while uploaded clips are still waiting for scenes", () => {
+  test("optional footage processing does not block song-and-reference setup", () => {
     const state = buildPipelineState(makeInput({ hasAudioAnalysis: true, videoCount: 3 }));
 
-    expect(state.stages[0]?.status).toBe("Upload stem");
-    expect(state.stages[0]?.ready).toBe(false);
+    expect(state.stages[0]?.status).toBe("Detecting scenes");
+    expect(state.stages[0]?.ready).toBe(true);
   });
 
   test("story is selectable but downstream work stays gated once ingest is complete", () => {
@@ -94,7 +94,7 @@ describe("studio pipeline state", () => {
     expect(state.stages.filter((stage) => stage.isNext)).toHaveLength(1);
   });
 
-  test("story stays locked until vocal stem lyrics are transcribed", () => {
+  test("story is available without vocal stem lyrics", () => {
     const state = buildPipelineState(
       makeInput({
         hasAudioAnalysis: true,
@@ -106,11 +106,11 @@ describe("studio pipeline state", () => {
       }),
     );
 
-    expect(state.stages[0]?.ready).toBe(false);
-    expect(state.stages[0]?.status).toBe("Upload stem");
+    expect(state.stages[0]?.ready).toBe(true);
+    expect(state.stages[0]?.status).toBe("2 clips · 12/12 captions");
     expect(state.stages.find((stage) => stage.key === "story")).toMatchObject({
-      available: false,
-      prerequisiteKey: "review",
+      available: true,
+      prerequisiteKey: null,
     });
   });
 
@@ -401,7 +401,6 @@ describe("studio pipeline state", () => {
 
   for (const prerequisites of [
     { storyPlanConfirmed: false, hasCommittedSplit: true },
-    { storyPlanConfirmed: true, hasCommittedSplit: false },
   ]) {
     test(`rough-cut access still requires current confirmed Story and Split: ${JSON.stringify(prerequisites)}`, () => {
       const state = buildPipelineState(makeInput({

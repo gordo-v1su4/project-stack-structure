@@ -40,11 +40,11 @@ const readyReferences: ReferenceAsset[] = [
 ];
 
 describe("caption context gate", () => {
-  test("requires vocal transcript and Char 1 + environment references", () => {
+  test("requires named references but not an optional vocal transcript", () => {
     expect(isCaptionContextReady({
       hasLyricTranscript: false,
       referenceAssets: readyReferences,
-    })).toBe(false);
+    })).toBe(true);
 
     expect(isCaptionContextReady({
       hasLyricTranscript: true,

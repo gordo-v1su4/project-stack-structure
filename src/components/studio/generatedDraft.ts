@@ -1,0 +1,159 @@
+import {
+  applyApprovedGeneratedAssets,
+  applyGeneratedAssetOverlays,
+  buildGeneratedAssetPlaybackUrl,
+  generatedAssetMatchesPreviewSegment,
+  type GeneratedStudioAsset,
+} from "./generatedAssets";
+import type { EditPlanPreviewSegment } from "./musicVideoProject";
+
+/** Candidate selection for an audition. It does not grant approval for export. */
+export type GeneratedDraftSelection = {
+  planSignature: string;
+  revision: number;
+  assetIds: string[];
+};
+
+/** Capture this when preparing the preview, and accept only that viewed preview. */
+export type GeneratedDraftReview = {
+  planSignature: string;
+  revision: number;
+  fingerprint: string;
+};
+
+export function createGeneratedDraftSelection(planSignature: string): GeneratedDraftSelection {
+  return { planSignature, revision: 0, assetIds: [] };
+}
+
+export function sanitizeGeneratedDraftSelection(value: unknown): GeneratedDraftSelection | null {
+  if (!value || typeof value !== "object") return null;
+  const draft = value as Partial<GeneratedDraftSelection>;
+  if (typeof draft.planSignature !== "string" || !draft.planSignature.trim()
+    || !Number.isSafeInteger(draft.revision) || (draft.revision ?? -1) < 0
+    || !Array.isArray(draft.assetIds) || !draft.assetIds.every(id => typeof id === "string" && id.trim())) return null;
+  return { planSignature: draft.planSignature, revision: draft.revision!, assetIds: [...new Set(draft.assetIds)] };
+}
+
+export function isGeneratedDraftCurrent(segments: EditPlanPreviewSegment[], draft: GeneratedDraftSelection | null | undefined): draft is GeneratedDraftSelection {
+  return Boolean(draft?.planSignature && segments.length && segments.every(segment => segment.planSignature === draft.planSignature));
+}
+
+function isSelectableAsset(asset: GeneratedStudioAsset, segments: EditPlanPreviewSegment[]) {
+  return asset.status === "completed" && asset.mediaKind === "video" && asset.reviewStatus !== "rejected"
+    && Boolean(buildGeneratedAssetPlaybackUrl(asset)) && Number.isFinite(asset.durationSeconds) && (asset.durationSeconds ?? 0) > 0
+    && segments.some(segment => generatedAssetMatchesPreviewSegment(asset, segment));
+}
+
+function sameTarget(left: GeneratedStudioAsset, right: GeneratedStudioAsset) {
+  const a = left.target;
+  const b = right.target;
+  return Boolean(a && b && a.planSignature === b.planSignature && a.sectionId === b.sectionId
+    && (a.requirementId || a.timelineItemId) === (b.requirementId || b.timelineItemId)
+    && a.songStart === b.songStart && a.songEnd === b.songEnd);
+}
+
+/** A late completion is retained in the asset bank but must not change a newer selection. */
+export function selectGeneratedDraftAsset({ draft, assets, asset, segments, expectedRevision }: {
+  draft: GeneratedDraftSelection;
+  assets: GeneratedStudioAsset[];
+  asset: GeneratedStudioAsset;
+  segments: EditPlanPreviewSegment[];
+  expectedRevision?: number;
+}): GeneratedDraftSelection {
+  if ((expectedRevision !== undefined && expectedRevision !== draft.revision)
+    || !isGeneratedDraftCurrent(segments, draft) || !isSelectableAsset(asset, segments)) return draft;
+  const byId = new Map(assets.map(candidate => [candidate.id, candidate]));
+  const remaining = draft.assetIds.filter(id => id !== asset.id && (!byId.has(id) || !sameTarget(byId.get(id)!, asset)));
+  const assetIds = [...remaining, asset.id];
+  if (assetIds.length === draft.assetIds.length && assetIds.every((id, index) => id === draft.assetIds[index])) return draft;
+  return { ...draft, revision: draft.revision + 1, assetIds };
+}
+
+function selectedAssets(segments: EditPlanPreviewSegment[], assets: GeneratedStudioAsset[], draft: GeneratedDraftSelection) {
+  const byId = new Map(assets.map(asset => [asset.id, asset]));
+  return draft.assetIds.flatMap(id => {
+    const asset = byId.get(id);
+    return asset && isSelectableAsset(asset, segments) ? [asset] : [];
+  });
+}
+
+/** Draft playback includes only explicitly selected candidates over the approved edit. */
+export function applyDraftGeneratedAssets(
+  segments: EditPlanPreviewSegment[],
+  assets: GeneratedStudioAsset[],
+  draft: GeneratedDraftSelection | null | undefined,
+): EditPlanPreviewSegment[] {
+  const approved = applyApprovedGeneratedAssets(segments, assets);
+  if (!isGeneratedDraftCurrent(segments, draft)) return approved;
+  return applyGeneratedAssetOverlays(approved, selectedAssets(segments, assets, draft));
+}
+
+export function captureGeneratedDraftReview(
+  segments: EditPlanPreviewSegment[],
+  assets: GeneratedStudioAsset[],
+  draft: GeneratedDraftSelection | null | undefined,
+): GeneratedDraftReview | null {
+  if (!isGeneratedDraftCurrent(segments, draft)) return null;
+  const selected = selectedAssets(segments, assets, draft);
+  if (selected.length !== draft.assetIds.length) return null;
+  // Keep the canonical payload itself: unlike a short hash it cannot collide.
+  // The token stays local to the prepared player and is never an approval credential.
+  const fingerprint = JSON.stringify({
+    planSignature: draft.planSignature,
+    revision: draft.revision,
+    assetIds: draft.assetIds,
+    candidates: selected.map(asset => ({
+      id: asset.id, status: asset.status, reviewStatus: asset.reviewStatus, prompt: asset.prompt,
+      model: asset.model, target: asset.target, trimStart: asset.trimStart ?? 0,
+      durationSeconds: asset.durationSeconds, videoUrl: buildGeneratedAssetPlaybackUrl(asset),
+    })),
+    segments: applyDraftGeneratedAssets(segments, assets, draft),
+  });
+  return { planSignature: draft.planSignature, revision: draft.revision, fingerprint };
+}
+
+export function rejectGeneratedDraftAsset({ draft, assets, assetId, expectedRevision }: {
+  draft: GeneratedDraftSelection;
+  assets: GeneratedStudioAsset[];
+  assetId: string;
+  expectedRevision?: number;
+}): { draft: GeneratedDraftSelection; assets: GeneratedStudioAsset[] } {
+  if ((expectedRevision !== undefined && expectedRevision !== draft.revision) || !assets.some(asset => asset.id === assetId)) return { draft, assets };
+  const assetIds = draft.assetIds.filter(id => id !== assetId);
+  return {
+    draft: { ...draft, revision: draft.revision + 1, assetIds },
+    assets: assets.map(asset => asset.id === assetId ? { ...asset, reviewStatus: "rejected", approvedAt: undefined } : asset),
+  };
+}
+
+export function approveGeneratedDraft({ draft, assets, segments, review, approvedAt = new Date().toISOString() }: {
+  draft: GeneratedDraftSelection;
+  assets: GeneratedStudioAsset[];
+  segments: EditPlanPreviewSegment[];
+  review: GeneratedDraftReview;
+  approvedAt?: string;
+}): { draft: GeneratedDraftSelection; assets: GeneratedStudioAsset[]; error: string | null } {
+  const current = captureGeneratedDraftReview(segments, assets, draft);
+  if (!current || review.planSignature !== current.planSignature || review.revision !== current.revision || review.fingerprint !== current.fingerprint) {
+    return { draft, assets, error: "The draft changed. Prepare and review the current cut before accepting it." };
+  }
+  const preview = applyDraftGeneratedAssets(segments, assets, draft);
+  if (preview.some(segment => segment.kind === "gap" || !segment.videoUrl)) {
+    return { draft, assets, error: "Unfilled song windows remain. Complete the draft before accepting it." };
+  }
+  const selected = new Set(draft.assetIds);
+  const requestedApprovalTime = Date.parse(approvedAt);
+  if (!Number.isFinite(requestedApprovalTime)) return { draft, assets, error: "Approval time is invalid. Review the draft again." };
+  const approvalTime = assets.reduce((latest, asset) => {
+    const previous = asset.reviewStatus === "approved" ? Date.parse(asset.approvedAt ?? asset.createdAt) : NaN;
+    return Number.isFinite(previous) ? Math.max(latest, previous + 1) : latest;
+  }, requestedApprovalTime);
+  // Approval order must reproduce the explicit audition order, even when the
+  // user chose an older generated take over a newer approved take.
+  const approvals = new Map(draft.assetIds.map((id, index) => [id, new Date(approvalTime + index).toISOString()]));
+  return {
+    draft: { ...draft, revision: draft.revision + 1, assetIds: [] },
+    assets: assets.map(asset => selected.has(asset.id) ? { ...asset, reviewStatus: "approved", approvedAt: approvals.get(asset.id) } : asset),
+    error: null,
+  };
+}

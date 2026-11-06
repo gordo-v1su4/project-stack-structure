@@ -1,0 +1,252 @@
+import { createHash } from "node:crypto";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { probeMediaFile, type ProbedMediaFile } from "@/components/studio/mediaProbe";
+import { buildSwarmComfyDirectUrl, extractComfyOutputRefs, getComfyHistoryStatus, type ComfyOutputRef } from "@/components/studio/localGeneration";
+import { H3_FPS, H3_HEIGHT, H3_WIDTH, type H3GenerationJob } from "@/components/studio/h3Generation";
+import type { LocalGenerationOutput } from "@/trigger/localGeneration";
+import { getMediaGatewayConfig, uploadFileToMediaGateway } from "./mediaGateway";
+import { normalizeStudioOwnerSegment } from "./studioStoragePaths";
+import { readStudioProject } from "./studioProjectStore";
+import { materializeH3Job } from "./h3GenerationServer";
+import { downloadH3ReferenceImage, pinH3JobReferences, readH3Job, updateH3Job } from "./h3JobStore";
+import { buildH3Workflow } from "./h3Workflow";
+
+export type H3JobReference = { ownerId: string; projectId: string; jobId: string };
+
+const MAX_IMAGE_BYTES = 32 * 1024 * 1024;
+const IMAGE_EXTENSIONS: Record<string, string> = { "image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp" };
+class H3ProviderRejection extends Error {}
+
+async function providerJson(baseUrl: string, route: string, body?: unknown) {
+  const response = await fetch(buildSwarmComfyDirectUrl(baseUrl, route), {
+    ...(body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
+    cache: "no-store", signal: AbortSignal.timeout(20_000),
+  });
+  if (!response.ok) {
+    const message = `SwarmUI ${route.split("/")[0]} returned HTTP ${response.status}.`;
+    if (route === "prompt" && response.status >= 400 && response.status < 500) throw new H3ProviderRejection(message);
+    throw new Error(message);
+  }
+  return await response.json() as Record<string, unknown>;
+}
+
+/** Search by our durable correlation, including the response-loss window after POST /prompt. */
+export function findH3ProviderPrompt(jobId: string, queue: Record<string, unknown>, history: Record<string, unknown>) {
+  for (const entry of [...((queue.queue_running as unknown[]) ?? []), ...((queue.queue_pending as unknown[]) ?? [])]) {
+    if (!Array.isArray(entry)) continue;
+    const extra = entry[3] as Record<string, unknown> | undefined;
+    if (extra?.stack_structure_h3_job === jobId && typeof entry[1] === "string") return entry[1];
+  }
+  for (const [id, value] of Object.entries(history)) {
+    const prompt = (value as { prompt?: unknown[] })?.prompt;
+    const extra = prompt?.[3] as Record<string, unknown> | undefined;
+    if (extra?.stack_structure_h3_job === jobId) return id;
+  }
+  return undefined;
+}
+
+export function validateH3VideoProbe(probe: ProbedMediaFile, frames: number, neededDuration: number) {
+  const video = probe.primaryVideoStream;
+  if (!video || video.codecName !== "h264" || video.width !== H3_WIDTH || video.height !== H3_HEIGHT
+    || Math.abs((video.frameRate ?? 0) - H3_FPS) > 0.01 || probe.duration + 0.01 < neededDuration
+    || Math.abs(probe.duration - frames / H3_FPS) > 0.1) {
+    throw new Error("H3 returned video outside the required codec, size, frame rate or duration contract.");
+  }
+}
+
+export function h3OutputSubfolder(value: string | undefined, jobId: string) {
+  if (!value || /^[\\/]|^[a-z]:/i.test(value)) throw new Error("The provider returned an invalid output reference.");
+  const parts = value.replace(/\\/g, "/").split("/");
+  if (parts.some(part => !part || part === "." || part === "..") || parts.join("/") !== `stack-structure/${jobId}`) {
+    throw new Error("The provider returned an invalid output reference.");
+  }
+  return parts.join("/");
+}
+
+function cancellationRequested(job: H3GenerationJob) { return Boolean(job.cancelRequestedAt) || job.state === "cancel_requested"; }
+
+async function uploadReference(baseUrl: string, job: H3GenerationJob, index: number, folder: string) {
+  const ref = job.references[index];
+  const media = await downloadH3ReferenceImage(ref);
+  const extension = IMAGE_EXTENSIONS[media.mime];
+  if (!extension || !media.bytes.byteLength || media.bytes.byteLength > MAX_IMAGE_BYTES) throw new Error("H3 references must be PNG, JPEG or WebP images smaller than 32 MiB.");
+  const hash = createHash("sha256").update(Buffer.from(media.bytes)).digest("hex");
+  const imagePath = path.join(folder, `${index}${extension}`);
+  await writeFile(imagePath, Buffer.from(media.bytes));
+  const probe = await probeMediaFile(imagePath);
+  const image = probe.primaryVideoStream;
+  if (!image?.width || !image.height || image.width < 256 || image.height < 256
+    || image.width * image.height > 64 * 1024 * 1024) throw new Error("Reference images must be readable and at least 256 pixels on each side.");
+  const form = new FormData();
+  form.set("subfolder", `stack-structure/${job.id}`);
+  form.set("type", "input");
+  form.set("overwrite", "true");
+  form.set("image", new File([media.bytes], `${hash}${extension}`, { type: media.mime }));
+  const response = await fetch(buildSwarmComfyDirectUrl(baseUrl, "upload/image"), {
+    method: "POST", body: form, signal: AbortSignal.timeout(120_000),
+  });
+  if (!response.ok) throw new Error(`SwarmUI reference upload returned HTTP ${response.status}.`);
+  const uploaded = await response.json() as { name?: string; subfolder?: string };
+  if (!uploaded.name || /[\\/]/.test(uploaded.name) || uploaded.subfolder !== `stack-structure/${job.id}`) {
+    throw new Error("SwarmUI returned an invalid reference binding.");
+  }
+  return { path: `${uploaded.subfolder}/${uploaded.name}`, hash };
+}
+
+function completedOutput(job: H3GenerationJob): LocalGenerationOutput {
+  const asset = job.result!.asset;
+  return { provider: "swarmui", status: "completed", message: "H3 shot persisted for draft review.",
+    jobId: job.id, generatedAsset: asset, promptId: job.promptId,
+    assets: [{ provider: "swarmui", kind: "video", filename: "shot.mp4", mimeType: "video/mp4",
+      providerUrl: asset.resultUrl!, storage: asset.fullStorage! }] };
+}
+
+export async function runH3Generation(reference: H3JobReference, runId: string,
+  options: { wait: (seconds: number) => Promise<unknown>; stage: (label: string) => void; timeoutSeconds?: number }) {
+  const { ownerId, projectId, jobId } = reference;
+  const storedJob = await readH3Job(ownerId, projectId, jobId);
+  if (!storedJob) throw new Error("Generation job not found.");
+  let job: H3GenerationJob = storedJob;
+  if (job.state === "ready" && job.result) return completedOutput(job);
+  if (job.state === "cancelled") throw new Error("This generation job was cancelled.");
+  const baseUrl = (process.env.LOCAL_SWARMUI_URL || process.env.SWARMUI_URL || "").replace(/\/+$/, "");
+  const temp = await mkdtemp(path.join(tmpdir(), "stack-h3-"));
+  const update = async (patch: Partial<H3GenerationJob>) => {
+    job = await updateH3Job(ownerId, projectId, jobId, current => {
+      if (current.runId && current.runId !== runId) throw new Error("A different Trigger run owns this job.");
+      if (current.state === "cancelled" && patch.state !== "cancelled") {
+        throw new Error("This generation job was cancelled.");
+      }
+      if (cancellationRequested(current) && patch.state && patch.state !== "cancelled") {
+        if (patch.state === "rendering") return { ...current, ...patch, state: "cancel_requested" };
+        throw new Error("This generation job was cancelled.");
+      }
+      return { ...current, ...patch };
+    });
+    return job;
+  };
+  try {
+    if (!baseUrl || !/^https?:\/\//.test(baseUrl)) throw new Error("The SwarmUI gateway is not configured.");
+    if (job.runId && job.runId !== runId) throw new Error("A different Trigger run owns this job.");
+    await update({ runId, error: undefined });
+    const saved = await readStudioProject(ownerId, projectId, { fresh: true });
+    const config = getMediaGatewayConfig();
+    if (!saved || !config) throw new Error("The saved project is unavailable.");
+    if (!job.promptId && job.state !== "submitting" && job.state !== "submission_unknown" && !cancellationRequested(job)) {
+      const current = await pinH3JobReferences(materializeH3Job(ownerId, saved, job.request, config.bucket));
+      if (current.id !== job.id) throw new Error("The story plan or reference package changed before generation.");
+    }
+    if (!job.promptId && (job.state === "submitting" || job.state === "submission_unknown" || cancellationRequested(job))) {
+      options.stage("Reconciling the existing H3 submission");
+      const queue = await providerJson(baseUrl, "queue");
+      const history = await providerJson(baseUrl, "history?max_items=1000");
+      const recovered = findH3ProviderPrompt(job.id, queue, history);
+      if (!recovered) {
+        if (cancellationRequested(job)) {
+          await update({ state: "cancelled", error: "Cancellation recorded; the original provider submission could not be located. Its result will not enter the draft." });
+          throw new Error("Cancellation recorded; no replacement generation was submitted.");
+        }
+        throw new Error("Submission could not be reconciled. Generation was not repeated.");
+      }
+      await update({ promptId: recovered, state: "rendering" });
+    }
+    if (!job.promptId) {
+      options.stage("Hydrating the named H3 references");
+      await update({ state: "preparing" });
+      // Health/schema probes do not enqueue GPU work.
+      await providerJson(baseUrl, "system_stats");
+      const contract = await providerJson(baseUrl, "object_info/MiniMaxH3ReferenceToVideo");
+      if (!contract.MiniMaxH3ReferenceToVideo) throw new Error("The native H3 Ref2VA node is unavailable.");
+      const paths: string[] = [], hashes: string[] = [];
+      for (let index = 0; index < job.references.length; index++) {
+        const uploaded = await uploadReference(baseUrl, job, index, temp);
+        paths.push(uploaded.path); hashes.push(uploaded.hash);
+      }
+      const built = buildH3Workflow(job, paths);
+      await update({ state: "submitting", compiledPrompt: built.prompt, frames: built.frames, referenceHashes: hashes });
+      options.stage("Submitting the native H3 reference shot");
+      const response = await providerJson(baseUrl, "prompt", { prompt: built.workflow, client_id: job.id,
+        extra_data: { stack_structure_h3_job: job.id, profile: job.profile } });
+      // HTTP 200 without an ID does not prove the queue rejected the request.
+      // A valid ID remains authoritative even when diagnostics accompany it.
+      if (typeof response.prompt_id !== "string" || !response.prompt_id.trim()) {
+        throw new Error("SwarmUI acknowledged the request without a prompt ID. Reconcile the original submission before retrying.");
+      }
+      await update({ promptId: response.prompt_id, state: "rendering" });
+    }
+    options.stage("Rendering the H3 shot on the local GPU");
+    const started = Date.now();
+    let output: ComfyOutputRef | undefined;
+    while (Date.now() - started < (options.timeoutSeconds ?? 1500) * 1000) {
+      const current = await readH3Job(ownerId, projectId, jobId);
+      const history = await providerJson(baseUrl, `history/${encodeURIComponent(job.promptId!)}`);
+      const status = getComfyHistoryStatus(history, job.promptId);
+      if (current && cancellationRequested(current) && (status === "error" || status === "completed")) {
+        await update({ state: "cancelled" });
+        throw new Error("H3 cancellation finalized; its output was not added to the draft.");
+      }
+      if (status === "error") {
+        await update({ state: "failed", error: "H3 execution failed on the local GPU." });
+        throw new Error("H3 execution failed on the local GPU.");
+      }
+      if (current && cancellationRequested(current)) {
+        const queue = await providerJson(baseUrl, "queue");
+        const pending = (queue.queue_pending as unknown[][] | undefined) ?? [];
+        if (pending.some(entry => entry[1] === job.promptId)) {
+          await providerJson(baseUrl, "queue", { delete: [job.promptId] });
+          await update({ state: "cancelled" });
+          throw new Error("H3 generation was cancelled before execution.");
+        }
+      } else if (status === "completed") {
+        output = extractComfyOutputRefs(history, job.promptId).find(asset => asset.kind === "video");
+        if (!output) throw new Error("H3 completed without a saved video.");
+        break;
+      }
+      await options.wait(3);
+    }
+    if (!output) throw new Error("H3 is still running or its completion is unknown. Resume status reconciliation instead of rendering again.");
+    await update({ state: "persisting" });
+    options.stage("Validating and storing the generated H3 video");
+    if (output.filename.includes("/") || output.filename.includes("\\")) {
+      throw new Error("The provider returned an invalid output reference.");
+    }
+    const subfolder = h3OutputSubfolder(output.subfolder, job.id);
+    const query = new URLSearchParams({ filename: output.filename, type: output.type ?? "output" });
+    query.set("subfolder", subfolder);
+    const response = await fetch(buildSwarmComfyDirectUrl(baseUrl, `view?${query}`), { signal: AbortSignal.timeout(120_000) });
+    if (!response.ok) throw new Error(`H3 output download returned HTTP ${response.status}.`);
+    const bytes = await response.arrayBuffer();
+    const outputPath = path.join(temp, "shot.mp4");
+    await writeFile(outputPath, Buffer.from(bytes));
+    const probe = await probeMediaFile(outputPath);
+    validateH3VideoProbe(probe, job.frames!, job.request.songEnd - job.request.songStart);
+    const folder = `media-uploads/projects/${normalizeStudioOwnerSegment(ownerId)}/generated/${projectId}/${job.id}`;
+    const storage = await uploadFileToMediaGateway({ file: new File([bytes], "shot.mp4", { type: "video/mp4" }), folder, preserveFileName: true });
+    const asset = { id: job.id, provider: "swarmui" as const, model: job.profile, title: job.target.sectionLabel,
+      prompt: job.compiledPrompt!, createdAt: job.createdAt, jobId: job.id, status: "completed" as const,
+      mediaKind: "video" as const, width: H3_WIDTH, height: H3_HEIGHT, durationSeconds: probe.duration,
+      resultUrl: storage.mediaUrl || storage.publicUrl, fullStorage: storage, trimStart: 0,
+      reviewStatus: "pending" as const, target: job.target, triggerRunId: runId };
+    job = await updateH3Job(ownerId, projectId, jobId, current => {
+      if (cancellationRequested(current) || current.state === "cancelled") return { ...current, state: "cancelled" };
+      return { ...current, state: "ready", result: { asset }, error: undefined };
+    });
+    if (!job.result || job.state !== "ready") throw new Error("H3 output was cancelled before draft acceptance.");
+    return completedOutput(job);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Local H3 generation failed.";
+    await updateH3Job(ownerId, projectId, jobId, current => {
+      if (current.runId && current.runId !== runId) return current;
+      if (["ready", "failed", "cancelled"].includes(current.state)) return current;
+      if (cancellationRequested(current)) return { ...current, state: "cancel_requested", error: message };
+      return { ...current, state: error instanceof H3ProviderRejection ? "failed"
+        : current.promptId || current.state === "submitting" || current.state === "submission_unknown" ? "submission_unknown" : "failed", error: message };
+    });
+    throw error;
+  } finally {
+    // temp is allocated by mkdtemp beneath the OS temp directory, never a caller path.
+    await rm(temp, { recursive: true, force: true });
+  }
+}

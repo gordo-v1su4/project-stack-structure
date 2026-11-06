@@ -55,14 +55,14 @@ export async function listStudioProjects(ownerId: string) {
   return (await readProjectIndex(ownerId)).projects.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
-export async function readStudioProject(ownerId: string, projectId: string): Promise<SavedStudioProject | null> {
+export async function readStudioProject(ownerId: string, projectId: string, options: { fresh?: boolean } = {}): Promise<SavedStudioProject | null> {
   const safeOwnerId = normalizeIdentity(ownerId);
   const safeProjectId = normalizeProjectId(projectId);
-  const readSources = studioProjectReadSources();
+  const readSources = options.fresh ? ["remote"] as const : studioProjectReadSources();
   for (const source of readSources) {
     const project = source === "local"
       ? await readLocalJson<SavedStudioProject>(localProjectPath(safeOwnerId, safeProjectId))
-      : await readRemoteProject(safeOwnerId, safeProjectId);
+      : await readRemoteProject(safeOwnerId, safeProjectId, options);
     if (!isSavedStudioProject(project, safeOwnerId, safeProjectId)) continue;
     if (source === "remote" && readSources[0] === "local") {
       await writeLocalJson(localProjectPath(safeOwnerId, safeProjectId), project);
@@ -131,8 +131,8 @@ export function createStudioProjectId() {
   return crypto.randomUUID();
 }
 
-async function readRemoteProject(ownerId: string, projectId: string): Promise<SavedStudioProject | null> {
-  const index = await readProjectIndex(ownerId);
+async function readRemoteProject(ownerId: string, projectId: string, options: { fresh?: boolean } = {}): Promise<SavedStudioProject | null> {
+  const index = await readProjectIndex(ownerId, options);
   const entry = index.projects.find((project) => project.id === projectId);
   const objectPaths = [
     entry?.storageFolder ? resolveProjectObjectPath(entry.storageFolder) : null,
@@ -154,9 +154,9 @@ function localIndexPath(ownerId: string) {
   return path.join(LOCAL_PROJECTS_FOLDER, normalizeIdentity(ownerId), "index.json");
 }
 
-async function readProjectIndex(ownerId: string): Promise<StudioProjectIndex> {
+async function readProjectIndex(ownerId: string, options: { fresh?: boolean } = {}): Promise<StudioProjectIndex> {
   const safeOwnerId = normalizeIdentity(ownerId);
-  const readSources = studioProjectReadSources();
+  const readSources = options.fresh ? ["remote"] as const : studioProjectReadSources();
   for (const source of readSources) {
     const index = source === "local"
       ? await readLocalJson<StudioProjectIndex>(localIndexPath(safeOwnerId))

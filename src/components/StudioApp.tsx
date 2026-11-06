@@ -2,7 +2,7 @@
 
 import { ClipAudioSettings } from "./studio/ClipAudioSettings";
 import { clipAudioKey, normalizeClipAudioSettings, usesClipAudio } from "./studio/clipAudio";
-import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type SetStateAction } from "react";
 import { flushSync } from "react-dom";
 import { extractWaveformData, fetchEssentiaAnalysis, getEssentiaStorageFromPayload, parseEssentiaPayload } from "./studio/audioAnalysis";
 import type { DeepgramTranscriptSummary } from "./studio/deepgramUtils";
@@ -17,7 +17,7 @@ import { buildSongSectionReview, selectReviewRange, type ReviewSelection } from 
 import { isPlacementPlanCurrent, storyProjectInputSignature, prepareApprovedPlacements, buildEditPlanPreviewSegments, normalizeStoryEditSettings, type EditPlanPreviewSegment, type MusicVideoProject } from "./studio/musicVideoProject";
 import { clearRoughCutPlacement, applyRoughCutSwap, proposeRoughCutSwap, proposeRoughCutReplacement, type RoughCutSwapProposal } from "./studio/roughCutArrangement";
 import { selectStorySectionCandidate } from "./studio/musicVideoProjectSelection";
-import { buildAutoShaderCues, describeMusicVideoShaderPreset, MUSIC_VIDEO_SHADER_PRESETS, type ShaderAccentKinds, type ShaderEffectCue } from "./studio/shaderEffectPlan";
+import { buildAutoShaderCues, describeMusicVideoShaderPreset, MUSIC_VIDEO_SHADER_PRESETS, type ShaderAccentKinds } from "./studio/shaderEffectPlan";
 import {
   ACTIVE_STUDIO_PROJECT_KEY,
   STUDIO_AUTOSAVE_INTERVAL_MS,
@@ -35,6 +35,8 @@ import {
 } from "./studio/projectPersistence";
 import type { StudioProjectSummary } from "@/lib/studioProjectStore";
 import { applyApprovedGeneratedAssets, buildGeneratedAssetContextPreview, buildGeneratedAssetPlaybackUrl, type GeneratedStudioAsset } from "./studio/generatedAssets";
+import { applyDraftGeneratedAssets, approveGeneratedDraft, captureGeneratedDraftReview, createGeneratedDraftSelection, rejectGeneratedDraftAsset, selectGeneratedDraftAsset, type GeneratedDraftReview, type GeneratedDraftSelection } from "./studio/generatedDraft";
+import { MiniMaxDraftPanel } from "./studio/panels/MiniMaxDraftPanel";
 import { createLocalReferenceAsset, uploadReferenceAssetToRustFs, type ReferenceAsset, type ReferenceAssetLibraryRole } from "./studio/referenceAssets";
 import { BrowserPreviewPlayer, createPreviewPlayerState, type PreviewPlayerState, type PreviewSegment } from "./studio/previewPlayer";
 import { buildEffectsTimeline, selectStoryAssemblyPreview, usesStoryAssembly, type PreviewCutRange } from "./studio/resolvedPreviewSelection";
@@ -164,7 +166,11 @@ export default function StudioApp() {
   const [roughCutUndo, setRoughCutUndo] = useState<{ before: MusicVideoProject; afterPlan: string } | null>(null);
   const [captionMode, setCaptionMode] = useState<SceneCaptionMode>("smart");
   const [referenceAssets, setReferenceAssets] = useState<ReferenceAsset[]>([]);
-  const [generatedAssets, setGeneratedAssets] = useState<GeneratedStudioAsset[]>([]);
+  const [generatedReviewState, setGeneratedReviewState] = useState<{ assets: GeneratedStudioAsset[]; draft: GeneratedDraftSelection | null }>({ assets: [], draft: null });
+  const { assets: generatedAssets, draft: generatedDraft } = generatedReviewState;
+  const setGeneratedAssets = useCallback((update: SetStateAction<GeneratedStudioAsset[]>) => {
+    setGeneratedReviewState(current => ({ ...current, assets: typeof update === "function" ? update(current.assets) : update }));
+  }, []);
   const [shaderPresetId, setShaderPresetId] = useState(MUSIC_VIDEO_SHADER_PRESETS[0].id);
   const [shaderAccentKinds, setShaderAccentKinds] = useState<ShaderAccentKinds>({});
   const [finalExportStatus, setFinalExportStatus] = useState("Final export waits for a generated story preview and master audio.");
@@ -307,6 +313,7 @@ export default function StudioApp() {
         musicVideoProject,
         referenceAssets,
         generatedAssets,
+        generatedDraft,
         clipAudioSettings,
         captionSettings: buildSceneCaptionSettings(captionMode, beatJoinAnalysis, storyState, referenceAssets),
         workflowUiSettings: {
@@ -336,7 +343,7 @@ export default function StudioApp() {
       return;
     }
     setSaveState((current) => (current.kind === "dirty" || current.kind === "saving" ? current : { ...current, kind: "dirty" }));
-  }, [activeProjectId, activeProjectName, beatJoinAnalysis, clipAudioSettings, captionMode, colorGradient, committedBeatSplit, draftRestored, finalExportCueCount, finalExportName, finalExportStatus, finalExportUrl, generatedAssets, isPreviewExpanded, matchLyricCueBlend, matchLyricMergeWindow, matchMode, matchOnsetDensity, musicVideoProject, referenceAssets, shaderAccentKinds, shaderPresetId, splitMode, storyState, tab, videoSources]);
+  }, [activeProjectId, activeProjectName, beatJoinAnalysis, clipAudioSettings, captionMode, colorGradient, committedBeatSplit, draftRestored, finalExportCueCount, finalExportName, finalExportStatus, finalExportUrl, generatedAssets, generatedDraft, isPreviewExpanded, matchLyricCueBlend, matchLyricMergeWindow, matchMode, matchOnsetDensity, musicVideoProject, referenceAssets, shaderAccentKinds, shaderPresetId, splitMode, storyState, tab, videoSources]);
 
   useEffect(() => {
     if (!draftRestored) return;
@@ -528,7 +535,7 @@ export default function StudioApp() {
     setCaptionMode(restoredCaptionMode);
     setMusicVideoProject(draft.musicVideoProject);
     setReferenceAssets(draft.referenceAssets ?? []);
-    setGeneratedAssets(draft.generatedAssets ?? []);
+    setGeneratedReviewState({ assets: draft.generatedAssets ?? [], draft: draft.generatedDraft ?? null });
     const workflowUi = draft.workflowUiSettings;
     if (workflowUi?.activeTab && NAV.some((item) => item.key === workflowUi.activeTab)) setTab(workflowUi.activeTab);
     if (workflowUi?.colorGradient) setColorGradient(workflowUi.colorGradient);
@@ -671,18 +678,21 @@ export default function StudioApp() {
     [videoSources, sourceClips, workingBeatSplitSegments]
   );
 
-  const storyPreviewSegments = useMemo<EditPlanPreviewSegment[]>(() => {
+  const baseStoryPreviewSegments = useMemo<EditPlanPreviewSegment[]>(() => {
     if (!storyState.storyGenerated) return [];
     const resolved = buildEditPlanPreviewSegments({
       project: musicVideoProject,
       videoSources,
       editSettings: storyState.editSettings,
     });
-    return applyApprovedGeneratedAssets(resolved, generatedAssets).map(segment => {
+    return resolved.map(segment => {
       const source = videoSources.find(source => source.videoUrl === segment.videoUrl);
       return { ...segment, useClipAudio: segment.kind !== "gap" && usesClipAudio(clipAudioSettings, source ? clipAudioKey(source) : undefined) };
     });
-  }, [clipAudioSettings, generatedAssets, musicVideoProject, storyState.editSettings, storyState.storyGenerated, videoSources]);
+  }, [clipAudioSettings, musicVideoProject, storyState.editSettings, storyState.storyGenerated, videoSources]);
+
+  const storyPreviewSegments = useMemo(() => applyApprovedGeneratedAssets(baseStoryPreviewSegments, generatedAssets), [baseStoryPreviewSegments, generatedAssets]);
+  const draftPreviewSegments = useMemo(() => applyDraftGeneratedAssets(baseStoryPreviewSegments, generatedAssets, generatedDraft), [baseStoryPreviewSegments, generatedAssets, generatedDraft]);
 
   const effectsTimeline = useMemo(() => buildEffectsTimeline(storyPreviewSegments), [storyPreviewSegments]);
 
@@ -1213,6 +1223,7 @@ export default function StudioApp() {
         musicVideoProject,
         referenceAssets,
         generatedAssets,
+        generatedDraft,
         clipAudioSettings,
         captionSettings: buildSceneCaptionSettings(captionMode, migratedAnalysis, storyState, referenceAssets),
         workflowUiSettings: {
@@ -1227,6 +1238,7 @@ export default function StudioApp() {
           shaderAccentKinds,
           isPreviewExpanded,
           committedSplit: committedBeatSplit ?? undefined,
+          finalExport: finalExportUrl ? { videoUrl: finalExportUrl, downloadFileName: finalExportName ?? "stack-structure-final.mp4", cueCount: finalExportCueCount, status: finalExportStatus } : undefined,
         },
       },
       { audioFile },
@@ -1286,8 +1298,9 @@ export default function StudioApp() {
           musicVideoProject,
           referenceAssets,
           generatedAssets,
+          generatedDraft,
           clipAudioSettings,
-        captionSettings: buildSceneCaptionSettings(captionMode, beatJoinAnalysis, storyState, referenceAssets),
+          captionSettings: buildSceneCaptionSettings(captionMode, beatJoinAnalysis, storyState, referenceAssets),
           workflowUiSettings: {
             activeTab: tab,
             splitMode,
@@ -1300,6 +1313,7 @@ export default function StudioApp() {
             shaderAccentKinds,
             isPreviewExpanded,
             committedSplit: committedBeatSplit ?? undefined,
+            finalExport: finalExportUrl ? { videoUrl: finalExportUrl, downloadFileName: finalExportName ?? "stack-structure-final.mp4", cueCount: finalExportCueCount, status: finalExportStatus } : undefined,
           },
         },
         {
@@ -1445,8 +1459,9 @@ export default function StudioApp() {
               musicVideoProject,
               referenceAssets,
               generatedAssets,
+              generatedDraft,
               clipAudioSettings,
-        captionSettings: buildSceneCaptionSettings(captionMode, beatJoinAnalysis, storyState, referenceAssets),
+              captionSettings: buildSceneCaptionSettings(captionMode, beatJoinAnalysis, storyState, referenceAssets),
               workflowUiSettings: {
                 activeTab: tab,
                 splitMode,
@@ -1459,6 +1474,7 @@ export default function StudioApp() {
                 shaderAccentKinds,
                 isPreviewExpanded,
                 committedSplit: committedBeatSplit ?? undefined,
+                finalExport: finalExportUrl ? { videoUrl: finalExportUrl, downloadFileName: finalExportName ?? "stack-structure-final.mp4", cueCount: finalExportCueCount, status: finalExportStatus } : undefined,
               },
             },
             {
@@ -1900,9 +1916,9 @@ export default function StudioApp() {
   const shaderPresetSummary = useMemo(() => describeMusicVideoShaderPreset(shaderPresetId), [shaderPresetId]);
 
   const browserPreviewSegments = useMemo<EditPlanPreviewSegment[]>(() => selectStoryAssemblyPreview(
-    tab, storyPreviewSegments, tab === "generate" ? generatePreviewRange : roughCutPreviewRange,
+    tab, tab === "generate" ? draftPreviewSegments : storyPreviewSegments, tab === "generate" ? generatePreviewRange : roughCutPreviewRange,
     generatedAuditionSegments,
-  ), [tab, storyPreviewSegments, generatePreviewRange, roughCutPreviewRange, generatedAuditionSegments]);
+  ), [tab, draftPreviewSegments, storyPreviewSegments, generatePreviewRange, roughCutPreviewRange, generatedAuditionSegments]);
 
   useEffect(() => {
     if (!usesStoryAssembly(tab) || previewAuditionRequest === 0 || !browserPreviewSegments.length) return;
@@ -2010,7 +2026,7 @@ export default function StudioApp() {
     storySegmentCount: storyPreviewSegments.length,
     hasCommittedSplit: isCommittedSplitCurrent,
     shaderPresetLabel: shaderPresetSummary.preset.label,
-    finalExportReady: Boolean(finalExportUrl) && storyState.storyGenerated && isCommittedSplitCurrent,
+    finalExportReady: Boolean(finalExportUrl) && storyState.storyGenerated,
   })), [
     tab,
     beatJoinAnalysis,
@@ -2040,8 +2056,9 @@ export default function StudioApp() {
     musicVideoProject,
     referenceAssets,
     generatedAssets,
+    generatedDraft,
     clipAudioSettings,
-        captionSettings: buildSceneCaptionSettings(captionMode, beatJoinAnalysis, storyState, referenceAssets),
+    captionSettings: buildSceneCaptionSettings(captionMode, beatJoinAnalysis, storyState, referenceAssets),
     workflowUiSettings: {
       activeTab: tab,
       splitMode,
@@ -2054,8 +2071,117 @@ export default function StudioApp() {
       shaderAccentKinds,
       isPreviewExpanded,
       committedSplit: committedBeatSplit ?? undefined,
+      finalExport: finalExportUrl ? { videoUrl: finalExportUrl, downloadFileName: finalExportName ?? "stack-structure-final.mp4", cueCount: finalExportCueCount, status: finalExportStatus } : undefined,
     },
-  }), [beatJoinAnalysis, clipAudioSettings, captionMode, colorGradient, committedBeatSplit, generatedAssets, isPreviewExpanded, matchLyricCueBlend, matchLyricMergeWindow, matchMode, matchOnsetDensity, musicVideoProject, referenceAssets, shaderAccentKinds, shaderPresetId, splitMode, storyState, tab, videoSources]);
+  }), [beatJoinAnalysis, clipAudioSettings, captionMode, colorGradient, committedBeatSplit, finalExportCueCount, finalExportName, finalExportStatus, finalExportUrl, generatedAssets, generatedDraft, isPreviewExpanded, matchLyricCueBlend, matchLyricMergeWindow, matchMode, matchOnsetDensity, musicVideoProject, referenceAssets, shaderAccentKinds, shaderPresetId, splitMode, storyState, tab, videoSources]);
+
+  const draftReviewLiveRef = useRef({ state: generatedReviewState, segments: baseStoryPreviewSegments, project: persistableProjectDraft, projectId: activeProjectId, projectName: activeProjectName });
+  useLayoutEffect(() => {
+    draftReviewLiveRef.current = { state: generatedReviewState, segments: baseStoryPreviewSegments, project: persistableProjectDraft, projectId: activeProjectId, projectName: activeProjectName };
+  }, [activeProjectId, activeProjectName, baseStoryPreviewSegments, generatedReviewState, persistableProjectDraft]);
+
+  async function ensureH3ProjectSaved() {
+    const startingProjectId = draftReviewLiveRef.current.projectId;
+    await flushPendingAutosaveRef.current?.();
+    const live = draftReviewLiveRef.current;
+    if (live.projectId !== startingProjectId) throw new Error("The open project changed while saving. Continue from its current draft.");
+    if (!live.project.musicVideoProject || !isPlacementPlanCurrent(live.project.musicVideoProject)) throw new Error("Confirm the current story before creating footage.");
+    const saved = await saveNamedStudioProject({
+      projectId: live.projectId,
+      name: live.projectName === "Untitled project" ? live.project.analysis?.sourceLabel ?? "Music video" : live.projectName,
+      draft: live.project,
+    });
+    if (draftReviewLiveRef.current.projectId !== startingProjectId
+      || draftReviewLiveRef.current.project.musicVideoProject?.placementPlan?.inputSignature !== live.project.musicVideoProject.placementPlan?.inputSignature) {
+      throw new Error("The open project or story changed while saving. Continue from its current draft.");
+    }
+    setActiveProjectId(saved.project.id);
+    setActiveProjectName(saved.project.name);
+    setSaveState({ kind: "saved", at: Date.now(), scope: "project", detail: "Story and references saved before generation." });
+    return saved.project.id;
+  }
+
+  function receiveGeneratedAsset(asset: GeneratedStudioAsset, expectedRevision?: number) {
+    if (asset.reviewStatus === "approved" || generatedAssets.some(candidate => candidate.id === asset.id && candidate.reviewStatus === "approved")) invalidateArrangementOutput();
+    setGeneratedReviewState(current => {
+      const assets = [asset, ...current.assets.filter(candidate => candidate.id !== asset.id)];
+      const planSignature = baseStoryPreviewSegments[0]?.planSignature;
+      // Legacy returns without a captured dispatch revision remain available in
+      // the bank, but cannot silently override a newer draft after reload.
+      if (!planSignature || expectedRevision === undefined) return { ...current, assets };
+      const draft = current.draft?.planSignature === planSignature ? current.draft : createGeneratedDraftSelection(planSignature);
+      return { assets, draft: selectGeneratedDraftAsset({ draft, assets, asset, segments: baseStoryPreviewSegments, expectedRevision }) };
+    });
+  }
+
+  async function reviewGeneratedDraft() {
+    const planSignature = baseStoryPreviewSegments[0]?.planSignature;
+    const selection = generatedDraft?.planSignature === planSignature ? generatedDraft : (planSignature ? createGeneratedDraftSelection(planSignature) : null);
+    const review = captureGeneratedDraftReview(baseStoryPreviewSegments, generatedAssets, selection);
+    if (!review) throw new Error("Prepare a current story and draft before reviewing.");
+    if (selection !== generatedDraft) setGeneratedReviewState(current => ({ ...current, draft: selection }));
+    setGeneratePreviewRange(null);
+    setGeneratedAuditionSegments(null);
+    setIsPreviewExpanded(true);
+    previewPlayer.load(applyDraftGeneratedAssets(baseStoryPreviewSegments, generatedAssets, selection));
+    await previewPlayer.play();
+    return review;
+  }
+
+  async function acceptGeneratedDraft(review: GeneratedDraftReview) {
+    const startingProjectId = draftReviewLiveRef.current.projectId;
+    const approvedAt = new Date().toISOString();
+    let savedProjectId = startingProjectId;
+    const currentAcceptance = () => {
+      const live = draftReviewLiveRef.current;
+      if (live.projectId !== startingProjectId && live.projectId !== savedProjectId) throw new Error("The open project changed during draft acceptance.");
+      if (!live.state.draft) throw new Error("Review the current assembled draft first.");
+      const result = approveGeneratedDraft({ draft: live.state.draft, assets: live.state.assets, segments: live.segments, review, approvedAt });
+      if (result.error) throw new Error(result.error);
+      return result;
+    };
+    currentAcceptance();
+    const projectId = await ensureH3ProjectSaved();
+    savedProjectId = projectId;
+    // Saving/dispatch can take time: validate the exact viewed cut again after
+    // every asynchronous boundary rather than overwriting a newer review.
+    const accepted = currentAcceptance();
+    const liveProject = draftReviewLiveRef.current.project;
+    const saved = await saveNamedStudioProject({ projectId, name: draftReviewLiveRef.current.projectName,
+      draft: { ...liveProject, savedAt: new Date().toISOString(), generatedAssets: accepted.assets, generatedDraft: accepted.draft,
+        workflowUiSettings: { ...liveProject.workflowUiSettings, finalExport: undefined } },
+    });
+    let commitError: string | null = null;
+    try {
+      currentAcceptance();
+      // Flush queued shot/review updates before reporting that the persisted
+      // snapshot is the accepted in-memory cut.
+      flushSync(() => setGeneratedReviewState(current => {
+        if (!current.draft) {
+          commitError = "Review the current assembled draft first.";
+          return current;
+        }
+        const result = approveGeneratedDraft({ draft: current.draft, assets: current.assets, segments: draftReviewLiveRef.current.segments, review, approvedAt });
+        commitError = result.error;
+        return result.error ? current : { assets: result.assets, draft: result.draft };
+      }));
+      if (commitError) throw new Error(commitError);
+    }
+    catch (error) {
+      if (draftReviewLiveRef.current.projectId === projectId) {
+        await saveNamedStudioProject({ projectId, name: draftReviewLiveRef.current.projectName, draft: draftReviewLiveRef.current.project });
+      }
+      throw error;
+    }
+    setSaveState({ kind: "saved", at: new Date(saved.draft.savedAt).getTime(), scope: "project", detail: "Reviewed draft accepted and saved." });
+    invalidateArrangementOutput();
+  }
+
+  function rejectGeneratedShot(assetId: string) {
+    if (generatedAssets.some(asset => asset.id === assetId && asset.reviewStatus === "approved")) invalidateArrangementOutput();
+    setGeneratedReviewState(current => current.draft
+      ? rejectGeneratedDraftAsset({ draft: current.draft, assets: current.assets, assetId }) : current);
+  }
 
   useEffect(() => {
     const staleWorkflowSplit = tab === "split" && committedBeatSplit?.kind === "workflow" && !isCommittedSplitCurrent;
@@ -2096,7 +2222,7 @@ export default function StudioApp() {
     }, 0);
   }
 
-  const needsVideoSource = tab !== "story" && tab !== "compose";
+  const needsVideoSource = tab === "split" || tab === "shuffle";
   const actionState = deriveActionDisabledState({
     needsVideoSource,
     videoSourceCount: videoSources.length,
@@ -2107,7 +2233,7 @@ export default function StudioApp() {
   const storyActionReason = !storyState.storyGenerated
       ? "Confirm the treatment and resolve its anchors first."
     : storyPreviewSegments.length === 0
-      ? "Upload source clips."
+      ? "Confirm the story to prepare its song windows."
       : previewState.activeRequestKey
         ? "Preview already running."
         : null;
@@ -2471,6 +2597,7 @@ export default function StudioApp() {
                 videoSources={videoSources}
                 segmentPreviews={segmentPreviews}
                 referenceRevision={referenceRevision}
+                referenceAssets={referenceAssets}
                 state={storyState}
                 onStateChange={setStoryState}
                 onProjectChange={handleStoryProjectChange}
@@ -2525,6 +2652,14 @@ export default function StudioApp() {
             )}
 
             {tab === "generate" && (
+              <>
+              <MiniMaxDraftPanel projectId={activeProjectId} segments={draftPreviewSegments}
+                assets={generatedAssets} draft={generatedDraft} referenceAssets={referenceAssets}
+                onEnsureSavedProject={ensureH3ProjectSaved} onGeneratedAsset={receiveGeneratedAsset}
+                onReviewDraft={reviewGeneratedDraft} onAcceptDraft={acceptGeneratedDraft}
+                onRejectAsset={rejectGeneratedShot} onSelectAsset={asset => receiveGeneratedAsset(asset, generatedDraft?.revision ?? 0)} />
+              <details className="rounded-md border border-line bg-ink-2 p-3">
+              <summary className="cursor-pointer text-sm text-fg-3">Advanced generation and external imports</summary>
               <GenerateTab
                 project={musicVideoProject}
                 analysis={beatJoinAnalysis}
@@ -2544,7 +2679,7 @@ export default function StudioApp() {
                     }
                   : null}
                 onEnsureOwnedMasterAudio={ensureOwnedMasterAudioForGeneration}
-                onGeneratedAsset={(asset) => setGeneratedAssets((current) => [asset, ...current.filter((candidate) => candidate.id !== asset.id)])}
+                onGeneratedAsset={receiveGeneratedAsset}
                 selectedPreviewRange={generatePreviewRange}
                 onSelectedPreviewRange={(range) => {
                   setGeneratedAuditionSegments(null);
@@ -2559,6 +2694,8 @@ export default function StudioApp() {
                 onSelectMatch={() => handleSelectTab("shuffle")}
                 onSelectJoin={() => handleSelectTab("join")}
               />
+              </details>
+              </>
             )}
 
             {tab === "join" && (

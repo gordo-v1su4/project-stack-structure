@@ -6,7 +6,8 @@ Before implementing a task or consumer, read the [Trigger execution contract](..
 
 - Project ref: `proj_wlrcsfnmovzmdwzojzfe`
 - Production dashboard: Trigger.dev UI for the configured project ref
-- Platform, CLI, SDK, build, and React hooks: `4.5.16` (production worker host Docker image must match)
+- Application CLI, SDK, build, and React hooks: aligned at `4.5.16` in this checkout. Verify the emitted worker version separately from the control-plane version.
+- Control-plane ownership: VM100 Dockhand-managed Trigger `4.8.1` per the current private runbook (2026-10-24). The older platform `4.5.16` notes below are historical; application deployment must not source or redeploy the retired platform checkout.
 - Production deployment host: production worker host Linux
 - Authoritative application data: RustFS project JSON, analysis manifests, and generated objects
 
@@ -129,6 +130,10 @@ Use the private ops runbook for checkout paths, SSH entry points, and registry U
 6. Query the current production worker and compare all 17 task IDs with the table above before triggering acceptance runs.
 
 The deploy script refuses non-Linux hosts, verifies SDK/build/React hooks share one pin, runs the Trigger CLI through `bunx`, uses `--local-build`, and pushes the built image to the production registry.
+
+It anchors execution to its own application checkout and sources only the BWS-generated application deployment env. It does not read a Trigger platform `.env`, invoke Compose, change Dockhand settings, or upgrade the control plane. `--dry-run` still performs dependency installation, registry login, and CLI build preparation; it is a deployment preflight, not a read-only diagnostic.
+
+For the current MiniMax release, use an isolated detached VM100 application worktree and the [completion deployment/acceptance checklist](minimax-completion-release.md). H3 reuses `local-ai-generation`; the inventory remains 17 tasks. Confirm the newly emitted worker version/source commit and execute a reference-bound H3 job: an unchanged task inventory cannot prove the new implementation was deployed.
 
 ### Worker host access and failure triage
 

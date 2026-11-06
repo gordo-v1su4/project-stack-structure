@@ -192,10 +192,17 @@ function sliceSegment(segment: EditPlanPreviewSegment, start: number, end: numbe
 }
 
 export function applyApprovedGeneratedAssets(segments: EditPlanPreviewSegment[], assets: GeneratedStudioAsset[]): EditPlanPreviewSegment[] {
+  return applyGeneratedAssetOverlays(segments, listApprovedGeneratedVideoAssets(assets).sort((left, right) =>
+    Date.parse(left.approvedAt ?? left.createdAt) - Date.parse(right.approvedAt ?? right.createdAt)));
+}
+
+/** Low-level composition shared by approved edits and explicitly selected draft auditions. */
+export function applyGeneratedAssetOverlays(segments: EditPlanPreviewSegment[], assets: GeneratedStudioAsset[]): EditPlanPreviewSegment[] {
   let next = segments.map((segment) => ({ ...segment }));
-  const approved = listApprovedGeneratedVideoAssets(assets).sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt));
-  for (const asset of approved) {
-    const videoUrl = buildGeneratedAssetPlaybackUrl(asset)!;
+  for (const asset of assets) {
+    const videoUrl = buildGeneratedAssetPlaybackUrl(asset);
+    if (asset.status !== "completed" || asset.mediaKind !== "video" || asset.reviewStatus === "rejected"
+      || !videoUrl || !Number.isFinite(asset.durationSeconds) || (asset.durationSeconds ?? 0) <= 0) continue;
     next = next.flatMap((segment) => {
       const window = generatedAssetWindow(asset, { ...segment, songStart: segment.musicStart, songEnd: segment.musicEnd });
       if (!window) return [segment];

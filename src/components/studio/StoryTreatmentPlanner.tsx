@@ -10,9 +10,11 @@ import { buildStoryCaptionClusters, storyValidationFeedback, hydrateTreatmentCov
 import { describeStoryCoverage, buildStoryDraftCommit, createStoryRequestGuard, mergeStoryRevision, storyAuthoringInputSignature, validateStoryAuthoring } from "./storyAuthoring";
 import { StoryTreatmentDialog } from "./StoryTreatmentDialog";
 import type { BeatJoinAnalysis } from "./types";
+import type { ReferenceAsset } from "./referenceAssets";
 
 type StoryTreatmentPlannerProps = {
   referenceRevision?: string;
+  referenceAssets?: ReferenceAsset[];
   analysis: BeatJoinAnalysis | null;
   transcriptSummary: DeepgramTranscriptSummary | null;
   project: MusicVideoProject;
@@ -28,11 +30,11 @@ type TreatmentApiPayload = {
 };
 const KIND_COPY = { faithful: "Faithful", bold: "Bold", wildcard: "Wildcard" } as const;
 
-export function StoryTreatmentPlanner({ referenceRevision, analysis, transcriptSummary, project, state, onChange, onConfirm, onInvalidateConfirmed }: StoryTreatmentPlannerProps) {
+export function StoryTreatmentPlanner({ referenceRevision, referenceAssets, analysis, transcriptSummary, project, state, onChange, onConfirm, onInvalidateConfirmed }: StoryTreatmentPlannerProps) {
   const [inspectedId, setInspectedId] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const canGenerate = Boolean(analysis && project.videoMoments.length > 0);
+  const canGenerate = Boolean(analysis && analysis.duration > 0);
   const inspected = state.treatments.find(treatment => treatment.id === inspectedId) ?? (state.confirmedTreatmentSnapshot?.id === inspectedId ? state.confirmedTreatmentSnapshot : undefined);
   const confirmed = state.confirmedTreatmentSnapshot;
   const captionClusters = useMemo(() => buildStoryCaptionClusters(project.videoMoments), [project.videoMoments]);
@@ -47,7 +49,7 @@ export function StoryTreatmentPlanner({ referenceRevision, analysis, transcriptS
       brief: state.brief.text,
       song: { title: analysis?.sourceLabel, duration: analysis?.duration, sections: analysis?.sections ?? [], lyricSummary: transcriptSummary?.summary || undefined, lyricExcerpt: transcriptSummary?.transcript?.slice(0, 1200) || undefined },
       footage: { captionClusters, sourceCount: new Set(project.videoMoments.map(moment => moment.sourceClipId)).size, momentCount: project.videoMoments.length },
-      constraints: ["Honor the user's chosen story. Keep missing shots visible instead of silently substituting similar-looking actions.", "Use a light visual spine appropriate to the song; do not force a disaster, relationship, or a fixed song form."],
+      constraints: ["Honor the user's chosen story. Keep missing shots visible instead of silently substituting similar-looking actions.", "Use a light visual spine appropriate to the song; do not force a disaster, relationship, or a fixed song form.", "Use the supplied music-section timing when timed lyrics are absent. Do not invent lyric text or claim footage exists when sourceCount is zero. Plan filmable narrative or performance shots; do not require lip-sync.", ...(referenceAssets ?? []).filter((asset) => asset.storageStatus === "uploaded").map((asset) => `Approved ${asset.role} reference: ${asset.displayName}. ${asset.promptHint || "Use this exact declared name for the subject or location."}`)],
     };
   }
   async function requestStory(body: StoryTreatmentRequest, requestIntentId: string): Promise<{ output: unknown; meta: StoryGenerationMeta }> {
@@ -117,7 +119,7 @@ export function StoryTreatmentPlanner({ referenceRevision, analysis, transcriptS
     {confirmed ? <div className="mt-3 rounded-md border border-line-2 bg-ink-1 p-3"><p className="text-xs text-accent">Current story</p><p className="mt-1 text-sm font-medium text-fg-1">{confirmed.title}</p><p className="mt-1 text-xs text-fg-2">{confirmed.logline}</p><button type="button" onClick={() => setInspectedId(confirmed.id)} className="mt-2 text-sm text-accent">Read current story</button></div> : null}
     <label className="mt-4 block text-sm text-fg-2">Story seed <span className="text-xs text-fg-3">· optional</span><textarea rows={2} value={state.brief.text} maxLength={4000} onChange={event => onChange({ brief: { text: event.target.value } })} placeholder="What should happen? A sentence or a short paragraph is enough." className="mt-2 w-full rounded-md border border-line bg-ink-1 px-3 py-2 text-sm text-fg-1 outline-none focus:border-accent" /></label>
     <div className="mt-2 flex justify-end"><button type="button" disabled={!canGenerate || isGenerating} onClick={() => void generateTreatments()} className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-ink-0 disabled:opacity-40">{isGenerating ? "Developing three stories…" : state.treatments.length ? "Generate three new treatments" : "Generate three treatments"}</button></div>
-    {!canGenerate ? <p className="mt-2 text-xs text-fg-3">Finish song analysis and scene captions in Ingest first.</p> : null}
+    {!canGenerate ? <p className="mt-2 text-xs text-fg-3">Analyze the master song in Setup first.</p> : !project.videoMoments.length ? <p className="mt-2 text-xs text-fg-3">Plan from the song and references. The draft will keep every unfilmed shot visible for generation.</p> : null}
     {error ? <p role="alert" className="mt-3 rounded-md border border-line p-3 text-sm text-fg-1">{error} Your story seed has been preserved.</p> : null}
     {state.treatments.some(treatment => treatment.reconciliation?.status === "legacy") ? <p className="mt-3 text-sm text-fg-2">These saved options contain earlier summaries. Their loglines still need updating; generate new treatments or refine an option.</p> : null}
     <div className="mt-4 grid gap-3 xl:grid-cols-3">{state.treatments.map(treatment => <button key={treatment.id} type="button" onClick={() => setInspectedId(treatment.id)} aria-label={`Read story: ${treatment.title}`} className={`rounded-md border p-4 text-left transition-colors hover:border-accent ${treatment.id === state.selectedTreatmentId ? "border-accent bg-accent-tint" : "border-line bg-ink-1"}`}><p className="text-xs text-accent">{KIND_COPY[treatment.kind]}</p><h3 className="mt-2 font-serif text-lg text-fg-0">{treatment.title}</h3>{treatment.reconciliation?.status === "legacy" ? <p className="mt-2 text-xs text-fg-3">Earlier summary · logline needs updating</p> : null}<p className="mt-2 text-sm leading-6 text-fg-1">{treatment.logline}</p><p className="mt-2 line-clamp-3 text-xs leading-5 text-fg-3">{treatment.synopsis}</p><p className="mt-3 text-xs text-fg-3">{treatment.reconciliation?.status === "legacy" || treatment.reconciliation?.status === "pending" ? "Assessment needs review" : describeStoryCoverage(treatment)}</p><span className="mt-3 block text-sm text-accent">Read story →</span></button>)}</div>

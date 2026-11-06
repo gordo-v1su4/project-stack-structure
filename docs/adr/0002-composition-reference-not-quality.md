@@ -3,6 +3,8 @@
 **Status:** accepted (2026-09-06)  
 **Context:** `CONTEXT.md` · `docs/protocols/higgsfield-nano-banana-reference-continuity.md` · grill session 2026-09-06
 
+**2026-11-06 provider update:** [ADR-0003](0003-minimax-draft-first-completion.md) makes local MiniMax H3 the primary video route and still-first/manual Seedance optional. The identity/environment quality authorities and composition-reference boundaries in this decision remain mandatory. The replacement-path table records the September sequence, not a prerequisite for finishing the current film.
+
 ## Decision
 
 Frames extracted from source clips (scene thumbnails, first/last frame URLs, matched-cut previews) may inform **composition only**:

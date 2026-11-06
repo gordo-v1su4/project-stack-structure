@@ -712,7 +712,7 @@ describe("musicVideoProject saved preview contract", () => {
     const input = previewFixture(6);
     input.project.song!.beats = [0, 1, 2, 3, 4, 5];
     const segments = prepareAndReadPreview({ ...input, editSettings: { cutDensity: 1, preferOnsets: false } });
-    expect(segments.map((segment) => [segment.musicStart, segment.musicEnd])).toEqual([[0, 6]]);
+    expect(segments.map((segment) => [segment.musicStart, segment.musicEnd])).toEqual([[0, 2], [2, 4], [4, 6]]);
     expect(segments.every((segment) => segment.kind === "source")).toBe(true);
   });
 
@@ -742,7 +742,8 @@ describe("musicVideoProject saved preview contract", () => {
     const dense = prepareAndReadPreview({ ...input, editSettings: { cutDensity: 1, preferOnsets: false } });
     expect(dense.length).toBeGreaterThanOrEqual(sparse.length);
     expect(dense.map(s => s.musicEnd)).not.toEqual(sparse.map(s => s.musicEnd));
-    expect(dense.filter(s => s.kind === "source").every(s => s.musicEnd - s.musicStart >= 4)).toBe(true);
+    expect(dense.filter(s => s.kind === "source").every(s => s.musicEnd - s.musicStart >= 1 && s.musicEnd - s.musicStart <= 3)).toBe(true);
+    expect(sparse.filter(s => s.kind === "source").every(s => s.musicEnd - s.musicStart >= 4)).toBe(true);
     for (const segments of [sparse, dense]) expect(segments.reduce((total, segment) => total + segment.musicEnd - segment.musicStart, 0)).toBeCloseTo(18, 5);
   });
 
@@ -756,6 +757,45 @@ describe("musicVideoProject saved preview contract", () => {
     expect(faithful.filter((segment) => segment.kind === "source").reduce((total, segment) => total + segment.endTime - segment.startTime, 0)).toBeLessThanOrEqual(4);
     expect(bestEffort.every((segment) => segment.kind === "source")).toBe(true);
     for (const segments of [faithful, bestEffort]) expect(segments.reduce((total, segment) => total + segment.musicEnd - segment.musicStart, 0)).toBe(8);
+  });
+
+  test("Fast admits usable short shots while Balanced keeps its four-second minimum", () => {
+    const input = previewFixture(6);
+    input.project.song!.beats = [0, 1, 2, 3, 4, 5];
+    input.project.videoMoments[0] = { ...input.project.videoMoments[0]!, start: 3, end: 5, duration: 2 };
+    const balanced = prepareAndReadPreview({ ...input, editSettings: { cutDensity: 0.55, preferOnsets: false } });
+    const fast = prepareAndReadPreview({ ...input, editSettings: { cutDensity: 0.82, preferOnsets: false } });
+    expect(balanced.every(cut => cut.kind === "gap")).toBe(true);
+    const used = fast.filter(cut => cut.kind === "source");
+    expect(used).toHaveLength(1);
+    expect(used[0]).toMatchObject({ musicStart: 0, musicEnd: 2, startTime: 3, endTime: 5 });
+    // A short source is spent once; Fast never loops it to manufacture coverage.
+    expect(fast.filter(cut => cut.kind === "gap").reduce((sum, cut) => sum + cut.musicEnd - cut.musicStart, 0)).toBe(4);
+  });
+
+  test("Fast keeps 1–3 second cuts on available music cues and consumes unique source frames", () => {
+    const input = previewFixture(18);
+    const cuts = prepareAndReadPreview({ ...input, editSettings: { cutDensity: 0.82, preferOnsets: true } });
+    const cues = [...input.project.song!.beats, ...input.project.song!.onsets];
+    expect(cuts.every(cut => cut.kind === "source" && cut.musicEnd - cut.musicStart >= 1 && cut.musicEnd - cut.musicStart <= 3)).toBe(true);
+    for (let index = 1; index < cuts.length; index++) {
+      expect(cues.some(cue => Math.abs(cue - cuts[index].musicStart) < 0.001)).toBe(true);
+      expect(cuts[index].startTime).toBeGreaterThanOrEqual(cuts[index - 1].endTime);
+      expect(cuts[index].musicStart).toBe(cuts[index - 1].musicEnd);
+    }
+    expect(cuts.at(-1)!.musicEnd).toBe(18);
+  });
+
+  test("a Fast UI setting does not silently rewrite the saved Balanced placement plan", () => {
+    const input = previewFixture(18);
+    const balanced = prepareApprovedPlacements({ ...input, editSettings: { cutDensity: 0.55, preferOnsets: false } });
+    const before = JSON.stringify(balanced);
+    const original = buildEditPlanPreviewSegments({ ...input, project: balanced });
+    const readWithFast = buildEditPlanPreviewSegments({ ...input, project: balanced, editSettings: { cutDensity: 0.82, preferOnsets: false } });
+    expect(readWithFast.every(cut => cut.kind === "gap")).toBe(true);
+    expect(readWithFast[0].gapReason).toContain("prepare this story revision");
+    expect(buildEditPlanPreviewSegments({ ...input, project: balanced })).toEqual(original);
+    expect(JSON.stringify(balanced)).toBe(before);
   });
   test("overlapping scene IDs cannot spend the same physical source seconds twice", () => {
     const input = previewFixture();

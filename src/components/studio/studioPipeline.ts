@@ -68,11 +68,11 @@ export function buildPipelineState(input: PipelineStageInput): PipelineState {
     && input.storyAnchorsResolved
     && input.storyPlanConfirmed
     && input.editSlotCount > 0;
-  const splitReady = storyReady && input.hasCommittedSplit;
-  const matchReady = splitReady && input.captionReadyCount > 0;
-  const generateReady = matchReady && input.gapSlotCount === 0;
+  const splitReady = storyReady && (input.videoCount === 0 || input.hasCommittedSplit);
+  const matchReady = storyReady && (input.videoCount === 0 || input.captionReadyCount > 0);
+  const generateReady = storyReady && input.gapSlotCount === 0;
   // Rough-cut review includes empty song windows; coverage gates final export only.
-  const joinReady = splitReady && input.storySegmentCount > 0;
+  const joinReady = storyReady && input.storySegmentCount > 0;
   const effectsReady = joinReady;
   const exportReady = effectsReady && generateReady;
   const exportComplete = exportReady && input.finalExportReady;
@@ -81,7 +81,7 @@ export function buildPipelineState(input: PipelineStageInput): PipelineState {
   const stages: Omit<PipelineStage, "step" | "active" | "isNext">[] = [
     {
       key: "review",
-      label: "Ingest",
+      label: "Setup",
       ready: ingestReady,
       complete: ingestReady,
       available: true,
@@ -97,7 +97,7 @@ export function buildPipelineState(input: PipelineStageInput): PipelineState {
       available: ingestReady,
       blockedReason: ingestReady
         ? null
-        : "Finish Ingest: master song, vocal stem, Char 1 + environment refs, clips, scenes, and smart captions.",
+        : "Add and analyze the master song, then upload Character 1 and environment references in Setup. Footage and timed lyrics are optional.",
       prerequisiteKey: ingestReady ? null : "review",
       status: storyReady
         ? `${input.editSlotCount} edit slots`
@@ -107,7 +107,7 @@ export function buildPipelineState(input: PipelineStageInput): PipelineState {
             : !input.storyAnchorsResolved
               ? "Resolve story anchors"
               : "Confirm story plan"
-          : "Finish Ingest",
+          : "Finish Setup",
     },
     {
       key: "split",
@@ -128,25 +128,25 @@ export function buildPipelineState(input: PipelineStageInput): PipelineState {
       label: "Match",
       ready: matchReady,
       complete: matchReady && input.matchedSlotCount === input.editSlotCount,
-      available: splitReady,
-      blockedReason: splitReady ? null : "Open Split once so cut windows are built before reviewing matches.",
-      prerequisiteKey: splitReady ? null : "split",
+      available: storyReady,
+      blockedReason: storyReady ? null : "Confirm the Story plan before reviewing source matches.",
+      prerequisiteKey: storyReady ? null : "story",
       status: matchReady
         ? `${input.matchedSlotCount}/${input.editSlotCount} model-supported slots`
-        : splitReady
-          ? "Review match candidates"
-          : "Needs Split cut windows",
+        : storyReady
+          ? "Source captions still processing · generation is available"
+          : "Needs confirmed Story",
     },
     {
       key: "generate",
       label: "Generate",
       ready: generateReady,
       complete: generateReady,
-      available: matchReady,
-      blockedReason: matchReady ? null : "Confirm Story and commit Split before planning missing or replacement shots.",
-      prerequisiteKey: matchReady ? null : "split",
-      status: !matchReady
-        ? "Waiting for Split"
+      available: storyReady,
+      blockedReason: storyReady ? null : "Choose and confirm the Story plan before generating its missing shots.",
+      prerequisiteKey: storyReady ? null : "story",
+      status: !storyReady
+        ? "Waiting for Story"
         : input.gapSlotCount > 0
           ? `${input.gapSlotCount} unfilled window${input.gapSlotCount === 1 ? "" : "s"}`
           : input.shortReviewSlotCount > 0
@@ -161,10 +161,10 @@ export function buildPipelineState(input: PipelineStageInput): PipelineState {
       ready: joinReady,
       complete: exportComplete,
       available: joinReady,
-      blockedReason: joinReady ? null : !splitReady
-        ? "Confirm Story and commit Split before reviewing the whole-song rough cut."
+      blockedReason: joinReady ? null : !storyReady
+        ? "Confirm Story before reviewing the whole-song rough cut."
         : "Build the Story timeline before reviewing the whole-song rough cut.",
-      prerequisiteKey: joinReady ? null : !splitReady ? "split" : "story",
+      prerequisiteKey: joinReady ? null : "story",
       status: joinReady
         ? input.gapSlotCount > 0
           ? `Whole-song rough cut · ${gapLabel} to fill`
@@ -197,7 +197,8 @@ export function buildPipelineState(input: PipelineStageInput): PipelineState {
     },
   ];
 
-  const firstNotReadyIndex = stages.findIndex((stage) => !stage.ready);
+  const primaryKeys: Tab[] = ["review", "story", "generate", "compose"];
+  const firstNotReadyIndex = stages.findIndex((stage) => primaryKeys.includes(stage.key) && !stage.ready);
   const fullStages = stages.map((stage, index) => ({
     ...stage,
     step: index + 1,
@@ -216,10 +217,9 @@ export function buildPipelineState(input: PipelineStageInput): PipelineState {
 function describeIngest(input: PipelineStageInput) {
   const missing: string[] = [];
   if (!input.hasAudioAnalysis) missing.push("song");
-  if (!input.hasLyricTranscript) missing.push("stem");
   if (!input.hasRequiredReferences) missing.push("refs");
-  if (input.videoCount === 0) missing.push("clips");
   if (missing.length) return `Upload ${missing.join(" + ")}`;
+  if (input.videoCount === 0) return "Song + references ready · generate footage";
   if (input.sceneCount === 0) return "Detecting scenes";
   if (input.captionTotalCount === 0 || input.captionReadyCount < input.captionTotalCount) {
     return `Captioning ${input.captionReadyCount}/${input.captionTotalCount || input.sceneCount}`;
@@ -231,7 +231,7 @@ function describeIngest(input: PipelineStageInput) {
 function buildNextHint(stage: PipelineStage) {
   switch (stage.key) {
     case "review":
-      return `Next: ${stage.status} in Ingest.`;
+      return `Next: ${stage.status} in Setup.`;
     case "story":
       return "Next: choose a treatment, resolve its anchors, and confirm the Story plan.";
     case "split":

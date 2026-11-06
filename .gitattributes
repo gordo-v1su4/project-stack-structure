@@ -1,0 +1,2 @@
+# Shell interpreters require LF even when a Windows checkout uses autocrlf.
+*.sh text eol=lf

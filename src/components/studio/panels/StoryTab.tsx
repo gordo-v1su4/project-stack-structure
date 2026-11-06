@@ -36,6 +36,7 @@ import { CollapsibleSection } from "../ui";
 import { formatVocalStemTranscriptStatus } from "../vocalStemTranscription";
 import { reconcileDetectedStorySongMap } from "../storySongMap";
 import type { BeatJoinAnalysis, SegmentPreview, UploadedVideoSource } from "../types";
+import type { ReferenceAsset } from "../referenceAssets";
 
 export type StoryBeatDraft = StoryPlanDraft;
 
@@ -55,6 +56,7 @@ export type StoryTabState = StoryTreatmentState & {
 
 type StoryTabProps = {
   referenceRevision?: string;
+  referenceAssets?: ReferenceAsset[];
   analysis: BeatJoinAnalysis | null;
   audioStatus: string;
   videoSources: UploadedVideoSource[];
@@ -74,7 +76,7 @@ const STORY_SECTION_TEMPLATES = getDefaultStorySectionDrafts();
 const STORY_PACE_OPTIONS = [
   { label: "Relaxed", density: 0.3, detail: "Longer phrases" },
   { label: "Balanced", density: 0.55, detail: "Musical rough cut" },
-  { label: "Fast", density: 0.82, detail: "Shorter rhythmic cuts" },
+  { label: "Fast", density: 0.82, detail: "1–3s rhythmic cuts" },
 ] as const;
 
 export function createDefaultStoryTabState(): StoryTabState {
@@ -95,7 +97,7 @@ export function createDefaultStoryTabState(): StoryTabState {
   };
 }
 
-export function StoryTab({ referenceRevision, analysis, audioStatus, videoSources, segmentPreviews, state, onStateChange, onProjectChange }: StoryTabProps) {
+export function StoryTab({ referenceRevision, referenceAssets, analysis, audioStatus, videoSources, segmentPreviews, state, onStateChange, onProjectChange }: StoryTabProps) {
   const { transcriptSummary, storyBeats, activeBeatId, storyGenerated } = state;
   const editSettings = useMemo(() => normalizeStoryEditSettings(state.editSettings), [state.editSettings]);
 
@@ -245,6 +247,7 @@ export function StoryTab({ referenceRevision, analysis, audioStatus, videoSource
     <div className="space-y-3">
       <StoryTreatmentPlanner
         referenceRevision={referenceRevision}
+        referenceAssets={referenceAssets}
         analysis={analysis}
         transcriptSummary={transcriptSummary}
         project={musicVideoProject}
@@ -281,13 +284,13 @@ export function StoryTab({ referenceRevision, analysis, audioStatus, videoSource
           <div>
             <div className="mb-2">
               <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Lyrics timing</div>
-              <div className="mt-1 text-[11px] text-[#6d6d6d]">Timed lyrics come from the vocal stem uploaded in Ingest. Story uses those SRT chunks for section windows and Match.</div>
+              <div className="mt-1 text-sm text-fg-3">Timed lyrics are optional. Without them, the master song’s music sections and rhythmic markers set the story timing.</div>
             </div>
 
             <div className={`rounded-[2px] border px-3 py-2 text-[10px] ${transcriptSummary ? "border-[#171717] bg-[#070707] text-[#777]" : "border-[#5a3219] bg-[#120a05] text-[#c68152]"}`}>
               {transcriptSummary
                 ? formatVocalStemTranscriptStatus(transcriptSummary)
-                : "Upload the vocal stem in Ingest to unlock lyric-aware story planning."}
+                : "Planning from the music · add an optional vocal stem in Setup for lyric-aware timing."}
             </div>
 
             <div className="mt-2 flex flex-wrap gap-x-5 gap-y-2 border-t border-[#151515] pt-2">
@@ -310,7 +313,7 @@ export function StoryTab({ referenceRevision, analysis, audioStatus, videoSource
                 );
               })}
             </div>
-            <div className="mt-2 text-[9px] leading-4 text-[#555]">New cuts aim for 4–6 seconds, with a four-second minimum. Rapid edits can happen inside a supplied or generated clip. Saved placements change only when you prepare a new arrangement.</div>
+            <div className="mt-2 text-xs leading-5 text-fg-3">Fast aims for 1–3 second cuts on musical cues. Balanced and Relaxed keep a four-second minimum. Saved placements change only when you prepare a new arrangement; short source clips are used once before leaving a visible gap.</div>
           </div>
         </div>
 
@@ -345,7 +348,7 @@ export function StoryTab({ referenceRevision, analysis, audioStatus, videoSource
             ? "Confirmed. Split and downstream stages may use this Story map."
             : state.selectedTreatmentId
               ? "Read a story and choose Use this story to continue. Missing shots remain visible as gaps."
-              : "Generate and select one of the three treatments above once Ingest lyrics and scene captions are ready."}
+              : "Generate and select one of the three treatments above. Footage and timed lyrics are optional."}
         </div>
 
         {totalDuration > 0 ? <div className="overflow-x-auto rounded-[2px] border border-[#171717] bg-[#070707]">
@@ -379,7 +382,7 @@ export function StoryTab({ referenceRevision, analysis, audioStatus, videoSource
                   </td>
                   <td className="border-b border-[#151515] px-3 py-3 text-[9px] leading-4 text-[#8f8f8f]">
                     <div className="max-h-24 overflow-auto pr-1">
-                      {relatedChunks.length ? relatedChunks.map((chunk) => <div key={chunk.id}><span className="mr-2 font-mono text-[#b86432]">{fmt(chunk.start)}</span>{chunk.text}</div>) : "No lyric chunk overlaps this section."}
+                      {relatedChunks.length ? relatedChunks.map((chunk) => <div key={chunk.id}><span className="mr-2 font-mono text-accent">{fmt(chunk.start)}</span>{chunk.text}</div>) : musicVideoProject.lyricChunks.length ? "No timed lyric overlaps this section." : "Music-section timing · lyrics optional"}
                     </div>
                   </td>
                   <td className="border-b border-[#151515] px-3 py-3 text-[10px] leading-4 text-[#a7a7a7]">

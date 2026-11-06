@@ -20,7 +20,8 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   allowedDevOrigins: ["127.0.0.1"],
   async redirects() {
-    return localAuthOriginRedirects(configuredAuthUrl);
+    // Keep the browser on the configured loopback host before OAuth cookies are set.
+    return localAuthOriginRedirects(configuredAuthUrl, process.env.NODE_ENV === "development" ? process.env.PORT ?? "3000" : undefined);
   },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];

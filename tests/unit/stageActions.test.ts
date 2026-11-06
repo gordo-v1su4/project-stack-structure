@@ -45,7 +45,7 @@ describe("buildStageHeaderModel", () => {
     const model = buildStageHeaderModel({ stages: pipeline.stages, activeTab: "review", canPreview: false, previewDisabledReason: null, isBusy: false });
     expect(model).not.toBeNull();
     expect(model!.step).toBe(1);
-    expect(model!.total).toBe(8);
+    expect(model!.total).toBe(4);
     expect(model!.blocked).toBeNull();
     expect(model!.primary).toMatchObject({ kind: "continue", label: "Continue to Story", targetTab: "story" });
     expect(model!.primary!.disabledReason).toContain("Upload");
@@ -55,9 +55,9 @@ describe("buildStageHeaderModel", () => {
   test("locked stage exposes the blocked reason and an Open <prerequisite> action", () => {
     const pipeline = buildPipelineState(makeInput({ activeTab: "shuffle" }));
     const model = buildStageHeaderModel({ stages: pipeline.stages, activeTab: "shuffle", canPreview: false, previewDisabledReason: null, isBusy: false });
-    expect(model!.title).toBe("Match");
-    expect(model!.blocked).toMatchObject({ prerequisiteKey: "split", prerequisiteLabel: "Split" });
-    expect(model!.primary).toMatchObject({ kind: "open-prerequisite", label: "Open Split", targetTab: "split", disabledReason: null });
+    expect(model!.title).toBe("Draft");
+    expect(model!.blocked).toMatchObject({ prerequisiteKey: "story", prerequisiteLabel: "Story" });
+    expect(model!.primary).toMatchObject({ kind: "open-prerequisite", label: "Open Story", targetTab: "story", disabledReason: null });
     expect(model!.secondary).toBeNull();
   });
 
@@ -74,7 +74,7 @@ describe("buildStageHeaderModel", () => {
       storySegmentCount: 6,
     }));
     const model = buildStageHeaderModel({ stages: pipeline.stages, activeTab: "join", canPreview: true, previewDisabledReason: null, isBusy: false });
-    expect(model!.primary).toMatchObject({ kind: "continue", label: "Continue to Effects", targetTab: "ramp", disabledReason: null });
+    expect(model!.primary).toMatchObject({ kind: "continue", label: "Continue to Finish", targetTab: "compose", disabledReason: null });
     expect(model!.secondary).toMatchObject({ kind: "preview", label: "Play whole-song rough cut", disabledReason: null });
   });
 
@@ -93,8 +93,8 @@ describe("buildStageHeaderModel", () => {
         hasCommittedSplit: true,
       }));
       const model = buildStageHeaderModel({ stages: pipeline.stages, activeTab: "generate", canPreview: true, previewDisabledReason: null, isBusy: true });
-      expect(model!.primary).toMatchObject({ kind: "continue", label: "Continue to Join" });
-      expect(model!.primary!.disabledReason).toBeNull();
+      expect(model!.primary).toMatchObject({ kind: "continue", label: "Continue to Finish" });
+      expect(model!.primary!.disabledReason).toContain(`Fill ${gapSlotCount} gaps`);
       expect(model!.status).toBe(`${gapSlotCount} unfilled windows`);
       expect(model!.secondary!.disabledReason).toBe("Preview already running");
     });
@@ -112,7 +112,7 @@ describe("buildStageHeaderModel", () => {
       storySegmentCount: 6,
     }));
     const model = buildStageHeaderModel({ stages: pipeline.stages, activeTab: "shuffle", canPreview: true, previewDisabledReason: null, isBusy: false });
-    expect(model!.primary).toMatchObject({ kind: "continue", targetTab: "generate", disabledReason: null });
+    expect(model!.primary).toMatchObject({ kind: "continue", targetTab: "compose", disabledReason: "Fill 6 gaps before final export. The whole-song rough cut is available in Join." });
     expect(model!.status).toBe("0/6 model-supported slots");
   });
 
@@ -127,7 +127,7 @@ describe("buildStageHeaderModel", () => {
       hasCommittedSplit: true,
     }));
     const model = buildStageHeaderModel({ stages: pipeline.stages, activeTab: "generate", canPreview: false, previewDisabledReason: null, isBusy: false });
-    expect(model!.primary!.disabledReason).toContain("Build the Story timeline");
+    expect(model!.primary!.disabledReason).toContain("Finish Join");
   });
 
   test("Effects review can play the rough cut but cannot continue to final Export with holes", () => {
@@ -144,7 +144,7 @@ describe("buildStageHeaderModel", () => {
     }));
     const model = buildStageHeaderModel({ stages: pipeline.stages, activeTab: "ramp", canPreview: true, previewDisabledReason: null, isBusy: false });
     expect(model!.blocked).toBeNull();
-    expect(model!.primary!.disabledReason).toContain("Fill 2 gaps before final export");
+    expect(model!.primary).toBeNull();
     expect(model!.secondary!.disabledReason).toBeNull();
   });
 
