@@ -3,10 +3,15 @@ import type { H3GenerationJob } from "@/components/studio/h3Generation";
 import type { ProbedMediaFile } from "@/components/studio/mediaProbe";
 import { materializeH3Job } from "@/lib/h3GenerationServer";
 import { h3ProjectFixture } from "../helpers/h3Project";
+import { FakeSwarmSocket } from "../helpers/fakeSwarmSocket";
 
 const fixture = h3ProjectFixture();
 let job: H3GenerationJob;
 const originalFetch = globalThis.fetch;
+const originalWebSocket = globalThis.WebSocket;
+const sockets: FakeSwarmSocket[] = [];
+let registrationMode: "normal" | "error" | "close-before-post" | "delayed" = "normal";
+let failPromptIdSaveOnce = false;
 const previousSwarm = process.env.SWARMUI_URL;
 const previousLocal = process.env.LOCAL_SWARMUI_URL;
 const uploads: string[] = [];
@@ -22,7 +27,14 @@ mock.module("@/lib/h3JobStore", () => ({
   downloadH3ReferenceImage: async () => ({ bytes: new Uint8Array([1, 2, 3]).buffer, mime: "image/png" }),
   readH3Job: async () => structuredClone(job),
   updateH3Job: async (_owner: string, _project: string, _id: string, change: (job: H3GenerationJob) => H3GenerationJob) => {
-    job = change(structuredClone(job));
+    const next = change(structuredClone(job));
+    if (next.promptId && next.state === "rendering" && failPromptIdSaveOnce) {
+      expect(sockets.at(-1)!.closeCalls).toBe(0); failPromptIdSaveOnce = false;
+      throw new Error("Durable prompt ID save response lost");
+    }
+    job = next;
+    if (job.promptId && job.state === "rendering" && sockets.length) expect(sockets.at(-1)!.closeCalls).toBe(0);
+    if (job.state === "submitting" && registrationMode === "close-before-post") sockets.at(-1)!.disconnect();
     return structuredClone(job);
   },
 }));
@@ -43,6 +55,7 @@ const { runH3Generation, findH3ProviderPrompt, validateH3VideoProbe, h3OutputSub
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
+  globalThis.WebSocket = originalWebSocket;
   if (previousSwarm === undefined) delete process.env.SWARMUI_URL; else process.env.SWARMUI_URL = previousSwarm;
   if (previousLocal === undefined) delete process.env.LOCAL_SWARMUI_URL; else process.env.LOCAL_SWARMUI_URL = previousLocal;
 });
@@ -52,9 +65,16 @@ function setup() {
   process.env.SWARMUI_URL = "http://swarm.test:7861";
   delete process.env.LOCAL_SWARMUI_URL;
   uploads.length = 0; persisted = 0; preflightCalls = 0;
+  sockets.length = 0; registrationMode = "normal"; failPromptIdSaveOnce = false;
+  globalThis.WebSocket = class extends FakeSwarmSocket {
+    constructor(url: string | URL) {
+      super(); expect(String(url)).toBe("ws://swarm.test:7861/ComfyBackendDirect/ws"); sockets.push(this);
+      queueMicrotask(() => { if (registrationMode !== "delayed") { if (registrationMode === "error") this.error(); else this.register(); } });
+    }
+  } as unknown as typeof WebSocket;
 }
 function json(value: unknown) { return new Response(JSON.stringify(value), { headers: { "content-type": "application/json" } }); }
-function providerFetch(failAfterSubmission = false, providerError = false, acknowledgement: "normal" | "missing" | "diagnostics" = "normal") {
+function providerFetch(failAfterSubmission = false, providerError = false, acknowledgement: "normal" | "missing" | "diagnostics" = "normal", closeBeforeAck = false) {
   let submissions = 0;
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
@@ -70,8 +90,12 @@ function providerFetch(failAfterSubmission = false, providerError = false, ackno
     if (url.endsWith("/prompt")) {
       submissions++;
       const submitted = JSON.parse(init!.body as string);
+      expect(submitted.client_id).toBe("registered-swarmed-client");
+      expect(sockets.at(-1)!.readyState).toBe(1);
+      expect(sockets.at(-1)!.closeCalls).toBe(0);
       expect(submitted.extra_data.stack_structure_h3_job).toBe(job.id);
       expect(submitted.prompt.cond.inputs["ref_images.ref_image_0"]).toEqual(["reference_0", 0]);
+      if (closeBeforeAck) sockets.at(-1)!.disconnect();
       if (failAfterSubmission) throw new Error("Connection closed after submission");
       if (acknowledgement === "missing") return json({});
       return json({ prompt_id: "provider-1", ...(acknowledgement === "diagnostics" ? { node_errors: { unused: { message: "unused branch diagnostic" } } } : {}) });
@@ -108,9 +132,11 @@ describe("durable native H3 execution", () => {
     expect(job.referenceHashes).toHaveLength(2);
     expect(result.generatedAsset?.reviewStatus).toBe("pending");
     expect(result.generatedAsset?.target).toEqual(job.target);
+    expect(sockets).toHaveLength(1); expect(sockets[0].closeCalls).toBe(1);
     // Reattaching to a completed durable job creates neither provider work nor storage duplicates.
     await runH3Generation({ ownerId: job.ownerId, projectId: job.projectId, jobId: job.id }, "run-1", { wait: async () => {}, stage: () => {} });
     expect(count()).toBe(1); expect(persisted).toBe(1);
+    expect(sockets).toHaveLength(1);
   });
 
   test("lost submission response remains unknown and is not automatically repeated", async () => {
@@ -120,6 +146,47 @@ describe("durable native H3 execution", () => {
     expect(job.state).toBe("submission_unknown");
     await expect(runH3Generation(reference, "run-1", { wait: async () => {}, stage: () => {} })).rejects.toThrow("not repeated");
     expect(count()).toBe(1); expect(persisted).toBe(0);
+    expect(sockets).toHaveLength(1); expect(sockets[0].closeCalls).toBe(1);
+  });
+
+  test("registration failure before submitting or a close before POST submits zero and stays a known failure", async () => {
+    for (const failure of ["error", "close-before-post"] as const) {
+      setup(); registrationMode = failure; const count = providerFetch();
+      await expect(runH3Generation({ ownerId: job.ownerId, projectId: job.projectId, jobId: job.id }, "run-1", { wait: async () => {}, stage: () => {} })).rejects.toThrow("no prompt was submitted");
+      expect(count()).toBe(0); expect(job.state).toBe("failed"); expect(job.promptId).toBe(undefined); expect(persisted).toBe(0);
+      expect(sockets).toHaveLength(1); expect(sockets[0].closeCalls).toBe(1);
+    }
+  });
+
+  test("no prompt POST occurs while registration is delayed", async () => {
+    setup(); registrationMode = "delayed"; const count = providerFetch();
+    const run = runH3Generation({ ownerId: job.ownerId, projectId: job.projectId, jobId: job.id }, "run-1", { wait: async () => {}, stage: () => {} });
+    const deadline = Date.now() + 1000;
+    while (!sockets.length && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 1));
+    expect(sockets).toHaveLength(1); expect(count()).toBe(0); expect(job.state).toBe("preparing");
+    sockets[0].register(); await run;
+    expect(count()).toBe(1); expect(job.state).toBe("ready");
+  });
+
+  test("lost durable ID save closes registration but never repeats the accepted provider submission", async () => {
+    setup(); failPromptIdSaveOnce = true; const count = providerFetch();
+    const ref = { ownerId: job.ownerId, projectId: job.projectId, jobId: job.id };
+    await expect(runH3Generation(ref, "run-1", { wait: async () => {}, stage: () => {} })).rejects.toThrow("ID save response lost");
+    expect(job.state).toBe("submission_unknown"); expect(count()).toBe(1); expect(sockets[0].closeCalls).toBe(1);
+    await expect(runH3Generation(ref, "run-1", { wait: async () => {}, stage: () => {} })).rejects.toThrow("not repeated");
+    expect(count()).toBe(1); expect(sockets).toHaveLength(1);
+  });
+
+  test("a valid HTTP acknowledgement remains authoritative if the websocket closes during POST", async () => {
+    setup(); const count = providerFetch(false, false, "normal", true);
+    await runH3Generation({ ownerId: job.ownerId, projectId: job.projectId, jobId: job.id }, "run-1", { wait: async () => {}, stage: () => {} });
+    expect(job.state).toBe("ready"); expect(job.promptId).toBe("provider-1"); expect(count()).toBe(1); expect(sockets[0].closeCalls).toBe(1);
+  });
+
+  test("a rendering job resumes by real prompt ID using HTTP without websocket registration or another POST", async () => {
+    setup(); const count = providerFetch(); job = { ...job, promptId: "provider-1", state: "rendering" };
+    await runH3Generation({ ownerId: job.ownerId, projectId: job.projectId, jobId: job.id }, "run-1", { wait: async () => {}, stage: () => {} });
+    expect(job.state).toBe("ready"); expect(count()).toBe(0); expect(sockets).toHaveLength(0);
   });
 
   test("provider correlation can be recovered from queue and completed history", () => {
@@ -164,6 +231,7 @@ describe("durable native H3 execution", () => {
     expect(job.state).toBe("submission_unknown");
     await expect(runH3Generation(ref, "run-1", { wait: async () => {}, stage: () => {} })).rejects.toThrow("not repeated");
     expect(count()).toBe(1);
+    expect(sockets).toHaveLength(1); expect(sockets[0].closeCalls).toBe(1);
   });
 
   test("an acknowledged provider ID survives accompanying node diagnostics and is reconciled once", async () => {

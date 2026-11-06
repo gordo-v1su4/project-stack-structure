@@ -20,6 +20,7 @@ import { prepareH3IdentityPolicy, type PreparedH3PolicyReference } from "./h3Dra
 import { canonicalIdentityPolicyJson, identityPolicySha256 } from "@/components/studio/issuedIdentityPolicy";
 import { assertH3IdentityAssessmentScope, identityAssessmentAsset, type H3IdentityAssessmentScope, type H3IdentityAssessment } from "@/components/studio/h3IdentityAssessment";
 import { readH3IdentityAssessment, writeH3IdentityAssessment } from "./h3IdentityAssessmentStore";
+import { openSwarmComfyClient, SwarmComfyClientUnavailable } from "./swarmComfyClient";
 
 export type H3JobReference = { ownerId: string; projectId: string; jobId: string; mode?: "identity-recheck"; assessment?: H3IdentityAssessmentScope };
 
@@ -207,17 +208,26 @@ export async function runH3Generation(reference: H3JobReference, runId: string,
         conditioningHashes.push(uploaded.conditioningHash); preparations.push(uploaded.preparation);
       }
       const built = buildH3Workflow(job, paths);
-      await update({ state: "submitting", compiledPrompt: built.prompt, frames: built.frames, referenceHashes: hashes,
-        conditioningReferenceHashes: conditioningHashes, conditioningPreparations: preparations });
-      options.stage("Submitting the native H3 reference shot");
-      const response = await providerJson(baseUrl, "prompt", { prompt: built.workflow, client_id: job.id,
-        extra_data: { stack_structure_h3_job: job.id, profile: job.profile } });
-      // HTTP 200 without an ID does not prove the queue rejected the request.
-      // A valid ID remains authoritative even when diagnostics accompany it.
-      if (typeof response.prompt_id !== "string" || !response.prompt_id.trim()) {
-        throw new Error("SwarmUI acknowledged the request without a prompt ID. Reconcile the original submission before retrying.");
+      const client = await openSwarmComfyClient(baseUrl);
+      try {
+        client.assertOpen();
+        await update({ state: "submitting", compiledPrompt: built.prompt, frames: built.frames, referenceHashes: hashes,
+          conditioningReferenceHashes: conditioningHashes, conditioningPreparations: preparations });
+        options.stage("Submitting the native H3 reference shot");
+        client.assertOpen();
+        const response = await providerJson(baseUrl, "prompt", { prompt: built.workflow, client_id: client.clientId,
+          extra_data: { stack_structure_h3_job: job.id, profile: job.profile } });
+        // HTTP 200 without an ID does not prove the queue rejected the request.
+        // A valid ID remains authoritative even when diagnostics accompany it.
+        if (typeof response.prompt_id !== "string" || !response.prompt_id.trim()) {
+          throw new Error("SwarmUI acknowledged the request without a prompt ID. Reconcile the original submission before retrying.");
+        }
+        await update({ promptId: response.prompt_id, state: "rendering" });
+      } finally {
+        // Registration is required through the ACK and durable ID write only.
+        // HTTP history remains authoritative across Trigger's durable waits.
+        client.close();
       }
-      await update({ promptId: response.prompt_id, state: "rendering" });
     }
     options.stage("Rendering the H3 shot on the local GPU");
     const started = Date.now();
@@ -286,7 +296,7 @@ export async function runH3Generation(reference: H3JobReference, runId: string,
       if (current.runId && current.runId !== runId) return current;
       if (["ready", "failed", "cancelled"].includes(current.state)) return current;
       if (cancellationRequested(current)) return { ...current, state: "cancel_requested", error: message };
-      return { ...current, state: error instanceof H3ProviderRejection ? "failed"
+      return { ...current, state: error instanceof H3ProviderRejection || error instanceof SwarmComfyClientUnavailable ? "failed"
         : current.promptId || current.state === "submitting" || current.state === "submission_unknown" ? "submission_unknown" : "failed", error: message };
     });
     throw error;

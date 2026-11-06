@@ -33,6 +33,28 @@ Official SwarmUI docs define the app-facing API as JSON `POST` calls to `/API/<r
 
 SwarmUI also exposes its Comfy-backed workflow UI inside Swarm. If we need Comfy workflow/json operations later, prefer Swarm's Comfy workflow UI/API rather than making the Mac app depend on the raw Comfy port.
 
+### Durable H3 managed-client registration
+
+The H3 runner registers a client through `/ComfyBackendDirect/ws` on the same
+configured SwarmUI base URL before submitting its compiled workflow. It waits
+at most ten seconds for a valid `status.data.sid`, uses that server-issued SID
+as `/ComfyBackendDirect/prompt`'s `client_id`, and retains the socket through
+the HTTP acknowledgement and durable real prompt-ID write. It then closes the
+socket; HTTP queue/history polling and the immutable `stack_structure_h3_job`
+marker remain authoritative across Trigger waits and recovery.
+
+A failed handshake submits no prompt. A lost submission acknowledgement still
+requires reconciliation and must not trigger a duplicate POST. Resuming a job
+with a persisted prompt ID does not open another client connection. General
+queue/multi-backend cookies are not enabled: their virtual prompt IDs and
+ephemeral mapping are incompatible with this runner's durable real-ID recovery.
+
+SwarmUI's informational “improper API call direct prompt” line identifies its
+unregistered-client fallback; it does not itself report failed inference or CPU
+fallback. H3 uses registered submission. The older generic workflow route still
+has a separate submission contract and can produce that informational line.
+This integration does not change SwarmUI's logging or shared backend settings.
+
 ## Local generation presets
 
 The Generate tab defaults to **16:9** output (`1280x720`) instead of the older wide/ultrawide framing. The route also falls back to `1280x720` if a caller does not send dimensions.
