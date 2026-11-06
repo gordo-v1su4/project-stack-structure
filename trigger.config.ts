@@ -37,6 +37,7 @@ export default defineConfig({
       additionalFiles({ files: [
         "node_modules/@higgsfield/cli/**",
         "scripts/patch-trigger-controller.ts",
+        "scripts/trigger-controller-patch-core.ts",
         "scripts/identity/*.py",
         "scripts/identity/model-manifest.json",
         "scripts/identity/policies/*.json",

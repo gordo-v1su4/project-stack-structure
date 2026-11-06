@@ -6,11 +6,11 @@ import { spawnSync } from "node:child_process";
 import type { BuildContext, BuildLayer } from "@trigger.dev/core/v3/build";
 import { controllerLogContainment } from "../../trigger.controller-containment";
 import { patchTriggerControllerSource, replaceAttemptLogStatement, SAFE_ATTEMPT_LOG,
-  TRIGGER_CONTROLLER_SOURCE_SHA256, TRIGGER_CONTROLLER_PATCHED_SHA256, UNSAFE_ATTEMPT_LOG } from "../../scripts/patch-trigger-controller";
+  TRIGGER_CONTROLLER_SOURCE_SHA256, TRIGGER_CONTROLLER_PATCHED_SHA256, UNSAFE_ATTEMPT_LOG } from "../../scripts/trigger-controller-patch-core";
 
 describe("app-image Trigger controller log containment", () => {
-  (process.env.STACK_TRIGGER_CONFIG_LOADER_CLI_ROOT ? test : test.skip)("actual pinned 4.5.16 c12/jiti config loader imports the containment script without executing its CLI main", () => {
-    const result = spawnSync(process.execPath, ["tests/helpers/loadTriggerConfig.mjs", process.env.STACK_TRIGGER_CONFIG_LOADER_CLI_ROOT!, process.cwd()],
+  (process.env.STACK_TRIGGER_CONFIG_LOADER_CLI_ROOT && process.env.STACK_TRIGGER_CONFIG_LOADER_NODE_BINARY ? test : test.skip)("actual Node/CJS pinned 4.5.16 c12/jiti config loader imports only the pure containment core", () => {
+    const result = spawnSync(process.env.STACK_TRIGGER_CONFIG_LOADER_NODE_BINARY!, ["tests/helpers/loadTriggerConfig.mjs", process.env.STACK_TRIGGER_CONFIG_LOADER_CLI_ROOT!, process.cwd()],
       { encoding: "utf8", timeout: 30_000 });
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('"pinnedCliConfigLoaded":true');
@@ -59,6 +59,13 @@ describe("app-image Trigger controller log containment", () => {
     const config = await readFile(new URL("../../trigger.config.ts", import.meta.url), "utf8");
     expect(config).toContain("controllerLogContainment()");
     expect(config).toContain('"scripts/patch-trigger-controller.ts"');
+    expect(config).toContain('"scripts/trigger-controller-patch-core.ts"');
+    const extensionSource = await readFile(new URL("../../trigger.controller-containment.ts", import.meta.url), "utf8");
+    expect(extensionSource).toContain('"./scripts/trigger-controller-patch-core"');
+    expect(extensionSource).not.toContain('"./scripts/patch-trigger-controller"');
+    const core = await readFile(new URL("../../scripts/trigger-controller-patch-core.ts", import.meta.url), "utf8");
+    expect(core).not.toContain("import.meta");
+    expect(core).not.toContain("void main()");
   });
 
   (existsSync(".tmp/security-audit/managed-run-controller-4.5.16.mjs") ? test : test.skip)("offline actual 4.5.16 image bundle has the reviewed source/output hashes and patched JavaScript parses", async () => {

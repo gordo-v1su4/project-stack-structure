@@ -1,6 +1,6 @@
 import path from "node:path";
 import type { BuildExtension } from "@trigger.dev/core/v3/build";
-import { TRIGGER_CONTROLLER_VERSION } from "./scripts/patch-trigger-controller";
+import { TRIGGER_CONTROLLER_VERSION } from "./scripts/trigger-controller-patch-core";
 
 /** Only this application's managed image; runs after the complete /app COPY. */
 export function controllerLogContainment(): BuildExtension {
