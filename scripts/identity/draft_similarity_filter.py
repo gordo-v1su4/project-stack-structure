@@ -13,6 +13,8 @@ POLICIES = {
     "love-me-tonight-diego-frontal-draft-v2": ("f0250eadd801010db9885de4a6359c3c526fe6783e7dcd4a8128cbabbb3d9498", "h3-ref2va-int8-v3"),
     "love-me-tonight-valentina-frontal-draft-v1": ("589ee087db6829a53910659514b50bb1227c705ae6f7302fe2c977ccdb49d637", "h3-ref2va-int8-v3"),
 }
+JOINT_POLICY_ID = "love-me-tonight-diego-valentina-frontal-pair-draft-v1"
+JOINT_POLICY_SHA256 = "34e9171b83d5d5fa07d4f61ed72e38efd28a13aa357f9c0413da2beca5d33e00"
 
 
 def canonical_sha256(value):
@@ -20,6 +22,9 @@ def canonical_sha256(value):
 
 
 def load_policy(policy_id=POLICY_ID):
+    if policy_id == JOINT_POLICY_ID:
+        from joint_similarity_filter import load_joint_policy
+        return load_joint_policy()
     if policy_id not in POLICIES: raise ValueError("Unknown draft similarity policy")
     expected_sha, generation_model = POLICIES[policy_id]
     policy = json.loads(Path(__file__).with_name("policies").joinpath(policy_id + ".json").read_text())
@@ -146,5 +151,8 @@ class DraftSimilarityFilter:
 
 
 def requested_draft_filter(value, verifier_metadata, manifest, gallery_profile):
+    if value.get("draftSimilarityPolicyId") == JOINT_POLICY_ID:
+        from joint_similarity_filter import JointDraftSimilarityFilter
+        return JointDraftSimilarityFilter(value, verifier_metadata, manifest, gallery_profile)
     if value.get("draftSimilarityPolicyId") not in POLICIES: return None
     return DraftSimilarityFilter(value, verifier_metadata, manifest, gallery_profile)

@@ -301,8 +301,11 @@ def assess(value, model_dir, sample_count=None):
             if missing: report["unverifiableFrameCount"] += 1
             if ambiguous: report["ambiguousFrameCount"] += 1
             if draft_filter is not None:
-                template = templates.get(draft_filter.policy["identity"]["rawSha256"])
-                if template is not None: draft_filter.observe(index, value["fps"], frame_hash, image.shape, faces, template)
+                if "identities" in draft_filter.policy:
+                    draft_filter.observe(index, value["fps"], frame_hash, image.shape, faces, templates)
+                else:
+                    template = templates.get(draft_filter.policy["identity"]["rawSha256"])
+                    if template is not None: draft_filter.observe(index, value["fps"], frame_hash, image.shape, faces, template)
             report["samples"].append(sample)
             report["diagnostics"]["frames"].append(diagnostic)
     finally:

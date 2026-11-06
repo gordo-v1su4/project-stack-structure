@@ -5,6 +5,8 @@ export type IdentityFrameSample = {
   timeSeconds: number;
   frameSha256: string;
   scores: { referenceHash: string; trackId: string; score: number }[];
+  /** Joint policies retain all four candidates so assignment margins can be checked. */
+  candidateScores?: { referenceHash: string; trackId: string; score: number }[];
 };
 
 /** Provisional model screen for a reviewed draft; never an identity certificate. */
@@ -71,13 +73,15 @@ function validSamples(value: unknown): value is IdentityFrameSample[] {
   return Array.isArray(value) && value.length <= 512 && value.every(sample => sample
     && Number.isFinite(sample.timeSeconds) && sample.timeSeconds >= 0 && sample.timeSeconds <= 86_400
     && hash(sample.frameSha256) && Array.isArray(sample.scores) && sample.scores.length <= 32
-    && sample.scores.every((score: IdentityFrameSample["scores"][number]) => score && hash(score.referenceHash) && boundedText(score.trackId)
+    && (sample.candidateScores === undefined || (Array.isArray(sample.candidateScores) && sample.candidateScores.length <= 32))
+    && [...sample.scores, ...(sample.candidateScores ?? [])].every((score: IdentityFrameSample["scores"][number]) => score && hash(score.referenceHash) && boundedText(score.trackId)
       && Number.isFinite(score.score) && score.score >= -1 && score.score <= 1));
 }
 
 function copySamples(samples: IdentityFrameSample[]): IdentityFrameSample[] {
   return samples.map(sample => ({ timeSeconds: sample.timeSeconds, frameSha256: sample.frameSha256,
-    scores: sample.scores.map(score => ({ referenceHash: score.referenceHash, trackId: score.trackId, score: score.score })) }));
+    scores: sample.scores.map(score => ({ referenceHash: score.referenceHash, trackId: score.trackId, score: score.score })),
+    ...(sample.candidateScores === undefined ? {} : { candidateScores: sample.candidateScores.map(score => ({ referenceHash: score.referenceHash, trackId: score.trackId, score: score.score })) }) }));
 }
 
 export function normalizeGeneratedAssetDraftSimilarityFilter(value: unknown): GeneratedAssetDraftSimilarityFilter | undefined {
@@ -188,15 +192,18 @@ export function generatedAssetDraftIdentityBlockReason(asset: GeneratedStudioAss
   if (!proof || proof.status !== "unverifiable" || !filter) return strictBlock;
   const policy = resolveH3DraftSimilarityPolicy(filter.policyId, filter.policySha256);
   if (!policy) return "Unknown similarity filter policy";
+  const requiredHashes: readonly string[] = "identityReferenceSha256s" in policy ? policy.identityReferenceSha256s : [policy.identityReferenceSha256];
+  const jointBinding = "galleryBindings" in policy ? policy.galleryBindings.find(binding => sameHashes(binding.identityReferenceHashes, proof.identityReferenceHashes)) : undefined;
+  const preprocessVersion = "galleryBindings" in policy ? jointBinding && `opencv412-aligncrop112-rgb-f32-nchw-unit-centroid-v1-gallery-v2-${jointBinding.gallerySha256}` : policy.preprocessVersion;
   if (proof.assetId !== asset.id || proof.jobId !== asset.jobId || proof.generationModel !== asset.model
     || asset.model !== policy.generationModel || asset.provider !== "swarmui"
     || !hash(asset.mediaSha256) || proof.mediaSha256 !== asset.mediaSha256
     || proof.frameCount !== asset.mediaFrameCount || proof.frameRate !== asset.mediaFrameRate || proof.durationSeconds !== asset.durationSeconds
     || !sameHashes(proof.referenceHashes, asset.generationReferenceHashes) || !sameHashes(proof.identityReferenceHashes, asset.identityReferenceHashes)
-    || proof.identityReferenceHashes.length !== 1 || proof.identityReferenceHashes[0] !== policy.identityReferenceSha256
-    || !proof.referenceHashes.includes(policy.identityReferenceSha256)
+    || proof.identityReferenceHashes.length !== requiredHashes.length || !requiredHashes.every(hash => proof.identityReferenceHashes.includes(hash))
+    || !requiredHashes.every(hash => proof.referenceHashes.includes(hash))
     || proof.verifier.model !== policy.verifierModel || proof.verifier.modelSha256 !== policy.modelSha256
-    || proof.verifier.version !== policy.verifierVersion || proof.verifier.preprocessVersion !== policy.preprocessVersion) return "Similarity filter does not match this clip";
+    || proof.verifier.version !== policy.verifierVersion || proof.verifier.preprocessVersion !== preprocessVersion) return "Similarity filter does not match this clip";
   // This helper is not an authorization boundary. Server export reconciliation
   // additionally binds the current owned project and canonical stored H3 job.
   const parts = typeof asset.fullStorage?.objectKey === "string" ? asset.fullStorage.objectKey.split("/") : undefined;
@@ -217,16 +224,32 @@ export function generatedAssetDraftIdentityBlockReason(asset: GeneratedStudioAss
     || trimStart > Math.max(0, proof.durationSeconds - Math.max(0.05, targetDuration))
     || Math.floor(trimStart * fps + 1e-6) !== proof.verifiedStartFrame
     || Math.min(proof.frameCount, Math.ceil((trimStart + targetDuration) * fps - 1e-6)) !== proof.verifiedEndFrameExclusive) return "Similarity filter does not cover this trim";
-  let trackId: string | undefined;
+  const tracks = new Map<string, string>();
   for (const [index, sample] of filter.samples.entries()) {
     const parentSample = proof.samples[index], expectedFrame = proof.verifiedStartFrame + index;
     if (Math.abs(sample.timeSeconds * fps - expectedFrame) > 1e-5 || sample.timeSeconds >= proof.durationSeconds
       || parentSample.timeSeconds !== sample.timeSeconds || parentSample.frameSha256 !== sample.frameSha256
-      || sample.scores.length !== 1 || sample.scores[0].referenceHash !== policy.identityReferenceSha256
-      || sample.scores[0].score < policy.threshold) return "Similarity filter has incomplete frame evidence";
-    const score = sample.scores[0];
-    if (trackId !== undefined && trackId !== score.trackId) return "Similarity filter has ambiguous tracking";
-    trackId = score.trackId;
+      || sample.scores.length !== requiredHashes.length
+      || !requiredHashes.every(hash => sample.scores.filter(score => score.referenceHash === hash).length === 1)
+      || sample.scores.some(score => score.score < policy.threshold)) return "Similarity filter has incomplete frame evidence";
+    if (new Set(sample.scores.map(score => score.trackId)).size !== requiredHashes.length) return "Similarity filter has ambiguous tracking";
+    for (const score of sample.scores) {
+      if (tracks.has(score.referenceHash) && tracks.get(score.referenceHash) !== score.trackId) return "Similarity filter has ambiguous tracking";
+      tracks.set(score.referenceHash, score.trackId);
+    }
+    if ("minimumAssignmentCosineMargin" in policy) {
+      const candidates = sample.candidateScores;
+      if (!candidates || candidates.length !== 4 || candidates.some(score => !requiredHashes.includes(score.referenceHash)
+        || !sample.scores.some(assigned => assigned.trackId === score.trackId))) return "Similarity filter has incomplete assignment evidence";
+      for (const assigned of sample.scores) {
+        const own = candidates.filter(score => score.referenceHash === assigned.referenceHash && score.trackId === assigned.trackId);
+        const otherFace = candidates.filter(score => score.referenceHash === assigned.referenceHash && score.trackId !== assigned.trackId);
+        const otherIdentity = candidates.filter(score => score.referenceHash !== assigned.referenceHash && score.trackId === assigned.trackId);
+        if (own.length !== 1 || otherFace.length !== 1 || otherIdentity.length !== 1 || own[0].score !== assigned.score
+          || assigned.score - otherFace[0].score < policy.minimumAssignmentCosineMargin
+          || assigned.score - otherIdentity[0].score < policy.minimumAssignmentCosineMargin) return "Similarity filter has ambiguous assignment";
+      }
+    }
   }
   return null;
 }
