@@ -133,12 +133,13 @@ export interface ConcatPreviewSegment {
 /** Generated MP4 sample tables establish the actual encoded budget, not a rounded container estimate. */
 async function probeEncodedVideo(inputPath: string) {
   const { stdout } = await execFileAsync(process.env.FFPROBE_PATH || "ffprobe", [
-    "-v", "error", "-show_entries", "stream=codec_type,nb_frames,duration,avg_frame_rate,r_frame_rate:format=duration", "-of", "json", inputPath,
+    "-v", "error", "-show_entries", "stream=codec_type,nb_frames,duration,duration_ts,time_base,avg_frame_rate,r_frame_rate:format=duration", "-of", "json", inputPath,
   ], { maxBuffer: 1024 * 1024 });
-  const probe = JSON.parse(stdout) as { streams?: Array<{ codec_type?: string; nb_frames?: string; duration?: string; avg_frame_rate?: string; r_frame_rate?: string }>; format?: { duration?: string } };
+  const probe = JSON.parse(stdout) as { streams?: Array<{ codec_type?: string; nb_frames?: string; duration?: string; duration_ts?: number; time_base?: string; avg_frame_rate?: string; r_frame_rate?: string }>; format?: { duration?: string } };
   const video = probe.streams?.find(stream => stream.codec_type === "video");
   const rate = (text?: string) => { const [n, d = "1"] = (text || "").split("/"); return Number(n) / Number(d); };
   return { frames: Number(video?.nb_frames), duration: Number(video?.duration), frameRate: rate(video?.avg_frame_rate), nativeFrameRate: rate(video?.r_frame_rate),
+    durationTicks: Number(video?.duration_ts), timeBase: rate(video?.time_base),
     containerDuration: Number(probe.format?.duration), audioDuration: Number(probe.streams?.find(stream => stream.codec_type === "audio")?.duration) };
 }
 
@@ -146,7 +147,10 @@ export async function assertEncodedVideoFrameBudget(inputPath: string, frames: n
   const actual = await probeEncodedVideo(inputPath);
   if (!Number.isSafeInteger(actual.frames) || actual.frames !== frames || !Number.isFinite(actual.frameRate) || Math.abs(actual.frameRate - CONCAT_PREVIEW_FPS) > 1e-6
     || !Number.isFinite(actual.duration) || Math.abs(actual.duration - frames / CONCAT_PREVIEW_FPS) > 0.001) {
-    throw new PreviewGenerationError("music-window-mismatch", `Encoded video does not match its allocated ${frames}-frame music window.`);
+    // Numeric-only diagnostics: never include input paths, signed URLs or env.
+    const measured = JSON.stringify({ frames: actual.frames, fps: actual.frameRate, duration: actual.duration,
+      durationTicks: actual.durationTicks, timeBase: actual.timeBase });
+    throw new PreviewGenerationError("music-window-mismatch", `Encoded video does not match its allocated ${frames}-frame music window. Measured ${measured}`);
   }
   return actual;
 }
@@ -218,6 +222,9 @@ export async function generateConcatPreview(params: {
         // that accumulates into seconds of missing video.
         "-frames:v", `${segmentFrameCount}`,
         "-map", "0:v:0",
+        // Older worker FFmpeg defaults to25fps after this filter chain even
+        // with fps=24. Pin the encoder clock as well as the filtered frames.
+        "-r", `${CONCAT_PREVIEW_FPS}`,
         "-vf", `${sourceFilter}fps=24,tpad=stop_mode=clone:stop_duration=${1 / CONCAT_PREVIEW_FPS},scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1,setpts=PTS-STARTPTS`,
         "-an",
         "-c:v", "libx264",
@@ -259,6 +266,7 @@ export async function generateConcatPreview(params: {
       "-safe", "0",
       "-i", concatListPath,
       "-map", "0:v:0",
+      "-r", `${CONCAT_PREVIEW_FPS}`,
       "-an",
       "-t", `${expectedDuration}`,
       "-c:v", "libx264",

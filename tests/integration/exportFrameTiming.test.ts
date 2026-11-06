@@ -45,6 +45,22 @@ async function frameIds(file: string, seek?: number, frameCount?: number) {
   return result;
 }
 describe("actual encoded music-video frame timing", () => {
+  test("a five-frame pickup pins the encoder clock and rejects a five-frame25fps impostor", async () => {
+    const folder = await mkdtemp(path.join(tmpdir(), "export-five-frame-"));
+    try {
+      const { video } = await fixture(folder), outputPath = path.join(folder, "five.mp4");
+      await generateConcatPreview({ segments: [{ inputPath: video, startTime: 0, endTime: .210 }],
+        requestKey: "five", outputPath, probeFn: probe });
+      const actual = await assertEncodedVideoFrameBudget(outputPath, 5);
+      expect(actual.frames).toBe(5); expect(actual.frameRate).toBe(24);
+      expect(actual.duration).toBeCloseTo(5 / 24, 5);
+      expect(await frameIds(outputPath)).toEqual([0, 1, 2, 3, 4]);
+      const wrongClock = path.join(folder, "five-at25.mp4");
+      await exec(ffmpeg, ["-y", "-v", "error", "-i", video, "-frames:v", "5", "-r", "25", "-an", "-c:v", "libx264", wrongClock]);
+      await expect(assertEncodedVideoFrameBudget(wrongClock, 5)).rejects.toThrow('"fps":25');
+      await expect(assertEncodedVideoFrameBudget(wrongClock, 5)).rejects.toThrow('"duration":0.2');
+    } finally { await rm(folder, { recursive: true, force: true }); }
+  }, 120_000);
   test("holds only one EOF frame and keeps every following cut on the global budget", async () => {
     const folder = await mkdtemp(path.join(tmpdir(), "export-eof-"));
     try {

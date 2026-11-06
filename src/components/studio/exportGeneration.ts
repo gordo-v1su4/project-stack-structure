@@ -237,6 +237,7 @@ export async function generateMusicVideoExport(params: {
   args.push(
     "-map", "0:v:0",
     "-map", "1:a:0",
+    "-r", "24",
     "-t", `${Math.max(0.05, canonicalDuration)}`,
     "-c:v", "libx264",
     "-preset", "veryfast",
