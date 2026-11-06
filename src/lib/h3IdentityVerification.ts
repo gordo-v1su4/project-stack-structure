@@ -4,7 +4,9 @@ import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { generatedAssetIdentityBlockReason, type GeneratedStudioAsset } from "@/components/studio/generatedAssets";
-import { normalizeGeneratedAssetIdentityVerification } from "@/components/studio/generatedAssetIdentity";
+import { H3_DRAFT_SIMILARITY_POLICY_ID, H3_DRAFT_SIMILARITY_POLICY_SHA256, H3_DRAFT_SIMILARITY_PROJECT_ID,
+  H3_DRAFT_SIMILARITY_RAW_IDENTITY_SHA256 } from "@/components/studio/identityDraftPolicy";
+import { generatedAssetDraftIdentityBlockReason, normalizeGeneratedAssetIdentityVerification } from "@/components/studio/generatedAssetIdentity";
 import { H3_FPS, type H3GenerationJob } from "@/components/studio/h3Generation";
 import { downloadH3ReferenceImage } from "./h3JobStore";
 import { resolveH3IdentityGallery, type H3IdentityFaceRegion } from "./h3IdentityGallery";
@@ -18,6 +20,9 @@ export type H3IdentityInput = {
   assetId: string;
   jobId: string;
   generationModel: string;
+  projectId: string;
+  draftSimilarityPolicyId?: string;
+  draftSimilarityPolicySha256?: string;
   videoPath: string;
   mediaSha256: string;
   frameCount: number;
@@ -77,7 +82,11 @@ export async function assessH3Identity(params: {
     }
     const trimStart = asset.trimStart ?? 0;
     const trimDuration = job.request.songEnd - job.request.songStart;
-    const input: H3IdentityInput = { version: 1, assetId: asset.id, jobId: job.id, generationModel: job.profile,
+    const canApplyDraftFilter = job.projectId === H3_DRAFT_SIMILARITY_PROJECT_ID && job.profile === "h3-ref2va-int8-v2"
+      && asset.identityReferenceHashes?.length === 1 && asset.identityReferenceHashes[0] === H3_DRAFT_SIMILARITY_RAW_IDENTITY_SHA256;
+    const input: H3IdentityInput = { version: 1, assetId: asset.id, jobId: job.id, generationModel: job.profile, projectId: job.projectId,
+      ...(canApplyDraftFilter ? { draftSimilarityPolicyId: H3_DRAFT_SIMILARITY_POLICY_ID,
+        draftSimilarityPolicySha256: H3_DRAFT_SIMILARITY_POLICY_SHA256 } : {}),
       videoPath: outputPath, mediaSha256: asset.mediaSha256!, frameCount: job.frames, fps: H3_FPS,
       durationSeconds: asset.durationSeconds, verifiedStartFrame: Math.floor(trimStart * H3_FPS + 1e-6),
       verifiedEndFrameExclusive: Math.min(job.frames, Math.ceil((trimStart + trimDuration) * H3_FPS - 1e-6)),
@@ -99,8 +108,11 @@ export async function assessH3Identity(params: {
     const block = generatedAssetIdentityBlockReason(assessed);
     // A model's claimed pass must also satisfy the shared binding/coverage contract.
     if ((proof.status === "passed" || proof.status === "not_required") && block) throw new Error("Identity report did not match this take.");
+    const draftBlock = generatedAssetDraftIdentityBlockReason(assessed);
     return { ...assessed, reviewStatus: proof.status === "rejected" ? "rejected" : asset.reviewStatus,
-      reviewNotes: block ? `${block}. ${proof.reason ?? "The take is outside the draft until identity is verified."}` : asset.reviewNotes };
+      reviewNotes: draftBlock ? `${draftBlock}. ${proof.reason ?? "The take is outside the draft until similarity can be checked."}`
+        : proof.draftSimilarityFilter?.status === "eligible"
+          ? ["Similarity filter passed · review required", ...proof.draftSimilarityFilter.warnings].join(". ") : asset.reviewNotes };
   } catch {
     // Do not retry inference because an optional post-render verifier failed.
     return { ...asset, identityVerification: undefined,

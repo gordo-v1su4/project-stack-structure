@@ -1,7 +1,9 @@
-import { resolveDurableInput, resolveDurableInputs, type DurableExportInput } from "@/lib/exportInputs";
+import { assertExportInputOwnership, resolveDurableInput, resolveDurableInputs, type DurableExportInput } from "@/lib/exportInputs";
 import { normalizeMediaPath, uploadFileToMediaGateway } from "@/lib/mediaGateway";
 import { getSessionUser, unauthorizedResponse } from "@/lib/session";
 import { triggerFinalExport } from "@/lib/triggerOrchestration";
+import { scopeMediaUploadFolder } from "@/lib/essentiaUpload";
+import { parseProjectExportContext, ProjectExportError, reconcileProjectFinalExport } from "@/lib/projectExportValidation";
 
 export const runtime = "nodejs";
 
@@ -14,8 +16,14 @@ export async function POST(request: Request) {
     const segmentsRaw = formData.get("segments");
     const requestKey = String(formData.get("requestKey") || `final-export-${Date.now()}`);
     if (typeof segmentsRaw !== "string" || !segmentsRaw.trim()) return Response.json({ success: false, error: "Export segments are required." }, { status: 400 });
-    const segments = JSON.parse(segmentsRaw) as Array<Record<string, unknown>>;
+    let segments: Array<Record<string, unknown>>;
+    try { segments = JSON.parse(segmentsRaw) as typeof segments; }
+    catch { return Response.json({ success: false, error: "Export segments are not valid JSON." }, { status: 400 }); }
     if (!Array.isArray(segments) || !segments.length) return Response.json({ success: false, error: "No export segments provided." }, { status: 400 });
+    if (segments.some(segment => !segment || !Number.isSafeInteger(segment.sourceIndex ?? 0) || Number(segment.sourceIndex ?? 0) < 0
+      || !Number.isFinite(segment.startTime) || Number(segment.startTime) < 0 || !Number.isFinite(segment.endTime) || Number(segment.endTime) <= Number(segment.startTime))) {
+      return Response.json({ success: false, error: "Export segment source indexes and trim intervals must be valid." }, { status: 400 });
+    }
 
     const audioRefRaw = formData.get("audioRef");
     const videoRefsRaw = formData.get("videoRefs");
@@ -41,12 +49,7 @@ export async function POST(request: Request) {
         const message = error instanceof Error ? error.message : "Invalid durable references.";
         return Response.json({ success: false, error: message }, { status: message.includes("within the application") ? 403 : 400 });
       }
-      // Shared worker credentials mean every referenced object must belong to
-      // the caller. Ownership is proven by the owner segment the storage route
-      // inserted at upload time, or by membership in the caller's saved project.
-      // Authenticated callers may reference any object in the application's
-      // media namespace; bucket pinning and key-shape validation are enforced
-      // by the storage route at upload time.
+      // Shared worker credentials must never resolve another account's objects.
       const refObjectKeys = [
         audio.objectKey,
         ...videos.flatMap((video) => [
@@ -61,6 +64,8 @@ export async function POST(request: Request) {
       if (invalidRefs.length) {
         return Response.json({ success: false, error: "Referenced objects must be within the application's media storage." }, { status: 403 });
       }
+      try { assertExportInputOwnership([audio, ...videos], user.id); }
+      catch (error) { return Response.json({ success: false, error: (error as Error).message }, { status: 403 }); }
     } else {
       if (!(audioFile instanceof File)) return Response.json({ success: false, error: "Master audio file is required." }, { status: 400 });
       const inputFiles = [...formData.entries()]
@@ -72,15 +77,11 @@ export async function POST(request: Request) {
         .sort((left, right) => left.index - right.index)
         .map((entry) => entry.file);
       if (!inputFiles.length) return Response.json({ success: false, error: "At least one source video file is required." }, { status: 400 });
-      audio = await uploadInput(audioFile, `media-uploads/export-inputs/${sanitize(requestKey)}`);
-      videos = await Promise.all(inputFiles.map((file) => uploadInput(file, `media-uploads/export-inputs/${sanitize(requestKey)}`)));
+      const folder = scopeMediaUploadFolder(`media-uploads/export-inputs/${sanitize(requestKey)}`, user.id);
+      audio = await uploadInput(audioFile, folder);
+      videos = await Promise.all(inputFiles.map((file) => uploadInput(file, folder)));
     }
-
-    const handle = await triggerFinalExport({
-      requestKey,
-      audio,
-      videos,
-      segments: segments.map((segment) => ({
+    const submittedSegments = segments.map((segment) => ({
         useClipAudio: segment.useClipAudio === true,
         sourceIndex: numberValue(segment.sourceIndex) ?? 0,
         startTime: numberValue(segment.startTime) ?? 0,
@@ -88,7 +89,12 @@ export async function POST(request: Request) {
         musicStart: numberValue(segment.musicStart),
         musicEnd: numberValue(segment.musicEnd),
         label: typeof segment.label === "string" ? segment.label : undefined,
-      })),
+      }));
+    if (submittedSegments.some(segment => (segment.sourceIndex ?? 0) >= videos.length)) return Response.json({ success: false, error: "Export segment source index is outside the supplied media." }, { status: 400 });
+    const canonical = await reconcileProjectFinalExport({ ownerId: user.id, context: parseProjectExportContext(formData), audio, videos, segments: submittedSegments });
+    const handle = await triggerFinalExport({
+      requestKey,
+      ...canonical,
       effectCues: parseJsonField(formData.get("shaderCues")) as unknown[] | undefined,
       accentKinds: parseJsonField(formData.get("accentKinds")) as Record<string, string> | undefined,
       beats: parseJsonField(formData.get("beats")) as number[] | undefined,
@@ -98,7 +104,7 @@ export async function POST(request: Request) {
     return Response.json({ success: true, queued: true, orchestration: "trigger.dev", runId: handle.id, requestKey }, { status: 202 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Final export failed.";
-    return Response.json({ success: false, error: message }, { status: /not configured|Missing RustFS/i.test(message) ? 503 : 500 });
+    return Response.json({ success: false, error: message }, { status: error instanceof ProjectExportError ? error.status : /not configured|Missing RustFS/i.test(message) ? 503 : 500 });
   }
 }
 

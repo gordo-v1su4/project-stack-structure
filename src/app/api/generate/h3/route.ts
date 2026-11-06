@@ -5,7 +5,7 @@ import { H3RequestError, h3GenerationJobId, materializeH3Job, parseH3Request } f
 import { H3_LEGACY_PROFILE } from "@/components/studio/h3Generation";
 import { claimH3GenerationIntent, createH3Job, listH3Jobs, pinH3JobReferences, readH3Job, updateH3Job } from "@/lib/h3JobStore";
 import { compileH3Prompt } from "@/lib/h3Workflow";
-import { retrieveTriggerRun, triggerH3Generation } from "@/lib/triggerOrchestration";
+import { retrieveTriggerRun, triggerH3Generation, triggerH3IdentityRecheck } from "@/lib/triggerOrchestration";
 
 export const runtime = "nodejs";
 
@@ -97,9 +97,20 @@ export async function PATCH(request: Request) {
   try {
     const body = await request.json() as { projectId?: string; jobId?: string; action?: string; requestIntentId?: string };
     if (!body.projectId || !body.jobId || !/^[a-zA-Z0-9_-]{1,96}$/.test(body.projectId)) throw new H3RequestError("A project and job are required.");
-    if (!await readStudioProject(user.id, body.projectId, { fresh: true })) throw new H3RequestError("Project not found.", 404);
+    const saved = await readStudioProject(user.id, body.projectId, { fresh: true });
+    if (!saved) throw new H3RequestError("Project not found.", 404);
     const job = await readH3Job(user.id, body.projectId, body.jobId);
     if (!job) throw new H3RequestError("Generation job not found.", 404);
+    if (body.action === "recheck_identity") {
+      if (!body.requestIntentId || !/^[a-f0-9-]{36}$/i.test(body.requestIntentId)) throw new H3RequestError("An identity recheck intent UUID is required.");
+      if (job.state !== "ready" || !job.result) throw new H3RequestError("Only a completed shot can be reassessed.", 409);
+      if (job.result.asset.reviewStatus === "rejected" || (saved.draft.generatedAssets ?? []).some(asset =>
+        (asset.id === job.result!.asset.id || asset.jobId === job.id) && asset.reviewStatus === "rejected")) {
+        throw new H3RequestError("This shot was rejected. Create a deliberate new take instead.", 409);
+      }
+      const handle = await triggerH3IdentityRecheck(job, body.requestIntentId);
+      return Response.json({ success: true, verificationRunId: handle.id, jobId: job.id, job }, { status: 202 });
+    }
     if (body.action === "cancel") {
       const cancelled = await updateH3Job(user.id, job.projectId, job.id, current => {
         if (["ready", "failed", "cancelled"].includes(current.state)) return current;

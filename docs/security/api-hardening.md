@@ -101,8 +101,34 @@ applies outside production.
   new value: ffmpeg-gateway service (Hostinger VM) and the Trigger worker env
   (production worker host). Both read their key at boot; BWS is the source of truth.
 
+### Final export media ownership and H3 evidence
+
+Final export and shader-capture clip audio validate every durable object and chunk
+against the authenticated account's existing upload-key layouts. The configured
+bucket and `media-uploads/` prefix alone do not establish ownership. Multipart
+export uploads use the same owner-scoped paths. Legacy unscoped inputs must be
+re-uploaded through the authenticated upload flow.
+
+Named-project FFmpeg exports send `projectId`, `planSignature`, `placementRevision`
+and `draftRevision`. The server reads that owner's fresh project, requires the
+accepted snapshot with no pending draft selection, rebuilds its cut, and checks
+the exact master, source intervals and song intervals. An H3 durable key always
+requires this context, including when browser metadata relabels it as ordinary
+footage; H3 outputs cannot be hidden inside source chunk manifests.
+
+For approved H3 takes the server reads the canonical ready job and uses its media,
+target, reference hashes and verifier evidence. Saved client proof is not an
+attestation. Owner approval supplies consent and the selected trim; it cannot
+replace worker evidence. A pinned eligible provisional similarity filter can be
+used after approval without changing its unverifiable identity status. Dispatch
+binds a digest of the accepted snapshot and canonical reports. Before FFmpeg reads
+an H3 video, the worker verifies the downloaded bytes against its canonical SHA256.
+
+WebGPU capture remains owner-uploaded captured pixels with
+`browser-webgpu-capture` provenance; this path does not attest to pixel identity.
+
 ## Known follow-ups (non-blocking)
 
-- Per-user ownership tags on uploaded objects (currently bucket-level checks).
+- Complete ownership coverage across remaining legacy media routes.
 - Rate limiting/quota on paid endpoints (auth gates the who, not the how much).
 - Strict CSP with nonces.

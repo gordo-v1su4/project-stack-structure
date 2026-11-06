@@ -1288,9 +1288,11 @@ export default function StudioApp() {
     setPreviewState((current) => markSectionRecomputeRunning(current, requestKey));
 
     try {
-      // The export route authorizes durable refs against the caller's saved
-      // studio draft, so flush a fresh save covering exactly this media.
-      await saveStudioProjectDraft(
+      // Project exports are checked against a fresh owner-scoped named snapshot.
+      const saveForExport: typeof saveStudioProjectDraft = async (params, media) => activeProjectId
+        ? (await saveNamedStudioProject({ projectId: activeProjectId, name: activeProjectName, draft: createPersistableStudioProjectDraft(params) })).draft
+        : saveStudioProjectDraft(params, media);
+      await saveForExport(
         {
           analysis: beatJoinAnalysis,
           videoSources,
@@ -1329,14 +1331,15 @@ export default function StudioApp() {
       const audioRef = beatJoinAnalysis.storageBucket && beatJoinAnalysis.storagePath
         ? { bucket: beatJoinAnalysis.storageBucket, objectKey: beatJoinAnalysis.storagePath }
         : null;
-      const videoRefs: Array<{ bucket: string; objectKey: string }> = [];
+      const videoRefs: Array<{ bucket: string; objectKey: string; chunks?: Array<{ bucket: string; objectKey: string }> }> = [];
       let missingVideoRef = false;
       for (const url of uniqueVideoUrls) {
         const source = videoSourcesRef.current.find((item) => item.videoUrl === url);
         const generated = generatedAssets.find((asset) => buildGeneratedAssetPlaybackUrl(asset) === url);
         const generatedObjectKey = generated?.fullStorage?.objectKey ?? generated?.fullStorage?.storagePath;
         if (source?.storageBucket && source?.storagePath) {
-          videoRefs.push({ bucket: source.storageBucket, objectKey: source.storagePath });
+          videoRefs.push({ bucket: source.storageBucket, objectKey: source.storagePath,
+            ...(source.uploadChunks?.chunks.length ? { chunks: source.uploadChunks.chunks } : {}) });
         } else if (generated?.fullStorage?.bucket && generatedObjectKey) {
           videoRefs.push({ bucket: generated.fullStorage.bucket, objectKey: generatedObjectKey });
         } else {
@@ -1371,6 +1374,12 @@ export default function StudioApp() {
         }
         form.set("shaderPresetId", shaderPresetId);
         form.set("requestKey", requestKey);
+        if (activeProjectId && audioRef && !missingVideoRef && videoRefs.length && musicVideoProject.placementPlan) {
+          form.set("projectId", activeProjectId);
+          form.set("planSignature", musicVideoProject.placementPlan.inputSignature);
+          form.set("placementRevision", String(musicVideoProject.placementPlan.revision));
+          form.set("draftRevision", String(generatedDraft?.revision ?? 0));
+        }
         return form;
       };
       const attachDurableRefs = (
@@ -1440,7 +1449,7 @@ export default function StudioApp() {
           setVideoSources((current) => current.map((source) => {
             const index = uniqueVideoUrls.indexOf(source.videoUrl);
             const scoped = index >= 0 ? scopedVideoRefs[index] : undefined;
-            return scoped ? { ...source, storageBucket: scoped.bucket, storagePath: scoped.objectKey } : source;
+            return scoped ? { ...source, storageBucket: scoped.bucket, storagePath: scoped.objectKey, uploadChunks: null } : source;
           }));
 
           // Persist the migrated references immediately so a reload before the
@@ -1449,9 +1458,9 @@ export default function StudioApp() {
           const migratedSources = videoSources.map((source) => {
             const index = uniqueVideoUrls.indexOf(source.videoUrl);
             const scoped = index >= 0 ? scopedVideoRefs[index] : undefined;
-            return scoped ? { ...source, storageBucket: scoped.bucket, storagePath: scoped.objectKey } : source;
+            return scoped ? { ...source, storageBucket: scoped.bucket, storagePath: scoped.objectKey, uploadChunks: null } : source;
           });
-          await saveStudioProjectDraft(
+          await saveForExport(
             {
               analysis: migratedAnalysis,
               videoSources: migratedSources,

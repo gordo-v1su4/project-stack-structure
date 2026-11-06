@@ -2,8 +2,8 @@ import type { ImageSplitManifest } from "@/lib/imageSplitterGateway";
 import type { MediaGatewayUploadResult } from "@/lib/mediaGateway";
 import type { EditPlanPreviewSegment, TimelineItem } from "./musicVideoProject";
 import type { StoryboardJob, VideoFrameRole } from "./storyboardGeneration";
-import { generatedAssetIdentityBlockReason, normalizeGeneratedAssetIdentityVerification, type GeneratedAssetIdentityVerification } from "./generatedAssetIdentity";
-export { generatedAssetIdentityBlockReason } from "./generatedAssetIdentity";
+import { generatedAssetDraftIdentityBlockReason, normalizeGeneratedAssetIdentityVerification, type GeneratedAssetIdentityVerification } from "./generatedAssetIdentity";
+export { generatedAssetIdentityBlockReason, generatedAssetDraftIdentityBlockReason } from "./generatedAssetIdentity";
 export type { GeneratedAssetIdentityVerification } from "./generatedAssetIdentity";
 
 export type GeneratedStudioAssetProvider = "higgsfield" | "swarmui";
@@ -269,7 +269,7 @@ export function buildGeneratedAssetPlaybackUrl(asset: GeneratedStudioAsset): str
 
 export function listApprovedGeneratedVideoAssets(assets: GeneratedStudioAsset[]) {
   return assets.filter((asset) => asset.status === "completed" && asset.mediaKind === "video" && asset.reviewStatus === "approved"
-    && generatedAssetIdentityBlockReason(asset) === null
+    && generatedAssetDraftIdentityBlockReason(asset) === null
     && asset.target && Boolean(buildGeneratedAssetPlaybackUrl(asset)) && Number.isFinite(asset.durationSeconds) && (asset.durationSeconds ?? 0) > 0);
 }
 

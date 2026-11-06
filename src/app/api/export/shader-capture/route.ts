@@ -1,8 +1,9 @@
-import { resolveDurableInputs } from "@/lib/exportInputs";
+import { assertExportInputOwnership, resolveDurableInputs } from "@/lib/exportInputs";
 import type { FinalExportPayload } from "@/trigger/export";
 import { uploadFileToMediaGateway } from "@/lib/mediaGateway";
 import { getSessionUser, unauthorizedResponse } from "@/lib/session";
 import { triggerShaderCaptureExport } from "@/lib/triggerOrchestration";
+import { scopeMediaUploadFolder } from "@/lib/essentiaUpload";
 
 export const runtime = "nodejs";
 
@@ -27,8 +28,10 @@ export async function POST(request: Request) {
       if (!Array.isArray(parsed) || !parsed.length || parsed.some(segment => !Number.isFinite(segment.startTime) || !Number.isFinite(segment.endTime) || segment.endTime <= segment.startTime)) throw new Error("Invalid clip audio intervals.");
       segments = parsed.map(segment => ({ ...segment, useClipAudio: segment.useClipAudio === true }));
       videos = resolveDurableInputs(JSON.parse(refsRaw), "video/mp4");
+      try { assertExportInputOwnership(videos, user.id); }
+      catch (error) { return Response.json({ success: false, error: (error as Error).message }, { status: 403 }); }
     }
-    const folder = `media-uploads/export-inputs/${sanitize(requestKey)}`;
+    const folder = scopeMediaUploadFolder(`media-uploads/export-inputs/${sanitize(requestKey)}`, user.id);
     const [audioUpload, captureUpload] = await Promise.all([
       uploadFileToMediaGateway({ file: audioFile, folder }),
       uploadFileToMediaGateway({ file: shaderCaptureFile, folder }),

@@ -8,7 +8,7 @@ import { probeMediaFile, type ProbedMediaFile } from "@/components/studio/mediaP
 import { buildSwarmComfyDirectUrl, extractComfyOutputRefs, getComfyHistoryStatus, type ComfyOutputRef } from "@/components/studio/localGeneration";
 import { H3_FPS, H3_HEIGHT, H3_WIDTH, type H3GenerationJob } from "@/components/studio/h3Generation";
 import type { LocalGenerationOutput } from "@/trigger/localGeneration";
-import { getMediaGatewayConfig, uploadFileToMediaGateway } from "./mediaGateway";
+import { downloadMediaGatewayFile, getMediaGatewayConfig, uploadFileToMediaGateway } from "./mediaGateway";
 import { normalizeStudioOwnerSegment } from "./studioStoragePaths";
 import { readStudioProject } from "./studioProjectStore";
 import { materializeH3Job } from "./h3GenerationServer";
@@ -17,7 +17,7 @@ import { buildH3Workflow } from "./h3Workflow";
 import { assessH3Identity } from "./h3IdentityVerification";
 import { planH3ReferenceConditioning } from "./h3ReferenceConditioning";
 
-export type H3JobReference = { ownerId: string; projectId: string; jobId: string };
+export type H3JobReference = { ownerId: string; projectId: string; jobId: string; mode?: "identity-recheck" };
 
 const MAX_IMAGE_BYTES = 32 * 1024 * 1024;
 const executeImagePreparation = promisify(execFile);
@@ -126,6 +126,7 @@ function completedOutput(job: H3GenerationJob): LocalGenerationOutput {
 
 export async function runH3Generation(reference: H3JobReference, runId: string,
   options: { wait: (seconds: number) => Promise<unknown>; stage: (label: string) => void; timeoutSeconds?: number }) {
+  if (reference.mode === "identity-recheck") return recheckH3Identity(reference, options);
   const { ownerId, projectId, jobId } = reference;
   const storedJob = await readH3Job(ownerId, projectId, jobId);
   if (!storedJob) throw new Error("Generation job not found.");
@@ -276,5 +277,50 @@ export async function runH3Generation(reference: H3JobReference, runId: string,
   } finally {
     // temp is allocated by mkdtemp beneath the OS temp directory, never a caller path.
     await rm(temp, { recursive: true, force: true });
+  }
+}
+
+/** Reassess immutable stored pixels on CPU; never contact Swarm or submit another render. */
+export async function recheckH3Identity(reference: H3JobReference, options: { stage: (label: string) => void }) {
+  const { ownerId, projectId, jobId } = reference;
+  const job = await readH3Job(ownerId, projectId, jobId);
+  const saved = await readStudioProject(ownerId, projectId, { fresh: true });
+  const config = getMediaGatewayConfig();
+  if (!job || job.ownerId !== ownerId || job.projectId !== projectId || job.state !== "ready" || !job.result || !saved || !config) {
+    throw new Error("An owned completed shot and saved project are required for an identity recheck.");
+  }
+  const asset = job.result.asset;
+  if (asset.reviewStatus === "rejected" || (saved.draft.generatedAssets ?? []).some(candidate =>
+    (candidate.id === asset.id || candidate.jobId === job.id) && candidate.reviewStatus === "rejected")) {
+    throw new Error("A rejected shot cannot be reconsidered by an automatic identity recheck.");
+  }
+  const storage = asset.fullStorage;
+  const expectedKey = `media-uploads/projects/${normalizeStudioOwnerSegment(ownerId)}/generated/${projectId}/${job.id}/shot.mp4`;
+  if (!storage || storage.bucket !== config.bucket || storage.objectKey !== expectedKey
+    || !asset.mediaSha256 || !/^[a-f0-9]{64}$/.test(asset.mediaSha256)) throw new Error("The stored shot has no immutable owned media binding.");
+  const folder = await mkdtemp(path.join(tmpdir(), "stack-h3-recheck-"));
+  const initialProof = JSON.stringify(asset.identityVerification);
+  try {
+    options.stage("Checking the existing shot with the deterministic face model");
+    const media = await downloadMediaGatewayFile({ bucket: config.bucket, objectKey: expectedKey, fileName: "shot.mp4" });
+    const hash = createHash("sha256").update(new Uint8Array(media.bytes)).digest("hex");
+    if (hash !== asset.mediaSha256) throw new Error("Stored shot bytes changed; no identity evidence was updated.");
+    const outputPath = path.join(folder, "shot.mp4");
+    await writeFile(outputPath, new Uint8Array(media.bytes));
+    validateH3VideoProbe(await probeMediaFile(outputPath), job.frames!, job.request.songEnd - job.request.songStart);
+    const assessed = await assessH3Identity({ job, asset, outputPath, tempFolder: folder });
+    const latest = await readStudioProject(ownerId, projectId, { fresh: true });
+    if (!latest || (latest.draft.generatedAssets ?? []).some(candidate => (candidate.id === asset.id || candidate.jobId === job.id)
+      && candidate.reviewStatus === "rejected")) throw new Error("The shot was rejected during reassessment.");
+    const updated = await updateH3Job(ownerId, projectId, jobId, current => {
+      if (current.state !== "ready" || current.result?.asset.mediaSha256 !== hash
+        || JSON.stringify(current.result.asset.identityVerification) !== initialProof || current.result.asset.reviewStatus === "rejected") {
+        throw new Error("The stored shot changed during reassessment. Refresh its evidence before retrying.");
+      }
+      return { ...current, result: { asset: assessed } };
+    });
+    return completedOutput(updated);
+  } finally {
+    await rm(folder, { recursive: true, force: true });
   }
 }

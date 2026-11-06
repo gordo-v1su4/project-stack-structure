@@ -31,14 +31,29 @@ mock.module("@/lib/h3JobStore", () => ({
 }));
 mock.module("@/lib/triggerOrchestration", () => ({
   triggerH3Generation: async () => { dispatches++; return { id: `run-${dispatches}` }; },
+  triggerH3IdentityRecheck: async () => { dispatches++; return { id: "cpu-recheck-run" }; },
   retrieveTriggerRun: async () => ({ isCompleted: true, isFailed: true }),
 }));
 const { POST, GET, PATCH } = await import("@/app/api/generate/h3/route");
 const { H3RequestError, materializeH3Job, parseH3Request } = await import("@/lib/h3GenerationServer");
 function post(body: unknown) { return new Request("http://app.test/api/generate/h3", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }); }
-function reset() { signedIn = true; stored = null; dispatches = 0; }
+function reset() { signedIn = true; stored = null; dispatches = 0; fixture.saved.draft.generatedAssets = []; }
 
 describe("authenticated H3 dispatch and recovery route", () => {
+  test("identity recheck dispatches a CPU task without replacing the render run and respects user rejection", async () => {
+    reset(); await POST(post(fixture.request));
+    stored = { ...stored!, state: "ready", result: { asset: { id: stored!.id, jobId: stored!.id,
+      provider: "swarmui", model: stored!.profile, prompt: "fixture", createdAt: stored!.createdAt,
+      status: "completed", reviewStatus: "pending" } } };
+    const body = { projectId: "project-1", jobId: stored.id, action: "recheck_identity", requestIntentId: fixture.request.requestIntentId };
+    const response = await PATCH(new Request("http://app.test/api/generate/h3", { method: "PATCH", body: JSON.stringify(body) }));
+    expect(response.status).toBe(202);
+    expect((await response.json()).verificationRunId).toBe("cpu-recheck-run");
+    expect(stored.runId).toBe("run-1"); expect(dispatches).toBe(2);
+    fixture.saved.draft.generatedAssets = [{ ...stored.result!.asset, reviewStatus: "rejected" }];
+    expect((await PATCH(new Request("http://app.test/api/generate/h3", { method: "PATCH", body: JSON.stringify(body) }))).status).toBe(409);
+    expect(dispatches).toBe(2);
+  });
   test("every method requires a session and dispatch creates no work anonymously", async () => {
     reset(); signedIn = false;
     expect((await POST(post(fixture.request))).status).toBe(401);

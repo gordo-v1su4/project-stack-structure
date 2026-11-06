@@ -232,6 +232,24 @@ export async function triggerH3Generation(job: H3GenerationJob, resumeIntentId?:
     tags: [...dispatch.tags, `project:${job.projectId}`, `h3:${job.id}`], metadata: dispatch.metadata }) as Promise<{ id: string }>;
 }
 
+/** Reassess existing bytes without submitting a new provider render. */
+export async function triggerH3IdentityRecheck(job: H3GenerationJob, requestIntentId: string) {
+  assertTriggerConfigured();
+  if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(requestIntentId)) {
+    throw new Error("An explicit identity recheck intent UUID is required.");
+  }
+  const dispatch = await buildDispatchContext(["stack-structure", "local-generation", "h3", "identity-recheck"], {
+    stageLabel: "Checking the existing H3 take against its pinned references", progressMode: "provider",
+  });
+  if (dispatch.userId !== job.ownerId) throw new Error("Generation job belongs to another user.");
+  const idempotencyKey = await idempotencyKeys.create(`h3-identity-${job.id}-${requestIntentId}`, { scope: "global" });
+  return tasks.trigger<typeof localGenerationTask>(STACK_STRUCTURE_TRIGGER_TASKS.localGeneration, {
+    request: { provider: "swarmui", kind: "video", prompt: job.request.prompt },
+    h3Job: { ownerId: job.ownerId, projectId: job.projectId, jobId: job.id, mode: "identity-recheck" },
+  }, { idempotencyKey, idempotencyKeyTTL: "30d", maxAttempts: 1,
+    tags: [...dispatch.tags, `project:${job.projectId}`, `h3:${job.id}`], metadata: dispatch.metadata }) as Promise<{ id: string }>;
+}
+
 export async function triggerHiggsfieldGeneration(payload: HiggsfieldGenerationPayload) {
   assertTriggerConfigured();
   const dispatch = await buildDispatchContext(["stack-structure", "higgsfield", "external-paid"], {
@@ -332,13 +350,14 @@ export async function triggerFinalExport(payload: FinalExportPayload) {
   return tasks.trigger<typeof finalExportTask>(STACK_STRUCTURE_TRIGGER_TASKS.finalExport, payload, {
     idempotencyKey: createTriggerIdempotencyKey("final-export", [
       payload.requestKey,
+      JSON.stringify(payload.projectSnapshot ?? null),
       JSON.stringify(payload.segments),
       JSON.stringify(payload.effectCues ?? []),
       JSON.stringify(payload.accentKinds ?? {}),
       JSON.stringify(payload.beats ?? []),
       JSON.stringify(payload.lyricChunks ?? []),
       payload.shaderPresetId ?? "",
-      ...payload.videos.map((video) => video.objectKey),
+      ...payload.videos.map((video) => `${video.objectKey}:${video.expectedSha256 ?? ""}`),
       payload.audio.objectKey,
     ]),
     idempotencyKeyTTL: "24h",

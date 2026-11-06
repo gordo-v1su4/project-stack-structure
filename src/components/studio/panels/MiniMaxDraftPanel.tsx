@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { generatedAssetIdentityBlockReason, type GeneratedStudioAsset } from "../generatedAssets";
+import { generatedAssetDraftIdentityBlockReason, type GeneratedStudioAsset } from "../generatedAssets";
+import { generatedAssetDraftSimilarityLabel, generatedAssetDraftSimilarityWarnings } from "../generatedAssetIdentity";
+import { recheckH3Similarity } from "../h3SimilarityRecheck";
 import type { GeneratedDraftReview, GeneratedDraftSelection } from "../generatedDraft";
 import { createH3PickupWindow, enqueueH3DraftRequest, findH3TargetSegment, h3DraftBatchStorageKey, h3RequestWindowKey, h3WindowKey, nextH3Attempt, parseH3DraftBatch, planH3DraftWindows, selectH3PickupWindow, selectH3ReferenceAssetIds, type H3DraftBatch } from "../h3DraftPlan";
 import { isH3JobTerminal, type H3GenerationJob, type H3GenerationRequest } from "../h3Generation";
@@ -152,12 +154,12 @@ export function MiniMaxDraftPanel(props: Props) {
           break;
         }
         const effectiveAsset = latest.current.assets.find(asset => asset.id === job.result?.asset.id) ?? job.result?.asset;
-        const identityBlock = effectiveAsset ? generatedAssetIdentityBlockReason(effectiveAsset) : "Needs identity check";
+        const identityBlock = effectiveAsset ? generatedAssetDraftIdentityBlockReason(effectiveAsset) : "Needs identity check";
         if (identityBlock) {
           const remaining = batchRef.current!.requests.slice(1);
           persistBatch(remaining.length ? { ...batchRef.current!, requests: remaining, paused: true } : null);
           setMessage("The take was saved outside the draft.");
-          throw new Error(`${identityBlock}. Check likeness before continuing the remaining shots.`);
+          throw new Error(`${identityBlock}. Review the take before continuing the remaining shots.`);
         }
         persistBatch({ ...batchRef.current!, requests: batchRef.current!.requests.slice(1) });
       }
@@ -274,6 +276,22 @@ export function MiniMaxDraftPanel(props: Props) {
     finally { if (mounted.current && !running.current) setBusy(false); }
   }
 
+  async function checkSimilarity(job: H3GenerationJob) {
+    if (busy || accepting) return;
+    const projectId = props.projectId, expectedRevision = props.draft?.revision;
+    setBusy(true); setError(null); setMessage("Checking the saved video with the similarity model…");
+    try {
+      const asset = await recheckH3Similarity(job, { requestIntentId: crypto.randomUUID() });
+      if (!mounted.current || latest.current.projectId !== projectId) return;
+      latest.current.onGeneratedAsset(asset, expectedRevision);
+      setReview(null);
+      await readJobs(job.projectId);
+      setMessage(generatedAssetDraftSimilarityLabel(asset) ?? `${generatedAssetDraftIdentityBlockReason(asset) ?? "Check completed"}. The take remains available for review.`);
+    } catch (failure) {
+      if (mounted.current && latest.current.projectId === projectId) setError(failure instanceof Error ? failure.message : "Similarity check failed.");
+    } finally { if (mounted.current) setBusy(false); }
+  }
+
   const missing = planH3DraftWindows(props.segments);
   const pickupWindow = selectH3PickupWindow(missing, pickupKey);
   const pickupEditKey = `${props.projectId ?? "unsaved"}:${pickupWindow ? h3WindowKey(pickupWindow) : ""}`;
@@ -356,16 +374,18 @@ export function MiniMaxDraftPanel(props: Props) {
       <h3 className="mb-2 text-sm font-semibold">Generation progress</h3>
       <ul className="divide-y divide-line">{jobs.slice(0, 40).map(job => {
         const asset = props.assets.find(candidate => candidate.id === job.result?.asset.id) ?? job.result?.asset;
-        const identityBlock = asset ? generatedAssetIdentityBlockReason(asset) : null;
+        const identityBlock = asset ? generatedAssetDraftIdentityBlockReason(asset) : null;
         const rejected = asset?.reviewStatus === "rejected" || identityBlock === "Rejected";
         return <li key={job.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-xs">
         <span className="flex items-center gap-2"><StatusDot tone={rejected || job.state === "failed" || (job.state === "ready" && Boolean(identityBlock)) ? "failed" : job.state === "ready" ? "ready" : "processing"} />{job.target.sectionLabel ?? job.request.sectionId} · {clock(job.request.songStart)}–{clock(job.request.songEnd)}</span>
         <span className="text-fg-3">{rejected ? "Rejected · excluded from draft" : job.state === "ready" && identityBlock ? identityBlock : STATE_LABELS[job.state]}{job.error ? `: ${job.error}` : ""}</span>
         <span className="flex flex-wrap gap-2">
+          {job.state === "ready" && asset?.identityVerification?.status === "unverifiable" && !rejected ? <Button disabled={busy || accepting} onClick={() => void checkSimilarity(job)}>Check similarity</Button> : null}
           {(["submission_unknown", "rendering", "persisting"] as string[]).includes(job.state) ? <Button disabled={busy || accepting} onClick={() => void recoverJob(job, "resume")}>Check existing render</Button> : null}
           {job.state === "failed" || job.state === "cancelled" ? <Button disabled={busy || accepting || attemptsLeft(job) <= 0 || !findH3TargetSegment(props.segments, job.target)} onClick={() => void recoverJob(job, "retry")}>Retry shot ({attemptsLeft(job)} left)</Button> : null}
           {!isH3JobTerminal(job) && job.state !== "cancel_requested" ? <Button variant="danger" disabled={accepting} onClick={() => void recoverJob(job, "cancel")}>Cancel this shot</Button> : null}
         </span>
+        {asset ? <SimilarityFilterNote asset={asset} /> : null}
       </li>; })}</ul>
     </Surface> : null}
     {selected.length ? <Surface aria-label="Review generated shots">
@@ -373,6 +393,7 @@ export function MiniMaxDraftPanel(props: Props) {
       <p className="mt-1 text-xs text-fg-3">Edit this shot direction while keeping the named people and location. The rest of the story stays intact.</p>
       <div className="mt-3 space-y-3">{selected.map(asset => <div key={asset.id} className="rounded-md border border-line p-3">
         <div className="mb-2 flex items-center justify-between gap-2"><span className="text-sm">{asset.title}</span><span className="text-xs text-fg-3">{clock(asset.target?.songStart ?? 0)}</span></div>
+        <SimilarityFilterNote asset={asset} />
         <label className="block text-xs text-fg-3">Shot direction<textarea aria-label={`Revision for ${asset.title}`} rows={2}
           value={revisionText[asset.id] ?? jobs.find(job => job.id === asset.jobId || job.id === asset.id)?.request.prompt ?? ""} placeholder={asset.target?.sectionLabel ?? "Describe the complete revised action"}
           onChange={event => setRevisionText(previous => ({ ...previous, [asset.id]: event.target.value }))}
@@ -383,10 +404,22 @@ export function MiniMaxDraftPanel(props: Props) {
     </Surface> : null}
     {props.assets.some(asset => !selectedIds.has(asset.id) && asset.mediaKind === "video" && asset.status === "completed" && asset.reviewStatus === "pending") ? <Surface>
       <h3 className="mb-2 text-sm font-semibold">Other takes</h3>
-      {props.assets.filter(asset => !selectedIds.has(asset.id) && asset.mediaKind === "video" && asset.status === "completed" && asset.reviewStatus === "pending").map(asset => <div key={asset.id} className="flex items-center justify-between gap-2 py-1 text-sm"><span>{asset.title}{generatedAssetIdentityBlockReason(asset) ? ` · ${generatedAssetIdentityBlockReason(asset)}` : ""}</span><Button disabled={busy || accepting || Boolean(generatedAssetIdentityBlockReason(asset)) || !asset.target || !findH3TargetSegment(props.segments, asset.target)} reason={generatedAssetIdentityBlockReason(asset)} onClick={() => { props.onSelectAsset(asset); setReview(null); }}>Use in draft</Button></div>)}
+      {props.assets.filter(asset => !selectedIds.has(asset.id) && asset.mediaKind === "video" && asset.status === "completed" && asset.reviewStatus === "pending").map(asset => {
+        const block = generatedAssetDraftIdentityBlockReason(asset);
+        return <div key={asset.id} className="py-2 text-sm"><div className="flex items-center justify-between gap-2"><span>{asset.title}{block ? ` · ${block}` : ""}</span><Button disabled={busy || accepting || Boolean(block) || !asset.target || !findH3TargetSegment(props.segments, asset.target)} reason={block} onClick={() => { props.onSelectAsset(asset); setReview(null); }}>Use in draft</Button></div><SimilarityFilterNote asset={asset} /></div>;
+      })}
     </Surface> : null}
   </div>;
 }
 
 function clock(seconds: number) { return `${Math.floor(seconds / 60)}:${Math.floor(seconds % 60).toString().padStart(2, "0")}`; }
 function preciseClock(seconds: number) { return `${Math.floor(seconds / 60)}:${(seconds % 60).toFixed(2).padStart(5, "0")}`; }
+
+function SimilarityFilterNote({ asset }: { asset: GeneratedStudioAsset }) {
+  const label = generatedAssetDraftSimilarityLabel(asset), warnings = generatedAssetDraftSimilarityWarnings(asset);
+  if (!label && !warnings.length) return null;
+  return <div aria-label="Similarity filter evidence" className="w-full py-1 text-xs text-fg-3">
+    {label ? <p className="text-fg-2">{label}. Identity remains unverified; review the assembled draft.</p> : null}
+    {warnings.length ? <ul aria-label="Similarity quality warnings" className="mt-1 list-inside list-disc">{warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul> : null}
+  </div>;
+}

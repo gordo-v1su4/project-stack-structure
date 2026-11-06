@@ -1,4 +1,26 @@
 import type { GeneratedStudioAsset } from "./generatedAssets";
+import { resolveH3DraftSimilarityPolicy } from "./identityDraftPolicy";
+
+export type IdentityFrameSample = {
+  timeSeconds: number;
+  frameSha256: string;
+  scores: { referenceHash: string; trackId: string; score: number }[];
+};
+
+/** Provisional model screen for a reviewed draft; never an identity certificate. */
+export type GeneratedAssetDraftSimilarityFilter = {
+  version: 1;
+  policyId: string;
+  policySha256: string;
+  status: "eligible" | "ineligible" | "unverifiable";
+  threshold: number;
+  examinedFrameCount: number;
+  eligibleFrameCount: number;
+  outOfScopeFrameCount: number;
+  ambiguousFrameCount: number;
+  samples: IdentityFrameSample[];
+  warnings: string[];
+};
 
 /** Worker evidence, not a user approval or a confidence percentage. */
 export type GeneratedAssetIdentityVerification = {
@@ -31,11 +53,8 @@ export type GeneratedAssetIdentityVerification = {
   threshold?: number;
   /** Missing faces or ambiguous identity-to-track assignment cannot pass. */
   coverage: "complete" | "incomplete" | "ambiguous" | "not_required";
-  samples: {
-    timeSeconds: number;
-    frameSha256: string;
-    scores: { referenceHash: string; trackId: string; score: number }[];
-  }[];
+  samples: IdentityFrameSample[];
+  draftSimilarityFilter?: GeneratedAssetDraftSimilarityFilter;
   reason?: string;
 };
 
@@ -47,6 +66,36 @@ const hashes = (value: unknown): value is string[] => Array.isArray(value) && va
 const sameHashes = (left: unknown, right: unknown) => hashes(left) && hashes(right)
   && left.length === right.length && left.every((value, index) => value === right[index]);
 const frameCount = (value: unknown): value is number => Number.isSafeInteger(value) && (value as number) >= 0 && (value as number) <= 10_000_000;
+
+function validSamples(value: unknown): value is IdentityFrameSample[] {
+  return Array.isArray(value) && value.length <= 512 && value.every(sample => sample
+    && Number.isFinite(sample.timeSeconds) && sample.timeSeconds >= 0 && sample.timeSeconds <= 86_400
+    && hash(sample.frameSha256) && Array.isArray(sample.scores) && sample.scores.length <= 32
+    && sample.scores.every((score: IdentityFrameSample["scores"][number]) => score && hash(score.referenceHash) && boundedText(score.trackId)
+      && Number.isFinite(score.score) && score.score >= -1 && score.score <= 1));
+}
+
+function copySamples(samples: IdentityFrameSample[]): IdentityFrameSample[] {
+  return samples.map(sample => ({ timeSeconds: sample.timeSeconds, frameSha256: sample.frameSha256,
+    scores: sample.scores.map(score => ({ referenceHash: score.referenceHash, trackId: score.trackId, score: score.score })) }));
+}
+
+export function normalizeGeneratedAssetDraftSimilarityFilter(value: unknown): GeneratedAssetDraftSimilarityFilter | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const filter = value as GeneratedAssetDraftSimilarityFilter;
+  if (filter.version !== 1 || !boundedText(filter.policyId) || !hash(filter.policySha256)
+    || !["eligible", "ineligible", "unverifiable"].includes(filter.status)
+    || !Number.isFinite(filter.threshold) || filter.threshold <= 0 || filter.threshold > 1
+    || ![filter.examinedFrameCount, filter.eligibleFrameCount, filter.outOfScopeFrameCount, filter.ambiguousFrameCount].every(frameCount)
+    || filter.examinedFrameCount > 512 || filter.eligibleFrameCount > filter.examinedFrameCount
+    || filter.outOfScopeFrameCount > filter.examinedFrameCount || filter.ambiguousFrameCount > filter.examinedFrameCount
+    || !validSamples(filter.samples) || !Array.isArray(filter.warnings) || filter.warnings.length > 32
+    || !filter.warnings.every(boundedText)) return undefined;
+  return { version: 1, policyId: filter.policyId, policySha256: filter.policySha256, status: filter.status,
+    threshold: filter.threshold, examinedFrameCount: filter.examinedFrameCount, eligibleFrameCount: filter.eligibleFrameCount,
+    outOfScopeFrameCount: filter.outOfScopeFrameCount, ambiguousFrameCount: filter.ambiguousFrameCount,
+    samples: copySamples(filter.samples), warnings: [...filter.warnings] };
+}
 
 /** Malformed persisted evidence is discarded; it can never grant eligibility. */
 export function normalizeGeneratedAssetIdentityVerification(value: unknown): GeneratedAssetIdentityVerification | undefined {
@@ -67,14 +116,11 @@ export function normalizeGeneratedAssetIdentityVerification(value: unknown): Gen
     || !hash(proof.verifier.modelSha256)
     || !["complete", "incomplete", "ambiguous", "not_required"].includes(proof.coverage)
     || (proof.threshold !== undefined && (!Number.isFinite(proof.threshold) || proof.threshold <= 0 || proof.threshold > 1))
-    || !Array.isArray(proof.samples) || proof.samples.length > 512
+    || !validSamples(proof.samples)
     || (proof.reason !== undefined && (typeof proof.reason !== "string" || proof.reason.length > 2048))) return undefined;
-  for (const sample of proof.samples) {
-    if (!sample || !Number.isFinite(sample.timeSeconds) || sample.timeSeconds < 0 || sample.timeSeconds > 86_400
-      || !hash(sample.frameSha256) || !Array.isArray(sample.scores) || sample.scores.length > 32
-      || sample.scores.some(score => !score || !hash(score.referenceHash) || !boundedText(score.trackId)
-        || !Number.isFinite(score.score) || score.score < -1 || score.score > 1)) return undefined;
-  }
+  const draftSimilarityFilter = proof.draftSimilarityFilter === undefined ? undefined
+    : normalizeGeneratedAssetDraftSimilarityFilter(proof.draftSimilarityFilter);
+  if (proof.draftSimilarityFilter !== undefined && !draftSimilarityFilter) return undefined;
   return {
     version: 1, status: proof.status, assetId: proof.assetId, jobId: proof.jobId, generationModel: proof.generationModel,
     mediaSha256: proof.mediaSha256, referenceHashes: [...proof.referenceHashes], identityReferenceHashes: [...proof.identityReferenceHashes],
@@ -82,8 +128,8 @@ export function normalizeGeneratedAssetIdentityVerification(value: unknown): Gen
     verifiedStartFrame: proof.verifiedStartFrame, verifiedEndFrameExclusive: proof.verifiedEndFrameExclusive,
     unverifiableFrameCount: proof.unverifiableFrameCount, ambiguousFrameCount: proof.ambiguousFrameCount,
     assessedAt: proof.assessedAt, verifier: { ...proof.verifier }, threshold: proof.threshold, coverage: proof.coverage,
-    samples: proof.samples.map(sample => ({ timeSeconds: sample.timeSeconds, frameSha256: sample.frameSha256,
-      scores: sample.scores.map(score => ({ referenceHash: score.referenceHash, trackId: score.trackId, score: score.score })) })),
+    samples: copySamples(proof.samples),
+    ...(draftSimilarityFilter ? { draftSimilarityFilter } : {}),
     reason: proof.reason,
   };
 }
@@ -131,4 +177,65 @@ export function generatedAssetIdentityBlockReason(asset: GeneratedStudioAsset): 
     if (new Set(samples.map(sample => sample.timeSeconds)).size < 3 || new Set(samples.map(sample => sample.frameSha256)).size < 3) return "Identity check has insufficient samples";
   }
   return null;
+}
+
+/** Draft-only model eligibility; explicit whole-draft approval remains separate. */
+export function generatedAssetDraftIdentityBlockReason(asset: GeneratedStudioAsset): string | null {
+  const strictBlock = generatedAssetIdentityBlockReason(asset);
+  if (strictBlock === null || strictBlock === "Rejected") return strictBlock;
+  const proof = normalizeGeneratedAssetIdentityVerification(asset.identityVerification);
+  const filter = proof?.draftSimilarityFilter;
+  if (!proof || proof.status !== "unverifiable" || !filter) return strictBlock;
+  const policy = resolveH3DraftSimilarityPolicy(filter.policyId, filter.policySha256);
+  if (!policy) return "Unknown similarity filter policy";
+  if (proof.assetId !== asset.id || proof.jobId !== asset.jobId || proof.generationModel !== asset.model
+    || asset.model !== policy.generationModel || asset.provider !== "swarmui"
+    || !hash(asset.mediaSha256) || proof.mediaSha256 !== asset.mediaSha256
+    || proof.frameCount !== asset.mediaFrameCount || proof.frameRate !== asset.mediaFrameRate || proof.durationSeconds !== asset.durationSeconds
+    || !sameHashes(proof.referenceHashes, asset.generationReferenceHashes) || !sameHashes(proof.identityReferenceHashes, asset.identityReferenceHashes)
+    || proof.identityReferenceHashes.length !== 1 || proof.identityReferenceHashes[0] !== policy.identityReferenceSha256
+    || !proof.referenceHashes.includes(policy.identityReferenceSha256)
+    || proof.verifier.model !== policy.verifierModel || proof.verifier.modelSha256 !== policy.modelSha256
+    || proof.verifier.version !== policy.verifierVersion || proof.verifier.preprocessVersion !== policy.preprocessVersion) return "Similarity filter does not match this clip";
+  // This helper is not an authorization boundary. Server export reconciliation
+  // additionally binds the current owned project and canonical stored H3 job.
+  const parts = typeof asset.fullStorage?.objectKey === "string" ? asset.fullStorage.objectKey.split("/") : undefined;
+  if (!parts || parts.length !== 7 || parts[0] !== "media-uploads" || parts[1] !== "projects"
+    || !/^[a-zA-Z0-9_-]+$/.test(parts[2]) || parts[3] !== "generated" || parts[4] !== policy.projectId
+    || parts[5] !== asset.jobId || parts[6] !== "shot.mp4"
+    || !/^h3-[a-f0-9]{64}$/.test(asset.jobId ?? "")) return "Similarity filter is outside its project scope";
+  if (filter.status !== "eligible") return filter.status === "ineligible" ? "Similarity filter did not pass" : "Similarity filter could not be assessed";
+  const count = proof.verifiedEndFrameExclusive - proof.verifiedStartFrame;
+  if (filter.threshold !== policy.threshold || count < policy.minimumFrameCount
+    || filter.examinedFrameCount !== count || filter.eligibleFrameCount !== count
+    || filter.outOfScopeFrameCount !== 0 || filter.ambiguousFrameCount !== 0 || proof.ambiguousFrameCount !== 0
+    || proof.examinedFrameCount !== count || filter.samples.length !== count || proof.samples.length !== count) return "Similarity filter is incomplete";
+  const trimStart = asset.trimStart ?? 0, fps = proof.frameRate;
+  const targetDuration = asset.target ? asset.target.songEnd - asset.target.songStart : NaN;
+  if (!Number.isFinite(trimStart) || trimStart < 0 || !Number.isFinite(targetDuration) || targetDuration <= 0
+    || trimStart + targetDuration > proof.durationSeconds + 1e-6
+    || trimStart > Math.max(0, proof.durationSeconds - Math.max(0.05, targetDuration))
+    || Math.floor(trimStart * fps + 1e-6) !== proof.verifiedStartFrame
+    || Math.min(proof.frameCount, Math.ceil((trimStart + targetDuration) * fps - 1e-6)) !== proof.verifiedEndFrameExclusive) return "Similarity filter does not cover this trim";
+  let trackId: string | undefined;
+  for (const [index, sample] of filter.samples.entries()) {
+    const parentSample = proof.samples[index], expectedFrame = proof.verifiedStartFrame + index;
+    if (Math.abs(sample.timeSeconds * fps - expectedFrame) > 1e-5 || sample.timeSeconds >= proof.durationSeconds
+      || parentSample.timeSeconds !== sample.timeSeconds || parentSample.frameSha256 !== sample.frameSha256
+      || sample.scores.length !== 1 || sample.scores[0].referenceHash !== policy.identityReferenceSha256
+      || sample.scores[0].score < policy.threshold) return "Similarity filter has incomplete frame evidence";
+    const score = sample.scores[0];
+    if (trackId !== undefined && trackId !== score.trackId) return "Similarity filter has ambiguous tracking";
+    trackId = score.trackId;
+  }
+  return null;
+}
+
+export function generatedAssetDraftSimilarityLabel(asset: GeneratedStudioAsset): string | null {
+  return asset.identityVerification?.status === "unverifiable" && asset.identityVerification.draftSimilarityFilter?.status === "eligible"
+    && generatedAssetDraftIdentityBlockReason(asset) === null ? "Similarity filter passed · review required" : null;
+}
+
+export function generatedAssetDraftSimilarityWarnings(asset: GeneratedStudioAsset): string[] {
+  return normalizeGeneratedAssetIdentityVerification(asset.identityVerification)?.draftSimilarityFilter?.warnings ?? [];
 }

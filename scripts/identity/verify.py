@@ -18,6 +18,7 @@ import cv2
 import numpy as np
 import onnxruntime as ort
 from download_models import sha256_file
+from draft_similarity_filter import requested_draft_filter
 
 VERSION = "sface-yunet-cpu-v1"
 PREPROCESS_VERSION = "opencv412-aligncrop112-rgb-f32-nchw-unit-centroid-v1"
@@ -223,10 +224,13 @@ def assess(value, model_dir, sample_count=None):
         "modelSha256": verifier.manifest["models"][0]["sha256"], "version": VERSION,
         "preprocessVersion": PREPROCESS_VERSION + "-gallery-v2-" + gallery_profile["sha256"],
         "calibrationId": "uncalibrated-no-automatic-pass-v1"}, "coverage": "incomplete", "samples": [],
-        "reason": "No validated SFace likeness calibration exists. Measurements cannot authorize automatic selection.",
+        "reason": "No validated SFace likeness calibration exists. This identity assessment cannot certify likeness; any provisional draft filter is reported separately.",
         "diagnostics": {"runtime": {**verifier.versions, "python": platform.python_version(), "recognitionProvider": "CPUExecutionProvider",
         "intraOpThreads": 2, "interOpThreads": 1, "opencvThreads": 2}, "modelManifest": verifier.manifest,
         "qualityLimitsStatus": "provisional-not-calibrated", "galleryProfile": gallery_profile, "galleries": {}, "frames": []}}
+    draft_filter = requested_draft_filter(value, report["verifier"], verifier.manifest, gallery_profile)
+    if draft_filter is not None:
+        report["draftSimilarityFilter"] = draft_filter.evidence
     if not value["identityReferenceHashes"]:
         report.update(status="not_required", coverage="not_required", reason="The shot has no identity-conditioning references.")
         return report
@@ -296,6 +300,9 @@ def assess(value, model_dir, sample_count=None):
                     sample["scores"].append({"referenceHash": reference_hash, "trackId": face["trackId"], "score": score})
             if missing: report["unverifiableFrameCount"] += 1
             if ambiguous: report["ambiguousFrameCount"] += 1
+            if draft_filter is not None:
+                template = templates.get(draft_filter.policy["identity"]["rawSha256"])
+                if template is not None: draft_filter.observe(index, value["fps"], frame_hash, image.shape, faces, template)
             report["samples"].append(sample)
             report["diagnostics"]["frames"].append(diagnostic)
     finally:
@@ -310,6 +317,8 @@ def assess(value, model_dir, sample_count=None):
             raise ValueError("Invalid provisional diagnostic threshold")
         report["threshold"] = threshold
         report["diagnostics"]["provisionalThresholdCannotGrantPass"] = True
+    if draft_filter is not None:
+        report["draftSimilarityFilter"] = draft_filter.finish()
     return report
 
 

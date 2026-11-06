@@ -1,0 +1,159 @@
+import { createHash } from "node:crypto";
+import { applyApprovedGeneratedAssets, buildGeneratedAssetPlaybackUrl, generatedAssetDraftIdentityBlockReason, type GeneratedStudioAsset } from "@/components/studio/generatedAssets";
+import { buildEditPlanPreviewSegments, isPlacementPlanCurrent } from "@/components/studio/musicVideoProject";
+import { hydrateStudioProjectDraft } from "@/components/studio/projectPersistence";
+import { buildStudioSourceContextSignature } from "@/components/studio/studioSourceContext";
+import { buildStoryContentSignature } from "@/components/studio/storyTreatments";
+import { clipAudioKey, normalizeClipAudioSettings, usesClipAudio } from "@/components/studio/clipAudio";
+import type { FinalExportPayload, StoredExportInput } from "@/trigger/export";
+import { resolveDurableInput, type DurableExportInput } from "./exportInputs";
+import { readH3Job } from "./h3JobStore";
+import { readStudioProject } from "./studioProjectStore";
+import { normalizeStudioOwnerSegment } from "./studioStoragePaths";
+
+export class ProjectExportError extends Error { constructor(message: string, readonly status: 400 | 403 | 409 = 409) { super(message); } }
+export type ProjectExportContext = { projectId: string; planSignature: string; placementRevision: number; draftRevision: number };
+const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
+const near = (a: unknown, b: unknown) => typeof a === "number" && typeof b === "number" && Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) < 1e-6;
+const mediaKey = (input: Pick<StoredExportInput, "bucket" | "objectKey">) => `${input.bucket}\n${input.objectKey}`;
+
+/** Durable namespace is authoritative even when browser asset tags are stripped or relabeled. */
+export function h3ExportMediaIdentity(objectKey: string) {
+  const match = /^media-uploads\/projects\/([^/]+)\/generated\/([^/]+)\/(h3-[a-f0-9]{64})(?:\/|$)/.exec(objectKey);
+  return match ? { owner: match[1], projectId: match[2], jobId: match[3] } : null;
+}
+
+export function parseProjectExportContext(form: FormData): ProjectExportContext | null {
+  const keys = ["projectId", "planSignature", "placementRevision", "draftRevision"];
+  if (keys.every(key => form.get(key) === null)) return null;
+  const projectId = form.get("projectId"), planSignature = form.get("planSignature");
+  const placementRevision = Number(form.get("placementRevision")), draftRevision = Number(form.get("draftRevision"));
+  if (typeof projectId !== "string" || !/^[a-zA-Z0-9_-]{1,96}$/.test(projectId)
+    || typeof planSignature !== "string" || !planSignature.trim() || planSignature.length > 200
+    || keys.some(key => form.get(key) === null) || !Number.isSafeInteger(placementRevision) || placementRevision < 0
+    || !Number.isSafeInteger(draftRevision) || draftRevision < 0) throw new ProjectExportError("A complete current project export context is required.", 400);
+  return { projectId, planSignature, placementRevision, draftRevision };
+}
+
+export async function reconcileProjectFinalExport(params: {
+  ownerId: string; context: ProjectExportContext | null; audio: DurableExportInput; videos: DurableExportInput[];
+  segments: FinalExportPayload["segments"];
+}): Promise<{ audio: StoredExportInput; videos: StoredExportInput[]; segments: FinalExportPayload["segments"]; projectSnapshot?: FinalExportPayload["projectSnapshot"] }> {
+  const { ownerId, context } = params;
+  const knownH3 = params.videos.flatMap(video => [video.objectKey, ...(video.chunks ?? []).map(chunk => chunk.objectKey)])
+    .map(h3ExportMediaIdentity).filter(identity => identity !== null);
+  if (!context) {
+    if (knownH3.length) throw new ProjectExportError("Generated H3 media requires its current approved project snapshot.");
+    return { audio: params.audio, videos: params.videos, segments: params.segments };
+  }
+  if (knownH3.some(identity => identity.owner !== normalizeStudioOwnerSegment(ownerId) || identity.projectId !== context.projectId)) {
+    throw new ProjectExportError("Generated media does not belong to this account and project.", 403);
+  }
+  // Canonical H3 returns one complete video, never a client-assembled chunk manifest.
+  if (params.videos.some(video => video.chunks?.some(chunk => h3ExportMediaIdentity(chunk.objectKey)))) {
+    throw new ProjectExportError("An H3 output cannot be relabeled as an ordinary source chunk.");
+  }
+  const saved = await readStudioProject(ownerId, context.projectId, { fresh: true });
+  if (!saved) throw new ProjectExportError("Project not found.", 403);
+  const { draft } = saved;
+  const project = draft.musicVideoProject;
+  if (!project || !isPlacementPlanCurrent(project) || project.placementPlan!.inputSignature !== context.planSignature
+    || project.placementPlan!.revision !== context.placementRevision || (draft.generatedDraft?.revision ?? 0) !== context.draftRevision
+    || (draft.generatedDraft?.assetIds.length ?? 0) !== 0 || !draft.storyState.storyGenerated) {
+    throw new ProjectExportError("The accepted project snapshot changed. Save and review the current draft before exporting.");
+  }
+  const runtime = hydrateStudioProjectDraft({ draft });
+  const assets: GeneratedStudioAsset[] = [];
+  const canonicalByKey = new Map<string, GeneratedStudioAsset>();
+  const receipts: NonNullable<FinalExportPayload["projectSnapshot"]>["h3"] = [];
+  for (const asset of runtime.generatedAssets) {
+    if (asset.reviewStatus !== "approved") { assets.push(asset); continue; }
+    // Approved history from another plan is retained in the project but cannot overlay this cut.
+    if (asset.target?.planSignature && asset.target.planSignature !== context.planSignature) continue;
+    const objectKey = asset.fullStorage?.objectKey ?? asset.fullStorage?.storagePath ?? "";
+    const identity = h3ExportMediaIdentity(objectKey);
+    const h3 = identity || asset.jobId?.startsWith("h3-") || /^h3-ref2va-/.test(asset.model);
+    if (!h3) { assets.push(asset); continue; }
+    const jobId = identity?.jobId ?? asset.jobId;
+    if (!jobId || !/^h3-[a-f0-9]{64}$/.test(jobId) || (identity && (identity.owner !== normalizeStudioOwnerSegment(ownerId) || identity.projectId !== context.projectId))) {
+      throw new ProjectExportError("An approved generated take has no canonical project job.");
+    }
+    const job = await readH3Job(ownerId, context.projectId, jobId);
+    const canonical = job?.result?.asset;
+    if (!job || job.state !== "ready" || !canonical || canonical.id !== asset.id || canonical.reviewStatus === "rejected"
+      || job.target.planSignature !== context.planSignature || canonical.target?.planSignature !== context.planSignature) {
+      throw new ProjectExportError("An approved generated take no longer matches its canonical ready job.");
+    }
+    const identityHashes = job.references.flatMap((reference, index) => reference.role === "identity" && job.referenceHashes?.[index] ? [job.referenceHashes[index]] : []);
+    if (!job.referenceHashes || job.referenceHashes.length !== job.references.length
+      || JSON.stringify(canonical.generationReferenceHashes) !== JSON.stringify(job.referenceHashes)
+      || JSON.stringify(canonical.identityReferenceHashes) !== JSON.stringify(identityHashes)) {
+      throw new ProjectExportError("The canonical take does not match its actual generation references.");
+    }
+    const authoritative: GeneratedStudioAsset = { ...canonical, id: canonical.id, jobId: job.id, provider: "swarmui", model: job.profile,
+      target: job.target, trimStart: asset.trimStart ?? 0, reviewStatus: "approved", approvedAt: asset.approvedAt };
+    // Owner approval is consent to this snapshot; eligibility comes only from worker evidence.
+    const reason = generatedAssetDraftIdentityBlockReason(authoritative);
+    if (reason) throw new ProjectExportError(`${reason}. This take cannot enter final export.`);
+    if (!authoritative.fullStorage?.bucket || !authoritative.fullStorage.objectKey || !/^[a-f0-9]{64}$/.test(authoritative.mediaSha256 ?? "")) {
+      throw new ProjectExportError("The canonical generated take has no verified durable media binding.");
+    }
+    canonicalByKey.set(mediaKey({ bucket: authoritative.fullStorage.bucket, objectKey: authoritative.fullStorage.objectKey }), authoritative);
+    assets.push(authoritative);
+    receipts.push({ jobId: job.id, assetId: authoritative.id, mediaSha256: authoritative.mediaSha256!,
+      proofSha256: digest(authoritative.identityVerification), trimStart: authoritative.trimStart ?? 0,
+      trimEnd: (authoritative.trimStart ?? 0) + job.target.songEnd - job.target.songStart });
+  }
+  for (const video of params.videos) if (h3ExportMediaIdentity(video.objectKey) && !canonicalByKey.has(mediaKey(video))) {
+    throw new ProjectExportError("Generated media is not an approved canonical take in this snapshot.");
+  }
+  if (receipts.length) {
+    const story = draft.storyState;
+    const liveContext = buildStudioSourceContextSignature({ analysis: runtime.analysis, videoSources: runtime.videoSources, referenceAssets: runtime.referenceAssets });
+    if (story.confirmedSourceContextSignature !== liveContext || project.sourceContextSignature !== liveContext
+      || !story.confirmedTreatmentSnapshot || story.confirmedTreatmentId !== story.confirmedTreatmentSnapshot.id
+      || story.storyContentSignature !== buildStoryContentSignature(story.confirmedTreatmentSnapshot, story.storyBeats)) {
+      throw new ProjectExportError("The song, references or story changed after generated-shot approval.");
+    }
+  }
+  const base = buildEditPlanPreviewSegments({ project: runtime.musicVideoProject, videoSources: runtime.videoSources, editSettings: runtime.storyState.editSettings })
+    .map(segment => {
+      const source = runtime.videoSources.find(source => source.videoUrl === segment.videoUrl);
+      return { ...segment, useClipAudio: segment.kind !== "gap" && usesClipAudio(normalizeClipAudioSettings(runtime.clipAudioSettings), source ? clipAudioKey(source) : undefined) };
+    });
+  const preview = applyApprovedGeneratedAssets(base, assets);
+  if (preview.length !== params.segments.length || preview.some(segment => segment.kind === "gap" || !segment.videoUrl)) {
+    throw new ProjectExportError("The submitted export does not match a complete accepted project cut.");
+  }
+  const audio = resolveDurableInput({ bucket: runtime.analysis?.storageBucket, objectKey: runtime.analysis?.storagePath }, "audio/wav");
+  if (mediaKey(audio) !== mediaKey(params.audio) || params.audio.chunks?.length) throw new ProjectExportError("The submitted master does not match the accepted project.");
+  const videos: StoredExportInput[] = [];
+  const segments: FinalExportPayload["segments"] = [];
+  let songCursor = 0;
+  for (const [index, segment] of preview.entries()) {
+    const source = runtime.videoSources.find(source => source.videoUrl === segment.videoUrl);
+    const generated = assets.find(asset => buildGeneratedAssetPlaybackUrl(asset) === segment.videoUrl);
+    const key = generated?.fullStorage?.objectKey ?? generated?.fullStorage?.storagePath ?? source?.storagePath;
+    const bucket = generated?.fullStorage?.bucket ?? source?.storageBucket;
+    const expected = resolveDurableInput({ bucket, objectKey: key, ...(source?.uploadChunks?.chunks?.length ? { chunks: source.uploadChunks.chunks } : {}) }, "video/mp4");
+    const canonical = canonicalByKey.get(mediaKey(expected));
+    if (h3ExportMediaIdentity(expected.objectKey) && !canonical) throw new ProjectExportError("An H3 output cannot be relabeled as ordinary source footage.");
+    const submitted = params.segments[index];
+    const ref = params.videos[submitted.sourceIndex ?? 0];
+    if (!ref || mediaKey(expected) !== mediaKey(ref) || JSON.stringify(expected.chunks ?? []) !== JSON.stringify(ref.chunks ?? [])
+      || !near(submitted.startTime, segment.startTime) || !near(submitted.endTime, segment.endTime)
+      || !near(submitted.musicStart, segment.musicStart) || !near(submitted.musicEnd, segment.musicEnd)
+      || Boolean(submitted.useClipAudio) !== Boolean(segment.useClipAudio) || !near(segment.musicStart, songCursor)
+      || segment.musicEnd <= segment.musicStart || segment.endTime <= segment.startTime) {
+      throw new ProjectExportError("Export media or trim timing changed after draft acceptance.");
+    }
+    let sourceIndex = videos.findIndex(video => mediaKey(video) === mediaKey(expected));
+    if (sourceIndex < 0) { sourceIndex = videos.length; videos.push({ ...expected, ...(canonical ? { expectedSha256: canonical.mediaSha256 } : {}) }); }
+    segments.push({ sourceIndex, startTime: segment.startTime, endTime: segment.endTime, musicStart: segment.musicStart,
+      musicEnd: segment.musicEnd, useClipAudio: segment.useClipAudio, label: segment.label });
+    songCursor = segment.musicEnd;
+  }
+  if (!near(songCursor, project.duration)) throw new ProjectExportError("The accepted cut does not cover the full master song.");
+  return { audio, videos, segments, projectSnapshot: { ownerId, projectId: context.projectId, planSignature: context.planSignature,
+    placementRevision: context.placementRevision, draftRevision: context.draftRevision, acceptedSnapshotSha256: digest(draft), h3: receipts } };
+}

@@ -63,7 +63,7 @@ export const localGenerationTask = task({
         stage: label => markWorkRunning("generating", label, { progressMode: "provider" }),
         timeoutSeconds: Math.max(30, Math.min(payload.timeoutSeconds ?? 1500, 1700)),
       });
-      markWorkCompleted("H3 shot persisted for draft review", { completedItems: 1, totalItems: 1 });
+      markWorkCompleted(payload.h3Job.mode === "identity-recheck" ? "Shot similarity measurements updated" : "H3 shot persisted for draft review", { completedItems: 1, totalItems: 1 });
       return result;
     }
     assertReferenceLanguage(payload.request.prompt);

@@ -47,6 +47,16 @@ JWT-based E2E bypasses OAuth. After any `AUTH_*` environment change, also verify
 
 ## Saved-project H3 verification
 
+`bun run test projectExportValidation exportMediaIntegrity h3IdentityRecheckDispatch`
+checks the final-export trust boundary with synthetic evidence: owner-scoped media
+and chunks, fresh named-project revisions, saved approval, canonical H3 job
+evidence, selected trims and worker-side video hashes. Browser-supplied positive
+reports cannot replace a canonical unverifiable report. A pinned provisional
+similarity filter permits final export only after owner approval; its identity
+status remains unverifiable. These tests do not certify likeness or film quality.
+The CPU recheck dispatch test verifies the distinct `identity-recheck` mode and
+intent, without submitting provider inference.
+
 `bun run scripts/verify-h3-draft-flow.ts --project-id ID` inspects an authenticated local app and its saved project/H3 jobs without dispatching work. Supply the session through the private `STACK_STRUCTURE_E2E_COOKIE` process environment; the harness never prints or saves cookies. No 21-video fixture bundle is required.
 
 Add `--zero-footage` to prepare a master-only, lyric-free variant locally. Add `--run --limit 1` to save a new `[H3 verification]` project copy, generate at most one planned missing shot through the real H3 route/Trigger path, replay its identical intent, poll its job, read durable media bytes, and verify that the pending candidate survives a saved-project reload. The original project remains unchanged. Each render is real GPU work; `--run` is explicit authorization to execute the chosen bounded lane. `--limit 0` saves a copy without rendering. `--reuse-copy` continues a previously saved verification copy and refuses an ordinary original project.

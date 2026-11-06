@@ -3,7 +3,7 @@ import {
   applyGeneratedAssetOverlays,
   buildGeneratedAssetPlaybackUrl,
   generatedAssetMatchesPreviewSegment,
-  generatedAssetIdentityBlockReason,
+  generatedAssetDraftIdentityBlockReason,
   type GeneratedStudioAsset,
 } from "./generatedAssets";
 import type { EditPlanPreviewSegment } from "./musicVideoProject";
@@ -41,7 +41,7 @@ export function isGeneratedDraftCurrent(segments: EditPlanPreviewSegment[], draf
 
 function isSelectableAsset(asset: GeneratedStudioAsset, segments: EditPlanPreviewSegment[]) {
   return asset.status === "completed" && asset.mediaKind === "video" && asset.reviewStatus !== "rejected"
-    && generatedAssetIdentityBlockReason(asset) === null
+    && generatedAssetDraftIdentityBlockReason(asset) === null
     && Boolean(buildGeneratedAssetPlaybackUrl(asset)) && Number.isFinite(asset.durationSeconds) && (asset.durationSeconds ?? 0) > 0
     && segments.some(segment => generatedAssetMatchesPreviewSegment(asset, segment));
 }

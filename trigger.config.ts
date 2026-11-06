@@ -36,6 +36,7 @@ export default defineConfig({
         "node_modules/@higgsfield/cli/**",
         "scripts/identity/*.py",
         "scripts/identity/model-manifest.json",
+        "scripts/identity/policies/*.json",
         "scripts/identity/requirements.lock",
         "scripts/identity/licenses/*.txt",
       ] }),

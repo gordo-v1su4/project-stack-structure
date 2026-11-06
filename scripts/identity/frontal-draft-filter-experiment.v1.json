@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "id": "love-me-tonight-diego-frontal-close-draft-filter-v1",
+  "preregisteredAt": "2026-11-06T08:06:52Z",
+  "purpose": "Project-local provisional draft filter experiment; not validated identity accuracy",
+  "noTargetVideoObservedOrIncluded": true,
+  "baselineFixturePath": "scripts/identity/calibration-fixture.love-me-tonight.v1.json",
+  "baselineFixtureFileSha256": "15e493ede0b36f4a81f5e4d68da3618bbc2f73a4a94374b433ea4dab1684b1fc",
+  "baselineReportPath": ".tmp/identity-audit/calibration-controls-v1-repeat-report.json",
+  "baselineReportFileSha256": "7d5efd51613142c421bbeea7949c887791fe13fd3cc8d0db62a79e3a012ba8f9",
+  "gallerySha256": "6e3acaeea694c1a1d1df4fbd8f2a5365aa801cca8fd2a07faf8f6634af4dd9e7",
+  "scope": {
+    "version": "yunet-five-point-frontal-image-geometry-v1",
+    "minimumFaceWidthPixels": 128,
+    "minimumFaceHeightPixels": 160,
+    "minimumDetectionScore": 0.94,
+    "minimumBlurVariance": 100,
+    "minimumLuminance": 60,
+    "maximumLuminance": 190,
+    "maximumAbsoluteRollDegrees": 8,
+    "maximumAbsoluteNoseEyeMidpointOffsetOverEyeDistance": 0.10,
+    "maximumAbsoluteMouthEyeMidpointOffsetOverEyeDistance": 0.12,
+    "minimumEyeDistancePixels": 48,
+    "minimumNoseDepthOverEyeDistance": 0.15,
+    "maximumNoseDepthOverEyeDistance": 1.5,
+    "maximumMouthDepthOverEyeDistance": 2.5,
+    "requireWholeFaceBoxInsideImage": true,
+    "requireSingleDetectedFace": true
+  },
+  "scoreRule": {
+    "minimumThreshold": 0.80,
+    "negativeMargin": 0.02,
+    "thresholdRoundingStep": 0.01,
+    "positiveMargin": 0.005
+  },
+  "scopeValidation": {
+    "requiredPositiveView": "front",
+    "excludedView": "three-quarter",
+    "allQuarterControlsMustBeExcluded": true,
+    "minimumApplicableFrontControls": 7,
+    "minimumApplicableFrontTransformFamilies": ["original", "exposure", "downscale", "blur", "h264"]
+  },
+  "runtimeGateChanged": false,
+  "automaticPassEnabled": false
+}

@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "id": "love-me-tonight-frontal-aligned112-quality-v1",
+  "preregisteredAt": "2026-11-06T08:16:55Z",
+  "purpose": "Separate project-local provisional draft-filter quality experiment; not validated identity accuracy",
+  "frontalExperimentPath": "scripts/identity/frontal-draft-filter-experiment.v1.json",
+  "frontalExperimentFileSha256": "01aaecbc45e26b5ce0f84138c2116c8bdc3e505c7c463902b580b21961ed16c6",
+  "frontalControlReportPath": ".tmp/identity-audit/frontal-scope-controls-v1-report.json",
+  "frontalControlReportFileSha256": "faf9d9acdb71f6fa1cd2dbaedb853482576d858d5a64c45c49d14bc09e6ad2f4",
+  "qualityMethod": {
+    "version": "opencv412-align112-interior96-gray-laplacian-v1",
+    "alignment": "Official FaceRecognizerSF.alignCrop: five landmarks,112x112,INTER_LINEAR",
+    "measurementRegion": [8, 8, 96, 96],
+    "colorConversion": "cv2.COLOR_BGR2GRAY",
+    "sharpness": "cv2.Laplacian(gray,cv2.CV_64F,ksize=1).var()",
+    "illumination": "gray.mean()"
+  },
+  "limitDerivation": {
+    "source": "All canonical held-out front controls inside unchanged frontal geometry/detection/physical-pixel scope",
+    "minimumSharpnessFactorOfWorstPositive": 0.9,
+    "minimumLuminanceFactorOfWorstPositive": 0.9,
+    "maximumLuminanceFactorOfWorstPositive": 1.1,
+    "targetMeasurementsMayInfluenceLimits": false
+  },
+  "thresholdFloor": 0.8,
+  "preserveFrontalGeometryDetectionAndPhysicalPixelMinimum": true,
+  "resolutionInvariance": {
+    "scaleFactors": [1.0, 1.5, 2.0],
+    "interpolation": "INTER_LINEAR",
+    "landmarks": "Original canonical front landmarks scaled exactly, no redetection",
+    "maximumAlignedSharpnessMaxMinRatio": 1.25
+  },
+  "severeQualityChallenges": [
+    {"name": "severe-blur", "gaussianKernel": 25, "gaussianSigma": 4.0},
+    {"name": "severe-underexposure", "exposureMultiplier": 0.35}
+  ],
+  "severeQualityChallengeLandmarks": "Original canonical front landmarks held fixed to isolate quality metric",
+  "allSevereQualityChallengesMustFailQuality": true,
+  "observedV2PickupRole": "Observed development material only; may be measured after limits freeze, never included in controls or described as independent holdout",
+  "freshUnobservedVideoRequiredForProspectiveCheck": true,
+  "automaticPassEnabled": false,
+  "runtimeGateChanged": false
+}

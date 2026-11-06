@@ -1,6 +1,6 @@
 # Finish a music video without manually producing missing footage
 
-Status: agreed product scope; parallel implementation and verification in progress.
+Status: **UNFINISHED**. App integration is deployed, but the existing film still has 77.989954649 seconds of explicit gaps. Identity policy, complete creative acceptance and final production render/export remain open.
 Updated: 2026-11-06.
 
 Decision authority: Robert explicitly delegates further workflow/product decisions while absent. Use Matt Pocock's Grill with Docs or Wayfinder, choose the first recommended answer, record it, and continue implementation. The skill defaults requiring a live user answer are superseded by that instruction for this goal; external commitments and destructive/paid operations still require applicable authorization.
@@ -106,7 +106,7 @@ This composite-reference pilot is historical evidence. A separate identity + env
 
 ## Verified audit findings
 
-Baseline: fetched `origin/main` commit `646b66e`; separate completion branch preserves the original dirty checkout.
+Historical pre-implementation baseline: fetched `origin/main` commit `646b66e`; separate completion branch preserves the original dirty checkout. The findings in this table explain the changes required at that time; they are not the current release status. Current evidence is recorded below and in [the film checkpoint](../docs/plans/2026-11-06-love-me-tonight-finish.md#verified-checkpoint-2026-11-06).
 
 | Seam | Current evidence | Completion implication |
 | --- | --- | --- |
@@ -131,28 +131,30 @@ The app has a useful saved rough cut and functioning concepts to extend; a compl
 - [x] Record the required high-energy, fast-cut, narrative-driven full-song final film.
 - [x] Finalize implementable workflow and align affected glossary/ADR contracts.
 - [x] Simplify the route through setup, planning, creation/review, and finish.
-- [ ] Compile reference-bound MiniMax shot jobs and persist candidate outputs automatically.
+- [x] Compile reference-bound MiniMax shot jobs and persist candidate outputs automatically. Both real pilots reached durable output; the first remains user-rejected and the controlled v2 candidate remains pending outside the draft.
 - [x] Implement bounded batch progress, retries, stale-result rejection, and reload recovery. Unit checks and persisted browser request recovery are verified; actual render recovery remains a live acceptance gate below.
 - [ ] Complete review-to-timeline coverage and durable preview/export behavior.
-- [x] Pass affected tests, lint/types, required pre-PR checks, and production build. Latest full check at `f9bb9ed`: 792 passed, 21 fixture-dependent skips, zero failures; repeat affected checks after later changes.
-- [ ] Prove a real reference-conditioned generated shot visually and mechanically.
+- [x] Pass affected tests, lint/types, required pre-PR checks, and production build for the deployed work. Historical full check at `f9bb9ed`: 792 passed, 21 fixture-dependent skips, zero failures; later checks/build supported the current release. This does not validate or release the export/proof fixes still in progress.
+- [x] Prove mechanical execution of a new reference-conditioned shot through public app → production Trigger → SwarmUI → durable media, with actual v2 crop and unchanged raw authorities.
+- [ ] Establish identity acceptance for the controlled shot and approve its exact reviewed trim. Current deterministic proof is unverifiable; no numeric score grants approval.
 - [ ] Prove the entire intended song through browser, Trigger jobs, durable media, review, reload, final export, and downloaded playback.
 - [ ] Deliver and review the actual fully cut, dynamic, high-energy, narrative-driven music video; retain a playable durable MP4 and editable project.
-- [ ] Complete authorized release work and verify the deployed journey; obtain any still-required deployment authorization only once the release is reviewable.
+- [x] Deploy the current reviewed web/worker release and verify a real public-app controlled render: `a50c6ef304dd612b61b34beca30cd5a2deeeb688`, Trigger `20261106.5`.
+- [ ] Complete and release the export ownership correction and canonical H3-proof reconciliation currently in progress; then verify the remaining deployed journey and final export.
 
 ## Observable acceptance
 
 ### Current live boundary and additional existing assets
 
-The finishing revision is saved separately as project `75101b25-fea6-42b1-b2c6-85a9d1deb8eb`. The public app has the four-step workflow and restored signed-in project; the existing app-only Trigger worker is deployed with the 17 current task IDs. RustFS configuration is sourced from the main checkout's `.env`/`.env.local` and exact BWS pointers, including `s3.v1su4.dev`; SwarmUI on this PC's RTX 5090 is reachable by the production worker.
+The current verified release is `a50c6ef304dd612b61b34beca30cd5a2deeeb688`: [public app](https://project-stack-structure.vercel.app), web deployment `dpl_7bXB3EMEAXvJx5pXzBEBowscYRwa`, Trigger version `20261106.5` / deployment `uqot5b0u`, worker image digest `sha256:fefbc5ddfbdc5124d3f0efbbaca24e941a97631a35ded08a05eaf719d9ff0c94`. The four-step app and signed-in finishing project are live. Export ownership correction and canonical H3-proof server reconciliation are being implemented separately and are not released in this version.
 
-Production reference reads now pass: after the public proxy rejects a signed one-byte Range request with `SignatureDoesNotMatch`, a bounded full signed GET verifies the same owned image. A deliberate invalid-prompt probe reached compile rejection (422), proving reference reads without dispatch. Release `9dde46b` is deployed to the web app and existing Trigger worker `20261106.3`. The resumed browser request created job `h3-a56dc01e839f189abfa774d20ff123d81f4832cd152eaa580e80f1216cf782cc`, run `run_cmw4mb35402ji3foelm5x5cdd`, provider prompt `487b2fc8-1df9-4d5d-8afc-c1375c07fbb8`. Actual RTX 5090 utilization reached 98–99% with about 30 GiB VRAM during rendering. The durable downloaded H.264 output measures 1344×768, 24fps, 124 frames, 5.166667s and 2,221,461 bytes. **Robert rejected the likeness.** The app's explicit rejection was saved and survived reload; draft revision 2 has an empty selection. Technical integration is proven for this shot; creative acceptance is not. The original project, accepted source placements and current character/location packet remain recoverable.
+The finishing revision `75101b25-fea6-42b1-b2c6-85a9d1deb8eb` was conditionally saved and read back after explicit Story reconfirmation and motion refinement. It retains **21 sources, 90 captioned scenes, the ten-beat story, the three canonical references, and all 13 original accepted placements exactly**. Current plan `placements-v1-48c7dc9b`, revision **6**, has **126 placements: 98 source / 28 gap**, totaling **168.710s of proposed source coverage and 77.989954649s of explicit gaps**. New source choices still require final musical/continuity acceptance. The latest saved generated draft has revision **3**, `assetIds: []`.
 
-Robert additionally identified `E:/Higgsfield/Projects_By_Name/01_Named_Projects/Love Me Tonight` and related/unfiled Higgsfield sessions as existing source material. The local catalog and visual audit found additional solo searching, corridor, approach and dance footage. Audit and reuse these before a full missing-footage generation batch. Robert explicitly authorized copying the named folder's original images into the project's RustFS archive; retain original bytes/resolution and a verified manifest, without automatically promoting every archived image to a canonical conditioning reference.
+The new controlled v2 job `h3-c8d7f22e6afd91d337bf85ddcfee8e5dfc2f825f9e9da6cdf41739046284a710`, run `run_cmw4osybx02qt3foe8yxqswms`, is ready with durable **124-frame / 24fps / 5.166667s** output for song **24.020–25.530s**. The worker actually used the versioned portrait crop, SHA-256 `23881baddb280676e22af6ee560b29c3876c889a8b8305b886a05d0575190c91`, while retaining the raw authority hashes. The candidate is pending and unselected. Its stored deterministic proof is **unverifiable**, with 37 examined trim frames, 23 quality abstentions and incomplete coverage. A separate offline frontal-filter experiment measured 37 frame cosines **0.860543–0.899159**; it does not change the deployed runtime gate or grant identity approval. The first pilot `h3-a56dc01e839f189abfa774d20ff123d81f4832cd152eaa580e80f1216cf782cc` remains user-rejected, permanently excluded from selection.
 
-Archive complete: 121 original PNGs, 884,335,654 bytes, under the finishing project's `library/higgsfield/original-images/{sha256}/{filename}`. Every stored object passed a full-download length/SHA-256 check; all local originals were re-read and unchanged. The content-addressed remote inventory manifest was also downloaded and hash-verified. No project, story or canonical-reference mutation was needed. Ten additional videos (213,771,287 bytes) are staged for append ingestion; exclude defective and semantically mismatched ranges recorded in the finish plan.
+The authorized RustFS archive holds **121 original PNGs / 884,335,654 bytes**, with every object and the inventory manifest verified by full-download SHA-256 and length; local originals were unchanged. Ten additional original videos were uploaded, hash-verified and appended as IDs 11–20, adding 33 analyzed/captioned scenes. The archived images remain a library, not an automatic replacement of the canonical references.
 
-The ten videos are now uploaded, full-download hash verified, and analyzed through production into 33 new scenes. A conditional project/index commit appended source IDs 11–20, producing 21 sources and 90 captioned scenes while preserving original sources 0–10, all 13 accepted placement records, story/reference fields and the H3 rejection. Story/source confirmation remains intentionally stale until the enlarged source inventory is reviewed. Its browser autosave exposed a 413 request-size limit; bounded gzip project/draft transport now passes local round-trip and route tests and awaits production save/reload verification. Latest full code check: 837 passed, 21 fixture-dependent skips, zero failures; production build passed.
+The refined **local audition only** is `.tmp/full-song-audition-v2-refined/Love-Me-Tonight-full-song-audition-v2.mp4`: complete master audio, visible missing-footage slates, H.264/AAC, 864×486, 24fps, 5,921 frames, 53,944,026 bytes; full decode passed. It coalesces metadata seams into 63 continuous source runs and 17 contiguous gap runs. It is not a final export, gap-free film, musical approval or identity approval. Evidence and exact remaining gates are in [the verified film checkpoint](../docs/plans/2026-11-06-love-me-tonight-finish.md#verified-checkpoint-2026-11-06).
 
 - Mixed footage: preserve approved existing footage, fill actual holes, and require no manual generation/reimport.
 - Zero footage: reach the same complete outcome with no uploaded clips. A source-dependent caption or Match gate cannot prevent planning and generation.

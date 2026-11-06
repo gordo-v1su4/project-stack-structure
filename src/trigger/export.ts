@@ -11,6 +11,7 @@ import {
 import { probeMediaFile } from "@/components/studio/mediaProbe";
 import { downloadMediaGatewayFile, getMediaGatewayConfig, type uploadFileToMediaGateway, type MediaGatewayUploadResult } from "@/lib/mediaGateway";
 import { uploadWorkerFileToStorage } from "@/lib/workerStorageUpload";
+import { verifyExportMediaIntegrity } from "@/lib/exportMediaIntegrity";
 
 import { MEDIA_ASSEMBLY_MACHINE, mediaAssemblyQueue } from "./queues";
 import { markWorkCompleted, markWorkRunning } from "./workMetadata";
@@ -22,9 +23,12 @@ export type StoredExportInput = {
   mimeType?: string;
   /** Ordered gateway-stored parts; present when the input traveled chunked. */
   chunks?: Array<{ bucket: string; objectKey: string }>;
+  expectedSha256?: string;
 };
 
 export type FinalExportPayload = {
+  projectSnapshot?: { ownerId: string; projectId: string; planSignature: string; placementRevision: number; draftRevision: number;
+    acceptedSnapshotSha256: string; h3: Array<{ jobId: string; assetId: string; mediaSha256: string; proofSha256: string; trimStart: number; trimEnd: number }> };
   requestKey: string;
   audio: StoredExportInput;
   videos: StoredExportInput[];
@@ -172,11 +176,14 @@ async function materializeStoredInput(input: StoredExportInput, workspace: strin
       });
       buffers.push(Buffer.from(partData.bytes));
     }
-    await writeFile(target, Buffer.concat(buffers));
+    const bytes = Buffer.concat(buffers);
+    verifyExportMediaIntegrity(input, bytes);
+    await writeFile(target, bytes);
     return target;
   }
 
   const source = await downloadMediaGatewayFile({ bucket: input.bucket, objectKey: input.objectKey, fileName: input.fileName });
+  verifyExportMediaIntegrity(input, new Uint8Array(source.bytes));
   await writeFile(target, Buffer.from(source.bytes));
   return target;
 }

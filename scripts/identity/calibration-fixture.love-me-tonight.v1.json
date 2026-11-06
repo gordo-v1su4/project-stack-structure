@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "id": "love-me-tonight-diego-provisional-controls-v1",
+  "purpose": "Diagnostic project-local draft-selection controls; not population-level identity validation",
+  "target": {
+    "path": ".tmp/film-audit/character-1.png",
+    "hash": "47d772694e0c14397707f31b7802fe91d434da1e4b54be7bac3eb00037364381",
+    "canonicalName": "Diego",
+    "role": "identity",
+    "faceRegions": [
+      {"name": "front", "rect": [0, 0, 0.285, 0.55]},
+      {"name": "three-quarter", "rect": [0.285, 0, 0.25, 0.55]},
+      {"name": "upper-body", "rect": [0, 0.55, 0.5, 0.365]}
+    ]
+  },
+  "wrongCharacters": [{
+    "path": ".tmp/film-audit/character-2.png",
+    "hash": "15a317d4bc85ab1b794f0bb0e9e25658b616c41a1b77bc23520ebbecc95ffc67",
+    "canonicalName": "Valentina",
+    "faceRegions": [
+      {"name": "front", "rect": [0.267, 0, 0.241, 0.508]},
+      {"name": "three-quarter", "rect": [0.509, 0, 0.24, 0.508]},
+      {"name": "profile", "rect": [0.749, 0, 0.25, 0.508]}
+    ]
+  }],
+  "rejectedPilot": {
+    "path": ".tmp/film-audit/first-h3-shot.mp4",
+    "hash": "c8dc1aaec1a151227f2347378883122bc0490a90261105b13805297b3b2888b6",
+    "frameCount": 124,
+    "fps": 24,
+    "intendedStartFrame": 0,
+    "intendedEndFrameExclusive": 60,
+    "operatorDecision": "user_rejected"
+  },
+  "preregisteredRule": {
+    "minimumThreshold": 0.78,
+    "negativeMargin": 0.02,
+    "thresholdRoundingStep": 0.01,
+    "positiveMargin": 0.005
+  },
+  "augmentationProfile": "mild-exposure90-110-downscale75-50-gaussian3-sigma05-motion3-h264crf19-23-v1"
+}
