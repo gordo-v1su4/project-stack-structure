@@ -3,6 +3,8 @@
 Status: source-based finishing plan; no project edits or renders performed by this audit.
 Evidence: fresh public-app project snapshot `.tmp/completion-source-project.json`, saved `2026-11-06T05:50:46.789Z`. Follow [the completion workflow](../../workflows/finish-music-video.md). This document contains shot-development briefs, not executable H3 prompts; compile and lint the final bound prompts before rendering.
 
+**Coverage update:** the original eleven-source gap counts below are historical baseline measurements, **not a generation queue**. The wider Higgsfield library audit found substantial matching footage outside the named project folder. The earlier provisional 138–160 seconds of H3 coverage is **superseded** pending that footage's ingestion and exact-range playback review. Preserve the original accepted placements, audition the discovered sources, then recalculate genuine missing shots.
+
 ## Preserve the production already started
 
 Finish `Assembly recovery · 2026-09-08`, source project `5fc48d59-01e4-4bfb-90c1-e054a0307575`. Keep the original recoverable and continue in its finishing revision/copy. Do not start another story or generate a zero-footage replacement for this film.
@@ -77,6 +79,31 @@ The visual audit changes several candidate decisions above:
 - **Source 6's unused passage views are anonymous crowd geography**, suitable for developing the cave opening. Do not label a foreground stranger as Diego.
 
 Scene boards establish visible states at sampled frames only. Playback, exact handles and identity through motion remain required before inserting new source ranges. Local audit sheets are under `.tmp/film-audit/`; they are working evidence, not conditioning authorities or delivered film footage.
+
+### Wider gathered-footage audit, 2026-11-06
+
+Robert identified `E:/Higgsfield/Projects_By_Name/01_Named_Projects/Love Me Tonight` and authorized looking beyond that folder for matching characters/location. Its **126 files comprise 121 PNGs and five MP4s**; one MP4 is already app source 2, and four are additional dance variants. Catalog-guided searching covered named projects, unassigned work-session folders, and related sessions across `E:/Higgsfield`: **94 candidate videos, ten already represented by the app, and 84 additional local videos**. Three candidates were found inside existing ZIPs and copied only into ignored audit storage. Original files were unchanged.
+
+All 84 additional videos received actual first/middle/last visual inspection; 17 received denser 0.5-second temporal boards. SHA-256/probe metadata and review decisions are in `.tmp/higgsfield-love-me-tonight-library.json`; indexed atlases are `.tmp/film-audit/library/page-00.jpg` through `page-13.jpg`, with stable `Lxxx-dense.jpg` files for closer inspection. The first pass identifies **18 high-priority intact-floor candidates**, nine post-fracture auditions, 26 limited/defective fragment candidates, one alternate cave sequence, and 30 unrelated clips. These are audition dispositions, not approvals or additive usable-duration totals.
+
+The **recommended first ten** are staged in `.tmp/finishing-next-ingest.json`, reserving source IDs 11–20 only if the fresh project still has IDs 0–10. Times below are **source seconds**, not song placement instructions. Endpoints are conservative sampled-frame recommendations; verify motion, precise handles, identity and music timing before accepting them.
+
+| Proposed source / audit ID / asset UUID | Proposed useful intervals and role | Restrictions |
+| --- | --- | --- |
+| **11 / L024** · `3e45a005-a81a-48a6-a821-be10cde9df77` | **0–9.5** Diego alone enters/searches the intact main room; **10–14.9** approach/first contact | Choose one completed approach across variants; do not replay the meeting |
+| **12 / L027** · `5412fb06-c143-4528-b447-4fe7a4ef1089` | **0–4.5** Diego scanning/profile; **5–11.5** genuine solo walking in the wet red corridor | Exclude about **12s onward**, where duplicated Valentina-like women appear |
+| **13 / L028** · `48b7c2a1-a907-4acf-8347-d5020124051c` | **0–5.5** Diego scan; **6.5–10** Valentina separately across room in an over-shoulder view; **10–14.9** approach | Does not establish a clean solo Valentina close-up; red-room geography must connect coherently |
+| **14 / L022** · `62a7dbe4-e720-4981-8fef-de7d1ed83645` | **0–7.5** Diego walks a populated narrow hallway; **9–12** distant Valentina/approach; **12.5–14.9** contact/pair | Use the pre-contact portion for exploration; not panic or an empty corridor |
+| **15 / L039** · `bbc12dc3-a7cc-419c-9b23-5f889c111e44` | **0–4** low crowd/footwork; **5–7.5** pair/room; **12–14.5** pair turn | **8–11.5** lift is optional only if not repeating an already completed lift |
+| **16 / L040** · `c424fa34-25b5-43c1-94ee-2ec66c910c9a` | **0–5** low crowd/footwork; **7.5–10** pair spin; **13–14.5** pair movement | Foreground black-clad dancers/acrobat are other performers, not Diego/Valentina |
+| **17 / L041** · `daf73f75-3311-4316-b10d-762c852b31fb` | **0–7.5** room/contest movement; **8–10.5** full-body pair/ensemble | Later foreground couple is not the leads; background lift may duplicate another variant |
+| **18 / L042** · `0df6fed6-cff5-4aba-ad12-0345d78bdd89` | **0–3** crowd; **4–7.5** pair footwork; **11.5–14.5** turn/rotation | Treat **8–11** lift as an alternative, not another replay of the same completed move |
+| **19 / L044** · `7c230e4a-18bf-419c-8f48-19428d3299e3` | **0–3.5** Diego scanning; **8–13.5** close pair connection | Valentina enters the vicinity before the close pair; not a whole-file solo arrival |
+| **20 / L046** · `599438a3-9cb4-4030-b0c3-2c0699d3a8d0` | **5–7.5** Valentina leads by hand; **8–10** pair dance; **10–13.5** room wide | Initial black-outfit woman is another dancer; do not identify that woman as Valentina |
+
+The added footage materially addresses arrival/search, corridor exploration, approach and dance. **A clean separate Valentina medium/close introduction, matching reverse eyeline, and a safe-together ending beyond the escape remain unverified.** Post-chasm pair shots in L025/L026 are still inside the main club and cannot certify an exterior/safe ending. L029's later half creates two identical Valentinas and must be excluded. “Jungle Partner Dance” clips contain different people/wardrobe; several files labelled RELAY/GROUP CHAT actually show the unrelated yellow-dress flood story. Metadata labels alone do not establish fit.
+
+Different hashes prove different files, not different completed actions. The search/approach/fracture and dance variants share setups and choreography; select the best coherent ranges rather than concatenating repeated entries, meetings, lifts or jumps as fake coverage. No new source has been inserted or approved by this audit. Preserve the original 13 accepted placements and their physical ranges. Their long source 2/8 intervals already contain moving camera/action progression: dense temporal review contradicts treating them as static holds from metadata duration alone.
 
 Use existing footage whenever the action and state actually fit. Generate complementary views and missing actions for the remaining timed windows. Each row is an editorial development brief; turn it into separately bound single-shot jobs. Do not submit a whole row as one overloaded prompt or repeat the complete action in every angle.
 

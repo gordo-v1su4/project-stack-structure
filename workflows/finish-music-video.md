@@ -121,18 +121,26 @@ The app has a useful saved rough cut and functioning concepts to extend; a compl
 - [x] Confirm optional footage, local H3 engine, and assembled-draft review.
 - [x] Resolve lyrics/stem, primary workflow presentation, and lip-sync scope.
 - [x] Record the required high-energy, fast-cut, narrative-driven full-song final film.
-- [ ] Finalize implementable workflow and align affected glossary/ADR contracts.
-- [ ] Simplify the route through setup, planning, creation/review, and finish.
+- [x] Finalize implementable workflow and align affected glossary/ADR contracts.
+- [x] Simplify the route through setup, planning, creation/review, and finish.
 - [ ] Compile reference-bound MiniMax shot jobs and persist candidate outputs automatically.
-- [ ] Implement bounded batch progress, retries, stale-result rejection, and reload recovery.
+- [x] Implement bounded batch progress, retries, stale-result rejection, and reload recovery. Unit checks and persisted browser request recovery are verified; actual render recovery remains a live acceptance gate below.
 - [ ] Complete review-to-timeline coverage and durable preview/export behavior.
-- [ ] Pass affected tests, lint/types, required pre-PR checks, and production build.
+- [x] Pass affected tests, lint/types, required pre-PR checks, and production build. Latest full check at `f9bb9ed`: 792 passed, 21 fixture-dependent skips, zero failures; repeat affected checks after later changes.
 - [ ] Prove a real reference-conditioned generated shot visually and mechanically.
 - [ ] Prove the entire intended song through browser, Trigger jobs, durable media, review, reload, final export, and downloaded playback.
 - [ ] Deliver and review the actual fully cut, dynamic, high-energy, narrative-driven music video; retain a playable durable MP4 and editable project.
 - [ ] Complete authorized release work and verify the deployed journey; obtain any still-required deployment authorization only once the release is reviewable.
 
 ## Observable acceptance
+
+### Current live boundary and additional existing assets
+
+The finishing revision is saved separately as project `75101b25-fea6-42b1-b2c6-85a9d1deb8eb`. The public app has the four-step workflow and restored signed-in project; the existing app-only Trigger worker is deployed with the 17 current task IDs. RustFS configuration is sourced from the main checkout's `.env`/`.env.local` and exact BWS pointers, including `s3.v1su4.dev`; SwarmUI on this PC's RTX 5090 is reachable by the production worker.
+
+The first browser-created pickup request remains paused before job dispatch because the production reference read returns a storage signature error. A reference-read fix/comparison is being verified; no new inference or generated-video acceptance is claimed. The original project, accepted source placements and current character/location packet remain recoverable.
+
+Robert additionally identified `E:/Higgsfield/Projects_By_Name/01_Named_Projects/Love Me Tonight` and related/unfiled Higgsfield sessions as existing source material. The local catalog and visual audit found additional solo searching, corridor, approach and dance footage. Audit and reuse these before a full missing-footage generation batch. Robert explicitly authorized copying the named folder's original images into the project's RustFS archive; retain original bytes/resolution and a verified manifest, without automatically promoting every archived image to a canonical conditioning reference.
 
 - Mixed footage: preserve approved existing footage, fill actual holes, and require no manual generation/reimport.
 - Zero footage: reach the same complete outcome with no uploaded clips. A source-dependent caption or Match gate cannot prevent planning and generation.

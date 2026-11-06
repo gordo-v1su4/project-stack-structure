@@ -16,6 +16,8 @@ const eslintConfig = defineConfig([
     ".research/**",
     "_repo-research/**",
     ".trigger/**",
+    // Local scratch scripts and media audit artifacts are not application source.
+    ".tmp/**",
   ]),
 ]);
 

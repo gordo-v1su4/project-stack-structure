@@ -7,6 +7,9 @@ let serial = 0, conditionalFailures = 0;
 let sourceEtag = "image-version-1";
 let metadataOverride: Record<string, unknown> = {};
 let metadataError: Error | undefined;
+let fullMetadataOverride: Record<string, unknown> = {};
+let fullMetadataError: Error | undefined;
+let imageReads: Record<string, unknown>[] = [];
 const originalFetch = globalThis.fetch;
 const names = ["RUSTFS_S3_ENDPOINT", "RUSTFS_ACCESS_KEY", "RUSTFS_SECRET_KEY"] as const;
 const previous = Object.fromEntries(names.map(name => [name, process.env[name]]));
@@ -20,11 +23,17 @@ class S3Client {
     const key = String(input.Key);
     if (command instanceof GetObjectCommand) {
       if (key.endsWith(".png")) {
+        imageReads.push(input);
         if (input.Range) {
           expect(input.Range).toBe("bytes=0-0");
           if (metadataError) throw metadataError;
           return { ETag: sourceEtag, ContentType: "image/png", ContentLength: 1, ContentRange: "bytes 0-0/3",
             $metadata: { httpStatusCode: 206 }, Body: { transformToByteArray: async () => new Uint8Array([1]) }, ...metadataOverride };
+        }
+        if (!input.IfMatch) {
+          if (fullMetadataError) throw fullMetadataError;
+          return { ETag: sourceEtag, ContentType: "image/png", ContentLength: 3, $metadata: { httpStatusCode: 200 },
+            Body: { async *[Symbol.asyncIterator]() { yield new Uint8Array([1, 2]); yield new Uint8Array([3]); } }, ...fullMetadataOverride };
         }
         if (input.IfMatch !== sourceEtag) throw failure(412);
         return { ContentType: "image/png", ContentLength: 3, Body: { transformToByteArray: async () => new Uint8Array([1, 2, 3]) } };
@@ -51,6 +60,7 @@ const { createH3Job, readH3Job, updateH3Job, listH3Jobs, pinH3JobReferences, dow
 function setup() {
   objects.clear(); serial = 0; conditionalFailures = 0; sourceEtag = "image-version-1";
   metadataOverride = {}; metadataError = undefined;
+  fullMetadataOverride = {}; fullMetadataError = undefined; imageReads = [];
   process.env.RUSTFS_S3_ENDPOINT = "https://storage.example";
   process.env.RUSTFS_ACCESS_KEY = "test-only-access";
   process.env.RUSTFS_SECRET_KEY = "test-only-secret";
@@ -123,6 +133,7 @@ describe("conditional durable H3 job records", () => {
     metadataError = failure(403);
     await expect(pinH3JobReferences(job)).rejects.toThrow("Reference metadata lookup failed (storage HTTP 403)");
     metadataError.name = "SignatureDoesNotMatch";
+    fullMetadataError = Object.assign(failure(403), { name: "SignatureDoesNotMatch" });
     await expect(pinH3JobReferences(job)).rejects.toThrow("storage HTTP 403, SignatureDoesNotMatch");
     metadataError.name = "private-transport-detail";
     await expect(pinH3JobReferences(job)).rejects.toThrow("Reference metadata lookup failed (storage HTTP 403).");
@@ -131,6 +142,43 @@ describe("conditional durable H3 job records", () => {
     metadataError = undefined;
     metadataOverride = { Body: { transformToByteArray: async () => { throw new Error("secret body detail"); } } };
     await expect(pinH3JobReferences(job)).rejects.toThrow("interrupted while reading durable storage");
+  });
+
+  test("only a ranged SignatureDoesNotMatch compares a bounded full signed GET on the same owned keys", async () => {
+    const job = setup();
+    const ranged = await pinH3JobReferences(job);
+    imageReads = [];
+    metadataError = Object.assign(failure(403), { name: "SignatureDoesNotMatch" });
+    const full = await pinH3JobReferences(job);
+    expect(full.id).toBe(ranged.id);
+    expect(imageReads.map(input => [input.Key, input.Range])).toEqual(job.references.flatMap(ref =>
+      [[ref.objectKey, "bytes=0-0"], [ref.objectKey, undefined]]));
+    for (const error of [Object.assign(failure(403), { name: "AccessDenied" }), failure(500), new Error("network unavailable")]) {
+      metadataError = error; imageReads = [];
+      await expect(pinH3JobReferences(job)).rejects.toThrow();
+      expect(imageReads).toHaveLength(1);
+      expect(imageReads[0].Range).toBe("bytes=0-0");
+    }
+  });
+
+  test("full signed comparison rejects oversized metadata before reading and bounds every streamed chunk", async () => {
+    const job = setup();
+    metadataError = Object.assign(failure(403), { name: "SignatureDoesNotMatch" });
+    let consumed = false, destroyed = false;
+    fullMetadataOverride = { ContentLength: 33554433, Body: {
+      async *[Symbol.asyncIterator]() { consumed = true; yield new Uint8Array([1]); }, destroy: () => { destroyed = true; } } };
+    await expect(pinH3JobReferences(job)).rejects.toThrow("smaller than 32 MiB");
+    expect(consumed).toBe(false); expect(destroyed).toBe(true);
+    fullMetadataOverride = { Body: { async *[Symbol.asyncIterator]() { yield new Uint8Array([1, 2, 3, 4]); }, destroy: () => { destroyed = true; } } };
+    destroyed = false;
+    await expect(pinH3JobReferences(job)).rejects.toThrow("exceeded its declared image size");
+    expect(destroyed).toBe(true);
+    fullMetadataOverride = { Body: { async *[Symbol.asyncIterator]() { yield new Uint8Array([1]); } } };
+    await expect(pinH3JobReferences(job)).rejects.toThrow("incomplete image");
+    fullMetadataOverride = { Body: { [Symbol.asyncIterator]: () => ({ next: async () => { throw new Error("private transport details"); } }) } };
+    await expect(pinH3JobReferences(job)).rejects.toThrow("interrupted while reading durable storage");
+    fullMetadataOverride = { ContentType: "text/html" };
+    await expect(pinH3JobReferences(job)).rejects.toThrow("PNG, JPEG or WebP");
   });
 
   test("one intent/attempt is immutable even if the payload or pinned image changes", async () => {
