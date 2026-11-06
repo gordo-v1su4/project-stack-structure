@@ -8,15 +8,24 @@ import numpy as np
 
 POLICY_ID = "love-me-tonight-diego-frontal-draft-v1"
 POLICY_SHA256 = "f23f8186a59c3c893c043b0bba19a335d874dec9d140de54cfd98f6c824fe7d7"
+POLICIES = {
+    POLICY_ID: (POLICY_SHA256, "h3-ref2va-int8-v2"),
+    "love-me-tonight-diego-frontal-draft-v2": ("f0250eadd801010db9885de4a6359c3c526fe6783e7dcd4a8128cbabbb3d9498", "h3-ref2va-int8-v3"),
+    "love-me-tonight-valentina-frontal-draft-v1": ("589ee087db6829a53910659514b50bb1227c705ae6f7302fe2c977ccdb49d637", "h3-ref2va-int8-v3"),
+}
 
 
 def canonical_sha256(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()).hexdigest()
 
 
-def load_policy():
-    policy = json.loads(Path(__file__).with_name("policies").joinpath(POLICY_ID + ".json").read_text())
-    if canonical_sha256(policy) != POLICY_SHA256: raise ValueError("Draft similarity policy bytes do not match the immutable policy")
+def load_policy(policy_id=POLICY_ID):
+    if policy_id not in POLICIES: raise ValueError("Unknown draft similarity policy")
+    expected_sha, generation_model = POLICIES[policy_id]
+    policy = json.loads(Path(__file__).with_name("policies").joinpath(policy_id + ".json").read_text())
+    if canonical_sha256(policy) != expected_sha: raise ValueError("Draft similarity policy bytes do not match the immutable policy")
+    if policy["id"] != policy_id or policy.get("generationModel", "h3-ref2va-int8-v2") != generation_model:
+        raise ValueError("Draft similarity policy has a different generation profile")
     return policy
 
 
@@ -63,15 +72,18 @@ def box_overlap(left, right):
 
 class DraftSimilarityFilter:
     def __init__(self, value, verifier_metadata, manifest, gallery_profile):
-        self.value, self.policy = value, load_policy()
-        self.evidence = {"version": 1, "policyId": POLICY_ID, "policySha256": POLICY_SHA256, "status": "unverifiable",
+        self.value, self.policy = value, load_policy(value["draftSimilarityPolicyId"])
+        policy_id = self.policy["id"]
+        policy_sha, generation_model = POLICIES[policy_id]
+        self.evidence = {"version": 1, "policyId": policy_id, "policySha256": policy_sha, "status": "unverifiable",
             "threshold": self.policy["threshold"], "examinedFrameCount": 0, "eligibleFrameCount": 0,
             "outOfScopeFrameCount": 0, "ambiguousFrameCount": 0, "samples": [],
             "warnings": ["Provisional numeric-model draft filter; not an identity certificate or final creative approval."]}
         identity, model = self.policy["identity"], self.policy["model"]
         reference = next((ref for ref in value["references"] if ref["hash"] == identity["rawSha256"]), None)
         hashes = {entry["sha256"] for entry in manifest["models"]}
-        self.bound = (value.get("draftSimilarityPolicyId") == POLICY_ID and value.get("projectId") == self.policy["projectId"] and value.get("draftSimilarityPolicySha256") == POLICY_SHA256
+        self.bound = (value.get("draftSimilarityPolicyId") == policy_id and value.get("projectId") == self.policy["projectId"] and value.get("draftSimilarityPolicySha256") == policy_sha
+            and value.get("generationModel") == generation_model
             and value["identityReferenceHashes"] == [identity["rawSha256"]]
             and reference is not None and reference["canonicalName"] == identity["canonicalName"] and reference["role"] == identity["role"]
             and gallery_profile["sha256"] == identity["gallerySha256"]
@@ -134,5 +146,5 @@ class DraftSimilarityFilter:
 
 
 def requested_draft_filter(value, verifier_metadata, manifest, gallery_profile):
-    if value.get("draftSimilarityPolicyId") != POLICY_ID: return None
+    if value.get("draftSimilarityPolicyId") not in POLICIES: return None
     return DraftSimilarityFilter(value, verifier_metadata, manifest, gallery_profile)

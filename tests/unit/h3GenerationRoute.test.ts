@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
-import { H3_LEGACY_PROFILE, H3_PROFILE, type H3GenerationJob } from "@/components/studio/h3Generation";
+import { H3_LEGACY_PROFILE, H3_PROFILE, H3_V2_PROFILE, H3_V2_CONDITIONING_PREPARATION_VERSION, type H3GenerationJob } from "@/components/studio/h3Generation";
 import { h3ProjectFixture } from "../helpers/h3Project";
 
 const fixture = h3ProjectFixture();
@@ -96,7 +96,7 @@ describe("authenticated H3 dispatch and recovery route", () => {
     expect(dispatches).toBe(1);
   });
 
-  test("new intents use v2 and a changed legacy prompt or reference cannot claim the old intent", async () => {
+  test("new intents use v3 and a changed legacy prompt or reference cannot claim the old intent", async () => {
     reset();
     const fresh = await POST(post(fixture.request));
     expect(((await fresh.json()) as { job: H3GenerationJob }).job.profile).toBe(H3_PROFILE);
@@ -108,6 +108,28 @@ describe("authenticated H3 dispatch and recovery route", () => {
     expect((await POST(post({ ...fixture.request, planSignature: "stale" }))).status).toBe(409);
     expect(dispatches).toBe(0);
     expect(JSON.stringify(stored)).toBe(snapshot);
+  });
+
+  test("recovers a saved v2 intent without changing its conditioning version or dispatching twice", async () => {
+    reset();
+    stored = materializeH3Job("github-test", fixture.saved, parseH3Request(fixture.request), "studio", {
+      profile: H3_V2_PROFILE, conditioningPreparationVersion: H3_V2_CONDITIONING_PREPARATION_VERSION,
+    });
+    const originalId = stored.id;
+    const response = await POST(post(fixture.request));
+    expect(response.status).toBe(202);
+    const body = await response.json() as { job: H3GenerationJob };
+    expect(body.job.id).toBe(originalId);
+    expect(body.job.profile).toBe("h3-ref2va-int8-v2");
+    expect(body.job.conditioningPreparationVersion).toBe("canonical-front-crop-v1");
+    expect(body.job.runId).toBe("run-1");
+    expect((await POST(post(fixture.request))).status).toBe(202);
+    expect(dispatches).toBe(1);
+    const snapshot = JSON.stringify(stored);
+    expect((await POST(post({ ...fixture.request, prompt: "Diego looks toward the passage." }))).status).toBe(409);
+    expect((await POST(post({ ...fixture.request, referenceAssetIds: ["club", "diego"] }))).status).toBe(409);
+    expect(JSON.stringify(stored)).toBe(snapshot);
+    expect(dispatches).toBe(1);
   });
 
   test("resumes an existing submission after a terminal worker without changing provider identity", async () => {

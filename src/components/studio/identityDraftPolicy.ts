@@ -3,11 +3,17 @@ export const H3_DRAFT_SIMILARITY_POLICY_ID = "love-me-tonight-diego-frontal-draf
 export const H3_DRAFT_SIMILARITY_POLICY_SHA256 = "f23f8186a59c3c893c043b0bba19a335d874dec9d140de54cfd98f6c824fe7d7";
 export const H3_DRAFT_SIMILARITY_PROJECT_ID = "75101b25-fea6-42b1-b2c6-85a9d1deb8eb";
 export const H3_DRAFT_SIMILARITY_RAW_IDENTITY_SHA256 = "47d772694e0c14397707f31b7802fe91d434da1e4b54be7bac3eb00037364381";
+export const H3_DIEGO_V3_DRAFT_SIMILARITY_POLICY_ID = "love-me-tonight-diego-frontal-draft-v2";
+export const H3_DIEGO_V3_DRAFT_SIMILARITY_POLICY_SHA256 = "f0250eadd801010db9885de4a6359c3c526fe6783e7dcd4a8128cbabbb3d9498";
+export const H3_VALENTINA_V3_DRAFT_SIMILARITY_POLICY_ID = "love-me-tonight-valentina-frontal-draft-v1";
+export const H3_VALENTINA_V3_DRAFT_SIMILARITY_POLICY_SHA256 = "589ee087db6829a53910659514b50bb1227c705ae6f7302fe2c977ccdb49d637";
 
 const policy = Object.freeze({
   id: H3_DRAFT_SIMILARITY_POLICY_ID,
   sha256: H3_DRAFT_SIMILARITY_POLICY_SHA256,
   projectId: H3_DRAFT_SIMILARITY_PROJECT_ID,
+  canonicalName: "Diego",
+  gallerySha256: "6e3acaeea694c1a1d1df4fbd8f2a5365aa801cca8fd2a07faf8f6634af4dd9e7",
   identityReferenceSha256: H3_DRAFT_SIMILARITY_RAW_IDENTITY_SHA256,
   threshold: 0.8,
   minimumFrameCount: 3,
@@ -18,6 +24,29 @@ const policy = Object.freeze({
   preprocessVersion: "opencv412-aligncrop112-rgb-f32-nchw-unit-centroid-v1-gallery-v2-6e3acaeea694c1a1d1df4fbd8f2a5365aa801cca8fd2a07faf8f6634af4dd9e7",
 });
 
+// V3 compatibility has new IDs and canonical files; the original V2 policy is immutable.
+const diegoV3Policy = Object.freeze({ ...policy,
+  id: H3_DIEGO_V3_DRAFT_SIMILARITY_POLICY_ID, sha256: H3_DIEGO_V3_DRAFT_SIMILARITY_POLICY_SHA256,
+  generationModel: "h3-ref2va-int8-v3",
+});
+const valentinaV3Policy = Object.freeze({ ...policy,
+  id: H3_VALENTINA_V3_DRAFT_SIMILARITY_POLICY_ID, sha256: H3_VALENTINA_V3_DRAFT_SIMILARITY_POLICY_SHA256,
+  canonicalName: "Valentina", identityReferenceSha256: "15a317d4bc85ab1b794f0bb0e9e25658b616c41a1b77bc23520ebbecc95ffc67",
+  gallerySha256: "aabd690a6375029bfc793be8c2cd9b9efc034583aa5b0d0463c111c1c565b9c8",
+  generationModel: "h3-ref2va-int8-v3",
+  preprocessVersion: "opencv412-aligncrop112-rgb-f32-nchw-unit-centroid-v1-gallery-v2-aabd690a6375029bfc793be8c2cd9b9efc034583aa5b0d0463c111c1c565b9c8",
+});
+export const H3_DRAFT_SIMILARITY_POLICIES = Object.freeze([policy, diegoV3Policy, valentinaV3Policy]);
+
 export function resolveH3DraftSimilarityPolicy(id: string, sha256: string) {
-  return id === policy.id && sha256 === policy.sha256 ? policy : undefined;
+  return H3_DRAFT_SIMILARITY_POLICIES.find(policy => id === policy.id && sha256 === policy.sha256);
+}
+
+/** Worker selection pins one raw authority, project and generation profile; unknown inputs abstain. */
+export function resolveH3DraftSimilarityPolicyForInputs(input: {
+  projectId: string; generationModel: string; identityReferenceHashes: readonly string[];
+}) {
+  if (input.identityReferenceHashes.length !== 1) return undefined;
+  return H3_DRAFT_SIMILARITY_POLICIES.find(policy => input.projectId === policy.projectId
+    && input.generationModel === policy.generationModel && input.identityReferenceHashes[0] === policy.identityReferenceSha256);
 }

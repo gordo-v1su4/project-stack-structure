@@ -3,14 +3,14 @@ import math
 import unittest
 
 import numpy as np
-from draft_similarity_filter import DraftSimilarityFilter, POLICY_ID, POLICY_SHA256, canonical_sha256, load_policy, requested_draft_filter
+from draft_similarity_filter import DraftSimilarityFilter, POLICIES, POLICY_ID, POLICY_SHA256, canonical_sha256, load_policy, requested_draft_filter
 
 
 class DraftFilterTests(unittest.TestCase):
     def setUp(self):
         self.policy = load_policy()
         raw = self.policy["identity"]["rawSha256"]
-        self.value = {"projectId": self.policy["projectId"], "draftSimilarityPolicyId": POLICY_ID,
+        self.value = {"projectId": self.policy["projectId"], "draftSimilarityPolicyId": POLICY_ID, "generationModel": "h3-ref2va-int8-v2",
             "draftSimilarityPolicySha256": POLICY_SHA256, "verifiedStartFrame": 0, "verifiedEndFrameExclusive": 3,
             "identityReferenceHashes": [raw], "references": [{"hash": raw, "canonicalName": "Diego", "role": "identity"}]}
         self.metadata = {"version": self.policy["model"]["version"], "preprocessVersion": self.policy["model"]["preprocessVersion"]}
@@ -68,6 +68,52 @@ class DraftFilterTests(unittest.TestCase):
         self.observe(evaluator, 0)
         self.observe(evaluator, 2)
         self.assertEqual(evaluator.finish()["status"], "unverifiable")
+
+    def test_separate_v3_policies_require_exact_model_raw_gallery_name_and_every_frame(self):
+        for policy_id, (policy_sha, generation_model) in POLICIES.items():
+            with self.subTest(policy_id=policy_id):
+                policy = load_policy(policy_id)
+                self.assertEqual(canonical_sha256(policy), policy_sha)
+                self.assertEqual(policy["threshold"], .8)
+                self.assertEqual(policy["preserveIdentityVerificationStatus"], "unverifiable")
+                self.assertEqual(policy["scope"], load_policy()["scope"])
+                raw = policy["identity"]["rawSha256"]
+                value = {**self.value, "draftSimilarityPolicyId": policy_id, "draftSimilarityPolicySha256": policy_sha,
+                    "generationModel": generation_model, "identityReferenceHashes": [raw],
+                    "references": [{"hash": raw, "canonicalName": policy["identity"]["canonicalName"], "role": "identity"}]}
+                metadata = {"version": policy["model"]["version"], "preprocessVersion": policy["model"]["preprocessVersion"]}
+                gallery = {"sha256": policy["identity"]["gallerySha256"]}
+                evaluator = requested_draft_filter(value, metadata, self.manifest, gallery)
+                for index in range(3): self.observe(evaluator, index)
+                result = evaluator.finish()
+                self.assertEqual(result["status"], "eligible")
+                self.assertEqual(result["policyId"], policy_id)
+                self.assertEqual(result["policySha256"], policy_sha)
+                for change in [{"generationModel": "h3-ref2va-int8-v1"}, {"generationModel": None},
+                    {"generationModel": "h3-ref2va-int8-v3" if generation_model.endswith("v2") else "h3-ref2va-int8-v2"},
+                    {"projectId": "other"}, {"identityReferenceHashes": ["a"*64]},
+                    {"identityReferenceHashes": [raw, "a"*64]}, {"draftSimilarityPolicySha256": "a"*64},
+                    {"references": [{"hash": raw, "canonicalName": "Other", "role": "identity"}]},
+                    {"references": [{"hash": raw, "canonicalName": policy["identity"]["canonicalName"], "role": "environment"}]}]:
+                    evaluator = requested_draft_filter({**value, **change}, metadata, self.manifest, gallery)
+                    for index in range(3): self.observe(evaluator, index)
+                    self.assertEqual(evaluator.finish()["status"], "unverifiable")
+                evaluator = requested_draft_filter(value, metadata, self.manifest, {"sha256": "a"*64})
+                self.assertEqual(evaluator.finish()["status"], "unverifiable")
+                evaluator = requested_draft_filter(value, {**metadata, "preprocessVersion": "changed"}, self.manifest, gallery)
+                self.assertEqual(evaluator.finish()["status"], "unverifiable")
+
+    def test_valentina_gallery_definition_has_the_pinned_hash_and_diego_v1_remains_unchanged(self):
+        from verify import identity_gallery_profile
+        policy = load_policy("love-me-tonight-valentina-frontal-draft-v1")
+        raw = policy["identity"]["rawSha256"]
+        gallery = identity_gallery_profile({"identityReferenceHashes": [raw], "references": [{"hash": raw, "canonicalName": "Valentina", "faceRegions": [
+            {"name": "front", "rect": [.267, 0, .241, .508]},
+            {"name": "three-quarter", "rect": [.509, 0, .24, .508]},
+            {"name": "full-body", "rect": [0, 0, .266, .938]}]}]})
+        self.assertEqual(gallery["sha256"], policy["identity"]["gallerySha256"])
+        self.assertEqual(canonical_sha256(load_policy()), POLICY_SHA256)
+        self.assertNotIn("generationModel", load_policy())
 
 
 if __name__ == "__main__": unittest.main()

@@ -57,7 +57,27 @@ Optional `provisionalThreshold` records a diagnostic cutoff only. Optional `--sa
 
 This separate policy can identify a **reviewable draft candidate** while the parent identity assessment remains `status: unverifiable`. It never creates an identity certificate, final creative approval, or a general likeness-accuracy claim. Earlier failed quality experiments remain unchanged. Sharpness and lighting diagnostics become warnings under this separate policy because their reference-photograph acquisition envelope was not validated as an identity-validity test for cinematic video.
 
-The server must explicitly add `projectId`, `draftSimilarityPolicyId` and `draftSimilarityPolicySha256` to CLI input. The only supported initial policy is `love-me-tonight-diego-frontal-draft-v1`, canonical JSON SHA256 `f23f8186a59c3c893c043b0bba19a335d874dec9d140de54cfd98f6c824fe7d7`, stored in `policies/love-me-tonight-diego-frontal-draft-v1.json`. Its hash uses UTF-8 `json.dumps(policy, sort_keys=True, separators=(",", ":"), ensure_ascii=True)` so checkout line endings do not alter the pin. Package that JSON with the worker; it is checked at runtime before use.
+The server must explicitly add `projectId`, `generationModel`, `draftSimilarityPolicyId` and `draftSimilarityPolicySha256` to CLI input. The initial V2 policy `love-me-tonight-diego-frontal-draft-v1` remains immutable, canonical JSON SHA256 `f23f8186a59c3c893c043b0bba19a335d874dec9d140de54cfd98f6c824fe7d7`. Policy hashes use UTF-8 `json.dumps(policy, sort_keys=True, separators=(",", ":"), ensure_ascii=True)` so checkout line endings do not alter the pin. Package the allowlisted policy JSON files with the worker; each is checked at runtime before use.
+
+V3 uses separate immutable policies: `love-me-tonight-diego-frontal-draft-v2`
+(`f0250eadd801010db9885de4a6359c3c526fe6783e7dcd4a8128cbabbb3d9498`) and
+`love-me-tonight-valentina-frontal-draft-v1`
+(`589ee087db6829a53910659514b50bb1227c705ae6f7302fe2c977ccdb49d637`).
+Both explicitly pin `h3-ref2va-int8-v3`, threshold0.80 and the same per-frame
+frontal geometry; blur and luminance remain diagnostic warnings. The worker
+selects only an exact project/profile/single raw-authority match. Python checks
+the allowlisted policy hash, generation profile, raw identity, canonical name,
+role, gallery and model/preprocessing pins before computing eligibility.
+
+Valentina's gallery resolves only raw SHA256
+`15a317d4bc85ab1b794f0bb0e9e25658b616c41a1b77bc23520ebbecc95ffc67`,
+canonical name `Valentina`, role `identity`: front `[0.267,0,0.241,0.508]`,
+three-quarter `[0.509,0,0.24,0.508]`, full-body `[0,0,0.266,0.938]`.
+Its profile hash is `aabd690a6375029bfc793be8c2cd9b9efc034583aa5b0d0463c111c1c565b9c8`.
+The raw profile view remains in the unchanged authority but is outside this
+frontal gallery. Cross-pose holdouts do not support an all-pose policy. All
+eligible evidence remains `status: unverifiable`; whole-draft review and owner
+approval remain separate.
 
 The policy is limited to project `75101b25-fea6-42b1-b2c6-85a9d1deb8eb`, the exact raw Diego authority and three-view gallery documented above, and the pinned model/preprocessing hashes. Missing opt-in or unknown policy IDs produce no eligibility evidence. Requested but mismatched project, policy SHA, raw identity, gallery or model bindings remain unverifiable. This project-wide policy can assess future frontal Diego shots; it is not restricted to one job or media file. The enclosing proof binds each result to its actual job, media, ordered raw references and half-open frame scope.
 

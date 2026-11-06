@@ -33,15 +33,18 @@ export type H3GenerationState = "queued" | "preparing" | "submitting" | "submiss
   | "rendering" | "persisting" | "ready" | "failed" | "cancel_requested" | "cancelled";
 
 export const H3_LEGACY_PROFILE = "h3-ref2va-int8-v1" as const;
-export const H3_PROFILE = "h3-ref2va-int8-v2" as const;
-export const H3_CONDITIONING_PREPARATION_VERSION = "canonical-front-crop-v1" as const;
-export type H3GenerationProfile = typeof H3_LEGACY_PROFILE | typeof H3_PROFILE;
+export const H3_V2_PROFILE = "h3-ref2va-int8-v2" as const;
+export const H3_V2_CONDITIONING_PREPARATION_VERSION = "canonical-front-crop-v1" as const;
+export const H3_PROFILE = "h3-ref2va-int8-v3" as const;
+export const H3_CONDITIONING_PREPARATION_VERSION = "canonical-front-crops-v2" as const;
+export type H3GenerationProfile = typeof H3_LEGACY_PROFILE | typeof H3_V2_PROFILE | typeof H3_PROFILE;
+export type H3ConditioningPreparationVersion = typeof H3_V2_CONDITIONING_PREPARATION_VERSION | typeof H3_CONDITIONING_PREPARATION_VERSION;
 export type H3GenerationProfileOptions = {
   profile: H3GenerationProfile;
-  conditioningPreparationVersion?: typeof H3_CONDITIONING_PREPARATION_VERSION;
+  conditioningPreparationVersion?: H3ConditioningPreparationVersion;
 };
 export type H3ConditioningPreparation = {
-  version: "original-v1" | typeof H3_CONDITIONING_PREPARATION_VERSION;
+  version: "original-v1" | H3ConditioningPreparationVersion;
   /** Authority bytes remain distinct from the PNG bytes actually sent to H3. */
   rawSha256: string;
   operation: "original" | "crop";
@@ -57,7 +60,7 @@ export type H3GenerationJob = {
   ownerId: string;
   projectId: string;
   profile: H3GenerationProfile;
-  conditioningPreparationVersion?: typeof H3_CONDITIONING_PREPARATION_VERSION;
+  conditioningPreparationVersion?: H3ConditioningPreparationVersion;
   request: H3GenerationRequest;
   references: H3ReferenceSnapshot[];
   target: GeneratedStudioAssetTarget;

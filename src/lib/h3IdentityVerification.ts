@@ -4,8 +4,7 @@ import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { generatedAssetIdentityBlockReason, type GeneratedStudioAsset } from "@/components/studio/generatedAssets";
-import { H3_DRAFT_SIMILARITY_POLICY_ID, H3_DRAFT_SIMILARITY_POLICY_SHA256, H3_DRAFT_SIMILARITY_PROJECT_ID,
-  H3_DRAFT_SIMILARITY_RAW_IDENTITY_SHA256 } from "@/components/studio/identityDraftPolicy";
+import { resolveH3DraftSimilarityPolicyForInputs } from "@/components/studio/identityDraftPolicy";
 import { generatedAssetDraftIdentityBlockReason, normalizeGeneratedAssetIdentityVerification } from "@/components/studio/generatedAssetIdentity";
 import { H3_FPS, type H3GenerationJob } from "@/components/studio/h3Generation";
 import { downloadH3ReferenceImage } from "./h3JobStore";
@@ -82,11 +81,11 @@ export async function assessH3Identity(params: {
     }
     const trimStart = asset.trimStart ?? 0;
     const trimDuration = job.request.songEnd - job.request.songStart;
-    const canApplyDraftFilter = job.projectId === H3_DRAFT_SIMILARITY_PROJECT_ID && job.profile === "h3-ref2va-int8-v2"
-      && asset.identityReferenceHashes?.length === 1 && asset.identityReferenceHashes[0] === H3_DRAFT_SIMILARITY_RAW_IDENTITY_SHA256;
+    const draftFilter = resolveH3DraftSimilarityPolicyForInputs({ projectId: job.projectId, generationModel: job.profile,
+      identityReferenceHashes: asset.identityReferenceHashes ?? [] });
     const input: H3IdentityInput = { version: 1, assetId: asset.id, jobId: job.id, generationModel: job.profile, projectId: job.projectId,
-      ...(canApplyDraftFilter ? { draftSimilarityPolicyId: H3_DRAFT_SIMILARITY_POLICY_ID,
-        draftSimilarityPolicySha256: H3_DRAFT_SIMILARITY_POLICY_SHA256 } : {}),
+      ...(draftFilter ? { draftSimilarityPolicyId: draftFilter.id,
+        draftSimilarityPolicySha256: draftFilter.sha256 } : {}),
       videoPath: outputPath, mediaSha256: asset.mediaSha256!, frameCount: job.frames, fps: H3_FPS,
       durationSeconds: asset.durationSeconds, verifiedStartFrame: Math.floor(trimStart * H3_FPS + 1e-6),
       verifiedEndFrameExclusive: Math.min(job.frames, Math.ceil((trimStart + trimDuration) * H3_FPS - 1e-6)),
