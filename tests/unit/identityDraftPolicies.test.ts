@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { describe, expect, test } from "bun:test";
 import { H3_DRAFT_SIMILARITY_POLICIES, H3_DRAFT_SIMILARITY_POLICY_ID, H3_DRAFT_SIMILARITY_POLICY_SHA256,
+  H3_VALENTINA_FOREGROUND_POLICY,
   resolveH3DraftSimilarityPolicy, resolveH3DraftSimilarityPolicyForInputs } from "@/components/studio/identityDraftPolicy";
 import { generatedAssetDraftIdentityBlockReason, generatedAssetIdentityBlockReason } from "@/components/studio/generatedAssetIdentity";
 import { approveGeneratedDraft, captureGeneratedDraftReview, createGeneratedDraftSelection, selectGeneratedDraftAsset } from "@/components/studio/generatedDraft";
@@ -24,7 +25,7 @@ describe("immutable profile-scoped provisional policy registry", () => {
       expect(value.threshold).toBe(.8); expect(value.scope.requireEveryIntendedFrame).toBe(true);
       expect(value.preserveIdentityVerificationStatus).toBe("unverifiable");
       expect(resolveH3DraftSimilarityPolicyForInputs({ projectId: policy.projectId, generationModel: policy.generationModel,
-        identityReferenceHashes: [policy.identityReferenceSha256] })).toBe(policy);
+        identityReferenceHashes: [policy.identityReferenceSha256] })).toBe(policy.canonicalName === "Valentina" ? H3_VALENTINA_FOREGROUND_POLICY : policy);
       expect(resolveH3DraftSimilarityPolicy(policy.id, "a".repeat(64))).toBe(undefined);
       for (const changed of [{ projectId: "other" }, { generationModel: "h3-ref2va-int8-v1" }, { identityReferenceHashes: [] },
         { identityReferenceHashes: ["a".repeat(64)] }, { identityReferenceHashes: [policy.identityReferenceSha256, "a".repeat(64)] }]) {

@@ -37,6 +37,18 @@ const valentinaV3Policy = Object.freeze({ ...policy,
   preprocessVersion: "opencv412-aligncrop112-rgb-f32-nchw-unit-centroid-v1-gallery-v2-aabd690a6375029bfc793be8c2cd9b9efc034583aa5b0d0463c111c1c565b9c8",
 });
 export const H3_DRAFT_SIMILARITY_POLICIES = Object.freeze([policy, diegoV3Policy, valentinaV3Policy]);
+export const H3_VALENTINA_FOREGROUND_POLICY_ID = "love-me-tonight-valentina-dominant-foreground-draft-v1";
+export const H3_VALENTINA_FOREGROUND_POLICY_SHA256 = "185d2a89d61cbad481ae3ea45acb87d2a5c8d8e0a46f14ddcddad74068878b47";
+export const H3_VALENTINA_FOREGROUND_POLICY = Object.freeze({ ...valentinaV3Policy,
+  id: H3_VALENTINA_FOREGROUND_POLICY_ID, sha256: H3_VALENTINA_FOREGROUND_POLICY_SHA256,
+  foregroundGeometry: Object.freeze({ minimumFaceWidthPixels: 128, minimumFaceHeightPixels: 160, minimumDetectionScore: .94,
+    maximumAbsoluteRollDegrees: 8, maximumAbsoluteNoseEyeMidpointOffsetOverEyeDistance: .1,
+    maximumAbsoluteMouthEyeMidpointOffsetOverEyeDistance: .12, minimumEyeDistancePixels: 48,
+    minimumNoseDepthOverEyeDistance: .15, maximumNoseDepthOverEyeDistance: 1.5, maximumMouthDepthOverEyeDistance: 2.5,
+    minimumConsecutiveFaceBoxIoU: .15 }),
+  foregroundDominance: Object.freeze({ maximumBackgroundWidthRatio: .6, maximumBackgroundHeightRatio: .6,
+    maximumBackgroundAreaRatio: 1 / 3, minimumLeadCosineMargin: .15, maximumDetectedFaceCount: 32 }),
+});
 export const H3_JOINT_DRAFT_SIMILARITY_POLICY_ID = "love-me-tonight-diego-valentina-frontal-pair-draft-v1";
 export const H3_JOINT_DRAFT_SIMILARITY_POLICY_SHA256 = "34e9171b83d5d5fa07d4f61ed72e38efd28a13aa357f9c0413da2beca5d33e00";
 export const H3_JOINT_DRAFT_SIMILARITY_POLICY = Object.freeze({ ...diegoV3Policy,
@@ -52,6 +64,7 @@ export const H3_JOINT_DRAFT_SIMILARITY_POLICY = Object.freeze({ ...diegoV3Policy
 });
 
 export function resolveH3DraftSimilarityPolicy(id: string, sha256: string) {
+  if (id === H3_VALENTINA_FOREGROUND_POLICY.id && sha256 === H3_VALENTINA_FOREGROUND_POLICY.sha256) return H3_VALENTINA_FOREGROUND_POLICY;
   if (id === H3_JOINT_DRAFT_SIMILARITY_POLICY.id && sha256 === H3_JOINT_DRAFT_SIMILARITY_POLICY.sha256) return H3_JOINT_DRAFT_SIMILARITY_POLICY;
   return H3_DRAFT_SIMILARITY_POLICIES.find(policy => id === policy.id && sha256 === policy.sha256);
 }
@@ -66,6 +79,8 @@ export function resolveH3DraftSimilarityPolicyForInputs(input: {
     return H3_JOINT_DRAFT_SIMILARITY_POLICY;
   }
   if (input.identityReferenceHashes.length !== 1) return undefined;
+  if (input.projectId === H3_VALENTINA_FOREGROUND_POLICY.projectId && input.generationModel === H3_VALENTINA_FOREGROUND_POLICY.generationModel
+    && input.identityReferenceHashes[0] === H3_VALENTINA_FOREGROUND_POLICY.identityReferenceSha256) return H3_VALENTINA_FOREGROUND_POLICY;
   return H3_DRAFT_SIMILARITY_POLICIES.find(policy => input.projectId === policy.projectId
     && input.generationModel === policy.generationModel && input.identityReferenceHashes[0] === policy.identityReferenceSha256);
 }

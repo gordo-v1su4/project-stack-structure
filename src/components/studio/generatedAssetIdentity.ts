@@ -1,5 +1,6 @@
 import type { GeneratedStudioAsset } from "./generatedAssets";
 import { resolveH3DraftSimilarityPolicy } from "./identityDraftPolicy";
+import { copyForegroundFrameEvidence, foregroundEvidenceBlockReason, validForegroundFrameEvidence, type ForegroundFrameEvidence } from "./foregroundDraftEvidence";
 
 export type IdentityFrameSample = {
   timeSeconds: number;
@@ -7,6 +8,7 @@ export type IdentityFrameSample = {
   scores: { referenceHash: string; trackId: string; score: number }[];
   /** Joint policies retain all four candidates so assignment margins can be checked. */
   candidateScores?: { referenceHash: string; trackId: string; score: number }[];
+  foreground?: ForegroundFrameEvidence;
 };
 
 /** Provisional model screen for a reviewed draft; never an identity certificate. */
@@ -74,6 +76,7 @@ function validSamples(value: unknown): value is IdentityFrameSample[] {
     && Number.isFinite(sample.timeSeconds) && sample.timeSeconds >= 0 && sample.timeSeconds <= 86_400
     && hash(sample.frameSha256) && Array.isArray(sample.scores) && sample.scores.length <= 32
     && (sample.candidateScores === undefined || (Array.isArray(sample.candidateScores) && sample.candidateScores.length <= 32))
+    && (sample.foreground === undefined || validForegroundFrameEvidence(sample.foreground))
     && [...sample.scores, ...(sample.candidateScores ?? [])].every((score: IdentityFrameSample["scores"][number]) => score && hash(score.referenceHash) && boundedText(score.trackId)
       && Number.isFinite(score.score) && score.score >= -1 && score.score <= 1));
 }
@@ -81,6 +84,7 @@ function validSamples(value: unknown): value is IdentityFrameSample[] {
 function copySamples(samples: IdentityFrameSample[]): IdentityFrameSample[] {
   return samples.map(sample => ({ timeSeconds: sample.timeSeconds, frameSha256: sample.frameSha256,
     scores: sample.scores.map(score => ({ referenceHash: score.referenceHash, trackId: score.trackId, score: score.score })),
+    ...(sample.foreground === undefined ? {} : { foreground: copyForegroundFrameEvidence(sample.foreground) }),
     ...(sample.candidateScores === undefined ? {} : { candidateScores: sample.candidateScores.map(score => ({ referenceHash: score.referenceHash, trackId: score.trackId, score: score.score })) }) }));
 }
 
@@ -236,6 +240,11 @@ export function generatedAssetDraftIdentityBlockReason(asset: GeneratedStudioAss
     for (const score of sample.scores) {
       if (tracks.has(score.referenceHash) && tracks.get(score.referenceHash) !== score.trackId) return "Similarity filter has ambiguous tracking";
       tracks.set(score.referenceHash, score.trackId);
+    }
+    if ("foregroundDominance" in policy) {
+      const block = foregroundEvidenceBlockReason({ evidence: sample.foreground, previous: filter.samples[index - 1]?.foreground,
+        assigned: sample.scores[0], candidates: sample.candidateScores, geometry: policy.foregroundGeometry, dominance: policy.foregroundDominance });
+      if (block) return block;
     }
     if ("minimumAssignmentCosineMargin" in policy) {
       const candidates = sample.candidateScores;

@@ -15,6 +15,8 @@ POLICIES = {
 }
 JOINT_POLICY_ID = "love-me-tonight-diego-valentina-frontal-pair-draft-v1"
 JOINT_POLICY_SHA256 = "34e9171b83d5d5fa07d4f61ed72e38efd28a13aa357f9c0413da2beca5d33e00"
+FOREGROUND_POLICY_ID = "love-me-tonight-valentina-dominant-foreground-draft-v1"
+FOREGROUND_POLICY_SHA256 = "185d2a89d61cbad481ae3ea45acb87d2a5c8d8e0a46f14ddcddad74068878b47"
 
 
 def canonical_sha256(value):
@@ -22,6 +24,9 @@ def canonical_sha256(value):
 
 
 def load_policy(policy_id=POLICY_ID):
+    if policy_id == FOREGROUND_POLICY_ID:
+        from foreground_similarity_filter import load_foreground_policy
+        return load_foreground_policy()
     if policy_id == JOINT_POLICY_ID:
         from joint_similarity_filter import load_joint_policy
         return load_joint_policy()
@@ -151,6 +156,9 @@ class DraftSimilarityFilter:
 
 
 def requested_draft_filter(value, verifier_metadata, manifest, gallery_profile):
+    if value.get("draftSimilarityPolicyId") == FOREGROUND_POLICY_ID:
+        from foreground_similarity_filter import ForegroundDraftSimilarityFilter
+        return ForegroundDraftSimilarityFilter(value, verifier_metadata, manifest, gallery_profile)
     if value.get("draftSimilarityPolicyId") == JOINT_POLICY_ID:
         from joint_similarity_filter import JointDraftSimilarityFilter
         return JointDraftSimilarityFilter(value, verifier_metadata, manifest, gallery_profile)
