@@ -67,6 +67,7 @@ export async function reconcileProjectFinalExport(params: {
   const runtime = hydrateStudioProjectDraft({ draft });
   const assets: GeneratedStudioAsset[] = [];
   const canonicalByKey = new Map<string, GeneratedStudioAsset>();
+  const environmentOnlyNativeBounds = new Set<string>();
   const receipts: NonNullable<FinalExportPayload["projectSnapshot"]>["h3"] = [];
   for (const asset of runtime.generatedAssets) {
     if (asset.reviewStatus !== "approved") { assets.push(asset); continue; }
@@ -113,7 +114,12 @@ export async function reconcileProjectFinalExport(params: {
     if (!authoritative.fullStorage?.bucket || !authoritative.fullStorage.objectKey || !/^[a-f0-9]{64}$/.test(authoritative.mediaSha256 ?? "")) {
       throw new ProjectExportError("The canonical generated take has no verified durable media binding.");
     }
-    canonicalByKey.set(mediaKey({ bucket: authoritative.fullStorage.bucket, objectKey: authoritative.fullStorage.objectKey }), authoritative);
+    const canonicalKey = mediaKey({ bucket: authoritative.fullStorage.bucket, objectKey: authoritative.fullStorage.objectKey });
+    canonicalByKey.set(canonicalKey, authoritative);
+    // No identity claim is made for an environment-only shot. Its immutable
+    // full-media SHA/probe permits another valid native trim without reassessing faces.
+    if (canonical.identityVerification?.status === "not_required" && job.references.every(reference => reference.role !== "identity")
+      && canonical.identityReferenceHashes?.length === 0) environmentOnlyNativeBounds.add(canonicalKey);
     assets.push(authoritative);
     receipts.push({ jobId: job.id, assetId: authoritative.id, mediaSha256: authoritative.mediaSha256!,
       proofSha256: digest(authoritative.identityVerification), trimStart: authoritative.trimStart ?? 0,
@@ -164,8 +170,22 @@ export async function reconcileProjectFinalExport(params: {
     }
     let sourceIndex = videos.findIndex(video => mediaKey(video) === mediaKey(expected));
     if (sourceIndex < 0) { sourceIndex = videos.length; videos.push({ ...expected, ...(canonical ? { expectedSha256: canonical.mediaSha256 } : {}) }); }
+    let sourceFrameWindow: FinalExportPayload["segments"][number]["sourceFrameWindow"];
+    if (canonical) {
+      const proof = canonical.identityVerification;
+      const startFrame = Math.floor(segment.startTime * 24 + 1e-6), endFrameExclusive = Math.ceil(segment.endTime * 24 - 1e-6);
+      const environmentOnly = environmentOnlyNativeBounds.has(mediaKey(expected));
+      if (!proof || canonical.mediaFrameRate !== 24 || !Number.isSafeInteger(canonical.mediaFrameCount)
+        || proof.frameCount !== canonical.mediaFrameCount || proof.frameRate !== 24
+        || startFrame < (environmentOnly ? 0 : proof.verifiedStartFrame)
+        || endFrameExclusive > (environmentOnly ? canonical.mediaFrameCount! : proof.verifiedEndFrameExclusive)) {
+        throw new ProjectExportError("The canonical H3 source frames are outside the approved verification window.");
+      }
+      sourceFrameWindow = { startFrame, endFrameExclusive, frameRate: 24, totalFrames: canonical.mediaFrameCount! };
+    }
     segments.push({ sourceIndex, startTime: segment.startTime, endTime: segment.endTime, musicStart: segment.musicStart,
-      musicEnd: segment.musicEnd, useClipAudio: segment.useClipAudio, label: segment.label });
+      musicEnd: segment.musicEnd, useClipAudio: segment.useClipAudio, label: segment.label,
+      ...(sourceFrameWindow ? { sourceFrameWindow } : {}) });
     songCursor = segment.musicEnd;
   }
   if (!near(songCursor, project.duration)) throw new ProjectExportError("The accepted cut does not cover the full master song.");

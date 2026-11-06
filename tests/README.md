@@ -47,6 +47,11 @@ JWT-based E2E bypasses OAuth. After any `AUTH_*` environment change, also verify
 
 ## Saved-project H3 verification
 
+`bun run test exportFrameTiming projectExportValidation` also checks encoded
+frame budgets, the bounded one-frame EOF hold, canonical H3 decoded-frame trims,
+ordinary VFR seeking, and final master duration using synthetic numbered video
+and local FFmpeg. It performs no provider generation or project writes.
+
 `bun run test projectExportValidation exportMediaIntegrity h3IdentityRecheckDispatch`
 checks the final-export trust boundary with synthetic evidence: owner-scoped media
 and chunks, fresh named-project revisions, saved approval, canonical H3 job

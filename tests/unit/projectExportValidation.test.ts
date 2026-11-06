@@ -41,23 +41,23 @@ let key = `media-uploads/projects/github-test/generated/project-1/${id}/shot.mp4
 const hash = (byte: string) => byte.repeat(64);
 const mediaHash = createHash("sha256").update(new Uint8Array([1, 2, 3])).digest("hex");
 
-function reset(idForProject = "project-1") {
+function reset(idForProject = "project-1", duration = 3) {
   signedIn = true; dispatches = []; reads = 0; issuedPolicy = undefined;
   projectId = idForProject; key = `media-uploads/projects/github-test/generated/${projectId}/${id}/shot.mp4`;
-  const analysis: BeatJoinAnalysis = { sourceLabel: "master.wav", audioUrl: "", duration: 3, waveform: [], energy: [], beats: [], onsets: [], sections: [],
+  const analysis: BeatJoinAnalysis = { sourceLabel: "master.wav", audioUrl: "", duration, waveform: [], energy: [], beats: [], onsets: [], sections: [],
     storageBucket: "studio", storagePath: "media-uploads/github-test/source-audio/master.wav", storageUrl: "https://media.test/master.wav" };
   const refs: ReferenceAsset[] = [{ id: "diego", role: "character-1", kind: "character", displayName: "Diego", fileName: "diego.png",
     previewUrl: "", promptHint: "", storageStatus: "uploaded", storageBucket: "studio", storagePath: "media-uploads/github-test/refs/diego.png", storageUrl: "https://media.test/diego.png", createdAt: "2026-11-06T00:00:00Z" },
   { id: "club", role: "environment", kind: "environment", displayName: "Club", fileName: "club.png", previewUrl: "", promptHint: "", storageStatus: "uploaded",
     storageBucket: "studio", storagePath: "media-uploads/github-test/refs/club.png", storageUrl: "https://media.test/club.png", createdAt: "2026-11-06T00:00:00Z" }];
-  const beats = [{ id: "verse", label: "Verse", start: 0, end: 3, prompt: "Diego reacts." }];
+  const beats = [{ id: "verse", label: "Verse", start: 0, end: duration, prompt: "Diego reacts." }];
   const treatment: StoryTreatment = { id: "story", kind: "faithful", title: "Test story", logline: "Diego reacts.", synopsis: "A controlled reaction.",
     visualThesis: "Stable identity.", endingHook: "Diego reacts.", expectedReusePercent: 0, expectedGenerationPercent: 100,
     anchors: [{ id: "reaction", title: "Reaction", description: "Diego reacts.", purpose: "Reaction", generationPrompt: "Diego reacts.", coverage: "missing", candidates: [], selectedCandidateId: null, resolution: "generate" }] };
   const sourceContext = buildStudioSourceContextSignature({ analysis, videoSources: [], referenceAssets: refs });
-  const project = prepareApprovedPlacements({ project: { ...createMusicVideoProject({ analysis, duration: 3, storyDrafts: beats }), sourceContextSignature: sourceContext }, videoSources: [] });
+  const project = prepareApprovedPlacements({ project: { ...createMusicVideoProject({ analysis, duration, storyDrafts: beats }), sourceContextSignature: sourceContext }, videoSources: [] });
   const item = project.editPlan.timelineItems[0];
-  const target = { planSignature: project.placementPlan!.inputSignature, timelineItemId: item.id, sectionId: item.sectionId, sectionLabel: "Verse", songStart: 0, songEnd: 3 };
+  const target = { planSignature: project.placementPlan!.inputSignature, timelineItemId: item.id, sectionId: item.sectionId, sectionLabel: "Verse", songStart: 0, songEnd: duration };
   const proof: GeneratedAssetIdentityVerification = { version: 1, status: "passed", assetId: id, jobId: id, generationModel: "h3-ref2va-int8-v2",
     mediaSha256: mediaHash, durationSeconds: 124 / 24, frameCount: 124, frameRate: 24, verifiedStartFrame: 0, verifiedEndFrameExclusive: 72,
     examinedFrameCount: 72, unverifiableFrameCount: 0, ambiguousFrameCount: 0, referenceHashes: [hash("b"), hash("c")], identityReferenceHashes: [hash("b")],
@@ -80,12 +80,14 @@ function reset(idForProject = "project-1") {
       prompt: "Diego reacts.", referenceAssetIds: ["diego", "club"], requestIntentId: "eacaa976-4fca-4cab-9160-0164107b8440" },
     references: refs.map((ref, index) => ({ assetId: ref.id, canonicalName: ref.displayName, role: index ? "environment" : "identity", bucket: "studio", objectKey: ref.storagePath!, version: "fixture" })),
     referenceHashes: [hash("b"), hash("c")], result: { asset } };
+  job.request.songEnd = duration;
 }
 function form(projectContext = true) {
   const data = new FormData();
   data.set("audioRef", JSON.stringify({ bucket: "studio", objectKey: saved.draft.analysis!.storagePath }));
   data.set("videoRefs", JSON.stringify([{ bucket: "studio", objectKey: key, expectedSha256: hash("f") }]));
-  data.set("segments", JSON.stringify([{ sourceIndex: 0, startTime: 0, endTime: 3, musicStart: 0, musicEnd: 3 }]));
+  const duration = saved.draft.musicVideoProject!.duration;
+  data.set("segments", JSON.stringify([{ sourceIndex: 0, startTime: 0, endTime: duration, musicStart: 0, musicEnd: duration }]));
   if (projectContext) for (const [name, value] of Object.entries({ projectId, planSignature: saved.draft.musicVideoProject!.placementPlan!.inputSignature,
     placementRevision: saved.draft.musicVideoProject!.placementPlan!.revision, draftRevision: 2 })) data.set(name, String(value));
   return data;
@@ -107,6 +109,40 @@ function provisionalProof(): GeneratedAssetIdentityVerification {
 }
 
 describe("final export canonical identity and ownership boundary", () => {
+  function lateEnvironmentSetup() {
+    reset("project-1", 1.59);
+    job.references = job.references.filter(reference => reference.role === "environment");
+    job.request.referenceAssetIds = ["club"]; job.referenceHashes = [hash("c")];
+    const canonical = job.result!.asset, proof = canonical.identityVerification!;
+    canonical.generationReferenceHashes = [...job.referenceHashes]; canonical.identityReferenceHashes = [];
+    proof.status = "not_required"; proof.coverage = "not_required"; proof.samples = []; proof.examinedFrameCount = 0;
+    proof.referenceHashes = [...job.referenceHashes]; proof.identityReferenceHashes = [];
+    proof.verifiedStartFrame = 0; proof.verifiedEndFrameExclusive = 39;
+    saved.draft.generatedAssets![0] = { ...structuredClone(canonical), reviewStatus: "approved", trimStart: 3.267 };
+    const data = form(); data.set("segments", JSON.stringify([{ sourceIndex: 0, startTime: 3.267, endTime: 4.857, musicStart: 0, musicEnd: 1.59 }]));
+    return data;
+  }
+  test("a canonical environment-only late trim uses native frame bounds without rewriting its original proof", async () => {
+    const data = lateEnvironmentSetup();
+    expect((await post(data)).status).toBe(202);
+    expect((dispatches[0] as { segments: Array<{ sourceFrameWindow: unknown }> }).segments[0].sourceFrameWindow)
+      .toEqual({ startFrame: 78, endFrameExclusive: 117, frameRate: 24, totalFrames: 124 });
+    expect(job.result!.asset.identityVerification!.verifiedEndFrameExclusive).toBe(39);
+  });
+  test("a forged environment exemption cannot widen an identity-conditioned take", async () => {
+    const data = lateEnvironmentSetup();
+    job.references[0].role = "identity";
+    expect((await post(data)).status).toBe(409); expect(dispatches).toHaveLength(0);
+  });
+  test("a browser-only not-required claim cannot widen canonical assessed identity frames", async () => {
+    const data = lateEnvironmentSetup();
+    const canonical = job.result!.asset, proof = canonical.identityVerification!;
+    job.references[0].role = "identity"; canonical.identityReferenceHashes = [...job.referenceHashes!];
+    proof.status = "passed"; proof.coverage = "complete"; proof.identityReferenceHashes = [...job.referenceHashes!];
+    proof.examinedFrameCount = 39; proof.samples = [0, .5, 1].map((timeSeconds, index) => ({ timeSeconds, frameSha256: hash(String(index + 1)),
+      scores: [{ referenceHash: job.referenceHashes![0], trackId: "lead", score: .9 }] }));
+    expect((await post(data)).status).toBe(409); expect(dispatches).toHaveLength(0);
+  });
   function issuedSetup() {
     reset(); job.profile = "h3-ref2va-int8-v3"; job.conditioningPreparationVersion = "canonical-front-crops-v2";
     job.request.identityPolicyFamily = "sface-yunet-foreground-frontal-v1";
@@ -145,6 +181,24 @@ describe("final export canonical identity and ownership boundary", () => {
     const result = dispatches[0] as { videos: Array<{ expectedSha256: string }>; projectSnapshot: { ownerId: string; h3: unknown[] } };
     expect(result.videos[0].expectedSha256).toBe(mediaHash);
     expect(result.projectSnapshot.ownerId).toBe("github-test"); expect(result.projectSnapshot.h3).toHaveLength(1);
+  });
+  test("reconstructs decoded H3 frame bounds on the server and ignores forged browser frame context", async () => {
+    reset(); const data = form();
+    data.set("segments", JSON.stringify([{ sourceIndex: 0, startTime: 0, endTime: 3, musicStart: 0, musicEnd: 3,
+      sourceFrameWindow: { startFrame: 99, endFrameExclusive: 100, frameRate: 60, totalFrames: 999 } }]));
+    expect((await post(data)).status).toBe(202);
+    expect((dispatches[0] as { segments: Array<{ sourceFrameWindow: unknown }> }).segments[0].sourceFrameWindow)
+      .toEqual({ startFrame: 0, endFrameExclusive: 72, frameRate: 24, totalFrames: 124 });
+  });
+  test("a rounded frame-step trim binds the actual exported interval inside canonical proof", async () => {
+    reset(); saved.draft.generatedAssets![0].trimStart = .042;
+    const proof = job.result!.asset.identityVerification!;
+    proof.verifiedStartFrame = 1; proof.verifiedEndFrameExclusive = 74; proof.examinedFrameCount = 73;
+    proof.samples.forEach((sample, index) => { sample.timeSeconds = (1 + index * 24) / 24; });
+    const data = form(); data.set("segments", JSON.stringify([{ sourceIndex: 0, startTime: .042, endTime: 3.042, musicStart: 0, musicEnd: 3 }]));
+    expect((await post(data)).status).toBe(202);
+    expect((dispatches[0] as { segments: Array<{ sourceFrameWindow: unknown }> }).segments[0].sourceFrameWindow)
+      .toEqual({ startFrame: 1, endFrameExclusive: 74, frameRate: 24, totalFrames: 124 });
   });
   for (const failure of ["unverifiable", "missing proof", "canonical rejection", "changed media ref", "changed trim", "changed selected trim", "changed reference hash", "stale revision", "pending selection", "false exemption"]) {
     test(`refuses ${failure} before Trigger dispatch`, async () => {

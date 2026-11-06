@@ -7,6 +7,8 @@ import { promisify } from "node:util";
 import { getDefaultPreviewOutputDir } from "./previewAssetPath";
 import {
   buildPreviewOutputPath,
+  allocateFrameAlignedCounts,
+  assertEncodedVideoFrameBudget,
   generateConcatPreview,
   type ConcatPreviewSegment,
   type GeneratedPreviewAsset,
@@ -261,6 +263,12 @@ export async function generateMusicVideoExport(params: {
   }
 
   const outputMetadata = await probeFn(outputPath);
+  const expectedFrames = allocateFrameAlignedCounts(segments.map(segment => segment.endTime - segment.startTime)).reduce((sum, frames) => sum + frames, 0);
+  const encoded = await assertEncodedVideoFrameBudget(outputPath, expectedFrames);
+  if (!Number.isFinite(encoded.containerDuration) || Math.abs(encoded.containerDuration - canonicalDuration) > 1 / 24 + 0.001
+    || !Number.isFinite(encoded.audioDuration) || Math.abs(encoded.audioDuration - canonicalDuration) > 1 / 24 + 0.001) {
+    throw new Error("Final export does not cover its canonical master-song duration.");
+  }
   return {
     requestKey: params.requestKey,
     assetKey: outputPath,

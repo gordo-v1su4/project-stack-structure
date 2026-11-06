@@ -40,6 +40,8 @@ export type FinalExportPayload = {
     musicStart?: number;
     musicEnd?: number;
     label?: string;
+    /** Reconstructed by server reconciliation; never accepted from browser input. */
+    sourceFrameWindow?: import("@/components/studio/previewGeneration").ConcatPreviewSegment["sourceFrameWindow"];
   }>;
   effectCues?: unknown[];
   accentKinds?: { beat?: string; section?: string; lyric?: string };

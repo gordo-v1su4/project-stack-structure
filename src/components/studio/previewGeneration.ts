@@ -126,6 +126,29 @@ export interface ConcatPreviewSegment {
   inputPath: string;
   startTime: number;
   endTime: number;
+  /** Server-derived decoded frame interval for canonical, verified 24 fps H3 media. */
+  sourceFrameWindow?: { startFrame: number; endFrameExclusive: number; frameRate: 24; totalFrames: number };
+}
+
+/** Generated MP4 sample tables establish the actual encoded budget, not a rounded container estimate. */
+async function probeEncodedVideo(inputPath: string) {
+  const { stdout } = await execFileAsync(process.env.FFPROBE_PATH || "ffprobe", [
+    "-v", "error", "-show_entries", "stream=codec_type,nb_frames,duration,avg_frame_rate,r_frame_rate:format=duration", "-of", "json", inputPath,
+  ], { maxBuffer: 1024 * 1024 });
+  const probe = JSON.parse(stdout) as { streams?: Array<{ codec_type?: string; nb_frames?: string; duration?: string; avg_frame_rate?: string; r_frame_rate?: string }>; format?: { duration?: string } };
+  const video = probe.streams?.find(stream => stream.codec_type === "video");
+  const rate = (text?: string) => { const [n, d = "1"] = (text || "").split("/"); return Number(n) / Number(d); };
+  return { frames: Number(video?.nb_frames), duration: Number(video?.duration), frameRate: rate(video?.avg_frame_rate), nativeFrameRate: rate(video?.r_frame_rate),
+    containerDuration: Number(probe.format?.duration), audioDuration: Number(probe.streams?.find(stream => stream.codec_type === "audio")?.duration) };
+}
+
+export async function assertEncodedVideoFrameBudget(inputPath: string, frames: number) {
+  const actual = await probeEncodedVideo(inputPath);
+  if (!Number.isSafeInteger(actual.frames) || actual.frames !== frames || !Number.isFinite(actual.frameRate) || Math.abs(actual.frameRate - CONCAT_PREVIEW_FPS) > 1e-6
+    || !Number.isFinite(actual.duration) || Math.abs(actual.duration - frames / CONCAT_PREVIEW_FPS) > 0.001) {
+    throw new PreviewGenerationError("music-window-mismatch", `Encoded video does not match its allocated ${frames}-frame music window.`);
+  }
+  return actual;
 }
 
 export async function generateConcatPreview(params: {
@@ -146,23 +169,9 @@ export async function generateConcatPreview(params: {
     throw new PreviewGenerationError("invalid-window", "No valid segments for concat preview.");
   }
 
-  if (segments.length === 1) {
-    const segment = segments[0];
-    return generateSectionPreview({
-      inputPath: segment.inputPath,
-      requestKey: params.requestKey,
-      startTime: segment.startTime,
-      endTime: segment.endTime,
-      outputPath,
-      ffmpegPath,
-      probeFn,
-    });
-  }
-
   await mkdir(path.dirname(outputPath), { recursive: true });
 
   const segmentPaths: string[] = [];
-  const segmentDurations: number[] = [];
   const segmentFrameCounts = allocateFrameAlignedCounts(
     segments.map((segment) => clampTime(segment.endTime) - clampTime(segment.startTime)),
   );
@@ -181,17 +190,35 @@ export async function generateConcatPreview(params: {
     }
 
     const segmentFrameCount = segmentFrameCounts[index]!;
+    if (segment.endTime > inputMetadata.duration + 1 / CONCAT_PREVIEW_FPS + 0.001 || segment.startTime >= inputMetadata.duration) {
+      throw new PreviewGenerationError("music-window-mismatch", `Concat segment ${index} extends beyond its source; only one EOF frame may be held.`);
+    }
+    let sourceFilter = "";
+    if (segment.sourceFrameWindow) {
+      const window = segment.sourceFrameWindow;
+      const input = await probeEncodedVideo(segment.inputPath);
+      if (window.frameRate !== 24 || ![window.startFrame, window.endFrameExclusive, window.totalFrames].every(Number.isSafeInteger)
+        || window.startFrame < 0 || window.endFrameExclusive <= window.startFrame || window.endFrameExclusive > window.totalFrames
+        || segmentFrameCount > window.endFrameExclusive - window.startFrame || input.frames !== window.totalFrames
+        || !Number.isFinite(input.frameRate) || !Number.isFinite(input.nativeFrameRate)
+        || Math.abs(input.frameRate - 24) > 1e-6 || Math.abs(input.nativeFrameRate - 24) > 1e-6) {
+        throw new PreviewGenerationError("music-window-mismatch", "Canonical H3 trim exceeds its verified decoded frame interval.");
+      }
+      // A rounded .042-second accurate seek skips decoded frame1 at24fps. Decode
+      // canonical H3 from zero and select the exact worker-verified frame indices.
+      sourceFilter = `trim=start_frame=${window.startFrame}:end_frame=${window.endFrameExclusive},setpts=PTS-STARTPTS,`;
+    }
     try {
       await execFileAsync(ffmpegPath, [
         "-y",
-        "-ss", `${clampTime(segment.startTime)}`,
+        ...(segment.sourceFrameWindow ? [] : ["-ss", `${clampTime(segment.startTime)}`]),
         "-i", segment.inputPath,
         // A time-based `-t` can lose nearly one decoded frame per cut when
         // `-ss` lands between source frames. Across a music-video timeline
         // that accumulates into seconds of missing video.
         "-frames:v", `${segmentFrameCount}`,
         "-map", "0:v:0",
-        "-vf", "fps=24,scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1,setpts=PTS-STARTPTS",
+        "-vf", `${sourceFilter}fps=24,tpad=stop_mode=clone:stop_duration=${1 / CONCAT_PREVIEW_FPS},scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1,setpts=PTS-STARTPTS`,
         "-an",
         "-c:v", "libx264",
         "-preset", "veryfast",
@@ -207,9 +234,8 @@ export async function generateConcatPreview(params: {
       );
     }
 
-    const segmentMetadata = await probeFn(segmentOutputPath);
+    await assertEncodedVideoFrameBudget(segmentOutputPath, segmentFrameCount);
     segmentPaths.push(segmentOutputPath);
-    segmentDurations.push(segmentMetadata.duration);
   }
 
   const concatListPath = buildPreviewOutputPath({
@@ -223,7 +249,8 @@ export async function generateConcatPreview(params: {
     .join("\n");
   await writeFile(concatListPath, concatEntries, "utf-8");
 
-  const expectedDuration = roundDuration(segmentDurations.reduce((total, duration) => total + duration, 0));
+  const expectedFrames = segmentFrameCounts.reduce((total, frames) => total + frames, 0);
+  const expectedDuration = expectedFrames / CONCAT_PREVIEW_FPS;
 
   try {
     await execFileAsync(ffmpegPath, [
@@ -248,6 +275,7 @@ export async function generateConcatPreview(params: {
     );
   }
 
+  await assertEncodedVideoFrameBudget(outputPath, expectedFrames);
   const metadata = await probeFn(outputPath);
   if (!isPreviewDurationWithinTolerance(metadata.duration, expectedDuration, concatPreviewDurationTolerance(segments.length))) {
     throw new PreviewGenerationError(
