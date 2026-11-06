@@ -4,7 +4,7 @@ import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { generatedAssetIdentityBlockReason, type GeneratedStudioAsset } from "@/components/studio/generatedAssets";
-import { resolveH3DraftSimilarityPolicyForInputs } from "@/components/studio/identityDraftPolicy";
+import { resolveH3DraftSimilarityPolicy, resolveH3DraftSimilarityPolicyForInputs } from "@/components/studio/identityDraftPolicy";
 import { generatedAssetDraftIdentityBlockReason, normalizeGeneratedAssetIdentityVerification } from "@/components/studio/generatedAssetIdentity";
 import { H3_FPS, type H3GenerationJob } from "@/components/studio/h3Generation";
 import { downloadH3ReferenceImage } from "./h3JobStore";
@@ -60,6 +60,7 @@ export async function assessH3Identity(params: {
   outputPath: string;
   tempFolder: string;
   runVerifier?: (inputPath: string, outputPath: string) => Promise<void>;
+  pinnedDraftPolicy?: { id: string; sha256: string };
 }): Promise<GeneratedStudioAsset> {
   const { job, outputPath, tempFolder } = params;
   const asset: GeneratedStudioAsset = { ...params.asset, mediaSha256: sha256(await readFile(outputPath)),
@@ -97,8 +98,9 @@ export async function assessH3Identity(params: {
     }
     const trimStart = asset.trimStart ?? 0;
     const trimDuration = job.request.songEnd - job.request.songStart;
-    const draftFilter = issuedPolicy ?? resolveH3DraftSimilarityPolicyForInputs({ projectId: job.projectId, generationModel: job.profile,
+    const draftFilter = issuedPolicy ?? (params.pinnedDraftPolicy ? resolveH3DraftSimilarityPolicy(params.pinnedDraftPolicy.id,params.pinnedDraftPolicy.sha256) : undefined) ?? resolveH3DraftSimilarityPolicyForInputs({ projectId: job.projectId, generationModel: job.profile,
       identityReferenceHashes: asset.identityReferenceHashes ?? [] });
+    if (params.pinnedDraftPolicy && (draftFilter?.id !== params.pinnedDraftPolicy.id || draftFilter.sha256 !== params.pinnedDraftPolicy.sha256)) throw new Error("The pinned assessment policy changed.");
     const input: H3IdentityInput = { version: 1, assetId: asset.id, jobId: job.id, generationModel: job.profile, projectId: job.projectId,
       ownerId: job.ownerId, ...(issuedPolicy ? { issuedPolicy } : {}),
       ...(draftFilter ? { draftSimilarityPolicyId: draftFilter.id,

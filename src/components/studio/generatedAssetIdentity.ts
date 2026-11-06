@@ -194,6 +194,8 @@ export function generatedAssetIdentityBlockReason(asset: GeneratedStudioAsset): 
 
 /** Draft-only model eligibility; explicit whole-draft approval remains separate. */
 export function generatedAssetDraftIdentityBlockReason(asset: GeneratedStudioAsset): string | null {
+  if (asset.identityAssessmentId && !/^h3-assessment-[a-f0-9]{64}$/.test(asset.identityAssessmentId)) return "Invalid range assessment";
+  if (asset.identityAssessmentId && (!Number.isFinite(asset.identityAssessmentTrimStart) || asset.identityAssessmentTrimStart !== (asset.trimStart ?? 0))) return "Similarity filter does not cover this trim";
   const strictBlock = generatedAssetIdentityBlockReason(asset);
   if ((strictBlock === null && !asset.identityVerification?.issuedPolicy) || strictBlock === "Rejected") return strictBlock;
   const proof = normalizeGeneratedAssetIdentityVerification(asset.identityVerification);

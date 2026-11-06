@@ -6,6 +6,8 @@ import { H3_LEGACY_PROFILE, H3_V2_PROFILE, H3_V2_CONDITIONING_PREPARATION_VERSIO
 import { claimH3GenerationIntent, createH3Job, listH3Jobs, pinH3JobReferences, readH3Job, updateH3Job } from "@/lib/h3JobStore";
 import { compileH3Prompt } from "@/lib/h3Workflow";
 import { retrieveTriggerRun, triggerH3Generation, triggerH3IdentityRecheck } from "@/lib/triggerOrchestration";
+import { assertH3IdentityAssessmentScope, buildH3IdentityAssessmentScope, identityAssessmentAsset, isH3IdentityAssessmentId } from "@/components/studio/h3IdentityAssessment";
+import { claimH3IdentityAssessment, readH3IdentityAssessment } from "@/lib/h3IdentityAssessmentStore";
 
 export const runtime = "nodejs";
 
@@ -92,6 +94,16 @@ export async function GET(request: Request) {
     }
     const job = await readH3Job(user.id, projectId, jobId);
     if (!job) throw new H3RequestError("Generation job not found.", 404);
+    const assessmentId = query.get("assessmentId");
+    if (assessmentId) {
+      if (!isH3IdentityAssessmentId(assessmentId)) throw new H3RequestError("A valid range assessment is required.");
+      const assessment = await readH3IdentityAssessment(user.id,projectId,jobId,assessmentId);
+      if (assessment) {
+        assertH3IdentityAssessmentScope(assessment.scope,job);
+        if (assessment.status === "ready") identityAssessmentAsset(assessment,job);
+      }
+      return Response.json({ success: true, jobId, assessment });
+    }
     return Response.json({ success: true, job: await reconcileWorker(job) });
   } catch (error) { return failure(error); }
 }
@@ -101,7 +113,7 @@ export async function PATCH(request: Request) {
   const user = await getSessionUser();
   if (!user) return unauthorizedResponse();
   try {
-    const body = await request.json() as { projectId?: string; jobId?: string; action?: string; requestIntentId?: string };
+    const body = await request.json() as { projectId?: string; jobId?: string; action?: string; requestIntentId?: string; trimStart?: number };
     if (!body.projectId || !body.jobId || !/^[a-zA-Z0-9_-]{1,96}$/.test(body.projectId)) throw new H3RequestError("A project and job are required.");
     const saved = await readStudioProject(user.id, body.projectId, { fresh: true });
     if (!saved) throw new H3RequestError("Project not found.", 404);
@@ -114,8 +126,18 @@ export async function PATCH(request: Request) {
         (asset.id === job.result!.asset.id || asset.jobId === job.id) && asset.reviewStatus === "rejected")) {
         throw new H3RequestError("This shot was rejected. Create a deliberate new take instead.", 409);
       }
-      const handle = await triggerH3IdentityRecheck(job, body.requestIntentId);
-      return Response.json({ success: true, verificationRunId: handle.id, jobId: job.id, job }, { status: 202 });
+      // Legacy queued worker payloads remain supported, but new public checks
+      // must append an explicit range assessment instead of replacing a report.
+      if (typeof body.trimStart !== "number" || !Number.isFinite(body.trimStart)) {
+        throw new H3RequestError("Refresh the app and choose a source handle before checking similarity.",409);
+      }
+      let assessment;
+      try { assessment = buildH3IdentityAssessmentScope(job,body.trimStart,body.requestIntentId); }
+      catch { throw new H3RequestError("The selected trim has no unchanged canonical media, policy and frame binding.",409); }
+      try { await claimH3IdentityAssessment(assessment); }
+      catch { throw new H3RequestError("The assessment intent is unavailable or already bound to a different range. Refresh before retrying.",409); }
+      const handle = await triggerH3IdentityRecheck(job, body.requestIntentId, assessment);
+      return Response.json({ success: true, verificationRunId: handle.id, jobId: job.id, assessmentId: assessment.id, job }, { status: 202 });
     }
     if (body.action === "cancel") {
       const cancelled = await updateH3Job(user.id, job.projectId, job.id, current => {

@@ -40,19 +40,19 @@ function post(body: unknown) { return new Request("http://app.test/api/generate/
 function reset() { signedIn = true; stored = null; dispatches = 0; fixture.saved.draft.generatedAssets = []; }
 
 describe("authenticated H3 dispatch and recovery route", () => {
-  test("identity recheck dispatches a CPU task without replacing the render run and respects user rejection", async () => {
+  test("a new no-range identity recheck cannot dispatch legacy overwrite work and still respects rejection", async () => {
     reset(); await POST(post(fixture.request));
     stored = { ...stored!, state: "ready", result: { asset: { id: stored!.id, jobId: stored!.id,
       provider: "swarmui", model: stored!.profile, prompt: "fixture", createdAt: stored!.createdAt,
       status: "completed", reviewStatus: "pending" } } };
     const body = { projectId: "project-1", jobId: stored.id, action: "recheck_identity", requestIntentId: fixture.request.requestIntentId };
     const response = await PATCH(new Request("http://app.test/api/generate/h3", { method: "PATCH", body: JSON.stringify(body) }));
-    expect(response.status).toBe(202);
-    expect((await response.json()).verificationRunId).toBe("cpu-recheck-run");
-    expect(stored.runId).toBe("run-1"); expect(dispatches).toBe(2);
+    expect(response.status).toBe(409);
+    expect((await response.json()).error).toContain("choose a source handle");
+    expect(stored.runId).toBe("run-1"); expect(dispatches).toBe(1);
     fixture.saved.draft.generatedAssets = [{ ...stored.result!.asset, reviewStatus: "rejected" }];
     expect((await PATCH(new Request("http://app.test/api/generate/h3", { method: "PATCH", body: JSON.stringify(body) }))).status).toBe(409);
-    expect(dispatches).toBe(2);
+    expect(dispatches).toBe(1);
   });
   test("every method requires a session and dispatch creates no work anonymously", async () => {
     reset(); signedIn = false;

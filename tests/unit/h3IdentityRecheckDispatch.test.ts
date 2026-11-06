@@ -1,5 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
 import type { H3GenerationJob } from "@/components/studio/h3Generation";
+import { h3IdentityAssessmentFixture } from "../helpers/h3IdentityAssessment";
 
 let owner: string | null = "owner-a";
 const sends: Array<{ task: string; payload: Record<string, unknown>; options: Record<string, unknown> }> = [];
@@ -17,6 +18,14 @@ const job = { id: `h3-${"a".repeat(64)}`, ownerId: "owner-a", projectId: "projec
 const intent = "00000000-0000-4000-8000-000000000001";
 
 describe("CPU identity recheck dispatch", () => {
+  test("carries the immutable range descriptor and refuses a changed range before task dispatch",async()=>{
+    const f=h3IdentityAssessmentFixture();owner=f.job.ownerId;sends.length=0;
+    await triggerH3IdentityRecheck(f.job,f.scope.requestIntentId,f.scope);
+    expect((sends[0].payload.h3Job as {assessment:unknown}).assessment).toEqual(f.scope);
+    const before=sends.length;
+    await expect(triggerH3IdentityRecheck(f.job,f.scope.requestIntentId,{...f.scope,firstFrame:13})).rejects.toThrow("exact trim");
+    expect(sends.length).toBe(before);
+  });
   test("dispatches existing bytes mode under a distinct deliberate intent", async () => {
     owner = "owner-a"; sends.length = 0; keys.length = 0;
     await triggerH3IdentityRecheck(job, intent);

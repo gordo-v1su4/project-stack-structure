@@ -112,12 +112,12 @@ export function captureGeneratedDraftReview(
       durationSeconds: asset.durationSeconds, videoUrl: buildGeneratedAssetPlaybackUrl(asset),
       mediaSha256: asset.mediaSha256, mediaFrameCount: asset.mediaFrameCount, mediaFrameRate: asset.mediaFrameRate,
       generationReferenceHashes: asset.generationReferenceHashes,
-      identityReferenceHashes: asset.identityReferenceHashes, identityVerification: asset.identityVerification,
+      identityReferenceHashes: asset.identityReferenceHashes, identityVerification: asset.identityVerification, identityAssessmentId: asset.identityAssessmentId, identityAssessmentTrimStart: asset.identityAssessmentTrimStart,
     })),
     approvedIdentityEvidence: assets.filter(asset => asset.reviewStatus === "approved").map(asset => ({
       id: asset.id, mediaSha256: asset.mediaSha256, mediaFrameCount: asset.mediaFrameCount, mediaFrameRate: asset.mediaFrameRate,
       generationReferenceHashes: asset.generationReferenceHashes, identityReferenceHashes: asset.identityReferenceHashes,
-      identityVerification: asset.identityVerification,
+      identityVerification: asset.identityVerification, identityAssessmentId: asset.identityAssessmentId, identityAssessmentTrimStart: asset.identityAssessmentTrimStart,
       target: asset.target, trimStart: asset.trimStart ?? 0, approvedIdentityEvidenceSha256: asset.approvedIdentityEvidenceSha256,
     })),
     segments: applyDraftGeneratedAssets(segments, assets, draft),
@@ -142,7 +142,7 @@ export function rejectGeneratedDraftAsset({ draft, assets, assetId, expectedRevi
 /** Invoke only from explicit Use this draft consent, then revalidate the viewed snapshot after awaiting. */
 export async function prepareGeneratedDraftApprovalEvidence(assets: GeneratedStudioAsset[], draft: GeneratedDraftSelection): Promise<Record<string, string>> {
   const selected = new Set(draft.assetIds);
-  return Object.fromEntries(await Promise.all(assets.filter(asset => selected.has(asset.id) && asset.identityVerification?.issuedPolicy)
+  return Object.fromEntries(await Promise.all(assets.filter(asset => selected.has(asset.id) && (asset.identityVerification?.issuedPolicy || asset.identityAssessmentId))
     .map(async asset => [asset.id, await approvedIdentityEvidenceSha256(asset)])));
 }
 
@@ -163,7 +163,7 @@ export function approveGeneratedDraft({ draft, assets, segments, review, approve
     return { draft, assets, error: "Unfilled song windows remain. Complete the draft before accepting it." };
   }
   const selected = new Set(draft.assetIds);
-  if (assets.some(asset => selected.has(asset.id) && asset.identityVerification?.issuedPolicy
+  if (assets.some(asset => selected.has(asset.id) && (asset.identityVerification?.issuedPolicy || asset.identityAssessmentId)
     && approvalEvidenceSha256ById?.[asset.id] !== currentIdentityEvidenceSha256(asset))) {
     return { draft, assets, error: "Similarity evidence changed. Review the current draft before accepting it." };
   }
@@ -179,7 +179,7 @@ export function approveGeneratedDraft({ draft, assets, segments, review, approve
   return {
     draft: { ...draft, revision: draft.revision + 1, assetIds: [] },
     assets: assets.map(asset => selected.has(asset.id) ? { ...asset, reviewStatus: "approved", approvedAt: approvals.get(asset.id),
-      ...(asset.identityVerification?.issuedPolicy ? { approvedIdentityEvidenceSha256: approvalEvidenceSha256ById![asset.id] } : {}) } : asset),
+      ...((asset.identityVerification?.issuedPolicy || asset.identityAssessmentId) ? { approvedIdentityEvidenceSha256: approvalEvidenceSha256ById![asset.id] } : {}) } : asset),
     error: null,
   };
 }

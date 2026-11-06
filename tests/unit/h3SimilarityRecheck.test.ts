@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { recheckH3Similarity } from "@/components/studio/h3SimilarityRecheck";
 import type { H3GenerationJob } from "@/components/studio/h3Generation";
 import { draftSimilarityFixture } from "../helpers/draftSimilarity";
+import { h3IdentityAssessmentFixture } from "../helpers/h3IdentityAssessment";
 
 function fixture() {
   const { asset } = draftSimilarityFixture();
@@ -9,6 +10,22 @@ function fixture() {
   return { version: 1, id: asset.id, projectId: "75101b25-fea6-42b1-b2c6-85a9d1deb8eb", state: "ready",
     runId: "original-video-render", result: { asset } } as H3GenerationJob;
 }
+
+test("checks an unselected native handle through its exact assessment ID without replacing original proof",async()=>{
+  const {job,record,scope}=h3IdentityAssessmentFixture(),before=JSON.stringify(job),requests:Array<{method:string;url:string;body?:unknown}>=[];
+  const result=await recheckH3Similarity(job,{requestIntentId:scope.requestIntentId,asset:{...job.result!.asset,trimStart:.5},wait:async()=>{},
+    fetchImpl:(async(url,init)=>{requests.push({method:init?.method??"GET",url:String(url),body:typeof init?.body==="string"?JSON.parse(init.body):undefined});
+      return Response.json(init?.method==="PATCH"?{verificationRunId:"cpu",assessmentId:scope.id}:{jobId:job.id,assessment:record});})as typeof fetch});
+  expect(result.identityAssessmentId).toBe(scope.id);expect(result.trimStart).toBe(.5);expect(result.reviewStatus).toBe("pending");
+  expect(requests[0].body).toMatchObject({trimStart:.5,action:"recheck_identity"});expect(requests[1].url).toContain(`assessmentId=${scope.id}`);
+  expect(JSON.stringify(job)).toBe(before);expect(requests.some(r=>r.method==="POST")).toBe(false);
+});
+
+test("a forged assessment ID or terminal range failure cannot be delivered",async()=>{
+  const {job,scope}=h3IdentityAssessmentFixture();
+  await expect(recheckH3Similarity(job,{requestIntentId:scope.requestIntentId,asset:{...job.result!.asset,trimStart:.5},fetchImpl:(async()=>Response.json({verificationRunId:"cpu",assessmentId:`h3-assessment-${"f".repeat(64)}`}))as typeof fetch})).rejects.toThrow("does not match");
+  await expect(recheckH3Similarity(job,{requestIntentId:scope.requestIntentId,asset:{...job.result!.asset,trimStart:.5},fetchImpl:(async(_url,init)=>Response.json(init?.method==="PATCH"?{verificationRunId:"cpu",assessmentId:scope.id}:{jobId:job.id,assessment:{version:1,status:"failed",scope,assessedAt:"2026-11-06T00:00:00Z",error:"failed"}}))as typeof fetch})).rejects.toThrow("range assessment failed");
+});
 
 test("rechecks existing bytes once, waits for changed canonical evidence and never starts another render", async () => {
   const job = fixture(), fresh = structuredClone(job), requests: { method?: string; body?: unknown }[] = [];

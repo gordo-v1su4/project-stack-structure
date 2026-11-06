@@ -213,9 +213,10 @@ export function normalizeH3IssuedDraftPolicy(value: unknown): H3IssuedDraftPolic
   return { ...policy, issuedAt: value.issuedAt };
 }
 
-export function identityApprovalPayload(asset: Pick<GeneratedStudioAsset, "id" | "jobId" | "model" | "mediaSha256" | "target" | "trimStart" | "identityVerification">) {
+export function identityApprovalPayload(asset: Pick<GeneratedStudioAsset, "id" | "jobId" | "model" | "mediaSha256" | "target" | "trimStart" | "identityVerification" | "identityAssessmentId" | "identityAssessmentTrimStart">) {
   return { id: asset.id, jobId: asset.jobId, model: asset.model, mediaSha256: asset.mediaSha256,
-    target: asset.target, trimStart: asset.trimStart ?? 0, identityVerification: asset.identityVerification };
+    target: asset.target, trimStart: asset.trimStart ?? 0, identityVerification: asset.identityVerification,
+    ...(asset.identityAssessmentId ? { identityAssessmentId: asset.identityAssessmentId, identityAssessmentTrimStart: asset.identityAssessmentTrimStart } : {}) };
 }
 export const currentIdentityEvidenceSha256 = (asset: Parameters<typeof identityApprovalPayload>[0]) => identityPolicySha256(identityApprovalPayload(asset));
 /** Called only by explicit whole-draft acceptance, never by generation or selection. */

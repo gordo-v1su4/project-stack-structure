@@ -58,12 +58,15 @@ export type GeneratedStudioAsset = {
   generationReferenceHashes?: string[];
   identityReferenceHashes?: string[];
   identityVerification?: GeneratedAssetIdentityVerification;
+  /** Explicit canonical append-only assessment of this exact selected source trim. */
+  identityAssessmentId?: string;
+  identityAssessmentTrimStart?: number;
   /** Consent to exact issued-policy media, trim, target and evidence; absent on historical jobs. */
   approvedIdentityEvidenceSha256?: string;
 };
 
 export function hasCurrentGeneratedIdentityApproval(asset: GeneratedStudioAsset): boolean {
-  if (!asset.identityVerification?.issuedPolicy) return true;
+  if (!asset.identityVerification?.issuedPolicy && !asset.identityAssessmentId) return true;
   try { return isIdentityPolicySha256(asset.approvedIdentityEvidenceSha256)
     && currentIdentityEvidenceSha256(asset) === asset.approvedIdentityEvidenceSha256; }
   catch { return false; }
@@ -77,7 +80,7 @@ export function mergeGeneratedAssetDelivery(existing: GeneratedStudioAsset | und
   if (incoming.reviewStatus === "rejected" || incoming.identityVerification?.status === "rejected") {
     return { ...incoming, reviewStatus: "rejected", approvedAt: undefined, approvedIdentityEvidenceSha256: undefined };
   }
-  if (existing?.id === incoming.id && (existing.identityVerification?.issuedPolicy || incoming.identityVerification?.issuedPolicy)) {
+  if (existing?.id === incoming.id && (existing.identityVerification?.issuedPolicy || incoming.identityVerification?.issuedPolicy || existing.identityAssessmentId || incoming.identityAssessmentId)) {
     let unchanged = false;
     try { unchanged = hasCurrentGeneratedIdentityApproval(existing) && Boolean(existing.approvedIdentityEvidenceSha256)
       && existing.approvedIdentityEvidenceSha256 === currentIdentityEvidenceSha256(incoming); } catch { /* Invalid evidence cannot preserve consent. */ }
@@ -203,6 +206,8 @@ export function sanitizeGeneratedStudioAssetForStorage(asset: GeneratedStudioAss
     generationReferenceHashes: Array.isArray(asset.generationReferenceHashes) ? [...asset.generationReferenceHashes] : undefined,
     identityReferenceHashes: Array.isArray(asset.identityReferenceHashes) ? [...asset.identityReferenceHashes] : undefined,
     identityVerification: normalizeGeneratedAssetIdentityVerification(asset.identityVerification),
+    identityAssessmentId: asset.identityAssessmentId,
+    identityAssessmentTrimStart: asset.identityAssessmentTrimStart,
   };
 }
 

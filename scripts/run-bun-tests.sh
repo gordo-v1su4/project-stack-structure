@@ -8,6 +8,8 @@ readonly isolated_tests=(
   "tests/unit/h3GenerationRunner.test.ts"
   "tests/unit/h3IdentityVerification.test.ts"
   "tests/unit/h3IdentityRecheck.test.ts"
+  "tests/unit/h3IdentityAssessmentStore.test.ts"
+  "tests/unit/h3IdentityRangeRoute.test.ts"
   "tests/unit/h3JobStore.test.ts"
   "tests/unit/h3DraftPolicyStore.test.ts"
   "tests/unit/h3GenerationRoute.test.ts"

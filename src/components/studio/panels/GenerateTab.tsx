@@ -1530,7 +1530,7 @@ function GeneratedShotCard({
 
   const commitTrimStart = (value: number) => {
     const next = Math.max(0, Math.min(value, maxTrimStart));
-    onUpdate({ ...asset, trimStart: Number(next.toFixed(3)), ...(asset.identityVerification?.issuedPolicy && next !== (asset.trimStart ?? 0)
+    onUpdate({ ...asset, trimStart: next, ...((asset.identityVerification?.issuedPolicy || asset.identityAssessmentId) && next !== (asset.trimStart ?? 0)
       ? { reviewStatus: asset.reviewStatus === "rejected" ? "rejected" as const : "pending" as const, approvedAt: undefined, approvedIdentityEvidenceSha256: undefined } : {}) });
   };
 

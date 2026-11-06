@@ -28,7 +28,7 @@ export type StoredExportInput = {
 
 export type FinalExportPayload = {
   projectSnapshot?: { ownerId: string; projectId: string; planSignature: string; placementRevision: number; draftRevision: number;
-    acceptedSnapshotSha256: string; h3: Array<{ jobId: string; assetId: string; mediaSha256: string; proofSha256: string; trimStart: number; trimEnd: number }> };
+    acceptedSnapshotSha256: string; h3: Array<{ jobId: string; assetId: string; mediaSha256: string; proofSha256: string; trimStart: number; trimEnd: number; identityAssessmentId?: string }> };
   requestKey: string;
   audio: StoredExportInput;
   videos: StoredExportInput[];

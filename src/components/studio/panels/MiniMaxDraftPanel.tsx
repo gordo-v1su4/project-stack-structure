@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { generatedAssetDraftIdentityBlockReason, type GeneratedStudioAsset } from "../generatedAssets";
+import { buildGeneratedAssetPlaybackUrl, generatedAssetDraftIdentityBlockReason, type GeneratedStudioAsset } from "../generatedAssets";
+import { canDeliverH3IdentityAssessment, h3IdentityAssessmentTrimWindow } from "../h3IdentityAssessment";
 import { generatedAssetDraftSimilarityLabel, generatedAssetDraftSimilarityWarnings, normalizeGeneratedAssetIdentityVerification } from "../generatedAssetIdentity";
 import { recheckH3Similarity } from "../h3SimilarityRecheck";
-import { identityPolicyChoiceForReferences } from "../issuedIdentityPolicy";
+import { currentIdentityEvidenceSha256, identityPolicyChoiceForReferences } from "../issuedIdentityPolicy";
 import type { GeneratedDraftReview, GeneratedDraftSelection } from "../generatedDraft";
 import { createH3PickupWindow, enqueueH3DraftRequest, findH3TargetSegment, h3DraftBatchStorageKey, h3RequestWindowKey, h3WindowKey, nextH3Attempt, parseH3DraftBatch, planH3DraftWindows, selectH3PickupWindow, selectH3ReferenceAssetIds, type H3DraftBatch } from "../h3DraftPlan";
 import { isH3JobTerminal, type H3GenerationJob, type H3GenerationRequest } from "../h3Generation";
@@ -43,6 +44,8 @@ export function MiniMaxDraftPanel(props: Props) {
   const [batch, setBatch] = useState<H3DraftBatch | null>(null);
   const [pickupKey, setPickupKey] = useState("");
   const [pickupEdits, setPickupEdits] = useState<Record<string, { direction?: string; duration?: string }>>({});
+  const [handleFrames,setHandleFrames] = useState<Record<string,number>>({});
+  const handleFramesRef = useRef<Record<string,number>>({});
   const latest = useRef(props);
   const mounted = useRef(true);
   const delivered = useRef(new Set<string>());
@@ -285,11 +288,21 @@ export function MiniMaxDraftPanel(props: Props) {
   async function checkSimilarity(job: H3GenerationJob) {
     if (busy || accepting) return;
     const projectId = props.projectId, expectedRevision = props.draft?.revision;
+    const currentAsset = props.assets.find(asset => asset.id === job.result?.asset.id) ?? job.result?.asset;
+    if (!currentAsset || currentAsset.reviewStatus === "rejected") return;
+    const fingerprint = currentIdentityEvidenceSha256(currentAsset);
+    const selectedFrame = handleFramesRef.current[job.id];
+    const range = h3IdentityAssessmentTrimWindow(currentAsset,selectedFrame);
     setBusy(true); setError(null); setMessage("Checking the saved video with the similarity model…");
     try {
-      const asset = await recheckH3Similarity(job, { requestIntentId: crypto.randomUUID() });
+      const asset = await recheckH3Similarity(job, { requestIntentId: crypto.randomUUID(), asset: {...currentAsset,trimStart:range.trimStart} });
       if (!mounted.current || latest.current.projectId !== projectId) return;
-      latest.current.onGeneratedAsset(asset, expectedRevision);
+      const latestAsset = latest.current.assets.find(candidate => candidate.id === currentAsset.id) ?? job.result?.asset;
+      if (!canDeliverH3IdentityAssessment({ fingerprint,currentAsset:latestAsset,requestedRevision:expectedRevision,currentRevision:latest.current.draft?.revision,
+        requestedStartFrame:selectedFrame,currentStartFrame:handleFramesRef.current[job.id] })) {
+        setMessage("The trim or draft changed while checking. Its assessment is saved; check the current trim before selecting it."); return;
+      }
+      latest.current.onGeneratedAsset(asset);
       setReview(null);
       await readJobs(job.projectId);
       setMessage(generatedAssetDraftSimilarityLabel(asset) ?? `${generatedAssetDraftIdentityBlockReason(asset) ?? "Check completed"}. The take remains available for review.`);
@@ -383,15 +396,26 @@ export function MiniMaxDraftPanel(props: Props) {
         const asset = props.assets.find(candidate => candidate.id === job.result?.asset.id) ?? job.result?.asset;
         const identityBlock = asset ? generatedAssetDraftIdentityBlockReason(asset) : null;
         const rejected = asset?.reviewStatus === "rejected" || identityBlock === "Rejected";
+        let range: ReturnType<typeof h3IdentityAssessmentTrimWindow> | undefined;
+        try { if (asset) range=h3IdentityAssessmentTrimWindow(asset,handleFrames[job.id]); } catch { /* Incomplete metadata cannot enable a range check. */ }
         return <li key={job.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-xs">
         <span className="flex items-center gap-2"><StatusDot tone={rejected || job.state === "failed" || (job.state === "ready" && Boolean(identityBlock)) ? "failed" : job.state === "ready" ? "ready" : "processing"} />{job.target.sectionLabel ?? job.request.sectionId} · {clock(job.request.songStart)}–{clock(job.request.songEnd)}</span>
         <span className="text-fg-3">{rejected ? "Rejected · excluded from draft" : job.state === "ready" && identityBlock ? identityBlock : STATE_LABELS[job.state]}{job.error ? `: ${job.error}` : ""}</span>
         <span className="flex flex-wrap gap-2">
-          {job.state === "ready" && asset?.identityVerification?.status === "unverifiable" && !rejected ? <Button disabled={busy || accepting} onClick={() => void checkSimilarity(job)}>Check similarity</Button> : null}
+          {job.state === "ready" && asset?.identityVerification?.status === "unverifiable" && !rejected ? <>
+            <span className="text-fg-3">Source {preciseClock(range?.trimStart ?? asset.trimStart ?? 0)}–{preciseClock(range?.trimEnd ?? (asset.trimStart ?? 0) + job.target.songEnd-job.target.songStart)}</span>
+            <Button disabled={busy || accepting || !range} onClick={() => void checkSimilarity(job)}>Check similarity</Button>
+          </> : null}
           {(["submission_unknown", "rendering", "persisting"] as string[]).includes(job.state) ? <Button disabled={busy || accepting} onClick={() => void recoverJob(job, "resume")}>Check existing render</Button> : null}
           {job.state === "failed" || job.state === "cancelled" ? <Button disabled={busy || accepting || attemptsLeft(job) <= 0 || !findH3TargetSegment(props.segments, job.target)} onClick={() => void recoverJob(job, "retry")}>Retry shot ({attemptsLeft(job)} left)</Button> : null}
           {!isH3JobTerminal(job) && job.state !== "cancel_requested" ? <Button variant="danger" disabled={accepting} onClick={() => void recoverJob(job, "cancel")}>Cancel this shot</Button> : null}
         </span>
+        {job.state === "ready" && asset?.identityVerification?.status === "unverifiable" && !rejected && range ? <details className="w-full py-2">
+          <summary className="cursor-pointer text-fg-2">Choose source handle</summary>
+          <NativeHandleControl asset={asset} range={range} disabled={busy || accepting} onStartFrame={frame=>{
+            handleFramesRef.current={...handleFramesRef.current,[job.id]:frame};setHandleFrames(handleFramesRef.current);setReview(null);
+          }}/>
+        </details> : null}
         {asset ? <SimilarityFilterNote asset={asset} /> : null}
       </li>; })}</ul>
     </Surface> : null}
@@ -421,6 +445,26 @@ export function MiniMaxDraftPanel(props: Props) {
 
 function clock(seconds: number) { return `${Math.floor(seconds / 60)}:${Math.floor(seconds % 60).toString().padStart(2, "0")}`; }
 function preciseClock(seconds: number) { return `${Math.floor(seconds / 60)}:${(seconds % 60).toFixed(2).padStart(5, "0")}`; }
+
+function NativeHandleControl({asset,range,disabled,onStartFrame}:{asset:GeneratedStudioAsset;range:ReturnType<typeof h3IdentityAssessmentTrimWindow>;disabled:boolean;onStartFrame:(frame:number)=>void}) {
+  const video=useRef<HTMLVideoElement>(null);
+  useEffect(()=>{if(video.current){video.current.pause();if(video.current.readyState>=1)video.current.currentTime=range.trimStart;}},[range.trimStart]);
+  return <div className="mt-2 grid gap-3 rounded-md border border-line bg-ink-0 p-3 sm:grid-cols-2">
+    <video ref={video} className="w-full rounded-sm" controls preload="metadata" src={buildGeneratedAssetPlaybackUrl(asset)}
+      onLoadedMetadata={event=>{event.currentTarget.currentTime=range.trimStart;}}
+      onTimeUpdate={event=>{if(event.currentTarget.currentTime>=range.trimEnd)event.currentTarget.pause();}}/>
+    <div className="space-y-2 text-xs text-fg-2">
+      <label className="block">Native start frame
+        <input type="number" min={0} max={range.maxStartFrame} step={1} value={range.firstFrame} disabled={disabled}
+          onChange={event=>{const value=Number(event.target.value);if(event.target.value!==""&&Number.isSafeInteger(value)&&value>=0&&value<=range.maxStartFrame)onStartFrame(value);}}
+          className="ml-2 w-24 rounded-md border border-line bg-ink-1 px-2 py-1 text-fg-0"/>
+      </label>
+      <p>{range.targetDuration.toFixed(3)}s target · source {preciseClock(range.trimStart)}–{preciseClock(range.trimEnd)} · frames {range.firstFrame}–{range.endFrameExclusive-1} at {range.fps}fps</p>
+      <p className="text-fg-3">Changing the handle does not select or approve it. Check this exact range, then review before using it.</p>
+      <Button disabled={disabled} onClick={()=>{if(video.current){video.current.currentTime=range.trimStart;void video.current.play().catch(()=>{});}}}>Play selected range</Button>
+    </div>
+  </div>;
+}
 
 export function SimilarityFilterNote({ asset }: { asset: GeneratedStudioAsset }) {
   const label = generatedAssetDraftSimilarityLabel(asset), warnings = generatedAssetDraftSimilarityWarnings(asset);

@@ -12,6 +12,8 @@ import { readStudioProject } from "./studioProjectStore";
 import { normalizeStudioOwnerSegment } from "./studioStoragePaths";
 import { canonicalIdentityPolicyJson, currentIdentityEvidenceSha256, normalizeH3PublicIssuedDraftPolicy } from "@/components/studio/issuedIdentityPolicy";
 import { assertIssuedH3DraftPolicyMatchesJob, readIssuedH3DraftPolicy } from "./h3DraftPolicyStore";
+import { readH3IdentityAssessment } from "./h3IdentityAssessmentStore";
+import { identityAssessmentAsset } from "@/components/studio/h3IdentityAssessment";
 
 export class ProjectExportError extends Error { constructor(message: string, readonly status: 400 | 403 | 409 = 409) { super(message); } }
 export type ProjectExportContext = { projectId: string; planSignature: string; placementRevision: number; draftRevision: number };
@@ -82,10 +84,17 @@ export async function reconcileProjectFinalExport(params: {
       throw new ProjectExportError("An approved generated take has no canonical project job.");
     }
     const job = await readH3Job(ownerId, context.projectId, jobId);
-    const canonical = job?.result?.asset;
+    let canonical = job?.result?.asset;
     if (!job || job.state !== "ready" || !canonical || canonical.id !== asset.id || canonical.reviewStatus === "rejected"
       || job.target.planSignature !== context.planSignature || canonical.target?.planSignature !== context.planSignature) {
       throw new ProjectExportError("An approved generated take no longer matches its canonical ready job.");
+    }
+    if (asset.identityAssessmentId) {
+      try {
+        const assessment = await readH3IdentityAssessment(ownerId,context.projectId,job.id,asset.identityAssessmentId);
+        if (!assessment) throw new Error("Missing assessment");
+        canonical = identityAssessmentAsset(assessment,job,asset.trimStart ?? 0);
+      } catch { throw new ProjectExportError("The selected range assessment does not match this owned shot, policy and exact trim."); }
     }
     const identityHashes = job.references.flatMap((reference, index) => reference.role === "identity" && job.referenceHashes?.[index] ? [job.referenceHashes[index]] : []);
     if (!job.referenceHashes || job.referenceHashes.length !== job.references.length
@@ -96,6 +105,9 @@ export async function reconcileProjectFinalExport(params: {
     const authoritative: GeneratedStudioAsset = { ...canonical, id: canonical.id, jobId: job.id, provider: "swarmui", model: job.profile,
       target: job.target, trimStart: asset.trimStart ?? 0, reviewStatus: "approved", approvedAt: asset.approvedAt,
       approvedIdentityEvidenceSha256: asset.approvedIdentityEvidenceSha256 };
+    if (asset.identityAssessmentId && asset.approvedIdentityEvidenceSha256 !== currentIdentityEvidenceSha256(authoritative)) {
+      throw new ProjectExportError("The range evidence changed after approval. Review and accept the exact assembled draft again.");
+    }
     if (job.request.identityPolicyFamily) {
       if (!job.identityPolicy) throw new ProjectExportError("The take has no canonical issued identity policy.");
       const policy = await readIssuedH3DraftPolicy(ownerId, context.projectId, job.identityPolicy);
@@ -122,6 +134,7 @@ export async function reconcileProjectFinalExport(params: {
       && canonical.identityReferenceHashes?.length === 0) environmentOnlyNativeBounds.add(canonicalKey);
     assets.push(authoritative);
     receipts.push({ jobId: job.id, assetId: authoritative.id, mediaSha256: authoritative.mediaSha256!,
+      ...(authoritative.identityAssessmentId ? { identityAssessmentId: authoritative.identityAssessmentId } : {}),
       proofSha256: digest(authoritative.identityVerification), trimStart: authoritative.trimStart ?? 0,
       trimEnd: (authoritative.trimStart ?? 0) + job.target.songEnd - job.target.songStart });
   }

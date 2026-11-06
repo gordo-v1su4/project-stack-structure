@@ -135,6 +135,32 @@ confirm the story or insert media into the timeline. See
 [the app consumer](../../src/components/studio/StoryTreatmentPlanner.tsx), and
 [the reference/writing protocol](higgsfield-nano-banana-reference-continuity.md#visible-writing-and-output-rules).
 
+## Private Story diagnostics
+
+Story runs retain bounded debug records in private Trigger run metadata:
+`storyAuthoredDiagnosticRecord` contains a deeply whitelisted, unreviewed
+candidate; `storyReviewDiagnosticRecord` contains fixed rejection codes or the
+real review marker and refers to the candidate by SHA-256. Records bind the
+canonical run ID and exactly one server-issued `user:` tag. Caller-supplied
+owner fields are ignored. Requested and actual author model names are distinct.
+
+These fields are authenticated debug retention, separate from the activity
+feed's stage/progress fields and from accepted-result transport. Read them only
+through an owner-checked canonical run with the existing scoped read token or
+private server credential. Never publish candidate values in logs, public media
+objects, error strings, or activity labels. The gateway currently returns fixed
+rejection diagnostics, not the critic's raw JSON; record that limitation rather
+than infer missing reviewer evidence.
+
+Each record is limited to 96 KiB. The worker checks the entire existing metadata
+plus the new record against the 256 KiB total limit, reserving 4 KiB for bounded
+progress/descriptors. Writes merge individual keys and explicitly flush before
+review starts or a rejection leaves the task. Retention failure logs only a
+fixed warning with run ID/phase and never masks the original semantic rejection
+or approves the candidate. A rejected candidate never enters accepted Story
+state. Tests cover deep whitelisting, owner tags, byte bounds, progress retention,
+explicit task writes, missing approval markers, and failure preservation.
+
 ## Failure, retry, and time limits
 
 - A semantic review rejection raises `AbortTaskRunError` with safe actionable

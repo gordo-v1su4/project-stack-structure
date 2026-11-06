@@ -12,10 +12,15 @@ import type { SavedStudioProject } from "@/lib/studioProjectStore";
 import { H3_DRAFT_SIMILARITY_POLICY_ID, H3_DRAFT_SIMILARITY_POLICY_SHA256, H3_DRAFT_SIMILARITY_PROJECT_ID, resolveH3DraftSimilarityPolicy } from "@/components/studio/identityDraftPolicy";
 import { currentIdentityEvidenceSha256, type H3IssuedDraftPolicy } from "@/components/studio/issuedIdentityPolicy";
 import { issuedPolicyFixture, issuedProofFixture } from "../helpers/issuedIdentityPolicy";
+import { buildH3IdentityAssessmentScope, identityAssessmentAsset, type H3IdentityAssessment } from "@/components/studio/h3IdentityAssessment";
+import { identityPolicySha256 } from "@/components/studio/issuedIdentityPolicy";
 
 let signedIn = true, dispatches: Array<Record<string, unknown>> = [], reads = 0;
 let saved: SavedStudioProject, job: H3GenerationJob, projectId = "project-1";
 let issuedPolicy: H3IssuedDraftPolicy | undefined;
+let rangeRecord:H3IdentityAssessment|undefined;
+mock.module("@/lib/h3IdentityAssessmentStore",()=>({readH3IdentityAssessment:async(owner:string,project:string,jobId:string,id:string)=>
+  rangeRecord&&owner===rangeRecord.scope.ownerId&&project===rangeRecord.scope.projectId&&jobId===rangeRecord.scope.jobId&&id===rangeRecord.scope.id?rangeRecord:null}));
 const { assertIssuedH3DraftPolicyMatchesJob } = await import("@/lib/h3DraftPolicyStore");
 mock.module("@/lib/h3DraftPolicyStore", () => ({ assertIssuedH3DraftPolicyMatchesJob,
   readIssuedH3DraftPolicy: async (owner: string, project: string, binding: { id: string }) => {
@@ -42,7 +47,7 @@ const hash = (byte: string) => byte.repeat(64);
 const mediaHash = createHash("sha256").update(new Uint8Array([1, 2, 3])).digest("hex");
 
 function reset(idForProject = "project-1", duration = 3) {
-  signedIn = true; dispatches = []; reads = 0; issuedPolicy = undefined;
+  signedIn = true; dispatches = []; reads = 0; issuedPolicy = undefined;rangeRecord=undefined;
   projectId = idForProject; key = `media-uploads/projects/github-test/generated/${projectId}/${id}/shot.mp4`;
   const analysis: BeatJoinAnalysis = { sourceLabel: "master.wav", audioUrl: "", duration, waveform: [], energy: [], beats: [], onsets: [], sections: [],
     storageBucket: "studio", storagePath: "media-uploads/github-test/source-audio/master.wav", storageUrl: "https://media.test/master.wav" };
@@ -152,6 +157,42 @@ describe("final export canonical identity and ownership boundary", () => {
     const asset = job.result!.asset; asset.model = job.profile;
     asset.identityVerification = issuedProofFixture(job, asset, issuedPolicy);
     saved.draft.generatedAssets![0] = { ...structuredClone(asset), reviewStatus: "approved", approvedIdentityEvidenceSha256: currentIdentityEvidenceSha256(asset) };
+  }
+  function rangeSetup() {
+    issuedSetup(2);const original=job.result!.asset;
+    original.identityVerification!.draftSimilarityFilter!.status="ineligible";
+    original.identityVerification!.draftSimilarityFilter!.eligibleFrameCount=0;
+    original.identityVerification!.draftSimilarityFilter!.outOfScopeFrameCount=72;
+    const scope=buildH3IdentityAssessmentScope(job,.5,"00000000-0000-4000-8000-000000000001");
+    const proof=issuedProofFixture(job,{...original,trimStart:.5},issuedPolicy!);
+    rangeRecord={version:1,status:"ready",scope,proof,proofSha256:identityPolicySha256(proof),assessedAt:"2026-11-06T03:00:00Z"};
+    const asset=identityAssessmentAsset(rangeRecord,job);
+    saved.draft.generatedAssets![0]={...asset,reviewStatus:"approved",approvedIdentityEvidenceSha256:currentIdentityEvidenceSha256(asset)};
+    const data=form();data.set("segments",JSON.stringify([{sourceIndex:0,startTime:.5,endTime:3.5,musicStart:0,musicEnd:3}]));return data;
+  }
+  test("exports only the canonical approved range assessment while preserving the original failed proof",async()=>{
+    const data=rangeSetup(),before=JSON.stringify(job.result!.asset.identityVerification);
+    const response=await post(data);expect(response.status).toBe(202);expect(dispatches).toHaveLength(1);
+    expect((dispatches[0].projectSnapshot as {h3:Array<{identityAssessmentId:string}>}).h3[0].identityAssessmentId).toBe(rangeRecord!.scope.id);
+    expect(JSON.stringify(job.result!.asset.identityVerification)).toBe(before);
+  });
+  for(const failure of ["missing record","foreign owner","changed media","changed policy","forged browser proof","changed trim","missing consent","missing used frame"]) {
+    test(`range export rejects ${failure}`,async()=>{
+      const data=rangeSetup(),asset=saved.draft.generatedAssets![0];
+      if(failure==="missing record")rangeRecord=undefined;
+      else if(failure==="foreign owner")rangeRecord!.scope.ownerId="foreign";
+      else if(failure==="changed media")rangeRecord!.scope.mediaSha256=hash("e");
+      else if(failure==="changed policy")rangeRecord!.scope.policySha256=hash("e");
+      else if(failure==="changed trim")asset.trimStart=.75;
+      else if(failure==="missing consent")delete asset.approvedIdentityEvidenceSha256;
+      else if(failure==="forged browser proof"){
+        asset.identityVerification!.draftSimilarityFilter!.samples[0].scores[0].score=.99;
+        asset.approvedIdentityEvidenceSha256=currentIdentityEvidenceSha256(asset);
+      }else if(rangeRecord!.status==="ready"){
+        rangeRecord!.proof.draftSimilarityFilter!.samples.pop();rangeRecord!.proofSha256=identityPolicySha256(rangeRecord!.proof);
+      }
+      expect((await post(data)).status).toBe(409);expect(dispatches).toHaveLength(0);
+    });
   }
   test("exports a new project's server-issued numerical screen only after exact owner consent", async () => {
     issuedSetup();

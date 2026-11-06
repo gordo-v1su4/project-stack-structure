@@ -17,9 +17,11 @@ import { buildH3Workflow } from "./h3Workflow";
 import { assessH3Identity } from "./h3IdentityVerification";
 import { planH3ReferenceConditioning } from "./h3ReferenceConditioning";
 import { prepareH3IdentityPolicy, type PreparedH3PolicyReference } from "./h3DraftPolicyPreparation";
-import { canonicalIdentityPolicyJson } from "@/components/studio/issuedIdentityPolicy";
+import { canonicalIdentityPolicyJson, identityPolicySha256 } from "@/components/studio/issuedIdentityPolicy";
+import { assertH3IdentityAssessmentScope, identityAssessmentAsset, type H3IdentityAssessmentScope, type H3IdentityAssessment } from "@/components/studio/h3IdentityAssessment";
+import { readH3IdentityAssessment, writeH3IdentityAssessment } from "./h3IdentityAssessmentStore";
 
-export type H3JobReference = { ownerId: string; projectId: string; jobId: string; mode?: "identity-recheck" };
+export type H3JobReference = { ownerId: string; projectId: string; jobId: string; mode?: "identity-recheck"; assessment?: H3IdentityAssessmentScope };
 
 const MAX_IMAGE_BYTES = 32 * 1024 * 1024;
 const executeImagePreparation = promisify(execFile);
@@ -308,6 +310,12 @@ export async function recheckH3Identity(reference: H3JobReference, options: { st
     (candidate.id === asset.id || candidate.jobId === job.id) && candidate.reviewStatus === "rejected")) {
     throw new Error("A rejected shot cannot be reconsidered by an automatic identity recheck.");
   }
+  const assessment = reference.assessment;
+  if (assessment) {
+    assertH3IdentityAssessmentScope(assessment,job);
+    const existing = await readH3IdentityAssessment(ownerId,projectId,jobId,assessment.id);
+    if (existing) return completedOutput({ ...job, result: { asset: identityAssessmentAsset(existing,job) } });
+  }
   const storage = asset.fullStorage;
   const expectedKey = `media-uploads/projects/${normalizeStudioOwnerSegment(ownerId)}/generated/${projectId}/${job.id}/shot.mp4`;
   if (!storage || storage.bucket !== config.bucket || storage.objectKey !== expectedKey
@@ -322,10 +330,22 @@ export async function recheckH3Identity(reference: H3JobReference, options: { st
     const outputPath = path.join(folder, "shot.mp4");
     await writeFile(outputPath, new Uint8Array(media.bytes));
     validateH3VideoProbe(await probeMediaFile(outputPath), job.frames!, job.request.songEnd - job.request.songStart);
-    const assessed = await assessH3Identity({ job, asset, outputPath, tempFolder: folder });
+    const assessed = await assessH3Identity({ job, asset: assessment ? { ...asset, trimStart: assessment.trimStart } : asset, outputPath, tempFolder: folder,
+      ...(assessment ? { pinnedDraftPolicy: { id: assessment.policyId, sha256: assessment.policySha256 } } : {}) });
     const latest = await readStudioProject(ownerId, projectId, { fresh: true });
     if (!latest || (latest.draft.generatedAssets ?? []).some(candidate => (candidate.id === asset.id || candidate.jobId === job.id)
       && candidate.reviewStatus === "rejected")) throw new Error("The shot was rejected during reassessment.");
+    if (assessment) {
+      const current = await readH3Job(ownerId,projectId,jobId);
+      if (!current || !assessed.identityVerification) throw new Error("Range assessment could not establish bound evidence.");
+      assertH3IdentityAssessmentScope(assessment,current);
+      const record: H3IdentityAssessment = { version: 1, scope: assessment, status: "ready", assessedAt: new Date().toISOString(),
+        proof: assessed.identityVerification, proofSha256: identityPolicySha256(assessed.identityVerification) };
+      // Validate before append. Never replace the original failed or successful report.
+      identityAssessmentAsset(record,current);
+      const stored = await writeH3IdentityAssessment(record);
+      return completedOutput({ ...current, result: { asset: identityAssessmentAsset(stored,current) } });
+    }
     const updated = await updateH3Job(ownerId, projectId, jobId, current => {
       if (current.state !== "ready" || current.result?.asset.mediaSha256 !== hash
         || JSON.stringify(current.result.asset.identityVerification) !== initialProof || current.result.asset.reviewStatus === "rejected") {
@@ -334,6 +354,10 @@ export async function recheckH3Identity(reference: H3JobReference, options: { st
       return { ...current, result: { asset: assessed } };
     });
     return completedOutput(updated);
+  } catch (error) {
+    if (assessment) await writeH3IdentityAssessment({ version: 1, scope: assessment, status: "failed", assessedAt: new Date().toISOString(),
+      error: "The exact range assessment could not be completed. Original shot evidence is unchanged." }).catch(() => {});
+    throw error;
   } finally {
     await rm(folder, { recursive: true, force: true });
   }
