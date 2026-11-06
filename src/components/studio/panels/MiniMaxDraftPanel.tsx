@@ -321,7 +321,7 @@ export function MiniMaxDraftPanel(props: Props) {
           <h2 className="text-lg font-semibold text-fg-0">Bring the story to life</h2>
           <p className="text-sm text-fg-2">MiniMax creates the missing shots from your references and assembles them with the footage you already have.</p>
           <p className="text-xs text-fg-3">New character shots receive a provisional similarity screen. Identity remains unverified; review the assembled cut.</p>
-          <p className="text-xs text-fg-3">{missing.length ? `${missing.length} unfilled shot windows` : "Every song window has footage"}{activeJobs.length ? ` · ${activeJobs.length} renders in progress` : ""}. Review the cut before accepting it for Finish.</p>
+          <p className="text-xs text-fg-3">{missing.length ? `${missing.length} unfilled window${missing.length === 1 ? "" : "s"}` : "Every song window has footage"}{activeJobs.length ? ` · ${activeJobs.length} renders in progress` : ""}. Review the cut before accepting it for Finish.</p>
         </div>
         <Button variant="primary" disabled={busy || accepting || Boolean(unavailable) || !missing.length || activeJobs.length > 0} reason={unavailable}
           onClick={() => void generateMissing()}>{busy ? "Creating draft…" : activeJobs.length ? "Generation in progress" : "Create missing shots"}</Button>

@@ -28,7 +28,7 @@ type InspectorProps = {
   projectDraft: PersistedStudioProjectDraft;
   activeProjectId: string | null;
   activeProjectName: string;
-  onNewProject: () => Promise<boolean>;
+  onNewProject: (name: string) => Promise<boolean>;
   onProjectSelected: (project: StudioProjectSummary, draft: RuntimeStudioProjectDraft) => void;
   onProjectSaved: (project: StudioProjectSummary) => void;
   /** Hide the blocked callout and prerequisite button when the monitor already shows the gate. */

@@ -16,6 +16,8 @@ export interface PipelineStageInput {
   editSlotCount: number;
   matchedSlotCount: number;
   gapSlotCount: number;
+  /** Display coverage of the eligible selected draft; approved coverage still gates Finish. */
+  draftGapSlotCount?: number;
   weakMatchSlotCount: number;
   shortReviewSlotCount: number;
   storySegmentCount: number;
@@ -76,7 +78,9 @@ export function buildPipelineState(input: PipelineStageInput): PipelineState {
   const effectsReady = joinReady;
   const exportReady = effectsReady && generateReady;
   const exportComplete = exportReady && input.finalExportReady;
-  const gapLabel = `${input.gapSlotCount} gap${input.gapSlotCount === 1 ? "" : "s"}`;
+  const displayedGapCount = input.draftGapSlotCount ?? input.gapSlotCount;
+  const gapLabel = `${displayedGapCount} gap${displayedGapCount === 1 ? "" : "s"}`;
+  const draftNeedsReview = displayedGapCount === 0 && input.gapSlotCount > 0;
 
   const stages: Omit<PipelineStage, "step" | "active" | "isNext">[] = [
     {
@@ -147,8 +151,9 @@ export function buildPipelineState(input: PipelineStageInput): PipelineState {
       prerequisiteKey: storyReady ? null : "story",
       status: !storyReady
         ? "Waiting for Story"
-        : input.gapSlotCount > 0
-          ? `${input.gapSlotCount} unfilled window${input.gapSlotCount === 1 ? "" : "s"}`
+        : displayedGapCount > 0
+          ? `${displayedGapCount} unfilled window${displayedGapCount === 1 ? "" : "s"}`
+          : draftNeedsReview ? "Draft covered · review required"
           : input.shortReviewSlotCount > 0
             ? `${input.shortReviewSlotCount} short source${input.shortReviewSlotCount === 1 ? "" : "s"} · optional`
             : input.weakMatchSlotCount > 0
@@ -166,7 +171,7 @@ export function buildPipelineState(input: PipelineStageInput): PipelineState {
         : "Build the Story timeline before reviewing the whole-song rough cut.",
       prerequisiteKey: joinReady ? null : "story",
       status: joinReady
-        ? input.gapSlotCount > 0
+        ? displayedGapCount > 0
           ? `Whole-song rough cut · ${gapLabel} to fill`
           : `${input.storySegmentCount} segments · rough cut`
         : "Waiting for story timeline",
@@ -187,11 +192,15 @@ export function buildPipelineState(input: PipelineStageInput): PipelineState {
       ready: exportReady,
       complete: exportComplete,
       available: exportReady,
-      blockedReason: exportReady ? null : input.gapSlotCount > 0
+      blockedReason: exportReady ? null : draftNeedsReview
+        ? "Review and accept the assembled draft before final export."
+        : input.gapSlotCount > 0
         ? `Fill ${gapLabel} before final export.${joinReady ? " The whole-song rough cut is available in Join." : ""}`
         : "Finish Join and review Effects before opening export controls.",
       prerequisiteKey: exportReady ? null : input.gapSlotCount > 0 ? "generate" : "ramp",
-      status: exportComplete ? "MP4 ready" : input.gapSlotCount > 0
+      status: exportComplete ? "MP4 ready" : draftNeedsReview
+        ? "Draft review required · final export blocked"
+        : input.gapSlotCount > 0
         ? `${gapLabel} · final export blocked`
         : exportReady ? "Preview ready · export pending" : "Waiting",
     },

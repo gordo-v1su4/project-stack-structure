@@ -6,6 +6,8 @@ import { useDismiss } from "./shell/useDismiss";
 import type { PersistedStudioProjectDraft, RuntimeStudioProjectDraft } from "./projectPersistence";
 import { hydrateStudioProjectDraft, listSavedStudioProjects, loadSavedStudioProject, saveNamedStudioProject } from "./projectPersistence";
 import type { StudioProjectSummary } from "@/lib/studioProjectStore";
+import { newStudioProjectNameError } from "./newStudioProject";
+import { Button } from "./ui";
 
 type SessionUser = { id?: string; name?: string | null; email?: string | null; image?: string | null; login?: string };
 
@@ -13,7 +15,7 @@ type ProjectLibraryProps = {
   draft: PersistedStudioProjectDraft;
   activeProjectId: string | null;
   activeProjectName: string;
-  onNewProject: () => Promise<boolean>;
+  onNewProject: (name: string) => Promise<boolean>;
   onProjectSelected: (project: StudioProjectSummary, draft: RuntimeStudioProjectDraft) => void;
   onProjectSaved: (project: StudioProjectSummary) => void;
 };
@@ -26,9 +28,14 @@ export function ProjectLibrary({ draft, activeProjectId, activeProjectName, onNe
   const [name, setName] = useState(activeProjectName);
   const [status, setStatus] = useState("Sign in to save projects across devices.");
   const [busy, setBusy] = useState(false);
+  const [newProjectName, setNewProjectName] = useState<string | null>(null);
+  const [newProjectError, setNewProjectError] = useState<string | null>(null);
+  const newNameRef = useRef<HTMLInputElement>(null);
+  const creatingProjectRef = useRef(false);
+  const creatingNewProject = newProjectName !== null;
   const githubIdentity = user?.login || user?.name || "GitHub user";
   const rootRef = useRef<HTMLDivElement>(null);
-  const close = useCallback(() => setOpen(false), []);
+  const close = useCallback(() => { if (!busy) { setOpen(false); setNewProjectName(null); setNewProjectError(null); } }, [busy]);
   useDismiss(rootRef, open, close);
 
   function beginGitHubSignIn() {
@@ -36,6 +43,7 @@ export function ProjectLibrary({ draft, activeProjectId, activeProjectName, onNe
   }
 
   useEffect(() => setName(activeProjectName), [activeProjectName]);
+  useEffect(() => { if (creatingNewProject) newNameRef.current?.focus(); }, [creatingNewProject]);
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -109,14 +117,21 @@ export function ProjectLibrary({ draft, activeProjectId, activeProjectName, onNe
   }
 
   async function startNewProject() {
+    if (newProjectName === null || busy || creatingProjectRef.current) return;
+    const error = newStudioProjectNameError(newProjectName);
+    if (error) { setNewProjectError(error); newNameRef.current?.focus(); return; }
+    creatingProjectRef.current = true;
+    setNewProjectError(null);
     setBusy(true);
     setStatus("Starting a new project...");
     try {
-      const started = await onNewProject();
+      const started = await onNewProject(newProjectName);
       if (!started) setStatus("Current project unchanged.");
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Could not start a new project.");
+      const message = error instanceof Error ? error.message : "Could not start a new project.";
+      setStatus(message); setNewProjectError(message);
     } finally {
+      creatingProjectRef.current = false;
       setBusy(false);
     }
   }
@@ -126,7 +141,8 @@ export function ProjectLibrary({ draft, activeProjectId, activeProjectName, onNe
       {/* The project name is the switcher: one title, one chevron. Identity lives in the panel. */}
       <button
         type="button"
-        onClick={() => setOpen((current) => !current)}
+        disabled={busy}
+        onClick={() => open ? close() : setOpen(true)}
         aria-expanded={open}
         aria-haspopup="dialog"
         title={user ? `${activeProjectName} · signed in as @${githubIdentity}` : "Sign in with GitHub to save projects"}
@@ -149,7 +165,10 @@ export function ProjectLibrary({ draft, activeProjectId, activeProjectName, onNe
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-3 text-[11px]">
-              <button type="button" disabled={busy} onClick={() => void startNewProject()} className="text-accent hover:text-accent-hi disabled:opacity-40">New</button>
+              <button type="button" disabled={busy || !sessionChecked} onClick={() => {
+                if (!user) return beginGitHubSignIn();
+                setNewProjectName(""); setNewProjectError(null);
+              }} className="text-accent hover:text-accent-hi disabled:opacity-40">New</button>
               {user ? (
                 <button type="button" onClick={() => signOut({ redirectTo: "/" })} className="text-fg-3 hover:text-fg-1">Sign out</button>
               ) : null}
@@ -167,18 +186,32 @@ export function ProjectLibrary({ draft, activeProjectId, activeProjectName, onNe
 
           {user ? (
             <>
-              <div className="mb-3 flex items-end gap-2">
+              {newProjectName !== null ? <form className="mb-3 space-y-3 rounded-md border border-line bg-ink-0 p-3" aria-label="New project"
+                onSubmit={event => { event.preventDefault(); void startNewProject(); }}>
+                <div className="text-sm font-medium text-fg-0">New project</div>
+                <p className="text-xs leading-5 text-fg-2">Start a blank workspace. Saved projects stay in your library. Save any current changes you want to keep before creating.</p>
+                <label className="block text-xs text-fg-2">New project name
+                  <input ref={newNameRef} value={newProjectName} disabled={busy} maxLength={120} aria-invalid={Boolean(newProjectError)} aria-describedby={newProjectError ? "new-project-error" : undefined}
+                    onChange={event => { setNewProjectName(event.target.value); setNewProjectError(null); }}
+                    className="mt-1 w-full rounded-md border border-line-2 bg-ink-1 px-2.5 py-2 text-sm text-fg-0 outline-none focus:border-accent" />
+                </label>
+                {newProjectError ? <p id="new-project-error" role="alert" className="text-xs text-danger">{newProjectError}</p> : null}
+                <div className="flex gap-2">
+                  <Button type="submit" variant="primary" disabled={busy}>{busy ? "Creating…" : "Create"}</Button>
+                  <Button type="button" disabled={busy} onClick={() => { setNewProjectName(null); setNewProjectError(null); }}>Cancel</Button>
+                </div>
+              </form> : <div className="mb-3 flex items-end gap-2">
                 <label className="min-w-0 flex-1 text-[10px] font-medium uppercase tracking-[0.14em] text-fg-3">
                   Project name
                   <input value={name} onChange={(event) => setName(event.target.value)} maxLength={120} className="mt-1 w-full rounded-md border border-line-2 bg-ink-0 px-2.5 py-1.5 text-[13px] normal-case tracking-normal text-fg-0 outline-none focus:border-line-3" />
                 </label>
                 <button type="button" disabled={busy} onClick={() => void saveProject(false)} className="rounded-md bg-accent px-3 py-2 text-[12px] font-semibold text-ink-0 hover:bg-accent-hi disabled:opacity-40">{activeProjectId ? "Save" : "Create"}</button>
                 {activeProjectId ? <button type="button" disabled={busy} onClick={() => void saveProject(true)} className="rounded-md border border-line-2 px-2.5 py-2 text-[12px] text-fg-2 hover:text-fg-0 disabled:opacity-40">Save as</button> : null}
-              </div>
+              </div>}
 
               <div className="max-h-[300px] overflow-y-auto border-t border-line">
                 {projects.map((project) => (
-                  <button key={project.id} type="button" disabled={busy} onClick={() => void loadProject(project)} className={`flex w-full flex-col gap-0.5 border-b border-line px-1 py-2 text-left last:border-b-0 hover:bg-ink-2 ${project.id === activeProjectId ? "text-fg-0" : "text-fg-2"}`}>
+                  <button key={project.id} type="button" disabled={busy || newProjectName !== null} onClick={() => void loadProject(project)} className={`flex w-full flex-col gap-0.5 border-b border-line px-1 py-2 text-left last:border-b-0 hover:bg-ink-2 disabled:opacity-40 ${project.id === activeProjectId ? "text-fg-0" : "text-fg-2"}`}>
                     <div className="flex w-full items-center justify-between gap-3">
                       <span className="flex min-w-0 items-center gap-2">
                         {project.id === activeProjectId ? <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" /> : null}

@@ -1,6 +1,7 @@
 "use client";
 
 import { ClipAudioSettings } from "./studio/ClipAudioSettings";
+import { createBlankNamedStudioProject } from "./studio/newStudioProject";
 import { clipAudioKey, normalizeClipAudioSettings, usesClipAudio } from "./studio/clipAudio";
 import { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type SetStateAction } from "react";
 import { flushSync } from "react-dom";
@@ -22,13 +23,11 @@ import {
   ACTIVE_STUDIO_PROJECT_KEY,
   STUDIO_AUTOSAVE_INTERVAL_MS,
   buildVideoMediaKey,
-  clearStudioProjectDraft,
   createPersistableStudioProjectDraft,
   hydrateStudioProjectDraft,
   loadSavedStudioProject,
   loadStudioProjectDraft,
   saveNamedStudioProject,
-  saveServerStudioProjectDraft,
   saveStudioProjectDraft,
   type PersistedCommittedSplit,
   type RuntimeStudioProjectDraft,
@@ -572,26 +571,11 @@ export default function StudioApp() {
     setSaveState({ kind: "saved", at: Date.now(), scope: "project", detail: `Saved ${project.name} to RustFS.` });
   }
 
-  async function handleNewProject() {
-    setRoughCutSelection(null);
-    const confirmed = window.confirm(
-      "Start a new project? This clears the current working draft. Named projects already saved to your Project Library will be kept.",
-    );
-    if (!confirmed) return false;
-
-    const emptyDraft = createPersistableStudioProjectDraft({
-      analysis: null,
-      videoSources: [],
-      storyState: createDefaultStoryTabState(),
-      musicVideoProject: null,
-      referenceAssets: [],
-      generatedAssets: [],
-      workflowUiSettings: { activeTab: "review" },
-    });
-
-    await saveServerStudioProjectDraft(emptyDraft);
-    clearStudioProjectDraft();
-    window.localStorage.removeItem(ACTIVE_STUDIO_PROJECT_KEY);
+  async function handleNewProject(name: string) {
+    // Only the explicit in-app Create submits a new blank, owner-scoped record.
+    // Existing named projects are never cleared or overwritten by this action.
+    await createBlankNamedStudioProject(name, createDefaultStoryTabState());
+    pendingAutosaveRef.current = null;
     window.localStorage.setItem("svs.studio.activeTab", "review");
     window.location.reload();
     return true;
@@ -2032,6 +2016,7 @@ export default function StudioApp() {
       && Boolean(musicVideoProject && isPlacementPlanCurrent(musicVideoProject)),
     musicVideoProject,
     generatedAssets,
+    resolvedDraftSegments: draftPreviewSegments,
     storySegmentCount: storyPreviewSegments.length,
     hasCommittedSplit: isCommittedSplitCurrent,
     shaderPresetLabel: shaderPresetSummary.preset.label,
@@ -2050,6 +2035,7 @@ export default function StudioApp() {
     ingestStats,
     musicVideoProject,
     storyPreviewSegments.length,
+    draftPreviewSegments,
     isCommittedSplitCurrent,
     shaderPresetSummary.preset.label,
     finalExportUrl,
