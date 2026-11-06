@@ -20,28 +20,51 @@ Web deployment uses the production Trigger key and reviewed `applicationProducti
 
 ## Isolated VM100 application build
 
-The canonical remote checkout is preserved. Commit/push the reviewed release first; verify the fetched branch contains that exact SHA. This example creates a separate immutable build checkout and refuses to overwrite an existing directory:
+The canonical remote checkout is preserved. Commit/push the reviewed release first; verify the fetched branch contains that exact SHA. Save this transport helper as a private `.tmp/deploy-minimax-release.ts` in the reviewed application checkout:
 
-```powershell
-$releaseCommit = (git rev-parse HEAD).Trim()
-if ($releaseCommit -notmatch '^[0-9a-f]{40}$') { throw 'Expected a full release commit SHA.' }
-@'
-set -euo pipefail
+```typescript
+import { openSync, closeSync } from "node:fs";
+
+const release = process.argv[2];
+if (!release || !/^[a-f0-9]{40}$/.test(release)) throw Error("Expected the reviewed full release SHA.");
+const git = (args: string[]) => {
+  const result = Bun.spawnSync(["git", ...args], { stdout: "pipe", stderr: "pipe" });
+  if (result.exitCode !== 0) throw Error("Local release guard failed.");
+  return result.stdout.toString().trim();
+};
+if (git(["rev-parse", "HEAD"]) !== release || git(["status", "--porcelain", "--untracked-files=no"])) {
+  throw Error("Release must match HEAD with no uncommitted tracked edits.");
+}
+const script = `set -euo pipefail
 release_commit="$1"
 base=/home/gordo/project-stack-structure
-git -C "$base" fetch origin codex/minimax-completion
+git -C "$base" fetch origin codex/minimax-completion </dev/null
 git -C "$base" merge-base --is-ancestor "$release_commit" FETCH_HEAD
-build_dir="/home/gordo/project-stack-structure-build-${release_commit}"
+build_dir="/home/gordo/project-stack-structure-build-${release}"
 test ! -e "$build_dir"
 git -C "$base" worktree add --detach "$build_dir" "$release_commit"
 cd "$build_dir"
 test "$(git rev-parse HEAD)" = "$release_commit"
+test -z "$(git status --porcelain --untracked-files=no)"
 export PATH="/home/gordo/.bun/bin:$PATH"
-bun run trigger:deploy -- --dry-run
-bun run trigger:deploy
-'@ | ssh gordo@192.168.8.222 bash -s -- "$releaseCommit"
-if ($LASTEXITCODE -ne 0) { throw 'VM100 application deployment failed.' }
+bun run trigger:deploy -- --dry-run </dev/null
+bun run trigger:deploy </dev/null
+`.replace(/\r\n?/g, "\n");
+const logPath = `.tmp/minimax-release-${release}.log`;
+const log = openSync(logPath, "wx"); // Preserve previous attempts and their evidence.
+try {
+  const child = Bun.spawn(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
+    "gordo@192.168.8.222", "bash", "-s", "--", release],
+    { stdin: "pipe", stdout: log, stderr: log });
+  await child.stdin.write(script);
+  await child.stdin.end();
+  const exitCode = await child.exited;
+  console.log(JSON.stringify({ release, exitCode, logPath }));
+  process.exitCode = exitCode;
+} finally { closeSync(log); }
 ```
+
+Run `bun .tmp/deploy-minimax-release.ts FULL_REVIEWED_40_CHARACTER_SHA` only when deployment is authorized. The helper sends literal LF-only bytes to `bash -s`, closes the SSH input, and redirects each deployment CLI's stdin from `/dev/null`; those CLIs must not consume the next shell command. Do not pipe a PowerShell here-string into SSH: CRLF can corrupt the `/dev/null` path. The log and remote build directory must both be new. Preserve failed attempts; use a separately reviewed fresh build path/log for a deliberate retry, never reset or reuse a failed build checkout.
 
 Do not run the example against an uncommitted checkout: deployment is intentionally pinned to a pushed commit. Record the release SHA, emitted deployment code/version, image digest and successful registry push. Query the production worker's 17-task inventory. H3 uses the existing `local-ai-generation` ID, so the new version/source and a real H3 run are required evidence beyond that inventory. Deploy the web app from the same reviewed commit and record its immutable deployment URL and production alias.
 

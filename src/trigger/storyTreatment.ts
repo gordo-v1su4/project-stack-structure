@@ -27,6 +27,10 @@ export type StoryTreatmentGatewayResult = {
   };
 };
 
+export const STORY_REVIEW_EVIDENCE_FORMAT_CONSTRAINT = "Reviewer evidence format: copy each loglineQuote as an exact contiguous substring of that candidate's supplied logline, each briefQuote as an exact contiguous substring of the unchanged brief or one supplied constraint, and each momentIds entry from that candidate's supplied moment IDs. Never paraphrase, combine excerpts, invent support, or rewrite the candidate. Preserve contradicted or unclear verdicts and resolution-spoiler rejection whenever warranted; this format constraint cannot establish story support.";
+const STORY_REVIEW_BUDGET_MESSAGE = "Story review exceeded its original time budget. The candidate remains unapproved.";
+class StoryEvidenceFormatRejection extends AbortTaskRunError {}
+
 export const storyTreatmentTask = task({
   id: "qwen-story-treatment",
   queue: vm100HeavyQueue,
@@ -45,7 +49,7 @@ export const storyTreatmentTask = task({
         currentMetadata: () => metadata.current(),
         writeMetadata: async (key, record) => { metadata.set(key, JSON.parse(JSON.stringify(record))); await metadata.flush(); },
       });
-      metadata.set(event.outcome === "authored-unreviewed" ? "storyAuthoredDiagnostic" : "storyReviewDiagnostic", descriptor);
+      metadata.set(event.outcome === "authored-unreviewed" ? "storyAuthoredDiagnostic" : event.reviewAttempt === 2 ? "storyReviewRepairDiagnostic" : "storyReviewDiagnostic", descriptor);
       await metadata.flush();
     };
     markWorkRunning("preparing", "Preparing story model", { progressMode: "indeterminate" });
@@ -99,19 +103,36 @@ export async function runStoryTreatmentGateway(payload: StoryTreatmentPayload, t
   await preserveSafely({ phase: "author", outcome: "authored-unreviewed", authoredOutput, actualModel, httpStatus: lastHttpStatus });
   logger.info("Story authoring finished; independent review required", { triggerRunId, model: payload.model });
   markWorkRunning("reviewing", "Checking story logline against authored facts");
+  // One timer owns both HTTP calls and body reads. A repair never gets a new budget.
+  const reviewSignal = AbortSignal.timeout(135_000);
+  let reviewAttempt: 1 | 2 = 1;
   const review = await logger.trace("Review story logline on GPU", async () => {
-    const reviewed = await postStoryStage(`${endpoint}/review`, {
-      operation: payload.operation ?? "generate", output, review_context: payload.reviewContext,
-    }, 135_000);
+    let reviewed: Record<string, unknown>;
+    try {
+      reviewed = await postStoryStage(`${endpoint}/review`, {
+        operation: payload.operation ?? "generate", output, review_context: payload.reviewContext,
+      }, 135_000, reviewSignal, reviewAttempt);
+    } catch (error) {
+      if (!(error instanceof StoryEvidenceFormatRejection) || reviewSignal.aborted
+        || payload.reviewContext.brief.length + payload.reviewContext.constraints.reduce((sum, item) => sum + item.length, 0)
+          + STORY_REVIEW_EVIDENCE_FORMAT_CONSTRAINT.length > 12_000) throw error;
+      reviewAttempt = 2;
+      logger.info("Retrying independent review evidence format", { triggerRunId, reviewAttempt });
+      reviewed = await postStoryStage(`${endpoint}/review`, {
+        operation: payload.operation ?? "generate", output,
+        // This is an allowed data constraint, not a privileged prompt override.
+        review_context: { brief: payload.reviewContext.brief, constraints: [...payload.reviewContext.constraints, STORY_REVIEW_EVIDENCE_FORMAT_CONSTRAINT] },
+      }, 135_000, reviewSignal, reviewAttempt);
+    }
     try { assertStoryLoglineReview(reviewed.logline_review); }
     catch {
-      await preserveSafely({ phase: "review", outcome: "rejected", authoredOutput, actualModel, httpStatus: lastHttpStatus,
+      await preserveSafely({ phase: "review", reviewAttempt, outcome: "rejected", authoredOutput, actualModel, httpStatus: lastHttpStatus,
         gatewayReviewMarker: "missing-or-invalid", rejection: { phase: "review", httpStatus: lastHttpStatus ?? 200, issues: [{ code: "review-approval-marker-missing" }] } });
       throw new AbortTaskRunError(STORY_LOGLINE_REVIEW_REQUIRED);
     }
     return { ...reviewed, logline_review: reviewed.logline_review };
   });
-  await preserveSafely({ phase: "review", outcome: "review-passed", authoredOutput, actualModel, httpStatus: lastHttpStatus, gatewayReviewMarker: "passed" });
+  await preserveSafely({ phase: "review", reviewAttempt, outcome: "review-passed", authoredOutput, actualModel, httpStatus: lastHttpStatus, gatewayReviewMarker: "passed" });
   logger.info("Independent story review passed", { triggerRunId, model: readString(review, "model") || payload.model });
   const usage = result.usage;
   return {
@@ -124,23 +145,45 @@ export async function runStoryTreatmentGateway(payload: StoryTreatmentPayload, t
       : undefined,
   } satisfies StoryTreatmentGatewayResult;
 
-  async function postStoryStage(stageEndpoint: string, body: Record<string, unknown>, timeoutMs: number) {
+  async function postStoryStage(stageEndpoint: string, body: Record<string, unknown>, timeoutMs: number, sharedSignal?: AbortSignal, attempt?: 1 | 2) {
+    if (sharedSignal?.aborted) throw new AbortTaskRunError(STORY_REVIEW_BUDGET_MESSAGE);
     const requestOptions: RequestInit & { timeout: false } = {
       method: "POST", headers, body: JSON.stringify(body), timeout: false,
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: sharedSignal ?? AbortSignal.timeout(timeoutMs),
     };
-    const response = await fetch(`${gatewayUrl}${stageEndpoint}`, requestOptions);
-    lastHttpStatus = response.status;
-    const stageResult = await readJson(response);
+    let response: Response | undefined;
+    let stageResult: Record<string, unknown>;
+    try {
+      response = await fetch(`${gatewayUrl}${stageEndpoint}`, requestOptions);
+      lastHttpStatus = response.status;
+      stageResult = await readJson(response);
+    } catch (error) {
+      if (!sharedSignal?.aborted) throw error;
+      await preserveSafely({ phase: "review", reviewAttempt: attempt, outcome: "rejected", ...diagnosticState,
+        httpStatus: response?.status,
+        // 504 classifies the local deadline when no HTTP response exists; it
+        // does not claim the gateway returned a status or stopped inference.
+        rejection: { phase: "review", httpStatus: response?.status ?? 504, issues: [{ code: "review-time-budget" }] } });
+      throw new AbortTaskRunError(STORY_REVIEW_BUDGET_MESSAGE);
+    }
+    if (sharedSignal?.aborted) {
+      await preserveSafely({ phase: "review", reviewAttempt: attempt, outcome: "rejected", ...diagnosticState, httpStatus: response.status,
+        rejection: { phase: "review", httpStatus: response.status, issues: [{ code: "review-time-budget" }] } });
+      throw new AbortTaskRunError(STORY_REVIEW_BUDGET_MESSAGE);
+    }
     if (!response.ok || readBoolean(stageResult, "ok") === false) {
       const detail = readString(stageResult, "detail");
       const phase = stageEndpoint.endsWith("/review") ? "review" : "author";
-      await preserveSafely({ phase, outcome: "rejected", ...diagnosticState, httpStatus: response.status, rejection: classifyStoryGatewayRejection(phase, response.status, detail) });
+      const rejection = classifyStoryGatewayRejection(phase, response.status, detail);
+      await preserveSafely({ phase, reviewAttempt: attempt, outcome: "rejected", ...diagnosticState, httpStatus: response.status, rejection });
       if (detail?.startsWith("Story logline review failed:")) {
         const message = safeStoryReviewFailureMessage(detail);
         logger.warn("Story stage rejected", { triggerRunId, stage: stageEndpoint.endsWith("/review") ? "review" : "author", reason: message });
         // A corrected authoring request must be a new run. Do not repeat the
         // identical story automatically after a semantic review rejection.
+        if (phase === "review" && rejection.issues.every(issue => ["review-quote-mismatch", "review-brief-quote-mismatch", "review-unknown-moment"].includes(issue.code))) {
+          throw new StoryEvidenceFormatRejection(message);
+        }
         throw new AbortTaskRunError(message);
       }
       if (response.status === 404) {

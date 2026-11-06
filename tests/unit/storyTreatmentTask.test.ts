@@ -17,7 +17,7 @@ mock.module("@trigger.dev/sdk", () => ({
     warn: (...args: unknown[]) => logs.push(args),
   },
 }));
-const { runStoryTreatmentGateway, storyTreatmentTask } = await import("../../src/trigger/storyTreatment");
+const { runStoryTreatmentGateway, storyTreatmentTask, STORY_REVIEW_EVIDENCE_FORMAT_CONSTRAINT } = await import("../../src/trigger/storyTreatment");
 const { STORY_LOGLINE_REVIEW_REQUIRED } = await import("../../src/lib/storyLoglineReview");
 type DiagnosticEvent = import("../../src/lib/storyTreatmentDiagnostics").StoryDiagnosticEvent;
 const originalFetch = globalThis.fetch;
@@ -25,10 +25,11 @@ afterEach(() => { globalThis.fetch = originalFetch; spans.length = 0; logs.lengt
 const payload = { operation: "revise" as const, instructions: "private instructions", input: "private story", model: "qwen-test", reviewContext: { brief: "private brief", constraints: [] } };
 const output = { treatment: { id: "faithful", logline: "private pitch" } };
 const approval = { version: 1, status: "passed" };
-function transport(responses: Response[]) {
-  const calls: { url: string; body?: Record<string, unknown> }[] = [];
+function transport(responses: Response[], onRequest?: (count: number) => void) {
+  const calls: { url: string; body?: Record<string, unknown>; signal?: AbortSignal | null }[] = [];
   globalThis.fetch = (async (url, options) => {
-    calls.push({ url: String(url), body: options?.body ? JSON.parse(String(options.body)) : undefined });
+    calls.push({ url: String(url), body: options?.body ? JSON.parse(String(options.body)) : undefined, signal: options?.signal });
+    onRequest?.(calls.length);
     const next = responses.shift();
     if (!next) throw new Error("Unexpected extra model request");
     return next;
@@ -129,4 +130,112 @@ test("production task refuses missing or ambiguous owner tags before model/stora
   for (const tags of [[], ["user:first", "user:second"]]) await expect(executeTask(payload, { ctx: { run: { id: "run_canonical123", tags } } })).rejects.toThrow("exactly one authenticated owner");
   expect(calls).toHaveLength(0);
   expect(privateMetadata.storyAuthoredDiagnosticRecord).toBe(undefined);
+});
+
+const formatFailure = (reason: string) => Response.json({ detail: `Story logline review failed: treatment 1 stakes reviewer ${reason}` }, { status: 502 });
+test("only exact quote/id evidence failures retry review once on byte-identical candidates and brief with one shared deadline", async () => {
+  for (const reason of ["logline quote is not an exact excerpt", "brief quote is not an exact excerpt", "cited an unknown moment id"]) {
+    const events: DiagnosticEvent[] = [];
+    const before = JSON.stringify(payload);
+    const calls = transport([healthy(), authored(), formatFailure(reason), Response.json({ ok: true, logline_review: approval })]);
+    const result = await runStoryTreatmentGateway(payload, "run-test", async event => { events.push(structuredClone(event)); });
+    expect(calls).toHaveLength(4);
+    expect(calls[2].signal).toBe(calls[3].signal);
+    expect(JSON.stringify(calls[2].body?.output)).toBe(JSON.stringify(calls[3].body?.output));
+    expect(calls[3].body?.review_context).toEqual({ brief: payload.reviewContext.brief, constraints: [STORY_REVIEW_EVIDENCE_FORMAT_CONSTRAINT] });
+    expect(JSON.stringify(payload)).toBe(before);
+    expect(events.filter(e => e.phase === "review").map(e => [e.reviewAttempt, e.outcome])).toEqual([[1, "rejected"], [2, "review-passed"]]);
+    expect(result.output).toEqual(output);
+    expect(result.loglineReview).toEqual(approval);
+  }
+});
+
+test("semantic, spoiler, unavailable and generic malformed evidence failures do not trigger format repair", async () => {
+  for (const detail of [
+    "treatment 1 stakes needs expression in the logline and story support (verdict: unclear)",
+    "treatment 1 must avoid revealing its resolution",
+    "reviewer unavailable; retry the story request",
+    "reviewer returned incomplete or invalid evidence; retry the story request",
+    "treatment 1 stakes reviewer logline quote is not an exact excerpt; treatment 2 goal needs expression in the logline and story support (verdict: contradicted)",
+  ]) {
+    const calls = transport([healthy(), authored(), Response.json({ detail: `Story logline review failed: ${detail}` }, { status: 502 })]);
+    await expect(runStoryTreatmentGateway(payload, "run-test")).rejects.toThrow();
+    expect(calls).toHaveLength(3);
+  }
+});
+
+test("a second evidence failure or missing second approval marker never accepts and never retries a third time", async () => {
+  for (const response of [formatFailure("brief quote is not an exact excerpt"), Response.json({ ok: true })]) {
+    const calls = transport([healthy(), authored(), formatFailure("logline quote is not an exact excerpt"), response]);
+    await expect(runStoryTreatmentGateway(payload, "run-test")).rejects.toThrow();
+    expect(calls).toHaveLength(4);
+  }
+});
+
+test("expiration of the shared review timer cannot accept a late repair response", async () => {
+  const controller = new AbortController(), originalTimeout = AbortSignal.timeout;
+  AbortSignal.timeout = ms => ms === 135_000 ? controller.signal : originalTimeout(ms);
+  try {
+    const events: DiagnosticEvent[] = [];
+    const calls = transport([healthy(), authored(), formatFailure("logline quote is not an exact excerpt"), Response.json({ ok: true, logline_review: approval })], count => { if (count === 4) controller.abort(); });
+    await expect(runStoryTreatmentGateway(payload, "run-test", async e => { events.push(e); })).rejects.toThrow("original time budget");
+    expect(calls[2].signal).toBe(calls[3].signal);
+    expect(events.some(e => e.outcome === "review-passed")).toBe(false);
+    expect(events.at(-1)?.rejection?.issues[0].code).toBe("review-time-budget");
+  } finally { AbortSignal.timeout = originalTimeout; }
+});
+
+test("an expired first review or full context budget prevents any second HTTP review", async () => {
+  const controller = new AbortController(), originalTimeout = AbortSignal.timeout;
+  AbortSignal.timeout = ms => ms === 135_000 ? controller.signal : originalTimeout(ms);
+  try {
+    const calls = transport([healthy(), authored(), formatFailure("brief quote is not an exact excerpt")], count => { if (count === 3) controller.abort(); });
+    await expect(runStoryTreatmentGateway(payload, "run-test")).rejects.toThrow("original time budget");
+    expect(calls).toHaveLength(3);
+  } finally { AbortSignal.timeout = originalTimeout; }
+  const calls = transport([healthy(), authored(), formatFailure("brief quote is not an exact excerpt")]);
+  await expect(runStoryTreatmentGateway({ ...payload, reviewContext: { brief: "b".repeat(12_000), constraints: [] } }, "run-test")).rejects.toThrow();
+  expect(calls).toHaveLength(3);
+});
+
+test("production retention keeps both review attempts hash-bound under canonical owner without logging candidates", async () => {
+  transport([healthy(), authored(), formatFailure("brief quote is not an exact excerpt"), Response.json({ ok: true, logline_review: approval })]);
+  const result = await executeTask(payload, { ctx: { run: { id: "run_repair123", tags: ["user:github-owner"] } } });
+  expect(result).not.toBe(undefined);
+  const first = privateMetadata.storyReviewDiagnosticRecord as Record<string, unknown>, second = privateMetadata.storyReviewRepairDiagnosticRecord as Record<string, unknown>;
+  expect(first.outcome).toBe("rejected"); expect(second.outcome).toBe("review-passed");
+  expect(first.candidateSha256).toBe(second.candidateSha256);
+  expect(first.ownerId).toBe("github-owner"); expect(second.ownerId).toBe("github-owner");
+  expect(JSON.stringify(logs)).not.toContain("private");
+});
+
+test("a shared-deadline fetch rejection aborts the task instead of permitting an authoring transport retry", async () => {
+  const controller = new AbortController(), originalTimeout = AbortSignal.timeout;
+  AbortSignal.timeout = ms => ms === 135_000 ? controller.signal : originalTimeout(ms);
+  try {
+    const calls = transport([healthy(), authored()], count => {
+      if (count === 3) { controller.abort(); throw new DOMException("private abort details", "AbortError"); }
+    });
+    let caught: unknown;
+    try { await executeTask(payload, { ctx: { run: { id: "run_deadline123", tags: ["user:github-owner"] } } }); }
+    catch (error) { caught = error; }
+    expect(caught instanceof Error && caught.constructor.name === "AbortTaskRunError").toBe(true);
+    expect((caught as Error).message).toContain("original time budget");
+    expect(calls).toHaveLength(3);
+    const record = privateMetadata.storyReviewDiagnosticRecord as Record<string, unknown>;
+    expect(record.outcome).toBe("rejected");
+    expect(record.reviewAttempt).toBe(1);
+    expect(record.httpStatus).toBe(undefined);
+    expect((record.rejection as { issues: { code: string }[] }).issues[0].code).toBe("review-time-budget");
+    expect(JSON.stringify(logs)).not.toContain("private");
+  } finally { AbortSignal.timeout = originalTimeout; }
+});
+
+test("ordinary nondeadline review transport rejection keeps its original retry semantics and error object", async () => {
+  const failure = new Error("private connection failure");
+  const calls = transport([healthy(), authored()], count => { if (count === 3) throw failure; });
+  let caught: unknown;
+  try { await runStoryTreatmentGateway(payload, "run-test"); } catch (error) { caught = error; }
+  expect(caught).toBe(failure);
+  expect(calls).toHaveLength(3);
 });

@@ -6,6 +6,7 @@ import { canDeliverH3IdentityAssessment, h3IdentityAssessmentTrimWindow } from "
 import { generatedAssetDraftSimilarityLabel, generatedAssetDraftSimilarityWarnings, normalizeGeneratedAssetIdentityVerification } from "../generatedAssetIdentity";
 import { recheckH3Similarity } from "../h3SimilarityRecheck";
 import { currentIdentityEvidenceSha256, identityPolicyChoiceForReferences } from "../issuedIdentityPolicy";
+import { createNativeHandleAudition } from "../nativeHandleAudition";
 import type { GeneratedDraftReview, GeneratedDraftSelection } from "../generatedDraft";
 import { createH3PickupWindow, enqueueH3DraftRequest, findH3TargetSegment, h3DraftBatchStorageKey, h3RequestWindowKey, h3WindowKey, nextH3Attempt, parseH3DraftBatch, planH3DraftWindows, selectH3PickupWindow, selectH3ReferenceAssetIds, type H3DraftBatch } from "../h3DraftPlan";
 import { isH3JobTerminal, type H3GenerationJob, type H3GenerationRequest } from "../h3Generation";
@@ -410,12 +411,9 @@ export function MiniMaxDraftPanel(props: Props) {
           {job.state === "failed" || job.state === "cancelled" ? <Button disabled={busy || accepting || attemptsLeft(job) <= 0 || !findH3TargetSegment(props.segments, job.target)} onClick={() => void recoverJob(job, "retry")}>Retry shot ({attemptsLeft(job)} left)</Button> : null}
           {!isH3JobTerminal(job) && job.state !== "cancel_requested" ? <Button variant="danger" disabled={accepting} onClick={() => void recoverJob(job, "cancel")}>Cancel this shot</Button> : null}
         </span>
-        {job.state === "ready" && asset?.identityVerification?.status === "unverifiable" && !rejected && range ? <details className="w-full py-2">
-          <summary className="cursor-pointer text-fg-2">Choose source handle</summary>
-          <NativeHandleControl asset={asset} range={range} disabled={busy || accepting} onStartFrame={frame=>{
+        {job.state === "ready" && asset?.identityVerification?.status === "unverifiable" && !rejected && range ? <NativeHandleDetails asset={asset} range={range} disabled={busy || accepting} onStartFrame={frame=>{
             handleFramesRef.current={...handleFramesRef.current,[job.id]:frame};setHandleFrames(handleFramesRef.current);setReview(null);
-          }}/>
-        </details> : null}
+          }}/> : null}
         {asset ? <SimilarityFilterNote asset={asset} /> : null}
       </li>; })}</ul>
     </Surface> : null}
@@ -446,13 +444,37 @@ export function MiniMaxDraftPanel(props: Props) {
 function clock(seconds: number) { return `${Math.floor(seconds / 60)}:${Math.floor(seconds % 60).toString().padStart(2, "0")}`; }
 function preciseClock(seconds: number) { return `${Math.floor(seconds / 60)}:${(seconds % 60).toFixed(2).padStart(5, "0")}`; }
 
-function NativeHandleControl({asset,range,disabled,onStartFrame}:{asset:GeneratedStudioAsset;range:ReturnType<typeof h3IdentityAssessmentTrimWindow>;disabled:boolean;onStartFrame:(frame:number)=>void}) {
+type NativeHandleProps = {asset:GeneratedStudioAsset;range:ReturnType<typeof h3IdentityAssessmentTrimWindow>;disabled:boolean;onStartFrame:(frame:number)=>void};
+
+export function NativeHandleDetails(props: NativeHandleProps) {
+  const [open,setOpen]=useState(false);
+  return <details className="w-full py-2" onToggle={event=>setOpen(event.currentTarget.open)}>
+    <summary className="cursor-pointer text-fg-2">Choose source handle</summary>
+    {open ? <NativeHandleControl {...props}/> : null}
+  </details>;
+}
+
+function NativeHandleControl({asset,range,disabled,onStartFrame}:NativeHandleProps) {
   const video=useRef<HTMLVideoElement>(null);
-  useEffect(()=>{if(video.current){video.current.pause();if(video.current.readyState>=1)video.current.currentTime=range.trimStart;}},[range.trimStart]);
+  const audition=useRef<ReturnType<typeof createNativeHandleAudition>|null>(null);
+  const attachVideo=useCallback((element:HTMLVideoElement|null)=>{
+    if (!element && video.current) { audition.current?.destroy(); audition.current=null; video.current.pause(); video.current.removeAttribute("src"); video.current.load(); }
+    video.current=element;
+  },[]);
+  useEffect(()=>{
+    const element=video.current;
+    if(!element)return;
+    element.pause();
+    if(element.readyState>=1)element.currentTime=range.trimStart;
+    const control=createNativeHandleAudition(element,{trimStart:range.trimStart,endFrameExclusive:range.endFrameExclusive,fps:range.fps});
+    audition.current=control;
+    return ()=>{control.destroy();if(audition.current===control)audition.current=null;};
+  },[range.trimStart,range.endFrameExclusive,range.fps]);
   return <div className="mt-2 grid gap-3 rounded-md border border-line bg-ink-0 p-3 sm:grid-cols-2">
-    <video ref={video} className="w-full rounded-sm" controls preload="metadata" src={buildGeneratedAssetPlaybackUrl(asset)}
+    <video ref={attachVideo} className="w-full rounded-sm" controls preload="metadata" src={buildGeneratedAssetPlaybackUrl(asset)}
       onLoadedMetadata={event=>{event.currentTarget.currentTime=range.trimStart;}}
-      onTimeUpdate={event=>{if(event.currentTarget.currentTime>=range.trimEnd)event.currentTarget.pause();}}/>
+      onPlay={()=>audition.current?.watch()} onPause={()=>audition.current?.cancel()}
+      onTimeUpdate={()=>audition.current?.check()}/>
     <div className="space-y-2 text-xs text-fg-2">
       <label className="block">Native start frame
         <input type="number" min={0} max={range.maxStartFrame} step={1} value={range.firstFrame} disabled={disabled}
@@ -461,7 +483,7 @@ function NativeHandleControl({asset,range,disabled,onStartFrame}:{asset:Generate
       </label>
       <p>{range.targetDuration.toFixed(3)}s target · source {preciseClock(range.trimStart)}–{preciseClock(range.trimEnd)} · frames {range.firstFrame}–{range.endFrameExclusive-1} at {range.fps}fps</p>
       <p className="text-fg-3">Changing the handle does not select or approve it. Check this exact range, then review before using it.</p>
-      <Button disabled={disabled} onClick={()=>{if(video.current){video.current.currentTime=range.trimStart;void video.current.play().catch(()=>{});}}}>Play selected range</Button>
+      <Button disabled={disabled} onClick={()=>audition.current?.play()}>Play selected range</Button>
     </div>
   </div>;
 }

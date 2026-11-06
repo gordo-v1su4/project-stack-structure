@@ -13,6 +13,7 @@ export type StoryRejectionIssue = {
 export type StoryGatewayRejection = { phase: StoryDiagnosticPhase; httpStatus: number; issues: StoryRejectionIssue[] };
 export type StoryDiagnosticEvent = {
   phase: StoryDiagnosticPhase;
+  reviewAttempt?: 1 | 2;
   outcome: "authored-unreviewed" | "rejected" | "review-passed";
   authoredOutput?: unknown;
   actualModel?: string;
@@ -22,7 +23,7 @@ export type StoryDiagnosticEvent = {
 };
 export type StoryDiagnosticDescriptor = {
   version: 1; runId: string; storage: "private-trigger-run-metadata";
-  key: "storyAuthoredDiagnosticRecord" | "storyReviewDiagnosticRecord"; sha256: string;
+  key: "storyAuthoredDiagnosticRecord" | "storyReviewDiagnosticRecord" | "storyReviewRepairDiagnosticRecord"; sha256: string;
   phase: StoryDiagnosticPhase; outcome: StoryDiagnosticEvent["outcome"];
   rejectionCodes?: StoryRejectionIssue["code"][];
 };
@@ -154,13 +155,14 @@ export async function persistStoryTreatmentDiagnostic(context: StoryDiagnosticCo
   storyDiagnosticOwnerFromTags([`user:${context.ownerId}`]);
   if (!/^run_[A-Za-z0-9]{1,96}$/.test(context.runId) || !/^[a-f0-9]{64}$/.test(context.inputSha256) || !/^[a-f0-9]{64}$/.test(context.reviewContextSha256)) throw new Error("Invalid Story diagnostic context.");
   if (!["author", "review"].includes(event.phase) || !["authored-unreviewed", "rejected", "review-passed"].includes(event.outcome)) throw new Error("Invalid Story diagnostic phase or outcome.");
+  if (event.reviewAttempt !== undefined && (event.phase !== "review" || ![1, 2].includes(event.reviewAttempt))) throw new Error("Invalid Story review attempt.");
   if (event.httpStatus !== undefined && (!Number.isInteger(event.httpStatus) || event.httpStatus < 100 || event.httpStatus > 599)) throw new Error("Invalid diagnostic HTTP status.");
   if (event.gatewayReviewMarker !== undefined && !["passed", "missing-or-invalid"].includes(event.gatewayReviewMarker)) throw new Error("Invalid diagnostic review marker.");
   const rejection = event.rejection ? sanitizeRejection(event.rejection, event.phase) : undefined;
   const candidate = event.authoredOutput === undefined ? undefined : sanitizeStoryDiagnosticCandidate(event.authoredOutput);
   const actualModel = event.actualModel === undefined ? undefined : text(event.actualModel, 200);
   const data = { version: 1, acceptance: "diagnostic-only-not-approved", runId: context.runId, ownerId: context.ownerId,
-    recordedAt: (dependencies.now?.() ?? new Date()).toISOString(), phase: event.phase, outcome: event.outcome,
+    recordedAt: (dependencies.now?.() ?? new Date()).toISOString(), phase: event.phase, outcome: event.outcome, reviewAttempt: event.reviewAttempt,
     requestedModel: text(context.requestedModel, 200), actualAuthorModel: actualModel, inputSha256: context.inputSha256,
     reviewContextSha256: context.reviewContextSha256,
     // Retain the candidate once. Later records refer to its exact whitelisted bytes.
@@ -170,7 +172,7 @@ export async function persistStoryTreatmentDiagnostic(context: StoryDiagnosticCo
     reviewerEvidenceLimitation: "The gateway returns a fixed rejection diagnostic, not the critic's raw JSON. No unavailable critic evidence is inferred." };
   const serialized = JSON.stringify(data, null, 2);
   if (Buffer.byteLength(serialized) > STORY_DIAGNOSTIC_MAX_BYTES) throw new Error("Story diagnostic byte bound exceeded.");
-  const key = event.outcome === "authored-unreviewed" ? "storyAuthoredDiagnosticRecord" : "storyReviewDiagnosticRecord";
+  const key = event.outcome === "authored-unreviewed" ? "storyAuthoredDiagnosticRecord" : event.reviewAttempt === 2 ? "storyReviewRepairDiagnosticRecord" : "storyReviewDiagnosticRecord";
   assertStoryDiagnosticMetadataBudget(dependencies.currentMetadata(), key, data);
   await dependencies.writeMetadata(key, data);
   return { version: 1, runId: context.runId, storage: "private-trigger-run-metadata", key, sha256: sha256(serialized), phase: event.phase, outcome: event.outcome, rejectionCodes: rejection?.issues.map(issue => issue.code) };

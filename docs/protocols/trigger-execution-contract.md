@@ -140,7 +140,9 @@ confirm the story or insert media into the timeline. See
 Story runs retain bounded debug records in private Trigger run metadata:
 `storyAuthoredDiagnosticRecord` contains a deeply whitelisted, unreviewed
 candidate; `storyReviewDiagnosticRecord` contains fixed rejection codes or the
-real review marker and refers to the candidate by SHA-256. Records bind the
+real review marker and refers to the candidate by SHA-256. When a format repair
+is attempted, `storyReviewRepairDiagnosticRecord` retains attempt 2 separately;
+it never overwrites attempt 1 and refers to the same candidate SHA-256. Records bind the
 canonical run ID and exactly one server-issued `user:` tag. Caller-supplied
 owner fields are ignored. Requested and actual author model names are distinct.
 
@@ -166,6 +168,16 @@ explicit task writes, missing approval markers, and failure preservation.
 - A semantic review rejection raises `AbortTaskRunError` with safe actionable
   feedback. Do not automatically regenerate the identical request inside the
   worker merely because review rejected it.
+- Only exact logline-quote mismatch, brief-quote mismatch, or unknown moment-ID
+  evidence failures permit one additional independent review HTTP call. Both
+  calls share the original 135-second abort signal/deadline. The authored output
+  and brief remain byte-identical; attempt 2 adds one fixed evidence-format data
+  constraint, never a privileged prompt override or invented support. The gateway
+  already permits up to two critic passes within each call's own 120-second
+  budget; the app's shared deadline bounds both calls together. Semantic negatives,
+  spoilers, unavailable reviewers, generic malformed JSON/evidence and absent
+  approval markers receive no app-owned format retry. Success still requires the
+  real independent passed marker. The extra constraint does not guarantee compliance.
 - The Story app currently allows two validation attempts. A correction becomes
   a new Trigger run with feedback and a different validation-attempt key. This
   is distinct from two attempts within one Trigger run.

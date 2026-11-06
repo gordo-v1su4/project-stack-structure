@@ -1,10 +1,21 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "bun:test";
-import { SimilarityFilterNote } from "@/components/studio/panels/MiniMaxDraftPanel";
+import { NativeHandleDetails, SimilarityFilterNote } from "@/components/studio/panels/MiniMaxDraftPanel";
+import { h3IdentityAssessmentTrimWindow } from "@/components/studio/h3IdentityAssessment";
 import { draftSimilarityFixture } from "../helpers/draftSimilarity";
 
 describe("numerical similarity evidence", () => {
+  test("a closed library of 79 native handles mounts no media or preload requests",()=>{
+    const {asset}=draftSimilarityFixture(),range=h3IdentityAssessmentTrimWindow(asset,12);
+    const before=JSON.stringify({asset,range});
+    const markup=renderToStaticMarkup(createElement("div",null,...Array.from({length:79},(_,key)=>createElement(NativeHandleDetails,{key,asset,range,disabled:false,onStartFrame:()=>{throw Error("Closed handle must not change selection");}}))));
+    expect((markup.match(/<details/g)??[]).length).toBe(79);
+    expect(markup).not.toContain("<video");
+    expect(markup).not.toContain("preload=");
+    expect(markup).not.toContain("/api/storage/media");
+    expect(JSON.stringify({asset,range})).toBe(before);
+  });
   test("failed filters show assigned score range, cutoff and honest frame counts", () => {
     const { asset } = draftSimilarityFixture(), filter = asset.identityVerification!.draftSimilarityFilter!;
     filter.status = "ineligible";

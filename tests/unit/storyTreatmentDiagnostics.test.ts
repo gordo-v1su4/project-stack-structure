@@ -79,3 +79,20 @@ test("the total metadata bound includes existing progress and all previously ret
   expect(store.values).toEqual(initial);
   expect(() => assertStoryDiagnosticMetadataBudget({ storyAuthoredDiagnosticRecord: "x".repeat(200 * 1024) }, "storyReviewDiagnosticRecord", "y".repeat(60 * 1024))).toThrow("total metadata budget");
 });
+
+test("review repair appends a distinct bounded record with the same candidate hash and preserves the first rejection", async () => {
+  const store = privateStore({ stage: "reviewing" });
+  const rejection = classifyStoryGatewayRejection("review", 502, "Story logline review failed: treatment 1 stakes reviewer brief quote is not an exact excerpt");
+  await persistStoryTreatmentDiagnostic(context(), { phase: "author", outcome: "authored-unreviewed", authoredOutput: candidate() }, store);
+  await persistStoryTreatmentDiagnostic(context(), { phase: "review", reviewAttempt: 1, outcome: "rejected", rejection, authoredOutput: candidate() }, store);
+  const first = JSON.stringify(store.values.storyReviewDiagnosticRecord);
+  const descriptor = await persistStoryTreatmentDiagnostic(context(), { phase: "review", reviewAttempt: 2, outcome: "review-passed", authoredOutput: candidate(), gatewayReviewMarker: "passed" }, store);
+  const second = store.values.storyReviewRepairDiagnosticRecord as Record<string, unknown>;
+  expect(descriptor.key).toBe("storyReviewRepairDiagnosticRecord");
+  expect(JSON.stringify(store.values.storyReviewDiagnosticRecord)).toBe(first);
+  expect(second.reviewAttempt).toBe(2);
+  expect(second.candidate).toBe(undefined);
+  expect(second.candidateSha256).toBe((store.values.storyAuthoredDiagnosticRecord as Record<string, unknown>).candidateSha256);
+  expect(store.values.stage).toBe("reviewing");
+  await expect(persistStoryTreatmentDiagnostic(context(), { phase: "author", reviewAttempt: 2, outcome: "authored-unreviewed" }, store)).rejects.toThrow("review attempt");
+});
