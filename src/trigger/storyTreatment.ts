@@ -18,6 +18,7 @@ export type StoryTreatmentPayload = {
 export type StoryTreatmentGatewayResult = {
   ok: boolean;
   loglineReview: { version: 1; status: "passed" };
+  reviewEvidenceFormat: typeof STORY_REVIEW_EVIDENCE_FORMAT;
   model: string;
   output: Record<string, unknown>;
   usage?: {
@@ -27,7 +28,8 @@ export type StoryTreatmentGatewayResult = {
   };
 };
 
-export const STORY_REVIEW_EVIDENCE_FORMAT_CONSTRAINT = "Reviewer evidence format: copy each loglineQuote as an exact contiguous substring of that candidate's supplied logline, each briefQuote as an exact contiguous substring of the unchanged brief or one supplied constraint, and each momentIds entry from that candidate's supplied moment IDs. Never paraphrase, combine excerpts, invent support, or rewrite the candidate. Preserve contradicted or unclear verdicts and resolution-spoiler rejection whenever warranted; this format constraint cannot establish story support.";
+export const STORY_REVIEW_EVIDENCE_FORMAT = "indexed-spans-v1" as const;
+export const STORY_REVIEW_EVIDENCE_FORMAT_CONSTRAINT = "Reviewer evidence format: select only supplied ascending first/last token IDs from the same source, using this candidate's logline source or one original brief/constraint source as appropriate. Select momentIds only from this candidate's supplied moments. Never invent IDs, cross sources or candidates, reproduce freeform quotes, or rewrite the candidate. Preserve contradicted or unclear verdicts and resolution-spoiler rejection whenever warranted; IDs and this format constraint cannot establish semantic support.";
 const STORY_REVIEW_BUDGET_MESSAGE = "Story review exceeded its original time budget. The candidate remains unapproved.";
 class StoryEvidenceFormatRejection extends AbortTaskRunError {}
 
@@ -111,6 +113,7 @@ export async function runStoryTreatmentGateway(payload: StoryTreatmentPayload, t
     try {
       reviewed = await postStoryStage(`${endpoint}/review`, {
         operation: payload.operation ?? "generate", output, review_context: payload.reviewContext,
+        review_evidence_format: STORY_REVIEW_EVIDENCE_FORMAT,
       }, 135_000, reviewSignal, reviewAttempt);
     } catch (error) {
       if (!(error instanceof StoryEvidenceFormatRejection) || reviewSignal.aborted
@@ -119,7 +122,7 @@ export async function runStoryTreatmentGateway(payload: StoryTreatmentPayload, t
       reviewAttempt = 2;
       logger.info("Retrying independent review evidence format", { triggerRunId, reviewAttempt });
       reviewed = await postStoryStage(`${endpoint}/review`, {
-        operation: payload.operation ?? "generate", output,
+        operation: payload.operation ?? "generate", output, review_evidence_format: STORY_REVIEW_EVIDENCE_FORMAT,
         // This is an allowed data constraint, not a privileged prompt override.
         review_context: { brief: payload.reviewContext.brief, constraints: [...payload.reviewContext.constraints, STORY_REVIEW_EVIDENCE_FORMAT_CONSTRAINT] },
       }, 135_000, reviewSignal, reviewAttempt);
@@ -130,6 +133,12 @@ export async function runStoryTreatmentGateway(payload: StoryTreatmentPayload, t
         gatewayReviewMarker: "missing-or-invalid", rejection: { phase: "review", httpStatus: lastHttpStatus ?? 200, issues: [{ code: "review-approval-marker-missing" }] } });
       throw new AbortTaskRunError(STORY_LOGLINE_REVIEW_REQUIRED);
     }
+    if (reviewed.review_evidence_format !== STORY_REVIEW_EVIDENCE_FORMAT) {
+      await preserveSafely({ phase: "review", reviewAttempt, outcome: "rejected", authoredOutput, actualModel, httpStatus: lastHttpStatus,
+        gatewayReviewMarker: "passed", rejection: { phase: "review", httpStatus: lastHttpStatus ?? 200, issues: [{ code: "review-evidence-format-mismatch" }] } });
+      // The real marker alone cannot authorize legacy or unknown quote transport.
+      throw new AbortTaskRunError(STORY_LOGLINE_REVIEW_REQUIRED);
+    }
     return { ...reviewed, logline_review: reviewed.logline_review };
   });
   await preserveSafely({ phase: "review", reviewAttempt, outcome: "review-passed", authoredOutput, actualModel, httpStatus: lastHttpStatus, gatewayReviewMarker: "passed" });
@@ -138,6 +147,7 @@ export async function runStoryTreatmentGateway(payload: StoryTreatmentPayload, t
   return {
     ok: true,
     loglineReview: review.logline_review,
+    reviewEvidenceFormat: STORY_REVIEW_EVIDENCE_FORMAT,
     model: readString(result, "model") || payload.model,
     output: output as Record<string, unknown>,
     usage: usage && typeof usage === "object" && !Array.isArray(usage)

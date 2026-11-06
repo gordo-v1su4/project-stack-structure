@@ -4,7 +4,7 @@ export type StoryDiagnosticPhase = "author" | "review";
 export type StoryRejectionIssue = {
   code: "duplicate-pitch" | "unsupported-element" | "resolution-spoiler" | "review-evidence-missing"
     | "review-evidence-invalid" | "review-quote-mismatch" | "review-unknown-moment"
-    | "review-brief-quote-mismatch" | "review-time-budget" | "review-unavailable" | "review-approval-marker-missing" | "gateway-rejected";
+    | "review-brief-quote-mismatch" | "review-time-budget" | "review-unavailable" | "review-approval-marker-missing" | "review-evidence-format-mismatch" | "gateway-rejected";
   treatmentIndex?: number;
   element?: "incident" | "protagonist" | "goal" | "opposition" | "stakes";
   verdict?: "contradicted" | "unclear" | "expressed-and-supported";
@@ -187,7 +187,7 @@ export function assertStoryDiagnosticMetadataBudget(current: unknown, key: Story
 }
 
 function sanitizeRejection(value: StoryGatewayRejection, phase: StoryDiagnosticPhase): StoryGatewayRejection {
-  const codes: StoryRejectionIssue["code"][] = ["duplicate-pitch", "unsupported-element", "resolution-spoiler", "review-evidence-missing", "review-evidence-invalid", "review-quote-mismatch", "review-unknown-moment", "review-brief-quote-mismatch", "review-time-budget", "review-unavailable", "review-approval-marker-missing", "gateway-rejected"];
+  const codes: StoryRejectionIssue["code"][] = ["duplicate-pitch", "unsupported-element", "resolution-spoiler", "review-evidence-missing", "review-evidence-invalid", "review-quote-mismatch", "review-unknown-moment", "review-brief-quote-mismatch", "review-time-budget", "review-unavailable", "review-approval-marker-missing", "review-evidence-format-mismatch", "gateway-rejected"];
   if (value.phase !== phase || !Number.isInteger(value.httpStatus) || value.httpStatus < 100 || value.httpStatus > 599 || !Array.isArray(value.issues) || value.issues.length < 1 || value.issues.length > 3) throw new Error("Invalid Story diagnostic rejection.");
   const issues = value.issues.map(issue => {
     if (!codes.includes(issue.code)) throw new Error("Unknown Story diagnostic rejection code.");

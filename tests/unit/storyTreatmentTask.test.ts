@@ -17,7 +17,7 @@ mock.module("@trigger.dev/sdk", () => ({
     warn: (...args: unknown[]) => logs.push(args),
   },
 }));
-const { runStoryTreatmentGateway, storyTreatmentTask, STORY_REVIEW_EVIDENCE_FORMAT_CONSTRAINT } = await import("../../src/trigger/storyTreatment");
+const { runStoryTreatmentGateway, storyTreatmentTask, STORY_REVIEW_EVIDENCE_FORMAT_CONSTRAINT, STORY_REVIEW_EVIDENCE_FORMAT } = await import("../../src/trigger/storyTreatment");
 const { STORY_LOGLINE_REVIEW_REQUIRED } = await import("../../src/lib/storyLoglineReview");
 type DiagnosticEvent = import("../../src/lib/storyTreatmentDiagnostics").StoryDiagnosticEvent;
 const originalFetch = globalThis.fetch;
@@ -40,10 +40,10 @@ const healthy = () => Response.json({ qwenBackendHealthy: true });
 const authored = () => Response.json({ ok: true, output, model: "qwen-test" });
 
 test("authoring and independent review are ordered trace stages on the exact same output", async () => {
-  const calls = transport([healthy(), authored(), Response.json({ ok: true, logline_review: approval })]);
+  const calls = transport([healthy(), authored(), Response.json({ ok: true, logline_review: approval, review_evidence_format: STORY_REVIEW_EVIDENCE_FORMAT })]);
   const result = await runStoryTreatmentGateway(payload, "run-test");
   expect(calls.map(call => new URL(call.url).pathname)).toEqual(["/health", "/story/treatments/author", "/story/treatments/review"]);
-  expect(calls[2].body).toEqual({ operation: "revise", output, review_context: payload.reviewContext });
+  expect(calls[2].body).toEqual({ operation: "revise", output, review_context: payload.reviewContext, review_evidence_format: STORY_REVIEW_EVIDENCE_FORMAT });
   expect(result.output).toEqual(output);
   expect(result.loglineReview).toEqual(approval);
   expect(spans).toEqual(["Prepare GPU story model", "Author story on GPU", "Review story logline on GPU"]);
@@ -137,10 +137,12 @@ test("only exact quote/id evidence failures retry review once on byte-identical 
   for (const reason of ["logline quote is not an exact excerpt", "brief quote is not an exact excerpt", "cited an unknown moment id"]) {
     const events: DiagnosticEvent[] = [];
     const before = JSON.stringify(payload);
-    const calls = transport([healthy(), authored(), formatFailure(reason), Response.json({ ok: true, logline_review: approval })]);
+    const calls = transport([healthy(), authored(), formatFailure(reason), Response.json({ ok: true, logline_review: approval, review_evidence_format: STORY_REVIEW_EVIDENCE_FORMAT })]);
     const result = await runStoryTreatmentGateway(payload, "run-test", async event => { events.push(structuredClone(event)); });
     expect(calls).toHaveLength(4);
     expect(calls[2].signal).toBe(calls[3].signal);
+    expect(calls[2].body?.review_evidence_format).toBe(STORY_REVIEW_EVIDENCE_FORMAT);
+    expect(calls[3].body?.review_evidence_format).toBe(STORY_REVIEW_EVIDENCE_FORMAT);
     expect(JSON.stringify(calls[2].body?.output)).toBe(JSON.stringify(calls[3].body?.output));
     expect(calls[3].body?.review_context).toEqual({ brief: payload.reviewContext.brief, constraints: [STORY_REVIEW_EVIDENCE_FORMAT_CONSTRAINT] });
     expect(JSON.stringify(payload)).toBe(before);
@@ -177,7 +179,7 @@ test("expiration of the shared review timer cannot accept a late repair response
   AbortSignal.timeout = ms => ms === 135_000 ? controller.signal : originalTimeout(ms);
   try {
     const events: DiagnosticEvent[] = [];
-    const calls = transport([healthy(), authored(), formatFailure("logline quote is not an exact excerpt"), Response.json({ ok: true, logline_review: approval })], count => { if (count === 4) controller.abort(); });
+    const calls = transport([healthy(), authored(), formatFailure("logline quote is not an exact excerpt"), Response.json({ ok: true, logline_review: approval, review_evidence_format: STORY_REVIEW_EVIDENCE_FORMAT })], count => { if (count === 4) controller.abort(); });
     await expect(runStoryTreatmentGateway(payload, "run-test", async e => { events.push(e); })).rejects.toThrow("original time budget");
     expect(calls[2].signal).toBe(calls[3].signal);
     expect(events.some(e => e.outcome === "review-passed")).toBe(false);
@@ -199,7 +201,7 @@ test("an expired first review or full context budget prevents any second HTTP re
 });
 
 test("production retention keeps both review attempts hash-bound under canonical owner without logging candidates", async () => {
-  transport([healthy(), authored(), formatFailure("brief quote is not an exact excerpt"), Response.json({ ok: true, logline_review: approval })]);
+  transport([healthy(), authored(), formatFailure("brief quote is not an exact excerpt"), Response.json({ ok: true, logline_review: approval, review_evidence_format: STORY_REVIEW_EVIDENCE_FORMAT })]);
   const result = await executeTask(payload, { ctx: { run: { id: "run_repair123", tags: ["user:github-owner"] } } });
   expect(result).not.toBe(undefined);
   const first = privateMetadata.storyReviewDiagnosticRecord as Record<string, unknown>, second = privateMetadata.storyReviewRepairDiagnosticRecord as Record<string, unknown>;
@@ -238,4 +240,41 @@ test("ordinary nondeadline review transport rejection keeps its original retry s
   try { await runStoryTreatmentGateway(payload, "run-test"); } catch (error) { caught = error; }
   expect(caught).toBe(failure);
   expect(calls).toHaveLength(3);
+});
+
+test("legacy or unknown review formats cannot grant acceptance even with a real passed marker", async () => {
+  for (const format of [undefined, null, "freeform-v1", "indexed-spans-v2", true, {}]) {
+    const calls = transport([healthy(), authored(), Response.json({ ok: true, logline_review: approval, review_evidence_format: format })]);
+    const events: DiagnosticEvent[] = [];
+    await expect(runStoryTreatmentGateway(payload, "run-test", async event => { events.push(event); })).rejects.toThrow(STORY_LOGLINE_REVIEW_REQUIRED);
+    expect(calls).toHaveLength(3);
+    expect(events.at(-1)?.outcome).toBe("rejected");
+    expect(events.at(-1)?.gatewayReviewMarker).toBe("passed");
+    expect(events.at(-1)?.rejection?.issues[0].code).toBe("review-evidence-format-mismatch");
+    expect(events.some(event => event.outcome === "review-passed")).toBe(false);
+  }
+});
+
+test("indexed format without independent approval still fails, and incompatible repair response cannot fall back", async () => {
+  let calls = transport([healthy(), authored(), Response.json({ ok: true, review_evidence_format: STORY_REVIEW_EVIDENCE_FORMAT })]);
+  await expect(runStoryTreatmentGateway(payload, "run-test")).rejects.toThrow(STORY_LOGLINE_REVIEW_REQUIRED);
+  expect(calls).toHaveLength(3);
+  const events: DiagnosticEvent[] = [];
+  calls = transport([healthy(), authored(), formatFailure("logline quote is not an exact excerpt"), Response.json({ ok: true, logline_review: approval })]);
+  await expect(runStoryTreatmentGateway(payload, "run-test", async event => { events.push(event); })).rejects.toThrow(STORY_LOGLINE_REVIEW_REQUIRED);
+  expect(calls).toHaveLength(4);
+  expect(events.at(-1)?.reviewAttempt).toBe(2);
+  expect(events.at(-1)?.rejection?.issues[0].code).toBe("review-evidence-format-mismatch");
+});
+
+test("production format-mismatch diagnostics stay private and preserve the unapproved authored candidate", async () => {
+  transport([healthy(), authored(), Response.json({ ok: true, logline_review: approval })]);
+  await expect(executeTask(payload, { ctx: { run: { id: "run_format123", tags: ["user:github-owner"] } } })).rejects.toThrow(STORY_LOGLINE_REVIEW_REQUIRED);
+  const authoredRecord = privateMetadata.storyAuthoredDiagnosticRecord as Record<string, unknown>, review = privateMetadata.storyReviewDiagnosticRecord as Record<string, unknown>;
+  expect(authoredRecord.acceptance).toBe("diagnostic-only-not-approved");
+  expect(authoredRecord.candidate).toEqual(output);
+  expect(review.outcome).toBe("rejected");
+  expect((review.rejection as { issues: { code: string }[] }).issues[0].code).toBe("review-evidence-format-mismatch");
+  expect(privateMetadata.storyReviewRepairDiagnosticRecord).toBe(undefined);
+  expect(JSON.stringify(logs)).not.toContain("private");
 });

@@ -104,7 +104,8 @@ sequence and requested visuals before accepting a revision.
 2. `Author story on GPU`: POST `/story/treatments/author` with `operation`,
    `model`, `instructions`, `input`, `max_tokens`, and `review_context`.
 3. `Review story logline on GPU`: POST `/story/treatments/review` with the
-   **exact authored output**, the same operation, and the same review context.
+   **exact authored output**, the same operation/review context, and explicit
+   `review_evidence_format: "indexed-spans-v1"` on both review attempts.
 
 Both gateway routes require bearer authentication. Authoring returns an output
 object and may return model/usage information; it cannot grant review approval.
@@ -112,6 +113,13 @@ Only the independent review response can supply
 `logline_review: {version: 1, status: "passed"}`. Validate that marker inside
 the review span before returning the worker result. Never manufacture it to
 bypass a rejection, and never trust a marker returned by authoring.
+The worker additionally requires the response's exact
+`review_evidence_format: "indexed-spans-v1"`. A legacy or unknown format fails
+closed even when its independent marker passed; private diagnostics retain
+`review-evidence-format-mismatch`. No silent fallback to freeform quotes is
+allowed. The gateway resolves server-issued source/token-range IDs to exact
+original evidence, then runs the unchanged independent semantic/support/spoiler
+validation. IDs alone do not establish semantic support or acceptance.
 
 The final successful Trigger output has this shape (camelCase at this boundary):
 
@@ -119,6 +127,7 @@ The final successful Trigger output has this shape (camelCase at this boundary):
 {
   "ok": true,
   "loglineReview": {"version": 1, "status": "passed"},
+  "reviewEvidenceFormat": "indexed-spans-v1",
   "model": "configured-model",
   "output": {"treatment": {}},
   "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
