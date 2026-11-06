@@ -1,7 +1,8 @@
 import { getSessionUser, unauthorizedResponse } from "@/lib/session";
 import { readStudioProject } from "@/lib/studioProjectStore";
 import { getMediaGatewayConfig } from "@/lib/mediaGateway";
-import { H3RequestError, materializeH3Job, parseH3Request } from "@/lib/h3GenerationServer";
+import { H3RequestError, h3GenerationJobId, materializeH3Job, parseH3Request } from "@/lib/h3GenerationServer";
+import { H3_LEGACY_PROFILE } from "@/components/studio/h3Generation";
 import { claimH3GenerationIntent, createH3Job, listH3Jobs, pinH3JobReferences, readH3Job, updateH3Job } from "@/lib/h3JobStore";
 import { compileH3Prompt } from "@/lib/h3Workflow";
 import { retrieveTriggerRun, triggerH3Generation } from "@/lib/triggerOrchestration";
@@ -38,7 +39,23 @@ export async function POST(request: Request) {
     if (!project) throw new H3RequestError("Project not found.", 404);
     const config = getMediaGatewayConfig();
     if (!config) throw new H3RequestError("Generation storage is not configured.", 503);
-    const proposed = await pinH3JobReferences(materializeH3Job(user.id, project, input, config.bucket));
+    let proposed = await pinH3JobReferences(materializeH3Job(user.id, project, input, config.bucket));
+    // A release may change the default profile between durable creation and
+    // dispatch. Only an exact existing legacy request may retain that profile.
+    const legacyId = h3GenerationJobId(user.id, input, proposed.references, { profile: H3_LEGACY_PROFILE });
+    const legacy = await readH3Job(user.id, input.projectId, legacyId);
+    if (legacy) {
+      if (legacy.id !== legacyId || legacy.ownerId !== user.id || legacy.projectId !== input.projectId
+        || legacy.profile !== H3_LEGACY_PROFILE || legacy.conditioningPreparationVersion !== undefined
+        || JSON.stringify(legacy.request) !== JSON.stringify(input)
+        || JSON.stringify(legacy.references) !== JSON.stringify(proposed.references)) {
+        throw new H3RequestError("The saved generation intent no longer matches this shot.", 409);
+      }
+      proposed = await pinH3JobReferences(materializeH3Job(user.id, project, input, config.bucket, {
+        profile: legacy.profile, conditioningPreparationVersion: legacy.conditioningPreparationVersion,
+      }));
+      if (proposed.id !== legacy.id) throw new H3RequestError("The saved generation references changed.", 409);
+    }
     // Compile before enqueue so invalid language or reference roles create no GPU work.
     try { compileH3Prompt(proposed); } catch (error) { throw new H3RequestError((error as Error).message, 422); }
     await claimH3GenerationIntent(proposed);

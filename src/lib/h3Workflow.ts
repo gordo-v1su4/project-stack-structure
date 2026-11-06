@@ -2,6 +2,7 @@ import { h3FrameCount, H3_FPS, H3_WIDTH, H3_HEIGHT, type H3GenerationJob } from 
 import type { ComfyWorkflow } from "@/components/studio/localGeneration";
 import { assertReferenceLanguage } from "@/components/studio/referenceLanguage";
 import { h3StableSeed } from "./h3GenerationServer";
+import { assertH3ConditioningProfile } from "./h3ReferenceConditioning";
 
 export const H3_MODEL = "minimax_h3_ref2va_pruned_int8_convrot.safetensors";
 export const H3_CLIP = "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors";
@@ -54,6 +55,7 @@ export function compileH3Prompt(job: H3GenerationJob) {
  * This version requires its own live baseline before production promotion.
  */
 export function buildH3Workflow(job: H3GenerationJob, inputPaths: string[]) {
+  assertH3ConditioningProfile(job);
   if (inputPaths.length !== job.references.length) throw new Error("H3 reference mapping changed.");
   const compiled = compileH3Prompt(job);
   const conditioning: Record<string, unknown> = { clip: ["clip", 0], vae: ["vae", 0], audio_vae: ["audio_vae", 0],

@@ -2593,6 +2593,7 @@ export default function StudioApp() {
 
             {tab === "story" && (
               <StoryTab
+                existingProject={storedMusicVideoProject}
                 analysis={beatJoinAnalysis}
                 audioStatus={audioStatus}
                 videoSources={videoSources}

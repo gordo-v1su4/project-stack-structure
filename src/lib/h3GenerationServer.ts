@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { H3_MAX_SHOT_SECONDS, H3_PROFILE, type H3GenerationJob, type H3GenerationRequest, type H3ReferenceSnapshot } from "@/components/studio/h3Generation";
+import { H3_MAX_SHOT_SECONDS, H3_PROFILE, H3_LEGACY_PROFILE, H3_CONDITIONING_PREPARATION_VERSION, type H3GenerationProfileOptions, type H3GenerationJob, type H3GenerationRequest, type H3ReferenceSnapshot } from "@/components/studio/h3Generation";
 import { isPlacementPlanCurrent } from "@/components/studio/musicVideoProject";
 import { assertReferenceLanguage } from "@/components/studio/referenceLanguage";
 import { buildStoryContentSignature } from "@/components/studio/storyTreatments";
@@ -7,6 +7,7 @@ import { buildStudioSourceContextSignature } from "@/components/studio/studioSou
 import { mediaUploadBelongsToOwner } from "./essentiaUpload";
 import type { SavedStudioProject } from "./studioProjectStore";
 import { normalizeStudioOwnerSegment, normalizeStudioProjectId } from "./studioStoragePaths";
+import { assertH3ConditioningProfile } from "./h3ReferenceConditioning";
 
 export class H3RequestError extends Error {
   constructor(message: string, public status = 400) { super(message); }
@@ -55,12 +56,19 @@ export function parseH3Request(value: unknown): H3GenerationRequest {
 
 function digest(value: unknown) { return createHash("sha256").update(JSON.stringify(value)).digest("hex"); }
 
-export function h3GenerationJobId(ownerId: string, request: H3GenerationRequest, references: H3ReferenceSnapshot[]) {
-  return `h3-${digest([H3_PROFILE, ownerId, request, references])}`;
+export function h3GenerationJobId(ownerId: string, request: H3GenerationRequest, references: H3ReferenceSnapshot[],
+  options: H3GenerationProfileOptions = { profile: H3_LEGACY_PROFILE }) {
+  assertH3ConditioningProfile(options);
+  // Legacy bytes must remain identical for durable jobs submitted before preparation existed.
+  return `h3-${digest(options.profile === H3_LEGACY_PROFILE
+    ? [H3_LEGACY_PROFILE, ownerId, request, references]
+    : [options.profile, ownerId, request, references, options.conditioningPreparationVersion])}`;
 }
 
 /** Validate against the saved project again immediately before dispatch and GPU execution. */
-export function materializeH3Job(ownerId: string, saved: SavedStudioProject, request: H3GenerationRequest, bucket: string): H3GenerationJob {
+export function materializeH3Job(ownerId: string, saved: SavedStudioProject, request: H3GenerationRequest, bucket: string,
+  options: H3GenerationProfileOptions = { profile: H3_PROFILE, conditioningPreparationVersion: H3_CONDITIONING_PREPARATION_VERSION }): H3GenerationJob {
+  assertH3ConditioningProfile(options);
   if (saved.project.ownerId !== normalizeStudioOwnerSegment(ownerId) || saved.project.id !== normalizeStudioProjectId(request.projectId)) {
     throw new H3RequestError("Project not found.", 404);
   }
@@ -122,9 +130,10 @@ export function materializeH3Job(ownerId: string, saved: SavedStudioProject, req
   for (const ref of references.filter(ref => ref.role === "identity")) {
     if (!mentions(ref.canonicalName)) throw new H3RequestError(`Use ${ref.canonicalName}'s exact name in the visible shot direction, or omit that identity reference.`);
   }
-  const id = h3GenerationJobId(ownerId, request, references);
+  const id = h3GenerationJobId(ownerId, request, references, options);
   const now = new Date().toISOString();
-  return { version: 1, id, ownerId, projectId: request.projectId, profile: H3_PROFILE, request, references,
+  return { version: 1, id, ownerId, projectId: request.projectId, profile: options.profile,
+    ...(options.conditioningPreparationVersion ? { conditioningPreparationVersion: options.conditioningPreparationVersion } : {}), request, references,
     target: { planSignature: request.planSignature, timelineItemId: item.id, requirementId: item.requirementId,
       narrativeMomentId: item.narrativeMomentId, sectionId: item.sectionId, sectionLabel: item.label,
       songStart: request.songStart, songEnd: request.songEnd }, state: "queued", createdAt: now, updatedAt: now };

@@ -21,14 +21,14 @@ The official immutable OpenCV Zoo model URLs, model SHA256 values and sizes are 
 
 ## Worker input
 
-Pass only worker-owned temporary paths. The browser must never select a server path or submit an identity proof. The worker already holds hydrated `0.png`, `1.png`, etc. and `shot.mp4` before persisting a generated H3 clip.
+Pass only worker-owned temporary paths. The browser must never select a server path or submit an identity proof. Before verification, the worker rehydrates the original reference files as `identity-reference-0`, `identity-reference-1`, etc., checks their raw hashes, and assesses `shot.mp4` before persisting a generated H3 clip. These identity inputs remain the raw authorities even when H3 receives a cropped conditioning image.
 
 ```json
 {
   "version": 1,
   "assetId": "generated-asset-id",
   "jobId": "h3-job-id",
-  "generationModel": "h3-ref2va-int8-v1",
+  "generationModel": "h3-ref2va-int8-v2",
   "videoPath": "/worker/tmp/shot.mp4",
   "mediaSha256": "64-lowercase-hex-characters",
   "frameCount": 124,
@@ -36,26 +36,28 @@ Pass only worker-owned temporary paths. The browser must never select a server p
   "durationSeconds": 5.166666666666667,
   "verifiedStartFrame": 0,
   "verifiedEndFrameExclusive": 60,
-  "generationReferenceHashes": ["ordered-image-byte-sha256-values"],
-  "identityReferenceHashes": ["ordered-identity-image-byte-sha256-values"],
+  "generationReferenceHashes": ["ordered-raw-authority-byte-sha256-values"],
+  "identityReferenceHashes": ["ordered-raw-identity-authority-byte-sha256-values"],
   "references": [{
-    "path": "/worker/tmp/0.png",
-    "hash": "image-byte-sha256",
+    "path": "/worker/tmp/identity-reference-0",
+    "hash": "raw-authority-byte-sha256",
     "canonicalName": "Diego",
     "role": "identity"
   }]
 }
 ```
 
-All hashes above are illustrative placeholders; actual input requires exactly 64 lowercase hexadecimal characters. Every generation reference has one local file binding, including environments. The ordered `identityReferenceHashes` must exactly match those generation references declared `role: identity`. Byte changes fail before model inference. The decoded frame count/FPS must match the worker probe. Frame bounds are half-open: `0..60` means precisely frames 0–59, the intended 2.5 seconds, while the unused generated handles remain outside this assessment. A legacy `verifiedEndFrame` input alias is accepted; output always uses `verifiedEndFrameExclusive`.
+All hashes above are illustrative placeholders; actual input requires exactly 64 lowercase hexadecimal characters. Despite its historical name, `generationReferenceHashes` binds the ordered **raw reference authorities** (`job.referenceHashes`), including environments. The ordered `identityReferenceHashes` must exactly match their `role: identity` subset. The report's `referenceHashes` carries these same raw authority hashes. The job's separate `conditioningReferenceHashes` records the actual image bytes uploaded to H3 after versioned preparation; those cropped-image hashes do not replace the verifier's raw authorities. Byte changes fail before model inference. The decoded frame count/FPS must match the worker probe. Frame bounds are half-open: `0..60` means precisely frames 0–59, the intended 2.5 seconds, while the unused generated handles remain outside this assessment. A legacy `verifiedEndFrame` input alias is accepted; output always uses `verifiedEndFrameExclusive`.
 
-Optional identity reference `faceRegions` contains `{name, rect: [x,y,width,height]}` normalized to the actual sheet. Each declared region must have exactly one quality face. Without regions, the CLI detects all quality faces in the sheet (maximum nine); that gallery is diagnostic and can contain inconsistent views. Region selection and gallery-consistency criteria must be frozen with a future calibration profile. A whole multi-panel sheet is never embedded as one face.
+Optional identity reference `faceRegions` contains `{name, rect: [x,y,width,height]}` normalized to the raw sheet. Each declared region must have exactly one quality face. `src/lib/h3IdentityGallery.ts` resolves the fixed `diego-canonical-three-view-v1` gallery only for canonical name `Diego`, role `identity`, and raw SHA256 `47d772694e0c14397707f31b7802fe91d434da1e4b54be7bac3eb00037364381`: front `[0,0,0.285,0.55]`, three-quarter `[0.285,0,0.25,0.55]`, and upper-body `[0,0.55,0.5,0.365]`. The worker supplies those exact regions independently of the portrait crop used for generation. Unknown references receive no resolver override. Without regions, the CLI detects all quality faces in the sheet (maximum nine); that gallery is diagnostic and can contain inconsistent views. A whole multi-panel sheet is never embedded as one face. The fixed three-view geometry preserves benchmark comparability; it does not establish a validated calibration or enable automatic pass.
 
 Optional `provisionalThreshold` records a diagnostic cutoff only. Optional `--sample-count N` measures evenly spaced frames and explicitly leaves scope coverage incomplete when frames are omitted. Production invocation omits this option and examines every frame in the selected trim, bounded to 512 frames.
 
 ## Report and abstention
 
-The top-level report matches `GeneratedAssetIdentityVerification` in `src/components/studio/generatedAssetIdentity.ts`. It binds asset/job/generation model, complete media byte SHA256, ordered conditioning hashes, measured video timing and the exact verification scope. Samples contain decoded frame SHA256, timestamp and per-reference track/cosine scores. `diagnostics` additionally records pinned runtime/model provenance, canonical view pairs and leave-one-view-out scores, per-face boxes/quality and diagnostic assignments.
+The top-level report matches `GeneratedAssetIdentityVerification` in `src/components/studio/generatedAssetIdentity.ts`. It binds asset/job/generation model, complete media byte SHA256, ordered raw authority hashes, measured video timing and the exact verification scope. Samples contain decoded frame SHA256, timestamp and per-reference track/cosine scores. `diagnostics` additionally records pinned runtime/model provenance, canonical view pairs and leave-one-view-out scores, per-face boxes/quality and diagnostic assignments.
+
+`diagnostics.galleryProfile` records a stable SHA256 of the ordered raw identity hashes, canonical names and actual normalized region definitions, including whole-sheet defaults. That SHA is appended to `verifier.preprocessVersion` as `-gallery-v2-<sha256>`, so whole-sheet and three-view measurements cannot share a preprocessing identifier. Local file paths do not affect this hash. The fixed Diego three-view profile hashes to `6e3acaeea694c1a1d1df4fbd8f2a5365aa801cca8fd2a07faf8f6634af4dd9e7`; `calibrationId` remains `uncalibrated-no-automatic-pass-v1`.
 
 SFace alignment follows OpenCV's five-landmark `FaceRecognizerSF.alignCrop` to 112x112. Recognition uses ONNX Runtime CPU only, intra-op threads 2/inter-op 1, sequential execution; input is RGB float32 NCHW, scale 1 and mean 0, matching the official implementation. Features and their mean template are L2-normalized. OpenCV detection is CPU only with two threads and OpenCL disabled. No features or demographic classifier are sent to an LLM.
 

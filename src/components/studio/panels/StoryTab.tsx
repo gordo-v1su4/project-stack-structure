@@ -1,7 +1,7 @@
 "use client";
 
 import { buildStudioSourceContextSignature } from "../studioSourceContext";
-import { startTransition, useEffect, useMemo, type Dispatch, type SetStateAction } from "react";
+import { startTransition, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import type { DeepgramTranscriptSummary } from "../deepgramUtils";
 import { fmt } from "../math";
 import {
@@ -37,6 +37,7 @@ import { formatVocalStemTranscriptStatus } from "../vocalStemTranscription";
 import { reconcileDetectedStorySongMap } from "../storySongMap";
 import type { BeatJoinAnalysis, SegmentPreview, UploadedVideoSource } from "../types";
 import type { ReferenceAsset } from "../referenceAssets";
+import { preserveReviewedStoryArrangement } from "../reconfirmStoryProject";
 
 export type StoryBeatDraft = StoryPlanDraft;
 
@@ -62,6 +63,7 @@ type StoryTabProps = {
   videoSources: UploadedVideoSource[];
   segmentPreviews: SegmentPreview[];
   state: StoryTabState;
+  existingProject?: MusicVideoProject | null;
   onStateChange: Dispatch<SetStateAction<StoryTabState>>;
   onProjectChange?: (project: MusicVideoProject) => void;
 };
@@ -97,8 +99,9 @@ export function createDefaultStoryTabState(): StoryTabState {
   };
 }
 
-export function StoryTab({ referenceRevision, referenceAssets, analysis, audioStatus, videoSources, segmentPreviews, state, onStateChange, onProjectChange }: StoryTabProps) {
+export function StoryTab({ referenceRevision, referenceAssets, analysis, audioStatus, videoSources, segmentPreviews, state, existingProject, onStateChange, onProjectChange }: StoryTabProps) {
   const { transcriptSummary, storyBeats, activeBeatId, storyGenerated } = state;
+  const [confirmationError, setConfirmationError] = useState<string | null>(null);
   const editSettings = useMemo(() => normalizeStoryEditSettings(state.editSettings), [state.editSettings]);
 
   function updateState(patch: Partial<StoryTabState>) {
@@ -149,11 +152,6 @@ export function StoryTab({ referenceRevision, referenceAssets, analysis, audioSt
   const liveSourceContextSignature = buildStudioSourceContextSignature({ analysis, videoSources, referenceRevision });
   const hasCurrentStoryPlan = Boolean(!songMapNeedsReconciliation && storyGenerated && state.confirmedTreatmentSnapshot && state.storyContentSignature
     && state.confirmedSourceContextSignature === liveSourceContextSignature && isPlacementPlanCurrent(musicVideoProject));
-
-  useEffect(() => {
-    if (songMapNeedsReconciliation || !storyGenerated || !state.confirmedTreatmentSnapshot || !state.storyContentSignature) return;
-    onProjectChange?.(musicVideoProject);
-  }, [musicVideoProject, onProjectChange, songMapNeedsReconciliation, storyGenerated, state.confirmedTreatmentSnapshot, state.storyContentSignature]);
 
   useEffect(() => {
     if (!songMapNeedsReconciliation) return;
@@ -232,19 +230,32 @@ export function StoryTab({ referenceRevision, referenceAssets, analysis, audioSt
   }
 
   function confirmStoryPlan(treatment: StoryTreatment) {
+    setConfirmationError(null);
     const storyBeatsWithAnchors = applyTreatmentAnchorsToStoryBeats(plannedStoryBeats, treatment);
+    const confirmedContext = buildStudioSourceContextSignature({ analysis, videoSources, referenceRevision });
+    const prepared = prepareStoryTabPlacements({ videoSources, editSettings, project: applyTreatmentCoverageToProject(
+      createMusicVideoProject({ analysis, duration: totalDuration || 0, lyricChunks: transcriptSummary?.chunks ?? [],
+        storyDrafts: storyBeatsWithAnchors, videoSources, segmentPreviews }), treatment,
+    ) }, confirmedContext);
+    let confirmedProject: MusicVideoProject;
+    try { confirmedProject = preserveReviewedStoryArrangement(existingProject, prepared); }
+    catch (error) { setConfirmationError(error instanceof Error ? error.message : "Existing accepted cuts could not be preserved."); return; }
+    // Only an explicit confirmation may publish an arrangement. Opening Story or
+    // deriving a preview after an append must never replace accepted placements.
+    onProjectChange?.(confirmedProject);
     updateState({
       storyBeats: storyBeatsWithAnchors,
       storyGenerated: true,
       confirmedTreatmentId: treatment.id,
       confirmedTreatmentSnapshot: treatment,
       storyContentSignature: buildStoryContentSignature(treatment, storyBeatsWithAnchors),
-      confirmedSourceContextSignature: buildStudioSourceContextSignature({ analysis, videoSources, referenceRevision }),
+      confirmedSourceContextSignature: confirmedContext,
     });
   }
 
   return (
     <div className="space-y-3">
+      {confirmationError ? <p role="alert" className="text-sm text-danger">{confirmationError}</p> : null}
       <StoryTreatmentPlanner
         referenceRevision={referenceRevision}
         referenceAssets={referenceAssets}

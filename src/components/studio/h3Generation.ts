@@ -32,12 +32,32 @@ export type H3ReferenceSnapshot = {
 export type H3GenerationState = "queued" | "preparing" | "submitting" | "submission_unknown"
   | "rendering" | "persisting" | "ready" | "failed" | "cancel_requested" | "cancelled";
 
+export const H3_LEGACY_PROFILE = "h3-ref2va-int8-v1" as const;
+export const H3_PROFILE = "h3-ref2va-int8-v2" as const;
+export const H3_CONDITIONING_PREPARATION_VERSION = "canonical-front-crop-v1" as const;
+export type H3GenerationProfile = typeof H3_LEGACY_PROFILE | typeof H3_PROFILE;
+export type H3GenerationProfileOptions = {
+  profile: H3GenerationProfile;
+  conditioningPreparationVersion?: typeof H3_CONDITIONING_PREPARATION_VERSION;
+};
+export type H3ConditioningPreparation = {
+  version: "original-v1" | typeof H3_CONDITIONING_PREPARATION_VERSION;
+  /** Authority bytes remain distinct from the PNG bytes actually sent to H3. */
+  rawSha256: string;
+  operation: "original" | "crop";
+  sourceWidth: number;
+  sourceHeight: number;
+  crop?: { x: number; y: number; width: number; height: number };
+  ffmpegFilter?: string;
+};
+
 export type H3GenerationJob = {
   version: 1;
   id: string;
   ownerId: string;
   projectId: string;
-  profile: "h3-ref2va-int8-v1";
+  profile: H3GenerationProfile;
+  conditioningPreparationVersion?: typeof H3_CONDITIONING_PREPARATION_VERSION;
   request: H3GenerationRequest;
   references: H3ReferenceSnapshot[];
   target: GeneratedStudioAssetTarget;
@@ -49,12 +69,13 @@ export type H3GenerationJob = {
   error?: string;
   cancelRequestedAt?: string;
   referenceHashes?: string[];
+  conditioningReferenceHashes?: string[];
+  conditioningPreparations?: H3ConditioningPreparation[];
   compiledPrompt?: string;
   frames?: number;
   result?: { asset: GeneratedStudioAsset };
 };
 
-export const H3_PROFILE = "h3-ref2va-int8-v1" as const;
 export const H3_FPS = 24;
 export const H3_WIDTH = 1344;
 export const H3_HEIGHT = 768;

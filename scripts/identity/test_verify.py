@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import cv2
 import numpy as np
-from verify import Verifier, assess, unit, validate_input
+from verify import Verifier, assess, identity_gallery_profile, unit, validate_input
 
 
 class FakeVideo:
@@ -106,6 +106,36 @@ class IdentityGateTests(unittest.TestCase):
         self.value["references"][0]["faceRegions"] = [{"name": "outside", "rect": [.8, 0, .5, 1]}]
         with self.assertRaisesRegex(ValueError, "outside its image"):
             validate_input(self.value)
+
+    def test_gallery_profile_binds_actual_regions_names_raw_bytes_and_order_without_local_paths(self):
+        baseline = identity_gallery_profile(self.value)
+        changed_path = copy.deepcopy(self.value)
+        changed_path["references"][0]["path"] = "/another/runtime/reference.png"
+        self.assertEqual(baseline, identity_gallery_profile(changed_path))
+        explicit_whole = copy.deepcopy(self.value)
+        explicit_whole["references"][0]["faceRegions"] = [{"name": "whole-sheet", "rect": [0., 0., 1., 1.]}]
+        self.assertEqual(baseline, identity_gallery_profile(explicit_whole))
+        self.value["references"][0]["faceRegions"] = [{"name": "front", "rect": [0, 0, .285, .55]}]
+        cropped = identity_gallery_profile(self.value)
+        self.assertNotEqual(baseline["sha256"], cropped["sha256"])
+        report = self.fake_assess()
+        self.assertTrue(report["verifier"]["preprocessVersion"].endswith(cropped["sha256"]))
+        self.assertEqual(report["diagnostics"]["galleryProfile"], cropped)
+        self.assertEqual(report["status"], "unverifiable")
+        self.assertIn("uncalibrated", report["verifier"]["calibrationId"])
+        for field, replacement in [("hash", "a" * 64), ("canonicalName", "Someone Else")]:
+            altered = copy.deepcopy(self.value)
+            altered["references"][0][field] = replacement
+            if field == "hash": altered["identityReferenceHashes"] = [replacement]
+            self.assertNotEqual(cropped["sha256"], identity_gallery_profile(altered)["sha256"])
+        self.value["references"][0]["faceRegions"][0]["rect"][2] = .3
+        self.assertNotEqual(cropped["sha256"], identity_gallery_profile(self.value)["sha256"])
+        second = {**self.value["references"][0], "hash": "b" * 64, "canonicalName": "Another Identity"}
+        self.value["references"].append(second)
+        self.value["identityReferenceHashes"].append(second["hash"])
+        ordered = identity_gallery_profile(self.value)["sha256"]
+        self.value["identityReferenceHashes"].reverse()
+        self.assertNotEqual(ordered, identity_gallery_profile(self.value)["sha256"])
 
 
 @unittest.skipUnless(os.environ.get("IDENTITY_TEST_MODEL_DIR"), "Official model files required for the numerical preprocessing check")

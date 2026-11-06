@@ -21,6 +21,7 @@ from download_models import sha256_file
 
 VERSION = "sface-yunet-cpu-v1"
 PREPROCESS_VERSION = "opencv412-aligncrop112-rgb-f32-nchw-unit-centroid-v1"
+GALLERY_PROFILE_VERSION = "ordered-raw-identity-normalized-rois-half-even-v1"
 MODEL = "opencv-sface-2021dec-yunet-2023mar"
 HASH = re.compile(r"^[a-f0-9]{64}$")
 PINS = {"numpy": "2.2.6", "opencv-python-headless": "4.12.0.88", "onnxruntime": "1.23.2"}
@@ -81,7 +82,14 @@ def validate_input(value):
         if not isinstance(reference.get("path"), str) or not isinstance(reference.get("canonicalName"), str) or not reference["canonicalName"].strip():
             raise ValueError("Missing local named reference image")
         by_hash[reference["hash"]] = reference
-        for region in reference.get("faceRegions", []):
+        regions = reference.get("faceRegions", [])
+        if not isinstance(regions, list) or len(regions) > 9:
+            raise ValueError("Invalid reference face regions")
+        region_names = set()
+        for region in regions:
+            if not isinstance(region, dict) or not isinstance(region.get("name"), str) or not region["name"].strip() or region["name"] in region_names:
+                raise ValueError("Invalid or duplicate reference face region name")
+            region_names.add(region["name"])
             rect = region.get("rect", [])
             if len(rect) != 4 or any(not isinstance(x, (int, float)) or not math.isfinite(x) for x in rect):
                 raise ValueError("Invalid normalized reference face region")
@@ -96,6 +104,20 @@ def validate_input(value):
         if by_hash[reference_hash].get("role") != "identity":
             raise ValueError("Required character reference is not declared as identity")
     return value
+
+
+def identity_gallery_profile(value):
+    """Bind scores to actual ordered authority bytes and ROI geometry, never local paths."""
+    by_hash = {reference["hash"]: reference for reference in value["references"]}
+    references = []
+    for reference_hash in value["identityReferenceHashes"]:
+        reference = by_hash[reference_hash]
+        regions = reference.get("faceRegions") or [{"name": "whole-sheet", "rect": [0, 0, 1, 1]}]
+        references.append({"rawSha256": reference_hash, "canonicalName": reference["canonicalName"],
+            "faceRegions": [{"name": region["name"], "rect": [float(x) for x in region["rect"]]} for region in regions]})
+    definition = {"version": GALLERY_PROFILE_VERSION, "references": references}
+    digest = hashlib.sha256(json.dumps(definition, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")).hexdigest()
+    return {**definition, "sha256": digest}
 
 
 class Verifier:
@@ -189,6 +211,7 @@ def assess(value, model_dir, sample_count=None):
         if sha256_file(reference["path"]) != reference["hash"]:
             raise ValueError("Reference bytes changed from the worker binding")
     verifier = Verifier(model_dir)
+    gallery_profile = identity_gallery_profile(value)
     start, end = value["verifiedStartFrame"], value["verifiedEndFrameExclusive"]
     report = {"version": 1, "status": "unverifiable", "assetId": value["assetId"], "jobId": value["jobId"],
         "generationModel": value["generationModel"], "mediaSha256": value["mediaSha256"],
@@ -197,12 +220,13 @@ def assess(value, model_dir, sample_count=None):
         "verifiedStartFrame": start, "verifiedEndFrameExclusive": end, "examinedFrameCount": 0,
         "unverifiableFrameCount": 0, "ambiguousFrameCount": 0,
         "assessedAt": datetime.now(timezone.utc).isoformat(), "verifier": {"method": "face-embedding-cosine", "model": MODEL,
-        "modelSha256": verifier.manifest["models"][0]["sha256"], "version": VERSION, "preprocessVersion": PREPROCESS_VERSION,
+        "modelSha256": verifier.manifest["models"][0]["sha256"], "version": VERSION,
+        "preprocessVersion": PREPROCESS_VERSION + "-gallery-v2-" + gallery_profile["sha256"],
         "calibrationId": "uncalibrated-no-automatic-pass-v1"}, "coverage": "incomplete", "samples": [],
         "reason": "No validated SFace likeness calibration exists. Measurements cannot authorize automatic selection.",
         "diagnostics": {"runtime": {**verifier.versions, "python": platform.python_version(), "recognitionProvider": "CPUExecutionProvider",
         "intraOpThreads": 2, "interOpThreads": 1, "opencvThreads": 2}, "modelManifest": verifier.manifest,
-        "qualityLimitsStatus": "provisional-not-calibrated", "galleries": {}, "frames": []}}
+        "qualityLimitsStatus": "provisional-not-calibrated", "galleryProfile": gallery_profile, "galleries": {}, "frames": []}}
     if not value["identityReferenceHashes"]:
         report.update(status="not_required", coverage="not_required", reason="The shot has no identity-conditioning references.")
         return report

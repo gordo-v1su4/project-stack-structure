@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import { probeMediaFile, type ProbedMediaFile } from "@/components/studio/mediaProbe";
 import { buildSwarmComfyDirectUrl, extractComfyOutputRefs, getComfyHistoryStatus, type ComfyOutputRef } from "@/components/studio/localGeneration";
 import { H3_FPS, H3_HEIGHT, H3_WIDTH, type H3GenerationJob } from "@/components/studio/h3Generation";
@@ -13,10 +15,12 @@ import { materializeH3Job } from "./h3GenerationServer";
 import { downloadH3ReferenceImage, pinH3JobReferences, readH3Job, updateH3Job } from "./h3JobStore";
 import { buildH3Workflow } from "./h3Workflow";
 import { assessH3Identity } from "./h3IdentityVerification";
+import { planH3ReferenceConditioning } from "./h3ReferenceConditioning";
 
 export type H3JobReference = { ownerId: string; projectId: string; jobId: string };
 
 const MAX_IMAGE_BYTES = 32 * 1024 * 1024;
+const executeImagePreparation = promisify(execFile);
 const IMAGE_EXTENSIONS: Record<string, string> = { "image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp" };
 class H3ProviderRejection extends Error {}
 
@@ -80,11 +84,27 @@ async function uploadReference(baseUrl: string, job: H3GenerationJob, index: num
   const image = probe.primaryVideoStream;
   if (!image?.width || !image.height || image.width < 256 || image.height < 256
     || image.width * image.height > 64 * 1024 * 1024) throw new Error("Reference images must be readable and at least 256 pixels on each side.");
+  const preparation = planH3ReferenceConditioning({ profile: job.profile, conditioningPreparationVersion: job.conditioningPreparationVersion,
+    rawSha256: hash, width: image.width, height: image.height, canonicalName: ref.canonicalName, role: ref.role });
+  let conditioningBytes = new Uint8Array(media.bytes);
+  let conditioningExtension = extension;
+  let conditioningMime = media.mime;
+  if (preparation.operation === "crop") {
+    const croppedPath = path.join(folder, `conditioning-${index}.png`);
+    await executeImagePreparation(process.env.FFMPEG_PATH || "ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-i", imagePath,
+      "-vf", preparation.ffmpegFilter!, "-frames:v", "1", "-pix_fmt", "rgb24", croppedPath], { timeout: 30_000, maxBuffer: 1024 * 1024, windowsHide: true });
+    conditioningBytes = new Uint8Array(await readFile(croppedPath));
+    const cropped = (await probeMediaFile(croppedPath)).primaryVideoStream;
+    if (cropped?.width !== preparation.crop!.width || cropped.height !== preparation.crop!.height) throw new Error("Conditioning crop dimensions did not match the pinned plan.");
+    conditioningExtension = ".png";
+    conditioningMime = "image/png";
+  }
+  const conditioningHash = createHash("sha256").update(conditioningBytes).digest("hex");
   const form = new FormData();
   form.set("subfolder", `stack-structure/${job.id}`);
   form.set("type", "input");
   form.set("overwrite", "true");
-  form.set("image", new File([media.bytes], `${hash}${extension}`, { type: media.mime }));
+  form.set("image", new File([conditioningBytes], `${conditioningHash}${conditioningExtension}`, { type: conditioningMime }));
   const response = await fetch(buildSwarmComfyDirectUrl(baseUrl, "upload/image"), {
     method: "POST", body: form, signal: AbortSignal.timeout(120_000),
   });
@@ -93,7 +113,7 @@ async function uploadReference(baseUrl: string, job: H3GenerationJob, index: num
   if (!uploaded.name || /[\\/]/.test(uploaded.name) || uploaded.subfolder !== `stack-structure/${job.id}`) {
     throw new Error("SwarmUI returned an invalid reference binding.");
   }
-  return { path: `${uploaded.subfolder}/${uploaded.name}`, hash };
+  return { path: `${uploaded.subfolder}/${uploaded.name}`, hash, conditioningHash, preparation };
 }
 
 function completedOutput(job: H3GenerationJob): LocalGenerationOutput {
@@ -136,7 +156,9 @@ export async function runH3Generation(reference: H3JobReference, runId: string,
     const config = getMediaGatewayConfig();
     if (!saved || !config) throw new Error("The saved project is unavailable.");
     if (!job.promptId && job.state !== "submitting" && job.state !== "submission_unknown" && !cancellationRequested(job)) {
-      const current = await pinH3JobReferences(materializeH3Job(ownerId, saved, job.request, config.bucket));
+      const current = await pinH3JobReferences(materializeH3Job(ownerId, saved, job.request, config.bucket, {
+        profile: job.profile, conditioningPreparationVersion: job.conditioningPreparationVersion,
+      }));
       if (current.id !== job.id) throw new Error("The story plan or reference package changed before generation.");
     }
     if (!job.promptId && (job.state === "submitting" || job.state === "submission_unknown" || cancellationRequested(job))) {
@@ -160,13 +182,16 @@ export async function runH3Generation(reference: H3JobReference, runId: string,
       await providerJson(baseUrl, "system_stats");
       const contract = await providerJson(baseUrl, "object_info/MiniMaxH3ReferenceToVideo");
       if (!contract.MiniMaxH3ReferenceToVideo) throw new Error("The native H3 Ref2VA node is unavailable.");
-      const paths: string[] = [], hashes: string[] = [];
+      const paths: string[] = [], hashes: string[] = [], conditioningHashes: string[] = [];
+      const preparations: NonNullable<H3GenerationJob["conditioningPreparations"]> = [];
       for (let index = 0; index < job.references.length; index++) {
         const uploaded = await uploadReference(baseUrl, job, index, temp);
         paths.push(uploaded.path); hashes.push(uploaded.hash);
+        conditioningHashes.push(uploaded.conditioningHash); preparations.push(uploaded.preparation);
       }
       const built = buildH3Workflow(job, paths);
-      await update({ state: "submitting", compiledPrompt: built.prompt, frames: built.frames, referenceHashes: hashes });
+      await update({ state: "submitting", compiledPrompt: built.prompt, frames: built.frames, referenceHashes: hashes,
+        conditioningReferenceHashes: conditioningHashes, conditioningPreparations: preparations });
       options.stage("Submitting the native H3 reference shot");
       const response = await providerJson(baseUrl, "prompt", { prompt: built.workflow, client_id: job.id,
         extra_data: { stack_structure_h3_job: job.id, profile: job.profile } });

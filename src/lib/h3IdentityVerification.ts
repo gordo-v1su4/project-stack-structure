@@ -7,6 +7,7 @@ import { generatedAssetIdentityBlockReason, type GeneratedStudioAsset } from "@/
 import { normalizeGeneratedAssetIdentityVerification } from "@/components/studio/generatedAssetIdentity";
 import { H3_FPS, type H3GenerationJob } from "@/components/studio/h3Generation";
 import { downloadH3ReferenceImage } from "./h3JobStore";
+import { resolveH3IdentityGallery, type H3IdentityFaceRegion } from "./h3IdentityGallery";
 
 const execute = promisify(execFile);
 const sha256 = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
@@ -26,7 +27,7 @@ export type H3IdentityInput = {
   verifiedEndFrameExclusive: number;
   generationReferenceHashes: string[];
   identityReferenceHashes: string[];
-  references: { path: string; hash: string; canonicalName: string; role: string }[];
+  references: { path: string; hash: string; canonicalName: string; role: string; faceRegions?: H3IdentityFaceRegion[] }[];
 };
 
 async function executeVerifier(inputPath: string, outputPath: string) {
@@ -70,7 +71,9 @@ export async function assessH3Identity(params: {
       if (hash !== job.referenceHashes[index]) throw new Error("The rendered reference bytes changed.");
       const localPath = path.join(tempFolder, `identity-reference-${index}`);
       await writeFile(localPath, bytes);
-      references.push({ path: localPath, hash, canonicalName: ref.canonicalName, role: ref.role });
+      const gallery = resolveH3IdentityGallery({ rawSha256: hash, canonicalName: ref.canonicalName, role: ref.role });
+      references.push({ path: localPath, hash, canonicalName: ref.canonicalName, role: ref.role,
+        ...(gallery ? { faceRegions: gallery.faceRegions } : {}) });
     }
     const trimStart = asset.trimStart ?? 0;
     const trimDuration = job.request.songEnd - job.request.songStart;

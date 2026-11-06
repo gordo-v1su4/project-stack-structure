@@ -129,7 +129,9 @@ export async function pinH3JobReferences(job: H3GenerationJob): Promise<H3Genera
     references.push({ ...reference, etag,
       version: createHash("sha256").update(JSON.stringify([reference.version, etag])).digest("hex") });
   }
-  return { ...job, references, id: h3GenerationJobId(job.ownerId, job.request, references) };
+  return { ...job, references, id: h3GenerationJobId(job.ownerId, job.request, references, {
+    profile: job.profile, conditioningPreparationVersion: job.conditioningPreparationVersion,
+  }) };
 }
 
 export async function downloadH3ReferenceImage(reference: H3ReferenceSnapshot) {

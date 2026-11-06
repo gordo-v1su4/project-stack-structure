@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
-import type { H3GenerationJob } from "@/components/studio/h3Generation";
+import { H3_LEGACY_PROFILE, H3_PROFILE, type H3GenerationJob } from "@/components/studio/h3Generation";
 import { h3ProjectFixture } from "../helpers/h3Project";
 
 const fixture = h3ProjectFixture();
@@ -17,10 +17,13 @@ mock.module("@/lib/studioProjectStore", () => ({
 }));
 mock.module("@/lib/mediaGateway", () => ({ getMediaGatewayConfig: () => ({ bucket: "studio" }), normalizeMediaPath: (value: string) => value }));
 mock.module("@/lib/h3JobStore", () => ({
-  claimH3GenerationIntent: async () => {},
+  claimH3GenerationIntent: async (job: H3GenerationJob) => {
+    if (stored && stored.request.requestIntentId === job.request.requestIntentId
+      && stored.request.attempt === job.request.attempt && stored.id !== job.id) throw new H3RequestError("Intent conflict", 409);
+  },
   pinH3JobReferences: async (job: H3GenerationJob) => job,
   createH3Job: async (job: H3GenerationJob) => { if (!stored) stored = job; return stored; },
-  readH3Job: async () => stored,
+  readH3Job: async (_owner: string, _project: string, id: string) => stored?.id === id ? stored : null,
   listH3Jobs: async () => stored ? [stored] : [],
   updateH3Job: async (_owner: string, _project: string, _id: string, change: (job: H3GenerationJob) => H3GenerationJob) => {
     stored = change(stored!); return stored;
@@ -31,6 +34,7 @@ mock.module("@/lib/triggerOrchestration", () => ({
   retrieveTriggerRun: async () => ({ isCompleted: true, isFailed: true }),
 }));
 const { POST, GET, PATCH } = await import("@/app/api/generate/h3/route");
+const { H3RequestError, materializeH3Job, parseH3Request } = await import("@/lib/h3GenerationServer");
 function post(body: unknown) { return new Request("http://app.test/api/generate/h3", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }); }
 function reset() { signedIn = true; stored = null; dispatches = 0; }
 
@@ -60,6 +64,35 @@ describe("authenticated H3 dispatch and recovery route", () => {
     expect((await POST(post({ ...fixture.request, planSignature: "old" }))).status).toBe(409);
     expect((await POST(post({ ...fixture.request, projectId: "foreign" }))).status).toBe(404);
     expect(dispatches).toBe(0); expect(stored).toBeNull();
+  });
+
+  test("recovers an exact legacy intent whose durable job was saved before dispatch", async () => {
+    reset();
+    stored = materializeH3Job("github-test", fixture.saved, parseH3Request(fixture.request), "studio", { profile: H3_LEGACY_PROFILE });
+    const originalId = stored.id;
+    const response = await POST(post(fixture.request));
+    expect(response.status).toBe(202);
+    const body = await response.json() as { job: H3GenerationJob };
+    expect(body.job.id).toBe(originalId);
+    expect(body.job.profile).toBe(H3_LEGACY_PROFILE);
+    expect(body.job.conditioningPreparationVersion).toBe(undefined);
+    expect(body.job.runId).toBe("run-1");
+    await POST(post(fixture.request));
+    expect(dispatches).toBe(1);
+  });
+
+  test("new intents use v2 and a changed legacy prompt or reference cannot claim the old intent", async () => {
+    reset();
+    const fresh = await POST(post(fixture.request));
+    expect(((await fresh.json()) as { job: H3GenerationJob }).job.profile).toBe(H3_PROFILE);
+    reset();
+    stored = materializeH3Job("github-test", fixture.saved, parseH3Request(fixture.request), "studio", { profile: H3_LEGACY_PROFILE });
+    const snapshot = JSON.stringify(stored);
+    expect((await POST(post({ ...fixture.request, prompt: "Diego waits beside the booths." }))).status).toBe(409);
+    expect((await POST(post({ ...fixture.request, referenceAssetIds: ["club", "diego"] }))).status).toBe(409);
+    expect((await POST(post({ ...fixture.request, planSignature: "stale" }))).status).toBe(409);
+    expect(dispatches).toBe(0);
+    expect(JSON.stringify(stored)).toBe(snapshot);
   });
 
   test("resumes an existing submission after a terminal worker without changing provider identity", async () => {
