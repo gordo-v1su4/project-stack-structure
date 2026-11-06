@@ -5,6 +5,7 @@ import math
 from pathlib import Path
 
 import numpy as np
+from failure_reasons import record_failure_reasons, append_failure_reason_warnings
 
 POLICY_ID = "love-me-tonight-diego-frontal-draft-v1"
 POLICY_SHA256 = "f23f8186a59c3c893c043b0bba19a335d874dec9d140de54cfd98f6c824fe7d7"
@@ -114,6 +115,7 @@ class DraftSimilarityFilter:
             self.evidence["ambiguousFrameCount"] += int(len(faces) > 1)
             self.unresolved = True
             self.previous_box, self.previous_index = None, index
+            record_failure_reasons(self, ["missing_face" if not faces else "ambiguous_face_count"])
             return
         face = faces[0]
         scope = self.policy["scope"]
@@ -122,6 +124,7 @@ class DraftSimilarityFilter:
         discontinuous = self.previous_index is not None and (index != self.previous_index+1 or self.previous_box is None
             or box_overlap(face["box"], self.previous_box) < scope["minimumConsecutiveFaceBoxIoU"])
         ambiguous = track_changed or discontinuous
+        failure_reasons = reasons + (["track_changed"] if track_changed else []) + (["track_discontinuous"] if discontinuous else [])
         if ambiguous:
             self.evidence["ambiguousFrameCount"] += 1
             self.unresolved = True
@@ -132,9 +135,11 @@ class DraftSimilarityFilter:
         score = float(np.clip((left/np.linalg.norm(left)) @ (right/np.linalg.norm(right)), -1, 1))
         if not math.isfinite(score):
             self.unresolved = True
+            record_failure_reasons(self, failure_reasons + ["non_finite_similarity"])
             return
         sample["scores"].append({"referenceHash": self.policy["identity"]["rawSha256"], "trackId": face["trackId"], "score": score})
         self.evidence["eligibleFrameCount"] += int(not reasons and not ambiguous and score >= self.policy["threshold"])
+        record_failure_reasons(self, failure_reasons + (["below_similarity_threshold"] if score < self.policy["threshold"] else []))
         warning = self.policy["acquisitionWarningsOnly"]
         quality = face["quality"]
         self.warning_counts["native_blur"] += int(quality["blurVariance"] < warning["nativeBoxBlurVarianceBelow"])
@@ -152,6 +157,7 @@ class DraftSimilarityFilter:
             self.evidence["status"] = "eligible" if self.evidence["eligibleFrameCount"] == expected else "ineligible"
         for name, count in self.warning_counts.items():
             if count: self.evidence["warnings"].append(f"Acquisition diagnostic warning only: {name} on {count}/{self.evidence['examinedFrameCount']} frames.")
+        append_failure_reason_warnings(self)
         return self.evidence
 
 

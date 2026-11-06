@@ -6,6 +6,7 @@ from pathlib import Path
 from draft_similarity_filter import (FOREGROUND_POLICY_ID, FOREGROUND_POLICY_SHA256,
     DraftSimilarityFilter, canonical_sha256, geometry_reasons, box_overlap)
 from joint_similarity_filter import similarity
+from failure_reasons import record_failure_reasons
 
 
 def load_foreground_policy():
@@ -53,17 +54,21 @@ class ForegroundDraftSimilarityFilter(DraftSimilarityFilter):
         if not faces or len(faces) > dominance["maximumDetectedFaceCount"]:
             self.evidence["outOfScopeFrameCount"] += 1
             self.unresolved = True
+            record_failure_reasons(self, ["missing_face" if not faces else "excessive_face_count"])
             return
         if any(len(face["box"]) != 4 or not all(math.isfinite(v) for v in face["box"])
             or face["box"][2] <= 0 or face["box"][3] <= 0 for face in faces):
             self.unresolved = True
+            record_failure_reasons(self, ["invalid_face_box"])
             return
         # Select only by physical box area before calculating any similarity.
         ordered = sorted(faces,key=lambda face:face["box"][2]*face["box"][3],reverse=True)
         lead, others = ordered[0], ordered[1:]
         area = lead["box"][2]*lead["box"][3]
         ambiguous = (bool(others) and others[0]["box"][2]*others[0]["box"][3] >= area)
+        failure_reasons = ["lead_not_unique_largest"] if ambiguous else []
         ambiguous |= len({face["trackId"] for face in faces}) != len(faces)
+        if len({face["trackId"] for face in faces}) != len(faces): failure_reasons.append("duplicate_track_id")
         reasons = geometry_reasons(lead,image_shape,scope)
         for other in others:
             box = other["box"]
@@ -75,6 +80,7 @@ class ForegroundDraftSimilarityFilter(DraftSimilarityFilter):
         scores = [similarity(face["feature"],template) for face in faces]
         if not all(math.isfinite(score) for score in scores):
             self.unresolved = True
+            record_failure_reasons(self, failure_reasons + reasons + ["non_finite_similarity"])
             return
         raw = self.policy["identity"]["rawSha256"]
         sample["candidateScores"] = [{"referenceHash":raw,"trackId":face["trackId"],"score":score} for face,score in zip(faces,scores)]
@@ -85,10 +91,14 @@ class ForegroundDraftSimilarityFilter(DraftSimilarityFilter):
         sample["foreground"] = {"imageWidth":image_shape[1],"imageHeight":image_shape[0],"leadTrackId":lead["trackId"],"detections":detections}
         lead_score = next(score for face,score in zip(faces,scores) if face is lead)
         ambiguous |= any(lead_score-score < dominance["minimumLeadCosineMargin"] for face,score in zip(faces,scores) if face is not lead)
+        if any(lead_score-score < dominance["minimumLeadCosineMargin"] for face,score in zip(faces,scores) if face is not lead): failure_reasons.append("assignment_margin")
         ambiguous |= self.track_id is not None and self.track_id != lead["trackId"]
+        if self.track_id is not None and self.track_id != lead["trackId"]: failure_reasons.append("track_changed")
         ambiguous |= index != self.value["verifiedStartFrame"]+self.evidence["examinedFrameCount"]-1
+        if index != self.value["verifiedStartFrame"]+self.evidence["examinedFrameCount"]-1: failure_reasons.append("frame_sequence_gap")
         if self.previous_index is not None:
             ambiguous |= index != self.previous_index+1 or box_overlap(lead["box"],self.previous_box) < scope["minimumConsecutiveFaceBoxIoU"]
+            if index != self.previous_index+1 or box_overlap(lead["box"],self.previous_box) < scope["minimumConsecutiveFaceBoxIoU"]: failure_reasons.append("track_discontinuous")
         self.track_id = self.track_id or lead["trackId"]
         self.previous_box, self.previous_index = lead["box"], index
         self.unresolved |= ambiguous
@@ -96,6 +106,7 @@ class ForegroundDraftSimilarityFilter(DraftSimilarityFilter):
         self.evidence["outOfScopeFrameCount"] += int(bool(reasons))
         sample["scores"] = [{"referenceHash":raw,"trackId":lead["trackId"],"score":lead_score}]
         self.evidence["eligibleFrameCount"] += int(not reasons and not ambiguous and lead_score >= self.policy["threshold"])
+        record_failure_reasons(self, failure_reasons + reasons + (["below_similarity_threshold"] if lead_score < self.policy["threshold"] else []))
         quality, warning = lead["quality"],self.policy["acquisitionWarningsOnly"]
         self.warning_counts["native_blur"] += int(quality["blurVariance"] < warning["nativeBoxBlurVarianceBelow"])
         self.warning_counts["native_luminance_low"] += int(quality["meanLuminance"] < warning["nativeBoxLuminanceBelow"])

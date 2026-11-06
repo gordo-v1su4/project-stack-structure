@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { generatedAssetDraftIdentityBlockReason, type GeneratedStudioAsset } from "../generatedAssets";
-import { generatedAssetDraftSimilarityLabel, generatedAssetDraftSimilarityWarnings } from "../generatedAssetIdentity";
+import { generatedAssetDraftSimilarityLabel, generatedAssetDraftSimilarityWarnings, normalizeGeneratedAssetIdentityVerification } from "../generatedAssetIdentity";
 import { recheckH3Similarity } from "../h3SimilarityRecheck";
 import { identityPolicyChoiceForReferences } from "../issuedIdentityPolicy";
 import type { GeneratedDraftReview, GeneratedDraftSelection } from "../generatedDraft";
@@ -422,14 +422,19 @@ export function MiniMaxDraftPanel(props: Props) {
 function clock(seconds: number) { return `${Math.floor(seconds / 60)}:${Math.floor(seconds % 60).toString().padStart(2, "0")}`; }
 function preciseClock(seconds: number) { return `${Math.floor(seconds / 60)}:${(seconds % 60).toFixed(2).padStart(5, "0")}`; }
 
-function SimilarityFilterNote({ asset }: { asset: GeneratedStudioAsset }) {
+export function SimilarityFilterNote({ asset }: { asset: GeneratedStudioAsset }) {
   const label = generatedAssetDraftSimilarityLabel(asset), warnings = generatedAssetDraftSimilarityWarnings(asset);
-  if (!label && !warnings.length) return null;
-  const filter = asset.identityVerification?.draftSimilarityFilter;
-  const scores = label && filter ? filter.samples.flatMap((sample) => sample.scores.map(({ score }) => score)) : [];
+  const filter = normalizeGeneratedAssetIdentityVerification(asset.identityVerification)?.draftSimilarityFilter;
+  if (!label && !filter && !warnings.length) return null;
+  const scores = filter ? filter.samples.flatMap((sample) => sample.scores.map(({ score }) => score)) : [];
+  const range = scores.reduce<[number, number]>(([low, high], score) => [Math.min(low, score), Math.max(high, score)], [Infinity, -Infinity]);
+  const outcome = label ?? (filter?.status === "ineligible" ? "Similarity filter did not pass" : "Similarity filter could not be assessed");
   return <div aria-label="Similarity filter evidence" className="w-full py-1 text-xs text-fg-3">
-    {label ? <p className="text-fg-2">{label}. Identity remains unverified; review the assembled draft.</p> : null}
-    {filter && scores.length ? <p className="mt-1 text-fg-2">Cosine similarity {Math.min(...scores).toFixed(3)}–{Math.max(...scores).toFixed(3)} · cutoff {filter.threshold.toFixed(3)} · {filter.eligibleFrameCount}/{filter.examinedFrameCount} frames</p> : null}
+    <p className="text-fg-2">{outcome}. Identity remains unverified; scores are not calibrated identity confidence. Review the assembled draft.</p>
+    {filter ? <>
+      <p className="mt-1 text-fg-2">{scores.length ? `Cosine similarity ${range[0].toFixed(3)}–${range[1].toFixed(3)}` : "No face similarity scores measured"} · cutoff {filter.threshold.toFixed(3)}</p>
+      <p className="mt-1 text-fg-2">Eligible frames {filter.eligibleFrameCount}/{filter.examinedFrameCount} assessed · out of scope {filter.outOfScopeFrameCount} · ambiguous {filter.ambiguousFrameCount}</p>
+    </> : null}
     {warnings.length ? <details className="mt-1">
       <summary className="cursor-pointer">Quality details ({warnings.length})</summary>
       <ul aria-label="Similarity quality warnings" className="mt-1 list-inside list-disc">{warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul>

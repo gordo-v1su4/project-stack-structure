@@ -5,6 +5,7 @@ from pathlib import Path
 
 import numpy as np
 from draft_similarity_filter import JOINT_POLICY_ID, JOINT_POLICY_SHA256, canonical_sha256, geometry_reasons, box_overlap
+from failure_reasons import record_failure_reasons, append_failure_reason_warnings
 
 
 def load_joint_policy():
@@ -51,15 +52,21 @@ class JointDraftSimilarityFilter:
         self.evidence["examinedFrameCount"] += 1
         sample = {"timeSeconds": index/fps, "frameSha256": frame_hash, "scores": [], "candidateScores": []}
         self.evidence["samples"].append(sample)
+        failure_reasons = []
         if index != self.value["verifiedStartFrame"]+self.evidence["examinedFrameCount"]-1:
             self.unresolved = True
+            failure_reasons.append("frame_sequence_gap")
         if len(faces) != 2 or any(raw not in templates for raw in self.hashes):
             self.evidence["outOfScopeFrameCount"] += 1
             self.unresolved = True
+            if len(faces) != 2: failure_reasons.append("missing_required_face" if len(faces) < 2 else "ambiguous_face_count")
+            if any(raw not in templates for raw in self.hashes): failure_reasons.append("missing_reference_template")
+            record_failure_reasons(self, failure_reasons)
             return
         matrix = [[similarity(face["feature"], templates[raw]) for face in faces] for raw in self.hashes]
         if not all(math.isfinite(score) for row in matrix for score in row):
             self.unresolved = True
+            record_failure_reasons(self, failure_reasons + ["non_finite_similarity"])
             return
         sample["candidateScores"] = [{"referenceHash": raw, "trackId": face["trackId"], "score": matrix[ri][fi]}
             for ri, raw in enumerate(self.hashes) for fi, face in enumerate(faces)]
@@ -69,14 +76,19 @@ class JointDraftSimilarityFilter:
         margin = self.policy["scope"]["minimumAssignmentCosineMargin"]
         ambiguous = any(matrix[ri][fi]-matrix[ri][1-fi] < margin
             or matrix[ri][fi]-matrix[1-ri][fi] < margin for ri, fi in enumerate(order))
+        if ambiguous: failure_reasons.append("assignment_margin")
         tracks = [face["trackId"] for face in assigned]
         ambiguous |= len(set(tracks)) != 2 or (self.tracks is not None and tracks != self.tracks)
+        if len(set(tracks)) != 2: failure_reasons.append("duplicate_track_id")
+        if self.tracks is not None and tracks != self.tracks: failure_reasons.append("track_changed")
         if self.previous is not None:
             ambiguous |= index != self.previous_index+1
+            if index != self.previous_index+1: failure_reasons.append("frame_sequence_gap")
             for ri, face in enumerate(assigned):
                 own = box_overlap(face["box"], self.previous[ri]["box"])
                 cross = box_overlap(face["box"], self.previous[1-ri]["box"])
                 ambiguous |= own < self.policy["scope"]["minimumConsecutiveFaceBoxIoU"] or own <= cross
+                if own < self.policy["scope"]["minimumConsecutiveFaceBoxIoU"] or own <= cross: failure_reasons.append("track_discontinuous")
         reasons = [geometry_reasons(face, image_shape, self.policy["scope"]) for face in assigned]
         self.evidence["outOfScopeFrameCount"] += int(any(reasons))
         self.evidence["ambiguousFrameCount"] += int(ambiguous)
@@ -87,6 +99,8 @@ class JointDraftSimilarityFilter:
             for ri, (raw, face) in enumerate(zip(self.hashes, assigned))]
         self.evidence["eligibleFrameCount"] += int(not any(reasons) and not ambiguous
             and all(score["score"] >= self.policy["threshold"] for score in sample["scores"]))
+        record_failure_reasons(self, failure_reasons + [reason for face_reasons in reasons for reason in face_reasons]
+            + (["below_similarity_threshold"] if any(score["score"] < self.policy["threshold"] for score in sample["scores"]) else []))
         warning = self.policy["acquisitionWarningsOnly"]
         for face in assigned:
             quality = face["quality"]
@@ -103,4 +117,5 @@ class JointDraftSimilarityFilter:
             self.evidence["status"] = "eligible" if self.evidence["eligibleFrameCount"] == expected else "ineligible"
         for name, count in self.warning_counts.items():
             if count: self.evidence["warnings"].append(f"Acquisition diagnostic warning only: {name} on {count}/{2*self.evidence['examinedFrameCount']} face observations.")
+        append_failure_reason_warnings(self)
         return self.evidence
