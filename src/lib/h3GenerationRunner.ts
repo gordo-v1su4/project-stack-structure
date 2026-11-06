@@ -12,6 +12,7 @@ import { readStudioProject } from "./studioProjectStore";
 import { materializeH3Job } from "./h3GenerationServer";
 import { downloadH3ReferenceImage, pinH3JobReferences, readH3Job, updateH3Job } from "./h3JobStore";
 import { buildH3Workflow } from "./h3Workflow";
+import { assessH3Identity } from "./h3IdentityVerification";
 
 export type H3JobReference = { ownerId: string; projectId: string; jobId: string };
 
@@ -224,11 +225,13 @@ export async function runH3Generation(reference: H3JobReference, runId: string,
     validateH3VideoProbe(probe, job.frames!, job.request.songEnd - job.request.songStart);
     const folder = `media-uploads/projects/${normalizeStudioOwnerSegment(ownerId)}/generated/${projectId}/${job.id}`;
     const storage = await uploadFileToMediaGateway({ file: new File([bytes], "shot.mp4", { type: "video/mp4" }), folder, preserveFileName: true });
-    const asset = { id: job.id, provider: "swarmui" as const, model: job.profile, title: job.target.sectionLabel,
+    const pendingAsset = { id: job.id, provider: "swarmui" as const, model: job.profile, title: job.target.sectionLabel,
       prompt: job.compiledPrompt!, createdAt: job.createdAt, jobId: job.id, status: "completed" as const,
       mediaKind: "video" as const, width: H3_WIDTH, height: H3_HEIGHT, durationSeconds: probe.duration,
       resultUrl: storage.mediaUrl || storage.publicUrl, fullStorage: storage, trimStart: 0,
       reviewStatus: "pending" as const, target: job.target, triggerRunId: runId };
+    options.stage("Checking likeness with the deterministic face verifier");
+    const asset = await assessH3Identity({ job, asset: pendingAsset, outputPath, tempFolder: temp });
     job = await updateH3Job(ownerId, projectId, jobId, current => {
       if (cancellationRequested(current) || current.state === "cancelled") return { ...current, state: "cancelled" };
       return { ...current, state: "ready", result: { asset }, error: undefined };

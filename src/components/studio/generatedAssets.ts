@@ -2,6 +2,9 @@ import type { ImageSplitManifest } from "@/lib/imageSplitterGateway";
 import type { MediaGatewayUploadResult } from "@/lib/mediaGateway";
 import type { EditPlanPreviewSegment, TimelineItem } from "./musicVideoProject";
 import type { StoryboardJob, VideoFrameRole } from "./storyboardGeneration";
+import { generatedAssetIdentityBlockReason, normalizeGeneratedAssetIdentityVerification, type GeneratedAssetIdentityVerification } from "./generatedAssetIdentity";
+export { generatedAssetIdentityBlockReason } from "./generatedAssetIdentity";
+export type { GeneratedAssetIdentityVerification } from "./generatedAssetIdentity";
 
 export type GeneratedStudioAssetProvider = "higgsfield" | "swarmui";
 export type GeneratedStudioAssetReviewStatus = "pending" | "approved" | "rejected";
@@ -47,7 +50,22 @@ export type GeneratedStudioAsset = {
   frameRole?: VideoFrameRole;
   triggerRunId?: string;
   approvedAt?: string;
+  /** Worker-bound bytes and references; omitted on legacy assets. */
+  mediaSha256?: string;
+  mediaFrameCount?: number;
+  mediaFrameRate?: number;
+  generationReferenceHashes?: string[];
+  identityReferenceHashes?: string[];
+  identityVerification?: GeneratedAssetIdentityVerification;
 };
+
+/** A repeated delivery for one immutable job cannot undo a saved rejection. */
+export function mergeGeneratedAssetDelivery(existing: GeneratedStudioAsset | undefined, incoming: GeneratedStudioAsset): GeneratedStudioAsset {
+  if (existing?.id === incoming.id && (existing.reviewStatus === "rejected" || existing.identityVerification?.status === "rejected")) {
+    return { ...existing, reviewStatus: "rejected", approvedAt: undefined };
+  }
+  return incoming;
+}
 
 export type GeneratedAssetContextPreview = {
   segments: EditPlanPreviewSegment[];
@@ -124,6 +142,7 @@ export function resolveGeneratedAssetTrimWindow({
 }
 
 export function sanitizeGeneratedStudioAssetForStorage(asset: GeneratedStudioAsset): GeneratedStudioAsset {
+  const rejected = asset.reviewStatus === "rejected" || asset.identityVerification?.status === "rejected";
   return {
     id: asset.id,
     provider: asset.provider,
@@ -145,14 +164,20 @@ export function sanitizeGeneratedStudioAssetForStorage(asset: GeneratedStudioAss
     mediaKind: asset.mediaKind,
     durationSeconds: asset.durationSeconds,
     trimStart: asset.trimStart,
-    reviewStatus: asset.reviewStatus,
+    reviewStatus: rejected ? "rejected" : asset.reviewStatus,
     reviewNotes: asset.reviewNotes,
     target: asset.target,
     storyboard: asset.storyboard,
     panelReviews: asset.panelReviews,
     frameRole: asset.frameRole,
     triggerRunId: asset.triggerRunId,
-    approvedAt: asset.approvedAt,
+    approvedAt: rejected ? undefined : asset.approvedAt,
+    mediaSha256: asset.mediaSha256,
+    mediaFrameCount: asset.mediaFrameCount,
+    mediaFrameRate: asset.mediaFrameRate,
+    generationReferenceHashes: Array.isArray(asset.generationReferenceHashes) ? [...asset.generationReferenceHashes] : undefined,
+    identityReferenceHashes: Array.isArray(asset.identityReferenceHashes) ? [...asset.identityReferenceHashes] : undefined,
+    identityVerification: normalizeGeneratedAssetIdentityVerification(asset.identityVerification),
   };
 }
 
@@ -244,6 +269,7 @@ export function buildGeneratedAssetPlaybackUrl(asset: GeneratedStudioAsset): str
 
 export function listApprovedGeneratedVideoAssets(assets: GeneratedStudioAsset[]) {
   return assets.filter((asset) => asset.status === "completed" && asset.mediaKind === "video" && asset.reviewStatus === "approved"
+    && generatedAssetIdentityBlockReason(asset) === null
     && asset.target && Boolean(buildGeneratedAssetPlaybackUrl(asset)) && Number.isFinite(asset.durationSeconds) && (asset.durationSeconds ?? 0) > 0);
 }
 

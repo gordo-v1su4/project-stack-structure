@@ -3,6 +3,7 @@ import {
   applyGeneratedAssetOverlays,
   buildGeneratedAssetPlaybackUrl,
   generatedAssetMatchesPreviewSegment,
+  generatedAssetIdentityBlockReason,
   type GeneratedStudioAsset,
 } from "./generatedAssets";
 import type { EditPlanPreviewSegment } from "./musicVideoProject";
@@ -40,6 +41,7 @@ export function isGeneratedDraftCurrent(segments: EditPlanPreviewSegment[], draf
 
 function isSelectableAsset(asset: GeneratedStudioAsset, segments: EditPlanPreviewSegment[]) {
   return asset.status === "completed" && asset.mediaKind === "video" && asset.reviewStatus !== "rejected"
+    && generatedAssetIdentityBlockReason(asset) === null
     && Boolean(buildGeneratedAssetPlaybackUrl(asset)) && Number.isFinite(asset.durationSeconds) && (asset.durationSeconds ?? 0) > 0
     && segments.some(segment => generatedAssetMatchesPreviewSegment(asset, segment));
 }
@@ -61,7 +63,8 @@ export function selectGeneratedDraftAsset({ draft, assets, asset, segments, expe
   expectedRevision?: number;
 }): GeneratedDraftSelection {
   if ((expectedRevision !== undefined && expectedRevision !== draft.revision)
-    || !isGeneratedDraftCurrent(segments, draft) || !isSelectableAsset(asset, segments)) return draft;
+    || !isGeneratedDraftCurrent(segments, draft) || !isSelectableAsset(asset, segments)
+    || assets.some(existing => existing.id === asset.id && (existing.reviewStatus === "rejected" || existing.identityVerification?.status === "rejected"))) return draft;
   const byId = new Map(assets.map(candidate => [candidate.id, candidate]));
   const remaining = draft.assetIds.filter(id => id !== asset.id && (!byId.has(id) || !sameTarget(byId.get(id)!, asset)));
   const assetIds = [...remaining, asset.id];
@@ -106,6 +109,14 @@ export function captureGeneratedDraftReview(
       id: asset.id, status: asset.status, reviewStatus: asset.reviewStatus, prompt: asset.prompt,
       model: asset.model, target: asset.target, trimStart: asset.trimStart ?? 0,
       durationSeconds: asset.durationSeconds, videoUrl: buildGeneratedAssetPlaybackUrl(asset),
+      mediaSha256: asset.mediaSha256, mediaFrameCount: asset.mediaFrameCount, mediaFrameRate: asset.mediaFrameRate,
+      generationReferenceHashes: asset.generationReferenceHashes,
+      identityReferenceHashes: asset.identityReferenceHashes, identityVerification: asset.identityVerification,
+    })),
+    approvedIdentityEvidence: assets.filter(asset => asset.reviewStatus === "approved").map(asset => ({
+      id: asset.id, mediaSha256: asset.mediaSha256, mediaFrameCount: asset.mediaFrameCount, mediaFrameRate: asset.mediaFrameRate,
+      generationReferenceHashes: asset.generationReferenceHashes, identityReferenceHashes: asset.identityReferenceHashes,
+      identityVerification: asset.identityVerification,
     })),
     segments: applyDraftGeneratedAssets(segments, assets, draft),
   });

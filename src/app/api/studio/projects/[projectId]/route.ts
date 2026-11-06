@@ -1,6 +1,7 @@
 import { auth } from "@/auth";
 import type { PersistedStudioProjectDraft } from "@/components/studio/projectPersistence";
 import { readStudioProject, saveStudioProject } from "@/lib/studioProjectStore";
+import { readStudioJsonBody, studioJsonBodyErrorResponse, studioJsonResponse } from "@/lib/studioJsonTransportServer";
 
 export const runtime = "nodejs";
 
@@ -12,21 +13,23 @@ export async function GET(_request: Request, context: RouteContext) {
   const { projectId } = await context.params;
   const saved = await readStudioProject(session.user.id, projectId);
   if (!saved) return Response.json({ success: false, error: "Project not found." }, { status: 404 });
-  return Response.json({ success: true, saved });
+  return studioJsonResponse(_request, { success: true, saved });
 }
 
 export async function PUT(request: Request, context: RouteContext) {
   const session = await auth();
   if (!session?.user?.id) return unauthorized();
   const { projectId } = await context.params;
-  const body = await request.json() as { name?: unknown; draft?: unknown };
-  if (!isPersistedDraft(body.draft)) {
+  let body: { name?: unknown; draft?: unknown };
+  try { body = await readStudioJsonBody(request) as typeof body; }
+  catch (error) { const response = studioJsonBodyErrorResponse(error); if (response) return response; throw error; }
+  if (!isPersistedDraft(body?.draft)) {
     return Response.json({ success: false, error: "A valid Studio project draft is required." }, { status: 400 });
   }
   const existing = await readStudioProject(session.user.id, projectId);
   const name = typeof body.name === "string" ? body.name : existing?.project.name || "Untitled project";
   const saved = await saveStudioProject({ ownerId: session.user.id, projectId, name, draft: body.draft });
-  return Response.json({ success: true, saved });
+  return studioJsonResponse(request, { success: true, saved });
 }
 
 function isPersistedDraft(value: unknown): value is PersistedStudioProjectDraft {

@@ -34,7 +34,7 @@ import {
   type RuntimeStudioProjectDraft,
 } from "./studio/projectPersistence";
 import type { StudioProjectSummary } from "@/lib/studioProjectStore";
-import { applyApprovedGeneratedAssets, buildGeneratedAssetContextPreview, buildGeneratedAssetPlaybackUrl, type GeneratedStudioAsset } from "./studio/generatedAssets";
+import { applyApprovedGeneratedAssets, buildGeneratedAssetContextPreview, buildGeneratedAssetPlaybackUrl, mergeGeneratedAssetDelivery, type GeneratedStudioAsset } from "./studio/generatedAssets";
 import { applyDraftGeneratedAssets, approveGeneratedDraft, captureGeneratedDraftReview, createGeneratedDraftSelection, rejectGeneratedDraftAsset, selectGeneratedDraftAsset, type GeneratedDraftReview, type GeneratedDraftSelection } from "./studio/generatedDraft";
 import { MiniMaxDraftPanel } from "./studio/panels/MiniMaxDraftPanel";
 import { createLocalReferenceAsset, uploadReferenceAssetToRustFs, type ReferenceAsset, type ReferenceAssetLibraryRole } from "./studio/referenceAssets";
@@ -2104,13 +2104,14 @@ export default function StudioApp() {
   function receiveGeneratedAsset(asset: GeneratedStudioAsset, expectedRevision?: number) {
     if (asset.reviewStatus === "approved" || generatedAssets.some(candidate => candidate.id === asset.id && candidate.reviewStatus === "approved")) invalidateArrangementOutput();
     setGeneratedReviewState(current => {
-      const assets = [asset, ...current.assets.filter(candidate => candidate.id !== asset.id)];
+      const delivered = mergeGeneratedAssetDelivery(current.assets.find(candidate => candidate.id === asset.id), asset);
+      const assets = [delivered, ...current.assets.filter(candidate => candidate.id !== delivered.id)];
       const planSignature = baseStoryPreviewSegments[0]?.planSignature;
       // Legacy returns without a captured dispatch revision remain available in
       // the bank, but cannot silently override a newer draft after reload.
       if (!planSignature || expectedRevision === undefined) return { ...current, assets };
       const draft = current.draft?.planSignature === planSignature ? current.draft : createGeneratedDraftSelection(planSignature);
-      return { assets, draft: selectGeneratedDraftAsset({ draft, assets, asset, segments: baseStoryPreviewSegments, expectedRevision }) };
+      return { assets, draft: selectGeneratedDraftAsset({ draft, assets, asset: delivered, segments: baseStoryPreviewSegments, expectedRevision }) };
     });
   }
 

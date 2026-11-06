@@ -34,6 +34,7 @@ mock.module("@/lib/mediaGateway", () => ({
 mock.module("@/components/studio/mediaProbe", () => ({
   probeMediaFile: async (file: string) => file.endsWith("shot.mp4") ? videoProbe : { primaryVideoStream: { width: 2048, height: 2048 } },
 }));
+mock.module("@/lib/h3IdentityVerification", () => ({ assessH3Identity: async ({ asset }: { asset: unknown }) => asset }));
 const { runH3Generation, findH3ProviderPrompt, validateH3VideoProbe, h3OutputSubfolder } = await import("@/lib/h3GenerationRunner");
 
 afterEach(() => {

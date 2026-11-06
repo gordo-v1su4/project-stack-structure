@@ -10,6 +10,7 @@ import type { BeatJoinAnalysis, ColorGradient, SceneCaptionSettings, Tab, Upload
 import type { SourceTimelineSegment, SplitMode } from "./sourceTimeline";
 import type { SavedStudioProject, StudioProjectSummary } from "@/lib/studioProjectStore";
 import type { StoryBrief, StoryGenerationMeta, StoryTreatment } from "./storyTreatments";
+import { encodeStudioJsonRequest, STUDIO_JSON_TRANSPORT_HEADERS } from "@/lib/studioJsonTransport";
 
 export const STUDIO_PROJECT_STORAGE_KEY = "project-stack-structure:studio-project:v1";
 export const ACTIVE_STUDIO_PROJECT_KEY = "project-stack-structure:active-project:v1";
@@ -336,8 +337,7 @@ export async function saveServerStudioProjectDraft(draft: PersistedStudioProject
 
   const response = await fetch("/api/studio/draft", {
     method: "PUT",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ draft }),
+    ...await encodeStudioJsonRequest({ draft }),
   });
   const payload = await readDraftApiResponse(response);
   if (!response.ok || !payload.success) {
@@ -350,7 +350,7 @@ export async function saveServerStudioProjectDraft(draft: PersistedStudioProject
 export async function loadServerStudioProjectDraft(): Promise<PersistedStudioProjectDraft | null> {
   if (typeof fetch !== "function") return null;
 
-  const response = await fetch("/api/studio/draft", { cache: "no-store" });
+  const response = await fetch("/api/studio/draft", { cache: "no-store", headers: STUDIO_JSON_TRANSPORT_HEADERS });
   const payload = await readDraftApiResponse(response);
   if (!response.ok || !payload.success) {
     throw new Error(payload.error || `Studio draft load failed (${response.status})`);
@@ -367,11 +367,10 @@ export async function listSavedStudioProjects(): Promise<StudioProjectSummary[]>
 }
 
 export async function loadSavedStudioProject(projectId: string): Promise<SavedStudioProject> {
-  const response = await fetch(`/api/studio/projects/${encodeURIComponent(projectId)}`, { cache: "no-store" });
+  const response = await fetch(`/api/studio/projects/${encodeURIComponent(projectId)}`, { cache: "no-store", headers: STUDIO_JSON_TRANSPORT_HEADERS });
   const payload = await readProjectApiResponse<{ saved?: SavedStudioProject }>(response);
   if (!response.ok || !payload.success || !payload.saved) throw new Error(payload.error || `Project load failed (${response.status})`);
-  window.localStorage.setItem(ACTIVE_STUDIO_PROJECT_KEY, projectId);
-  window.localStorage.setItem(STUDIO_PROJECT_STORAGE_KEY, JSON.stringify(payload.saved.draft));
+  cacheSavedStudioProject(payload.saved);
   return payload.saved;
 }
 
@@ -383,14 +382,22 @@ export async function saveNamedStudioProject(params: {
   const projectId = params.projectId?.trim() || null;
   const response = await fetch(projectId ? `/api/studio/projects/${encodeURIComponent(projectId)}` : "/api/studio/projects", {
     method: projectId ? "PUT" : "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ name: params.name, draft: params.draft }),
+    ...await encodeStudioJsonRequest({ name: params.name, draft: params.draft }),
   });
   const payload = await readProjectApiResponse<{ saved?: SavedStudioProject }>(response);
   if (!response.ok || !payload.success || !payload.saved) throw new Error(payload.error || `Project save failed (${response.status})`);
-  window.localStorage.setItem(ACTIVE_STUDIO_PROJECT_KEY, payload.saved.project.id);
-  window.localStorage.setItem(STUDIO_PROJECT_STORAGE_KEY, JSON.stringify(payload.saved.draft));
+  cacheSavedStudioProject(payload.saved);
   return payload.saved;
+}
+
+/** The durable save/load succeeded even if a large optional browser mirror exceeds its quota. */
+function cacheSavedStudioProject(saved: SavedStudioProject) {
+  try { window.localStorage.setItem(ACTIVE_STUDIO_PROJECT_KEY, saved.project.id); } catch { /* Storage may be unavailable. */ }
+  try { window.localStorage.setItem(STUDIO_PROJECT_STORAGE_KEY, JSON.stringify(saved.draft)); }
+  catch {
+    // Do not leave another project's stale draft behind the newly saved project pointer.
+    try { window.localStorage.removeItem(STUDIO_PROJECT_STORAGE_KEY); } catch { /* Storage may be unavailable. */ }
+  }
 }
 
 export function buildAudioMediaKey(sourceLabel: string) {

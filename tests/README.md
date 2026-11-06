@@ -55,6 +55,12 @@ Reports/checkpoints under `.tmp/h3-verification/` correlate project, plan, run, 
 
 On Windows, shell scripts are checked out with LF through `.gitattributes`. Run the test command with Git Bash on PATH and Bun available there; the Windows `system32/bash` WSL shim may not share the workstation's Bun installation. Keep the normal `bun run test` runner so isolated module-mock tests retain separate processes.
 
+Large project saves use bounded gzip request/response transport without dropping
+story or placement data. `bun run test studioJsonTransportRoute projectPersistence studioProjectStore`
+checks large 21-source save/reload, authentication before decompression, malformed
+input, expansion limits and browser cache quota handling. See the
+[transport contract](../docs/protocols/studio-project-json-transport.md).
+
 ## Probe command
 Use the local fixture lane to generate a canonical probe manifest:
 

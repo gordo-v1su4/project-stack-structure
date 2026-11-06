@@ -1,5 +1,6 @@
 import { defineConfig } from "@trigger.dev/sdk";
 import { additionalFiles, ffmpeg } from "@trigger.dev/build/extensions/core";
+import { identityRuntime } from "./trigger.identity-runtime";
 
 export default defineConfig({
   // The production project remains the default. Temporary self-hosted
@@ -28,9 +29,16 @@ export default defineConfig({
   build: {
     extensions: [
       ffmpeg({ version: "7" }),
+      identityRuntime(),
       // The higgsfield CLI is spawned at runtime (not imported), so the
       // bundler never traces it — ship the self-contained package explicitly.
-      additionalFiles({ files: ["node_modules/@higgsfield/cli/**"] }),
+      additionalFiles({ files: [
+        "node_modules/@higgsfield/cli/**",
+        "scripts/identity/*.py",
+        "scripts/identity/model-manifest.json",
+        "scripts/identity/requirements.lock",
+        "scripts/identity/licenses/*.txt",
+      ] }),
     ],
   },
   dirs: ["./src/trigger"],

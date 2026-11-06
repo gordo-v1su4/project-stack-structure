@@ -4,6 +4,7 @@ import { h3ProjectFixture } from "../helpers/h3Project";
 import type { SavedStudioProject } from "@/lib/studioProjectStore";
 import type { H3GenerationJob, H3GenerationRequest } from "@/components/studio/h3Generation";
 import { isPlacementPlanCurrent } from "@/components/studio/musicVideoProject";
+import { generatedAssetIdentityBlockReason } from "@/components/studio/generatedAssets";
 
 const options: VerificationOptions = { baseUrl: "http://127.0.0.1:3000", projectId: "project-1", run: false, zeroFootage: false, limit: 1 };
 
@@ -68,7 +69,8 @@ describe("H3 app verification harness", () => {
     expect(submissions[0].body).toEqual(submissions[1].body);
     expect((submissions[0].body as H3GenerationRequest).referenceAssetIds).toEqual(["diego", "club"]);
     expect(app.projects.get("verification-copy")?.draft.generatedAssets?.[0].reviewStatus).toBe("pending");
-    expect(app.projects.get("verification-copy")?.draft.generatedDraft?.assetIds).toEqual(["generated-1"]);
+    expect(app.projects.get("verification-copy")?.draft.generatedDraft?.assetIds).toEqual([]);
+    expect(generatedAssetIdentityBlockReason(app.projects.get("verification-copy")!.draft.generatedAssets![0])).toBe("Needs identity check");
     expect(app.projects.get("project-1")?.draft).toEqual(app.original.draft);
     expect(report.approvedAssetCount).toBe(0);
     expect(report.export.fullSongCovered).toBe(false);

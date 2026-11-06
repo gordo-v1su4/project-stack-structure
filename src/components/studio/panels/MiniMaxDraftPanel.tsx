@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { GeneratedStudioAsset } from "../generatedAssets";
+import { generatedAssetIdentityBlockReason, type GeneratedStudioAsset } from "../generatedAssets";
 import type { GeneratedDraftReview, GeneratedDraftSelection } from "../generatedDraft";
 import { createH3PickupWindow, enqueueH3DraftRequest, findH3TargetSegment, h3DraftBatchStorageKey, h3RequestWindowKey, h3WindowKey, nextH3Attempt, parseH3DraftBatch, planH3DraftWindows, selectH3PickupWindow, selectH3ReferenceAssetIds, type H3DraftBatch } from "../h3DraftPlan";
 import { isH3JobTerminal, type H3GenerationJob, type H3GenerationRequest } from "../h3Generation";
@@ -150,6 +150,14 @@ export function MiniMaxDraftPanel(props: Props) {
           setError(job.error || "A shot needs attention. Completed footage is preserved.");
           persistBatch({ ...batchRef.current!, paused: true, requests: batchRef.current!.requests.slice(1) });
           break;
+        }
+        const effectiveAsset = latest.current.assets.find(asset => asset.id === job.result?.asset.id) ?? job.result?.asset;
+        const identityBlock = effectiveAsset ? generatedAssetIdentityBlockReason(effectiveAsset) : "Needs identity check";
+        if (identityBlock) {
+          const remaining = batchRef.current!.requests.slice(1);
+          persistBatch(remaining.length ? { ...batchRef.current!, requests: remaining, paused: true } : null);
+          setMessage("The take was saved outside the draft.");
+          throw new Error(`${identityBlock}. Check likeness before continuing the remaining shots.`);
         }
         persistBatch({ ...batchRef.current!, requests: batchRef.current!.requests.slice(1) });
       }
@@ -346,15 +354,19 @@ export function MiniMaxDraftPanel(props: Props) {
     </Surface>
     {jobs.length ? <Surface aria-label="Generation progress">
       <h3 className="mb-2 text-sm font-semibold">Generation progress</h3>
-      <ul className="divide-y divide-line">{jobs.slice(0, 40).map(job => <li key={job.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-xs">
-        <span className="flex items-center gap-2"><StatusDot tone={job.state === "ready" ? "ready" : job.state === "failed" ? "failed" : "processing"} />{job.target.sectionLabel ?? job.request.sectionId} · {clock(job.request.songStart)}–{clock(job.request.songEnd)}</span>
-        <span className="text-fg-3">{STATE_LABELS[job.state]}{job.error ? `: ${job.error}` : ""}</span>
+      <ul className="divide-y divide-line">{jobs.slice(0, 40).map(job => {
+        const asset = props.assets.find(candidate => candidate.id === job.result?.asset.id) ?? job.result?.asset;
+        const identityBlock = asset ? generatedAssetIdentityBlockReason(asset) : null;
+        const rejected = asset?.reviewStatus === "rejected" || identityBlock === "Rejected";
+        return <li key={job.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-xs">
+        <span className="flex items-center gap-2"><StatusDot tone={rejected || job.state === "failed" || (job.state === "ready" && Boolean(identityBlock)) ? "failed" : job.state === "ready" ? "ready" : "processing"} />{job.target.sectionLabel ?? job.request.sectionId} · {clock(job.request.songStart)}–{clock(job.request.songEnd)}</span>
+        <span className="text-fg-3">{rejected ? "Rejected · excluded from draft" : job.state === "ready" && identityBlock ? identityBlock : STATE_LABELS[job.state]}{job.error ? `: ${job.error}` : ""}</span>
         <span className="flex flex-wrap gap-2">
           {(["submission_unknown", "rendering", "persisting"] as string[]).includes(job.state) ? <Button disabled={busy || accepting} onClick={() => void recoverJob(job, "resume")}>Check existing render</Button> : null}
           {job.state === "failed" || job.state === "cancelled" ? <Button disabled={busy || accepting || attemptsLeft(job) <= 0 || !findH3TargetSegment(props.segments, job.target)} onClick={() => void recoverJob(job, "retry")}>Retry shot ({attemptsLeft(job)} left)</Button> : null}
           {!isH3JobTerminal(job) && job.state !== "cancel_requested" ? <Button variant="danger" disabled={accepting} onClick={() => void recoverJob(job, "cancel")}>Cancel this shot</Button> : null}
         </span>
-      </li>)}</ul>
+      </li>; })}</ul>
     </Surface> : null}
     {selected.length ? <Surface aria-label="Review generated shots">
       <h3 className="text-sm font-semibold">Revise individual shots</h3>
@@ -371,7 +383,7 @@ export function MiniMaxDraftPanel(props: Props) {
     </Surface> : null}
     {props.assets.some(asset => !selectedIds.has(asset.id) && asset.mediaKind === "video" && asset.status === "completed" && asset.reviewStatus === "pending") ? <Surface>
       <h3 className="mb-2 text-sm font-semibold">Other takes</h3>
-      {props.assets.filter(asset => !selectedIds.has(asset.id) && asset.mediaKind === "video" && asset.status === "completed" && asset.reviewStatus === "pending").map(asset => <div key={asset.id} className="flex items-center justify-between gap-2 py-1 text-sm"><span>{asset.title}</span><Button disabled={busy || accepting || !asset.target || !findH3TargetSegment(props.segments, asset.target)} onClick={() => { props.onSelectAsset(asset); setReview(null); }}>Use in draft</Button></div>)}
+      {props.assets.filter(asset => !selectedIds.has(asset.id) && asset.mediaKind === "video" && asset.status === "completed" && asset.reviewStatus === "pending").map(asset => <div key={asset.id} className="flex items-center justify-between gap-2 py-1 text-sm"><span>{asset.title}{generatedAssetIdentityBlockReason(asset) ? ` · ${generatedAssetIdentityBlockReason(asset)}` : ""}</span><Button disabled={busy || accepting || Boolean(generatedAssetIdentityBlockReason(asset)) || !asset.target || !findH3TargetSegment(props.segments, asset.target)} reason={generatedAssetIdentityBlockReason(asset)} onClick={() => { props.onSelectAsset(asset); setReview(null); }}>Use in draft</Button></div>)}
     </Surface> : null}
   </div>;
 }

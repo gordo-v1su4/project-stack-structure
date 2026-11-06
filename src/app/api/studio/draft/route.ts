@@ -1,7 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { cookies } from "next/headers";
-import { NextResponse } from "next/server";
 import {
   buildMediaGatewayFileUrl,
   getMediaGatewayConfig,
@@ -10,6 +9,7 @@ import {
 } from "@/lib/mediaGateway";
 import { getSessionUser, unauthorizedResponse } from "@/lib/session";
 import type { PersistedStudioProjectDraft } from "@/components/studio/projectPersistence";
+import { readStudioJsonBody, studioJsonBodyErrorResponse, studioJsonResponse } from "@/lib/studioJsonTransportServer";
 
 export const runtime = "nodejs";
 
@@ -22,14 +22,14 @@ function draftStoragePath(userId: string) {
   return normalizeMediaPath(`${DRAFT_FOLDER}/${encodeURIComponent(userId)}.json`);
 }
 
-export async function GET() {
+export async function GET(request?: Request) {
   const user = await getSessionUser();
   if (!user) return unauthorizedResponse("Sign in with GitHub to load the studio draft.");
   try {
     if (studioDraftLocalCacheEnabled()) {
       const localDraft = await readLocalDraft();
       if (localDraft) {
-        return Response.json({ success: true, draft: localDraft, storagePath: draftStoragePath(user.id), source: "local-cache" });
+        return studioJsonResponse(request, { success: true, draft: localDraft, storagePath: draftStoragePath(user.id), source: "local-cache" });
       }
     }
 
@@ -61,7 +61,7 @@ export async function GET() {
       if (!draft) {
         return Response.json({ success: false, error: "Stored studio draft is invalid." }, { status: 422 });
       }
-      return Response.json({ success: true, draft, storagePath, source: "remote" });
+      return studioJsonResponse(request, { success: true, draft, storagePath, source: "remote" });
     }
     return Response.json({ success: true, draft: null, storagePath: legacyStoragePath });
   } catch (error) {
@@ -82,7 +82,7 @@ async function saveDraft(request: Request) {
   const user = await getSessionUser();
   if (!user) return unauthorizedResponse("Sign in with GitHub to save the studio draft.");
   try {
-    const body = await request.json() as { draft?: unknown } | unknown;
+    const body = await readStudioJsonBody(request);
     const draft = isDraftEnvelope(body) ? body.draft : body;
 
     if (!isPersistedDraft(draft)) {
@@ -104,7 +104,7 @@ async function saveDraft(request: Request) {
       preserveFileName: true,
     });
 
-    const response = NextResponse.json({ success: true, draft: savedDraft, storage: uploaded });
+    const response = await studioJsonResponse(request, { success: true, draft: savedDraft, storage: uploaded });
     response.cookies.set(DRAFT_POINTER_COOKIE, uploaded.storagePath, {
       httpOnly: true,
       sameSite: "lax",
@@ -114,6 +114,8 @@ async function saveDraft(request: Request) {
     });
     return response;
   } catch (error) {
+    const bodyError = studioJsonBodyErrorResponse(error);
+    if (bodyError) return bodyError;
     const message = error instanceof Error ? error.message : "Studio draft save failed";
     const status = /Missing RustFS media gateway env/i.test(message) ? 503 : 500;
     return Response.json({ success: false, error: message }, { status });

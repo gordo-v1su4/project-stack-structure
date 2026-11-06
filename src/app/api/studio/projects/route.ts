@@ -1,6 +1,7 @@
 import { auth } from "@/auth";
 import type { PersistedStudioProjectDraft } from "@/components/studio/projectPersistence";
 import { createStudioProjectId, listStudioProjects, saveStudioProject } from "@/lib/studioProjectStore";
+import { readStudioJsonBody, studioJsonBodyErrorResponse, studioJsonResponse } from "@/lib/studioJsonTransportServer";
 
 export const runtime = "nodejs";
 
@@ -15,8 +16,10 @@ export async function POST(request: Request) {
   const session = await auth();
   if (!session?.user?.id) return unauthorized();
 
-  const body = await request.json() as { name?: unknown; draft?: unknown; projectId?: unknown };
-  if (!isPersistedDraft(body.draft)) {
+  let body: { name?: unknown; draft?: unknown; projectId?: unknown };
+  try { body = await readStudioJsonBody(request) as typeof body; }
+  catch (error) { const response = studioJsonBodyErrorResponse(error); if (response) return response; throw error; }
+  if (!isPersistedDraft(body?.draft)) {
     return Response.json({ success: false, error: "A valid Studio project draft is required." }, { status: 400 });
   }
   const projectId = typeof body.projectId === "string" && body.projectId.trim()
@@ -24,7 +27,7 @@ export async function POST(request: Request) {
     : createStudioProjectId();
   const name = typeof body.name === "string" ? body.name : body.draft.analysis?.sourceLabel || "Untitled project";
   const saved = await saveStudioProject({ ownerId: session.user.id, projectId, name, draft: body.draft });
-  return Response.json({ success: true, saved }, { status: 201 });
+  return studioJsonResponse(request, { success: true, saved }, 201);
 }
 
 function isPersistedDraft(value: unknown): value is PersistedStudioProjectDraft {
