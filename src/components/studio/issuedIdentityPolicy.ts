@@ -5,10 +5,13 @@ import type { H3IdentityFaceRegion } from "../../lib/h3IdentityGallery";
 import { sha256 } from "@noble/hashes/sha2.js";
 import foregroundFamily from "../../../scripts/identity/families/sface-yunet-foreground-frontal-v1.json";
 import jointFamily from "../../../scripts/identity/families/sface-yunet-joint-frontal-v1.json";
+import foregroundFamilyV2 from "../../../scripts/identity/families/sface-yunet-foreground-frontal-v2.json";
+import jointFamilyV2 from "../../../scripts/identity/families/sface-yunet-joint-frontal-v2.json";
 import type { GeneratedStudioAsset } from "./generatedAssets";
 import type { ReferenceAsset } from "./referenceAssets";
 
-export type H3IdentityPolicyFamilyId = "sface-yunet-foreground-frontal-v1" | "sface-yunet-joint-frontal-v1";
+export type H3IdentityPolicyFamilyId = "sface-yunet-foreground-frontal-v1" | "sface-yunet-joint-frontal-v1"
+  | "sface-yunet-foreground-frontal-v2" | "sface-yunet-joint-frontal-v2";
 export type Sha256 = string; // Normalize exactly64 lowercase hex at every untrusted boundary.
 export type H3IdentityPolicyChoice = { identityPolicyFamily?: H3IdentityPolicyFamilyId };
 // Add optional identityPolicyFamily to H3GenerationRequest only when explicitly supplied.
@@ -23,7 +26,7 @@ export type H3PolicyModelPins = {
   preprocessBaseVersion: "opencv412-aligncrop112-rgb-f32-nchw-unit-centroid-v1";
 };
 export type H3PolicyFrontalGeometry = {
-  minimumFaceWidthPixels: 128; minimumFaceHeightPixels: 160; minimumDetectionScore: 0.94;
+  minimumFaceWidthPixels: 128; minimumFaceHeightPixels: 160; minimumDetectionScore: 0.94 | 0.9;
   maximumAbsoluteRollDegrees: 8; maximumAbsoluteNoseEyeMidpointOffsetOverEyeDistance: 0.1;
   maximumAbsoluteMouthEyeMidpointOffsetOverEyeDistance: 0.12; minimumEyeDistancePixels: 48;
   minimumNoseDepthOverEyeDistance: 0.15; maximumNoseDepthOverEyeDistance: 1.5;
@@ -87,6 +90,8 @@ export type H3PublicIssuedDraftPolicy = Omit<H3IssuedDraftPolicy, "issuedAt">;
 const families = [
   { ...foregroundFamily, sha256: "15c8acceeb809a13c4d322b03fd4967c3013ab78610774df1f3b3b28f3ad391b" },
   { ...jointFamily, sha256: "b6f5526099fc483a1fa0573f79636b40304e00e37c0074b1014cba15d6424b95" },
+  { ...foregroundFamilyV2, sha256: "45bd64dac164694b7715c7afd65debdea3a9b5db24725016f30fd05cea6ec6f4" },
+  { ...jointFamilyV2, sha256: "6abae4d91e76d21864c88d2e3fcbb03b4a7052f5a2bd7b47bbc7a56bb50c2a44" },
 ] as H3PolicyFamily[];
 function freeze(value: object) { Object.values(value).forEach(item => { if (item && typeof item === "object") freeze(item); }); return Object.freeze(value); }
 families.forEach(freeze);
@@ -95,8 +100,8 @@ export function getH3PolicyFamily(id: string): H3PolicyFamily | undefined { retu
 export function identityPolicyChoiceForReferences(assets: ReferenceAsset[], referenceAssetIds: readonly string[]): H3IdentityPolicyChoice {
   const count = assets.filter(asset => referenceAssetIds.includes(asset.id) && (asset.kind === "character" || asset.role.startsWith("character"))).length;
   if (count > 2) throw new Error("Create shots with at most two named characters so both can be screened.");
-  return count === 1 ? { identityPolicyFamily: "sface-yunet-foreground-frontal-v1" }
-    : count === 2 ? { identityPolicyFamily: "sface-yunet-joint-frontal-v1" } : {};
+  return count === 1 ? { identityPolicyFamily: "sface-yunet-foreground-frontal-v2" }
+    : count === 2 ? { identityPolicyFamily: "sface-yunet-joint-frontal-v2" } : {};
 }
 export function canonicalIdentityPolicyJson(value: unknown): string {
   const sort = (item: unknown): unknown => {

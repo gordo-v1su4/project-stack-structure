@@ -3,7 +3,7 @@ import { draftSimilarityFixture } from "./draftSimilarity";
 import { issuedPolicyFixture } from "./issuedIdentityPolicy";
 
 /** Synthetic new-project contracts only, not face likeness measurements. */
-export function issuedDraftAssetFixture(kind: "foreground" | "joint" = "foreground") {
+export function issuedDraftAssetFixture(kind: "foreground" | "joint" = "foreground", familyVersion: 1 | 2 = 1) {
   const { asset, gap } = draftSimilarityFixture();
   const projectId = "new-named-character-project", ownerId = "github-new-owner", id = `h3-${"7".repeat(64)}`;
   const references: H3ReferenceSnapshot[] = [
@@ -15,7 +15,7 @@ export function issuedDraftAssetFixture(kind: "foreground" | "joint" = "foregrou
     request: { projectId, planSignature: "plan", sectionId: "intro", timelineItemId: "arrival", requirementId: "arrival",
       songStart: 0, songEnd: 1.51, prompt: kind === "joint" ? "Maya 星 and Omar face the lens." : "Maya 星 faces the lens.",
       referenceAssetIds: references.map(ref => ref.assetId), requestIntentId: "12345678-1234-4123-8123-123456789abc",
-      identityPolicyFamily: kind === "joint" ? "sface-yunet-joint-frontal-v1" : "sface-yunet-foreground-frontal-v1" },
+      identityPolicyFamily: `sface-yunet-${kind}-frontal-v${familyVersion}` },
     target: asset.target!, state: "ready", createdAt: asset.createdAt, updatedAt: asset.createdAt, frames: 124 };
   const fixture = issuedPolicyFixture(job);
   const policy = fixture.policy, body = policy.body, proof = asset.identityVerification!, filter = proof.draftSimilarityFilter!;

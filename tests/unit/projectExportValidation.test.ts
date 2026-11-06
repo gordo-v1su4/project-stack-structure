@@ -143,9 +143,9 @@ describe("final export canonical identity and ownership boundary", () => {
       scores: [{ referenceHash: job.referenceHashes![0], trackId: "lead", score: .9 }] }));
     expect((await post(data)).status).toBe(409); expect(dispatches).toHaveLength(0);
   });
-  function issuedSetup() {
+  function issuedSetup(familyVersion: 1 | 2 = 1) {
     reset(); job.profile = "h3-ref2va-int8-v3"; job.conditioningPreparationVersion = "canonical-front-crops-v2";
-    job.request.identityPolicyFamily = "sface-yunet-foreground-frontal-v1";
+    job.request.identityPolicyFamily = `sface-yunet-foreground-frontal-v${familyVersion}`;
     job.references.forEach((ref, index) => { ref.etag = `etag-${index}`; });
     issuedPolicy = issuedPolicyFixture(job, job.referenceHashes).policy;
     const { body: _body, issuedAt: _issuedAt, ...binding } = issuedPolicy; void _body; void _issuedAt; job.identityPolicy = binding;
@@ -158,6 +158,18 @@ describe("final export canonical identity and ownership boundary", () => {
     const response = await post(form());
     expect(response.status).toBe(202); expect(dispatches).toHaveLength(1);
     expect(job.result!.asset.identityVerification!.status).toBe("unverifiable");
+  });
+  test("exports canonical v2 .934 detection evidence only with exact consent, keeping v1 blocked", async () => {
+    for (const version of [1, 2] as const) {
+      issuedSetup(version);
+      const asset = job.result!.asset;
+      for (const sample of asset.identityVerification!.draftSimilarityFilter!.samples) sample.foreground!.detections[0].quality.detectionScore = .934;
+      saved.draft.generatedAssets![0] = { ...structuredClone(asset), reviewStatus: "approved", approvedIdentityEvidenceSha256: currentIdentityEvidenceSha256(asset) };
+      const response = await post(form());
+      expect(response.status).toBe(version === 2 ? 202 : 409);
+      expect(dispatches).toHaveLength(version === 2 ? 1 : 0);
+      expect(asset.identityVerification!.status).toBe("unverifiable");
+    }
   });
   for (const failure of ["missing receipt", "changed canonical evidence", "changed approval trim", "missing consent", "foreign policy", "changed gallery"]) {
     test(`issued export refuses ${failure}`, async () => {

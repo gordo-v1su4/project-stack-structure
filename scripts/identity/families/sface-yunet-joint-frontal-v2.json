@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "model": {
+    "method": "face-embedding-cosine",
+    "model": "opencv-sface-2021dec-yunet-2023mar",
+    "recognitionSha256": "0ba9fbfa01b5270c96627c4ef784da859931e02f04419c829e83484087c34e79",
+    "detectionSha256": "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4",
+    "verifierVersion": "sface-yunet-cpu-v1",
+    "preprocessBaseVersion": "opencv412-aligncrop112-rgb-f32-nchw-unit-centroid-v1"
+  },
+  "threshold": 0.8,
+  "frontalGeometry": {
+    "minimumFaceWidthPixels": 128,
+    "minimumFaceHeightPixels": 160,
+    "minimumDetectionScore": 0.9,
+    "maximumAbsoluteRollDegrees": 8,
+    "maximumAbsoluteNoseEyeMidpointOffsetOverEyeDistance": 0.1,
+    "maximumAbsoluteMouthEyeMidpointOffsetOverEyeDistance": 0.12,
+    "minimumEyeDistancePixels": 48,
+    "minimumNoseDepthOverEyeDistance": 0.15,
+    "maximumNoseDepthOverEyeDistance": 1.5,
+    "maximumMouthDepthOverEyeDistance": 2.5,
+    "requireWholeFaceBoxInsideImage": true,
+    "minimumConsecutiveFaceBoxIoU": 0.15,
+    "minimumIntendedFrameCount": 3,
+    "requireEveryIntendedFrame": true
+  },
+  "acquisitionWarningsOnly": {
+    "nativeBoxBlurVarianceBelow": 100,
+    "nativeBoxLuminanceBelow": 60,
+    "nativeBoxLuminanceAbove": 190
+  },
+  "referencePreparation": {
+    "method": "yunet-frontal-coherent-gallery-v1",
+    "maximumDetectedFaceCount": 32,
+    "maximumGalleryRegionCount": 9,
+    "minimumGalleryRegionCount": 1,
+    "minimumPairwiseCosine": 0.8
+  },
+  "preserveIdentityVerificationStatus": "unverifiable",
+  "id": "sface-yunet-joint-frontal-v2",
+  "scope": {
+    "kind": "joint-frontal",
+    "requiredIdentityCount": 2,
+    "requiredDetectedFaceCount": 2,
+    "minimumAssignmentCosineMargin": 0.08,
+    "requireDistinctContinuousTracks": true,
+    "requireOwnPreviousBoxIoUGreaterThanCrossTrack": true
+  }
+}

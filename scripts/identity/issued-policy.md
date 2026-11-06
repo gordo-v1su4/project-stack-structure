@@ -6,7 +6,7 @@ server-issued policy envelope through trusted worker input. Neither command
 creates media, contacts a provider, changes project references, or certifies
 identity. Use the same pinned Python environment as the existing verifier.
 
-Two immutable files under `families/` define the numeric behavior independently
+Versioned immutable files under `families/` define the numeric behavior independently
 of a project or character name. Their canonical SHA256 registry is in
 `issued_policy.py`. The foreground family retains threshold 0.80, the existing
 frontal geometry and physical pixel minimums, dominant-face selection before
@@ -21,8 +21,8 @@ candidate is re-detected at native detail in a deterministic crop extending
 30% of its detected width on either side and 25% of its height above and below,
 clamped to the source image. This changes neither the raw source nor generation
 conditioning. Re-detection retains the same 128x160 physical pixel minimum,
-0.94 detector confidence and frontal landmark bounds; it does not reduce a
-threshold to accommodate whole-sheet downsampling. Each selected crop must
+the requested family's detector-confidence minimum and frontal landmark bounds.
+Each selected crop must
 contain exactly one detectable face. Overlapping detections of the same face
 are deduplicated by box IoU above 0.5. Candidates are ordered by source position.
 Every qualifying distinct frontal view is included, up to nine; all pairs must
@@ -45,6 +45,20 @@ canonical policy/approval checks still apply. These editorial operating rules,
 correlated frames and reference-sheet consistency checks do not establish a
 held-out identity accuracy or false-accept rate. Historical fixed project
 policies, rejected clips and their reports remain unchanged when opt-in is absent.
+
+The foreground and joint `frontal-v1` families retain detector confidence 0.94.
+The separately pinned `frontal-v2` families use 0.90; all other numeric rules,
+including cosine 0.80 and every-frame geometry/tracking, are identical. New UI
+intents request v2. Restored intents keep their explicit family or absent field;
+parsing and retries never upgrade it. A failed older take remains excluded and
+requires a deliberate new creative intent with a fresh render and preflight.
+Its earlier attempts and any explicit rejection remain in history.
+
+This operating-point decision was made after observing the P05 detector-only
+failure. [OpenCV 4.12's FaceDetectorYN API](https://docs.opencv.org/4.12.0/df/d20/classcv_1_1FaceDetectorYN.html)
+documents a 0.90 detection-score default. That default is not a calibrated
+likeness threshold or an identity-accuracy claim. Parent proofs remain
+`unverifiable`, and final draft review remains required.
 
 Focused tests: `uv run --no-project --python <pinned-python> python -m unittest
 discover -s scripts/identity -p test_issued_policy.py`. Local real-media fixtures

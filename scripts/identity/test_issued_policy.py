@@ -22,8 +22,8 @@ def face(x=300, y=20, width=240, height=344, track="lead", feature=None):
             x+.35*width, y+.7*height, x+.65*width, y+.7*height]}
 
 
-def fixture(joint=False):
-    family = load_family("sface-yunet-joint-frontal-v1" if joint else "sface-yunet-foreground-frontal-v1")
+def fixture(joint=False, version=1):
+    family = load_family(f"sface-yunet-{'joint' if joint else 'foreground'}-frontal-v{version}")
     refs = [{"assetId": "ref-"+str(i), "canonicalName": name, "rawSha256": str(i+1)*64, "role": "identity",
         "bucket": "media", "objectKey": "media-uploads/owner/"+str(i), "version": "v1", "etag": '"immutable"'}
         for i, name in enumerate(["Renée", "Second Lead"] if joint else ["Renée"])]

@@ -7,6 +7,8 @@ from pathlib import Path
 FAMILIES = {
     "sface-yunet-foreground-frontal-v1": "15c8acceeb809a13c4d322b03fd4967c3013ab78610774df1f3b3b28f3ad391b",
     "sface-yunet-joint-frontal-v1": "b6f5526099fc483a1fa0573f79636b40304e00e37c0074b1014cba15d6424b95",
+    "sface-yunet-foreground-frontal-v2": "45bd64dac164694b7715c7afd65debdea3a9b5db24725016f30fd05cea6ec6f4",
+    "sface-yunet-joint-frontal-v2": "6abae4d91e76d21864c88d2e3fcbb03b4a7052f5a2bd7b47bbc7a56bb50c2a44",
 }
 
 

@@ -10,6 +10,9 @@ describe("owned plan-bound H3 generation", () => {
     const historical = parseH3Request(request);
     expect(Object.hasOwn(historical, "identityPolicyFamily")).toBe(false);
     const screened = parseH3Request({ ...request, identityPolicyFamily: "sface-yunet-foreground-frontal-v1" });
+    const nextFamily = parseH3Request({ ...request, requestIntentId: "77777777-7777-4777-8777-777777777777", identityPolicyFamily: "sface-yunet-foreground-frontal-v2" });
+    expect(materializeH3Job("github-test", saved, nextFamily, "studio").id).not.toBe(materializeH3Job("github-test", saved, screened, "studio").id);
+    expect(screened.identityPolicyFamily).toBe("sface-yunet-foreground-frontal-v1");
     expect(materializeH3Job("github-test", saved, screened, "studio").id).not.toBe(materializeH3Job("github-test", saved, historical, "studio").id);
     expect(() => parseH3Request({ ...request, identityPolicyFamily: "client-chosen-loose-threshold" })).toThrow();
     expect(() => materializeH3Job("github-test", saved, { ...request, identityPolicyFamily: "sface-yunet-joint-frontal-v1" }, "studio")).toThrow("named reference count");

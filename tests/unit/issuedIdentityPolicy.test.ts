@@ -12,7 +12,7 @@ import { issuedDraftAssetFixture } from "../helpers/issuedDraftAsset";
 import { h3ProjectFixture } from "../helpers/h3Project";
 
 describe("fixed numerical families and dynamically issued reference bindings", () => {
-  for (const id of ["sface-yunet-foreground-frontal-v1", "sface-yunet-joint-frontal-v1"]) {
+  for (const id of ["sface-yunet-foreground-frontal-v1", "sface-yunet-joint-frontal-v1", "sface-yunet-foreground-frontal-v2", "sface-yunet-joint-frontal-v2"]) {
     test(`${id} pins the exact numerical family bytes`, async () => {
       const body = JSON.parse(await readFile(`scripts/identity/families/${id}.json`, "utf8")), family = getH3PolicyFamily(id)!;
       expect(identityPolicySha256(body)).toBe(family.sha256);
@@ -112,13 +112,53 @@ describe("fixed numerical families and dynamically issued reference bindings", (
 
   test("UI opts only new one/two-character requests in and leaves historical persisted requests absent", () => {
     const { saved, request } = h3ProjectFixture(), refs = saved.draft.referenceAssets!;
-    expect(identityPolicyChoiceForReferences(refs, ["diego", "club"])).toEqual({ identityPolicyFamily: "sface-yunet-foreground-frontal-v1" });
+    expect(identityPolicyChoiceForReferences(refs, ["diego", "club"])).toEqual({ identityPolicyFamily: "sface-yunet-foreground-frontal-v2" });
     const second = { ...refs[0], id: "second", role: "character-2" as const, displayName: "Omar" };
-    expect(identityPolicyChoiceForReferences([...refs, second], ["diego", "second", "club"])).toEqual({ identityPolicyFamily: "sface-yunet-joint-frontal-v1" });
+    expect(identityPolicyChoiceForReferences([...refs, second], ["diego", "second", "club"])).toEqual({ identityPolicyFamily: "sface-yunet-joint-frontal-v2" });
     expect(identityPolicyChoiceForReferences(refs, ["club"])).toEqual({});
     const restored = parseH3DraftBatch(JSON.stringify({ version: 1, projectId: request.projectId, planSignature: request.planSignature, requests: [request], paused: false }), request.projectId)!;
     expect("identityPolicyFamily" in restored.requests[0]).toBe(false);
+    const pendingV1 = { ...request, identityPolicyFamily: "sface-yunet-foreground-frontal-v1" };
+    const restoredV1 = parseH3DraftBatch(JSON.stringify({ version: 1, projectId: request.projectId, planSignature: request.planSignature, requests: [pendingV1], paused: false }), request.projectId)!;
+    expect(restoredV1.requests[0]).toEqual(pendingV1);
     expect(getH3PolicyFamily("unknown")).toBe(undefined);
+  });
+
+  test("v2 changes only detector confidence, preserving the exact v1 families and every other rule", () => {
+    for (const kind of ["foreground", "joint"] as const) {
+      const old = getH3PolicyFamily(`sface-yunet-${kind}-frontal-v1`)!;
+      const next = getH3PolicyFamily(`sface-yunet-${kind}-frontal-v2`)!;
+      expect(old.frontalGeometry.minimumDetectionScore).toBe(.94);
+      expect(next.frontalGeometry.minimumDetectionScore).toBe(.90);
+      expect({ ...next, id: old.id, sha256: old.sha256,
+        frontalGeometry: { ...next.frontalGeometry, minimumDetectionScore: .94 } }).toEqual(old);
+    }
+  });
+
+  test("v2 foreground evidence admits .934 detection only with every other rule met; explicit rejection still wins", () => {
+    for (const version of [1, 2] as const) {
+      const { asset } = issuedDraftAssetFixture("foreground", version);
+      for (const sample of asset.identityVerification!.draftSimilarityFilter!.samples) sample.foreground!.detections[0].quality.detectionScore = .934;
+      expect(generatedAssetDraftIdentityBlockReason(asset) === null).toBe(version === 2);
+      if (version === 2) {
+        const original = structuredClone(asset);
+        asset.identityVerification!.draftSimilarityFilter!.samples[0].foreground!.detections[0].quality.detectionScore = .899;
+        expect(generatedAssetDraftIdentityBlockReason(asset)).not.toBeNull();
+        original.identityVerification!.draftSimilarityFilter!.samples[0].scores[0].score = .79;
+        expect(generatedAssetDraftIdentityBlockReason(original)).not.toBeNull();
+        const rejected = issuedDraftAssetFixture("foreground", 2).asset;
+        rejected.reviewStatus = "rejected";
+        expect(generatedAssetDraftIdentityBlockReason(rejected)).toBe("Rejected");
+      }
+    }
+  });
+
+  test("new joint v2 remains explicitly uncalibrated and binds its own immutable family", () => {
+    const { asset, policy } = issuedDraftAssetFixture("joint", 2);
+    expect(normalizeH3IssuedDraftPolicy(policy)).toEqual(policy);
+    expect(generatedAssetDraftIdentityBlockReason(asset)).toBeNull();
+    expect(asset.identityVerification!.status).toBe("unverifiable");
+    expect(asset.identityVerification!.verifier.calibrationId).toBe("uncalibrated-no-automatic-pass-v1");
   });
 
   test("native24fps controls retain the old30fps fallback without mutating existing trim seconds", () => {
