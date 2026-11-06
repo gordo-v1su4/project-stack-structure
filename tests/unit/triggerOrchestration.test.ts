@@ -6,11 +6,20 @@ import {
   buildStoryTreatmentDispatchKey,
 } from "@/lib/triggerOrchestration";
 import { MEDIA_ASSEMBLY_MACHINE } from "@/trigger/queues";
-import { resolvePreviewSegments } from "@/trigger/ffmpeg";
+import { resolvePreviewSegments, buildFfmpegPreviewFolder } from "@/trigger/ffmpeg";
+import { mediaUploadBelongsToOwner } from "@/lib/essentiaUpload";
 import { resolveExportSegments } from "@/trigger/export";
 import { copyAudioChunk } from "@/trigger/essentia";
 
 describe("Trigger orchestration", () => {
+  test("worker preview outputs use the authenticated owner's durable download namespace", () => {
+    const folder = buildFfmpegPreviewFolder("github-owner-a", "preview/first");
+    expect(folder).toBe("media-uploads/github-owner-a/generated/previews/preview-first");
+    expect(mediaUploadBelongsToOwner(`${folder}/output.mp4`, "github-owner-a")).toBe(true);
+    expect(mediaUploadBelongsToOwner(`${folder}/output.mp4`, "github-owner-b")).toBe(false);
+    expect(() => buildFfmpegPreviewFolder(undefined, "preview")).toThrow("authenticated application owner");
+    expect(() => buildFfmpegPreviewFolder("  ", "preview")).toThrow("authenticated application owner");
+  });
   test("deduplicates one story delivery but separates new gestures, validation repairs, operations and users", () => {
     const payload = { operation: "generate" as const, model: "qwen", instructions: "Direct the story", input: "Same seed", reviewContext: { brief: "Same seed", constraints: [] } };
     const intent = { requestIntentId: "00000000-0000-4000-8000-000000000001", validationAttempt: 0 };

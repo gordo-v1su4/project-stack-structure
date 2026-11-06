@@ -2,10 +2,42 @@ import { describe, expect, test } from "bun:test";
 import { uploadGeneratedClipToRustFs } from "@/components/studio/generatedClipUpload";
 import { uploadReferenceAssetToRustFs } from "@/components/studio/referenceAssets";
 import { uploadFileDirectlyToRustFs } from "@/components/studio/directUploadClient";
+import { buildImportedVideoUploadFolder } from "@/components/studio/externalClipImport";
+import { validateDirectUploadInput } from "@/lib/directStorageUpload";
 
 const originalFetch = globalThis.fetch;
 
 describe("direct browser media uploads", () => {
+  test("imports editorial and Seedance clips for real colon-delimited story cuts through strict folder validation", async () => {
+    const cutId = "story-item:part-1:shot-7:243.850";
+    const projectId = "75101b25-fea6-42b1-b2c6-85a9d1deb8eb";
+    const metadata = { fileName: "outro.mp4", size: 7, contentType: "video/mp4" };
+    expect(() => validateDirectUploadInput({ ...metadata, folder: `media-uploads/editorial/original-footage/${projectId}/${cutId}` })).toThrow("Invalid media folder.");
+    const folders: string[] = [];
+    globalThis.fetch = (async (input, init) => {
+      if (String(input) === "https://storage.test/outro") return new Response(null, { status: 200 });
+      const payload = JSON.parse(String(init?.body));
+      if (payload.action === "start") {
+        folders.push(validateDirectUploadInput(payload).folder);
+        return Response.json({ token: "signed-receipt", partSize: 32, parts: [{ number: 1, url: "https://storage.test/outro" }] });
+      }
+      return Response.json({ bucket: "stack-structure", objectKey: "media-uploads/owner/outro.mp4", publicUrl: "https://media.test/outro.mp4", mime: "video/mp4", uploadToken: payload.token });
+    }) as typeof fetch;
+    try {
+      for (const kind of ["original-footage", "seedance"] as const) {
+        await uploadGeneratedClipToRustFs({ file: new File(["1234567"], metadata.fileName, { type: metadata.contentType }),
+          folder: buildImportedVideoUploadFolder({ kind, projectId, cutId }) });
+      }
+      expect(folders).toEqual([
+        `media-uploads/editorial/original-footage/${projectId}/story-item-part-1-shot-7-243.850`,
+        `media-uploads/generated/higgsfield/seedance/${projectId}/story-item-part-1-shot-7-243.850`,
+      ]);
+      for (const cut of ["..", ".", "../escape/other:cut", "名字 / cut", "x".repeat(1000)]) {
+        expect(validateDirectUploadInput({ ...metadata, folder: buildImportedVideoUploadFolder({ projectId, cutId: cut }) }).size).toBe(7);
+      }
+    } finally { globalThis.fetch = originalFetch; }
+  });
+
   test("sends only metadata to the app and exact ordered file bytes to storage", async () => {
     const actions: string[] = [];
     const sentBytes: number[] = [];

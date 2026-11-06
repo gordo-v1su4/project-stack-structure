@@ -7,6 +7,8 @@ import { AbortTaskRunError, logger, task } from "@trigger.dev/sdk";
 import { generateConcatPreview, generateSectionPreview } from "@/components/studio/previewGeneration";
 import { probeMediaFile } from "@/components/studio/mediaProbe";
 import { downloadMediaGatewayFile, uploadFileToMediaGateway, type MediaGatewayUploadResult } from "@/lib/mediaGateway";
+import { scopeMediaUploadFolder } from "@/lib/essentiaUpload";
+import { assertExportInputOwnership } from "@/lib/exportInputs";
 
 import { MEDIA_ASSEMBLY_MACHINE, mediaAssemblyQueue } from "./queues";
 import { markWorkCompleted, markWorkRunning } from "./workMetadata";
@@ -19,6 +21,8 @@ export type FfmpegInputRef = {
 };
 
 export type FfmpegPreviewPayload = {
+  /** Injected from the authenticated dispatch session; never copied from browser fields. */
+  applicationUserId?: string;
   operation: "concat" | "preview";
   requestKey: string;
   inputFiles: FfmpegInputRef[];
@@ -45,6 +49,8 @@ export const ffmpegPreviewTask = task({
   run: async (payload: FfmpegPreviewPayload, { ctx }): Promise<FfmpegPreviewOutput> => {
     if (!payload.requestKey?.trim()) throw new AbortTaskRunError("FFmpeg preview requestKey is required.");
     if (!payload.inputFiles?.length) throw new AbortTaskRunError("FFmpeg preview requires at least one stored input file.");
+    const outputFolder = buildFfmpegPreviewFolder(payload.applicationUserId, payload.requestKey);
+    assertExportInputOwnership(payload.inputFiles.map(input => ({ ...input, mimeType: input.mimeType || "video/mp4" })), payload.applicationUserId!);
     markWorkRunning("rendering", "Rendering preview", { progressMode: "indeterminate" });
     const workspace = await mkdtemp(path.join(os.tmpdir(), "stack-structure-preview-"));
     try {
@@ -75,7 +81,7 @@ export const ffmpegPreviewTask = task({
       const output = await readFile(asset.outputPath);
       const storage = await uploadFileToMediaGateway({
         file: new File([output], `${sanitize(payload.requestKey)}.mp4`, { type: "video/mp4" }),
-        folder: `media-uploads/generated/previews/${sanitize(payload.requestKey)}`,
+        folder: outputFolder,
       });
 
       logger.info("FFmpeg preview persisted", {
@@ -97,6 +103,11 @@ export const ffmpegPreviewTask = task({
     }
   },
 });
+
+export function buildFfmpegPreviewFolder(applicationUserId: string | undefined, requestKey: string) {
+  if (!applicationUserId?.trim()) throw new AbortTaskRunError("FFmpeg preview requires its authenticated application owner.");
+  return scopeMediaUploadFolder(`media-uploads/generated/previews/${sanitize(requestKey)}`, applicationUserId);
+}
 
 export function resolvePreviewSegments(
   segments: NonNullable<FfmpegPreviewPayload["segments"]>,

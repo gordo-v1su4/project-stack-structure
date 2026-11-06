@@ -302,8 +302,9 @@ export async function triggerFfmpegPreview(payload: FfmpegPreviewPayload) {
     stageLabel: "Waiting for media assembly capacity",
     progressMode: "indeterminate",
   });
-  return tasks.trigger<typeof ffmpegPreviewTask>(STACK_STRUCTURE_TRIGGER_TASKS.ffmpegPreview, payload, {
+  return tasks.trigger<typeof ffmpegPreviewTask>(STACK_STRUCTURE_TRIGGER_TASKS.ffmpegPreview, { ...payload, applicationUserId: dispatch.userId }, {
     idempotencyKey: createTriggerIdempotencyKey("ffmpeg-preview", [
+      dispatch.userId,
       payload.operation,
       payload.requestKey,
       ...payload.inputFiles.map((file) => `${file.bucket}:${file.objectKey}`),

@@ -12,7 +12,7 @@ mock.module("@trigger.dev/sdk", () => ({ idempotencyKeys: { create: async (key: 
   tasks: { trigger: async (task: string, payload: Record<string, unknown>, options: Record<string, unknown>) => {
     sends.push({ task, payload, options }); return { id: "recheck-run" };
   } } }));
-const { triggerH3IdentityRecheck } = await import("@/lib/triggerOrchestration");
+const { triggerH3IdentityRecheck, triggerFfmpegPreview } = await import("@/lib/triggerOrchestration");
 const job = { id: `h3-${"a".repeat(64)}`, ownerId: "owner-a", projectId: "project-a", request: { prompt: "Saved shot" } } as H3GenerationJob;
 const intent = "00000000-0000-4000-8000-000000000001";
 
@@ -36,6 +36,26 @@ describe("CPU identity recheck dispatch", () => {
   test("requires an explicit new intent rather than reusing generation idempotency", async () => {
     owner = "owner-a"; sends.length = 0;
     await expect(triggerH3IdentityRecheck(job, "")).rejects.toThrow("intent UUID");
+    expect(sends).toHaveLength(0);
+  });
+});
+
+describe("authenticated preview dispatch", () => {
+  const payload = { operation: "concat" as const, requestKey: "same-preview", applicationUserId: "forged-owner",
+    inputFiles: [{ bucket: "stack-structure", objectKey: "media-uploads/owner-a/video-source/input.mp4", fileName: "input.mp4" }] };
+  test("overrides payload owner claims and keeps idempotency separate across accounts", async () => {
+    owner = "owner-a"; sends.length = 0;
+    await triggerFfmpegPreview(payload);
+    expect(sends[0].payload.applicationUserId).toBe("owner-a");
+    expect(sends[0].options.tags).toContain("user:owner-a");
+    owner = "owner-b";
+    await triggerFfmpegPreview(payload);
+    expect(sends[1].payload.applicationUserId).toBe("owner-b");
+    expect(sends[1].options.idempotencyKey).not.toBe(sends[0].options.idempotencyKey);
+  });
+  test("does not dispatch anonymous previews", async () => {
+    owner = null; sends.length = 0;
+    await expect(triggerFfmpegPreview(payload)).rejects.toThrow("Sign in");
     expect(sends).toHaveLength(0);
   });
 });

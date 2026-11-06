@@ -3,6 +3,20 @@ import type { GeneratedStudioAsset, GeneratedStudioAssetTarget } from "./generat
 
 export type ExternalClipImportKind = "seedance" | "original-footage";
 
+/** Folder labels only; the exact cut target is stored separately and the server inserts the owner. */
+export function buildImportedVideoUploadFolder({ kind = "seedance", projectId, cutId }: {
+  kind?: ExternalClipImportKind;
+  projectId?: string;
+  cutId: string;
+}): string {
+  const segment = (value: string | undefined, fallback: string) => {
+    const safe = (value ?? "").replace(/[^a-zA-Z0-9._-]+/g, "-").slice(0, 160);
+    return !safe || safe === "." || safe === ".." ? fallback : safe;
+  };
+  const prefix = kind === "original-footage" ? "editorial/original-footage" : "generated/higgsfield/seedance";
+  return `media-uploads/${prefix}/${segment(projectId, "draft")}/${segment(cutId, "resolved-cut")}`;
+}
+
 /** Provenance is explicit; importing never approves a clip or supplies H3 evidence. */
 export function createImportedVideoAsset({ kind = "seedance", fileName, durationSeconds, storage, target }: {
   kind?: ExternalClipImportKind;

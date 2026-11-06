@@ -22,7 +22,7 @@ import {
   type GeneratedStudioAsset,
 } from "../generatedAssets";
 import { uploadGeneratedClipToRustFs } from "../generatedClipUpload";
-import { createImportedVideoAsset, type ExternalClipImportKind } from "../externalClipImport";
+import { buildImportedVideoUploadFolder, createImportedVideoAsset, type ExternalClipImportKind } from "../externalClipImport";
 import { buildSeedanceContinuationPacket, serializeSeedanceContinuationPacket, type SeedanceVideoModel } from "../seedanceContinuation";
 import { buildSeedanceAudioPlacementKey } from "../seedanceAudioReference";
 import { buildAdaptiveCueMap } from "../adaptiveCueMap";
@@ -241,7 +241,8 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
         const durationSeconds = await readVideoDuration(file);
         const payload = await uploadGeneratedClipToRustFs({
           file,
-          folder: `${externalImportKind === "original-footage" ? "media-uploads/editorial/original-footage" : "media-uploads/generated/higgsfield/seedance"}/${project?.id ?? "draft"}/${selectedReturnSlot?.item.id ?? `cut-${selectedPreviewRange!.startIndex + 1}`}`,
+          folder: buildImportedVideoUploadFolder({ kind: externalImportKind, projectId: project?.id,
+            cutId: selectedReturnSlot?.item.id ?? `cut-${selectedPreviewRange!.startIndex + 1}` }),
           onPartUploaded: (uploaded, total) => {
             setGeneratedImportStatus(`Uploading ${file.name}: part ${uploaded}/${total} to RustFS...`);
           },

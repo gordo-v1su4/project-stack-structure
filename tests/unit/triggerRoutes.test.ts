@@ -98,6 +98,8 @@ const { POST: postStorageUpload } = await import("@/app/api/storage/upload/route
 const { POST: postStorageDirect } = await import("@/app/api/storage/direct/route");
 const { POST: postMediaJob } = await import("@/app/api/media/video/jobs/route");
 const { POST: postPreviewGateway } = await import("@/app/api/preview/gateway/route");
+const { POST: postPreviewSection } = await import("@/app/api/preview/section/route");
+const { GET: getStoredMedia } = await import("@/app/api/storage/media/route");
 const { POST: postSeedanceAudioReference } = await import("@/app/api/generate/seedance/audio-reference/route");
 const { POST: postFinalExport } = await import("@/app/api/export/final/route");
 const { POST: postShaderExport } = await import("@/app/api/export/shader-capture/route");
@@ -485,6 +487,53 @@ describe("Next route Trigger.dev dispatch boundary", () => {
     expect(payload.runId).toBe("run-preview-123");
     expect(uploadFileToMediaGatewayMock).toHaveBeenCalledTimes(1);
     expect(triggerMocks.triggerFfmpegPreview).toHaveBeenCalledTimes(1);
+    expect(uploadFileToMediaGatewayMock.mock.calls[0][0].folder).toBe("media-uploads/github-test-user/preview-inputs/preview-route-test");
+  });
+
+  test("owner-scoped preview output streams through the authenticated durable-media route", async () => {
+    resetMocks();
+    const previousFetch = globalThis.fetch;
+    const objectKey = "media-uploads/github-test-user/generated/previews/preview-route-test/output.mp4";
+    const bytes = new Uint8Array([0, 0, 0, 24, 102, 116, 121, 112]);
+    const upstream = mock(async () => new Response(bytes, { headers: { "content-type": "video/mp4" } }));
+    globalThis.fetch = upstream as unknown as typeof fetch;
+    try {
+      const response = await getStoredMedia(new Request(`http://localhost/api/storage/media?${new URLSearchParams({ bucket: "stack-structure", objectKey })}`));
+      expect(response.status).toBe(200);
+      expect(new Uint8Array(await response.arrayBuffer())).toEqual(bytes);
+      expect(upstream).toHaveBeenCalledTimes(1);
+      authenticatedUserId = "github-other-user";
+      const foreign = await getStoredMedia(new Request(`http://localhost/api/storage/media?${new URLSearchParams({ bucket: "stack-structure", objectKey })}`));
+      expect(foreign.status).toBe(403);
+      expect(upstream).toHaveBeenCalledTimes(1);
+    } finally { globalThis.fetch = previousFetch; }
+  });
+
+  test("gateway and section preview reject foreign or unowned refs before worker dispatch", async () => {
+    for (const objectKey of ["media-uploads/github-other-user/video-source/input.mp4", "media-uploads/generated/previews/legacy/output.mp4"]) {
+      resetMocks();
+      const form = new FormData();
+      form.set("refs", JSON.stringify([{ bucket: "stack-structure", objectKey }]));
+      form.set("segments", JSON.stringify([{ sourceIndex: 0, startTime: 0, endTime: 1 }]));
+      const response = await postPreviewGateway(new Request("http://localhost/api/preview/gateway", { method: "POST", body: form }));
+      expect(response.status).toBe(403);
+      const section = await postPreviewSection(new Request("http://localhost/api/preview/section", { method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ inputs: [{ bucket: "stack-structure", objectKey }], startTime: 0, endTime: 1 }) }));
+      expect(section.status).toBe(403);
+      expect(triggerMocks.triggerFfmpegPreview).toHaveBeenCalledTimes(0);
+    }
+  });
+
+  test("preview routes preserve owned canonical H3 durable refs", async () => {
+    resetMocks();
+    const objectKey = `media-uploads/projects/github-test-user/generated/project-a/h3-${"a".repeat(64)}/shot.mp4`;
+    const form = new FormData();
+    form.set("refs", JSON.stringify([{ bucket: "stack-structure", objectKey }]));
+    form.set("segments", JSON.stringify([{ sourceIndex: 0, startTime: 0, endTime: 1 }]));
+    expect((await postPreviewGateway(new Request("http://localhost/api/preview/gateway", { method: "POST", body: form }))).status).toBe(202);
+    expect((await postPreviewSection(new Request("http://localhost/api/preview/section", { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ inputs: [{ bucket: "stack-structure", objectKey }], startTime: 0, endTime: 1 }) }))).status).toBe(202);
+    expect(triggerMocks.triggerFfmpegPreview).toHaveBeenCalledTimes(2);
   });
 
   test("queues a just-in-time Seedance audio timing reference from owned durable audio", async () => {

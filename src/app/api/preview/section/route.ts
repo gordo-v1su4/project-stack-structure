@@ -1,6 +1,7 @@
 import { getMediaGatewayConfig, normalizeMediaPath } from "@/lib/mediaGateway";
 import { getSessionUser, unauthorizedResponse } from "@/lib/session";
 import { triggerFfmpegPreview } from "@/lib/triggerOrchestration";
+import { assertExportInputOwnership, resolveDurableInput } from "@/lib/exportInputs";
 
 export const runtime = "nodejs";
 
@@ -34,13 +35,16 @@ export async function POST(request: Request) {
       if (config && bucket !== config.bucket) {
         return Response.json({ success: false, error: `bucket must be ${config.bucket}.` }, { status: 400 });
       }
+      const durable = resolveDurableInput({ bucket, objectKey }, input.mimeType || "video/mp4");
       inputFiles.push({
         bucket,
-        objectKey,
+        objectKey: durable.objectKey,
         fileName: input.fileName?.slice(0, 255) || "source.mp4",
         mimeType: input.mimeType || "video/mp4",
       });
     }
+    try { assertExportInputOwnership(inputFiles, user.id); }
+    catch (error) { return Response.json({ success: false, error: (error as Error).message }, { status: 403 }); }
 
     const handle = await triggerFfmpegPreview({
       operation: "preview",

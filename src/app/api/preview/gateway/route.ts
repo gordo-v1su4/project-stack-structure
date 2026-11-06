@@ -1,6 +1,8 @@
-import { getMediaGatewayConfig, normalizeMediaPath, uploadFileToMediaGateway } from "@/lib/mediaGateway";
+import { getMediaGatewayConfig, uploadFileToMediaGateway } from "@/lib/mediaGateway";
 import { getSessionUser, unauthorizedResponse } from "@/lib/session";
 import { triggerFfmpegPreview } from "@/lib/triggerOrchestration";
+import { scopeMediaUploadFolder } from "@/lib/essentiaUpload";
+import { assertExportInputOwnership, resolveDurableInput } from "@/lib/exportInputs";
 
 export const runtime = "nodejs";
 
@@ -27,9 +29,7 @@ function resolveRefsToInputs(refs: GatewayInputRef[]) {
     throw new Error("RustFS media gateway env is not configured; durable preview references cannot be resolved.");
   }
   return refs.map((ref) => {
-    const objectKey = normalizeMediaPath(ref.objectKey);
-    if (!objectKey || objectKey.length > 512) throw new Error("Invalid durable reference object key.");
-    if (!ref.bucket || ref.bucket !== config.bucket) throw new Error(`Durable reference bucket must be ${config.bucket}.`);
+    const { objectKey } = resolveDurableInput(ref, "video/mp4");
     return {
       bucket: ref.bucket,
       objectKey,
@@ -72,8 +72,10 @@ export async function POST(request: Request) {
     if (parsedRefs) {
       inputFiles = resolveRefsToInputs(parsedRefs);
     } else {
-      inputFiles = await uploadClientFilesToInputs(formData, primary as File, requestKey);
+      inputFiles = await uploadClientFilesToInputs(formData, primary as File, requestKey, user.id);
     }
+    try { assertExportInputOwnership(inputFiles, user.id); }
+    catch (error) { return Response.json({ success: false, error: (error as Error).message }, { status: 403 }); }
 
     const handle = await triggerFfmpegPreview({
       operation: "concat",
@@ -94,7 +96,7 @@ export async function POST(request: Request) {
   }
 }
 
-async function uploadClientFilesToInputs(formData: FormData, primary: File, requestKey: string) {
+async function uploadClientFilesToInputs(formData: FormData, primary: File, requestKey: string, ownerId: string) {
   const indexedFiles = [...formData.entries()]
     .map(([key, value]) => {
       const match = key.match(/^file:(\d+)$/);
@@ -107,7 +109,7 @@ async function uploadClientFilesToInputs(formData: FormData, primary: File, requ
   return Promise.all(files.map(async (file) => {
     const uploaded = await uploadFileToMediaGateway({
       file,
-      folder: `media-uploads/preview-inputs/${sanitize(requestKey)}`,
+      folder: scopeMediaUploadFolder(`media-uploads/preview-inputs/${sanitize(requestKey)}`, ownerId),
     });
     return {
       bucket: uploaded.bucket,
