@@ -418,8 +418,14 @@ function preciseClock(seconds: number) { return `${Math.floor(seconds / 60)}:${(
 function SimilarityFilterNote({ asset }: { asset: GeneratedStudioAsset }) {
   const label = generatedAssetDraftSimilarityLabel(asset), warnings = generatedAssetDraftSimilarityWarnings(asset);
   if (!label && !warnings.length) return null;
+  const filter = asset.identityVerification?.draftSimilarityFilter;
+  const scores = label && filter ? filter.samples.flatMap((sample) => sample.scores.map(({ score }) => score)) : [];
   return <div aria-label="Similarity filter evidence" className="w-full py-1 text-xs text-fg-3">
     {label ? <p className="text-fg-2">{label}. Identity remains unverified; review the assembled draft.</p> : null}
-    {warnings.length ? <ul aria-label="Similarity quality warnings" className="mt-1 list-inside list-disc">{warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul> : null}
+    {filter && scores.length ? <p className="mt-1 text-fg-2">Cosine similarity {Math.min(...scores).toFixed(3)}–{Math.max(...scores).toFixed(3)} · cutoff {filter.threshold.toFixed(3)} · {filter.eligibleFrameCount}/{filter.examinedFrameCount} frames</p> : null}
+    {warnings.length ? <details className="mt-1">
+      <summary className="cursor-pointer">Quality details ({warnings.length})</summary>
+      <ul aria-label="Similarity quality warnings" className="mt-1 list-inside list-disc">{warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul>
+    </details> : null}
   </div>;
 }
