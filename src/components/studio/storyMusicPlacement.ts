@@ -60,8 +60,11 @@ export function suggestStoryMomentWindows(treatment: StoryTreatment, duration: n
 export function mapStoryToMusic(treatment: StoryTreatment, sections: StoryPlanDraft[], duration: number, cues: number[] = []): StoryMusicPlacement[] {
   const windows = suggestStoryMomentWindows(treatment, duration, cues);
   return sections.flatMap((section) => {
-    const start = section.start ?? 0;
-    const end = section.end ?? start;
+    // Detected section times may round beyond the decoded master (even by one
+    // audio sample). Map only real song time; never manufacture a tail there.
+    const start = Math.max(0, Math.min(duration, section.start ?? 0));
+    const end = Math.min(duration, section.end ?? start);
+    if (end <= start) return [];
     const explicit = treatment.anchors.find((anchor) => anchor.id === treatment.sectionAnchorIds?.[section.id]);
     const intersections = explicit ? [{ anchor: explicit, start, end }] : windows;
     const placed = intersections.flatMap((window) => {

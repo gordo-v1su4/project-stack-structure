@@ -14,6 +14,32 @@ function project(): MusicVideoProject {
     editPlan: { id: "edit", createdAt: "fixed", timelineItems: [{ id: "item", sectionId: "intro", lyricChunkIds: [], videoMomentId: "dance", start: 0, end: 10, label: "Intro", prompt: "A couple dancing together" }] } };
 }
 describe("approved story placements", () => {
+  test("one-sample rounded section overrun creates no phantom cut and retains the real final section", () => {
+    const duration = 4.999977324263039;
+    const boundary = 1.3580000400543213;
+    const treatment = { anchors: [
+      { id: "anticipation", songWindow: { start: 0, end: boundary } },
+      { id: "smile", songWindow: { start: boundary, end: duration } },
+    ] } as StoryTreatment;
+    const sections = [{ id: "chorus-1", label: "Chorus 1", prompt: "", start: 0, end: 4.75 },
+      { id: "chorus-2", label: "Chorus 2", prompt: "", start: 4.75, end: 5 }];
+    const mapped = mapStoryToMusic(treatment, sections, duration);
+    expect(mapped.map(p => [p.momentId, p.start, p.end])).toEqual([
+      ["anticipation", 0, boundary], ["smile", boundary, 4.75], ["smile", 4.75, duration],
+    ]);
+    expect(mapped.reduce((sum, p) => sum + p.end - p.start, 0)).toBe(duration);
+    expect(sections[1]!.end).toBe(5);
+  });
+  test("section clipping cannot hide genuine unassigned song time or invalid explicit story timing", () => {
+    const treatment = { anchors: [{ id: "a", songWindow: { start: 0, end: 2 } },
+      { id: "b", songWindow: { start: 2, end: 4.75 } }] } as StoryTreatment;
+    const sections = [{ id: "song", label: "Song", prompt: "", start: -1, end: 7 },
+      { id: "outside", label: "Outside", prompt: "", start: 7, end: 8 }];
+    const mapped = mapStoryToMusic(treatment, sections, 5);
+    expect(mapped.map(p => [p.momentId, p.start, p.end])).toEqual([["a", 0, 2], ["b", 2, 4.75], ["unassigned", 4.75, 5]]);
+    const invalid = { ...treatment, anchors: [treatment.anchors[0]!, { ...treatment.anchors[1]!, songWindow: { start: 2, end: 5.25 } }] };
+    expect(() => mapStoryToMusic(invalid, sections, 5)).toThrow(/outside the song/);
+  });
   test("nearby story and section boundaries retain every interval through playback", () => {
     const treatment = { anchors: [
       { id: "opening", songWindow: { start: 0, end: 4.02 } },
