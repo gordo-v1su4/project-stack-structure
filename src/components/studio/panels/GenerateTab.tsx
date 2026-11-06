@@ -1514,10 +1514,11 @@ function GeneratedShotCard({
   const { framesPerSecond: trimFramesPerSecond, maxFrame: maxTrimStartFrame, valueFrame: trimStartFrame } = resolveGeneratedAssetTrimFrameControl({
     trimStart: committedTrimWindow.trimStart,
     maxTrimStart: committedTrimWindow.maxTrimStart,
+    framesPerSecond: asset.mediaFrameRate,
   });
   const activeTrimFrame = Math.max(0, Math.min(previewTrimFrame ?? trimStartFrame, maxTrimStartFrame));
   const { requiredDuration, sourceDuration, maxTrimStart, trimStart, trimEnd, selectedWidthPct, selectedLeftPct } = resolveGeneratedAssetTrimWindow({
-    trimStart: activeTrimFrame / trimFramesPerSecond,
+    trimStart: previewTrimFrame === null ? committedTrimWindow.trimStart : activeTrimFrame / trimFramesPerSecond,
     sourceDuration: asset.durationSeconds,
     requiredDuration: (asset.target?.songEnd ?? 0) - (asset.target?.songStart ?? 0),
   });
@@ -1525,7 +1526,8 @@ function GeneratedShotCard({
 
   const commitTrimStart = (value: number) => {
     const next = Math.max(0, Math.min(value, maxTrimStart));
-    onUpdate({ ...asset, trimStart: Number(next.toFixed(3)) });
+    onUpdate({ ...asset, trimStart: Number(next.toFixed(3)), ...(asset.identityVerification?.issuedPolicy && next !== (asset.trimStart ?? 0)
+      ? { reviewStatus: asset.reviewStatus === "rejected" ? "rejected" as const : "pending" as const, approvedAt: undefined, approvedIdentityEvidenceSha256: undefined } : {}) });
   };
 
   const previewFrame = (value: number) => {
@@ -1680,8 +1682,8 @@ function GeneratedShotCard({
                 >+</button>
               </div>
               <div className="mt-1 grid grid-cols-2 gap-2">
-                <div className="rounded-[1px] border border-[#1d343a] bg-[#071014] px-2 py-1"><span className="text-[#52737c]">IN / START FRAME</span><div className="mt-0.5 text-[#b6e6ef]">{trimStart.toFixed(2)}s · f{Math.round(trimStart * 30)}</div></div>
-                <div className="rounded-[1px] border border-[#1d343a] bg-[#071014] px-2 py-1"><span className="text-[#52737c]">OUT / LAST FRAME</span><div className="mt-0.5 text-[#b6e6ef]">{trimEnd.toFixed(2)}s · f{Math.round(trimEnd * 30)}</div></div>
+                <div className="rounded-[1px] border border-[#1d343a] bg-[#071014] px-2 py-1"><span className="text-[#52737c]">IN / START FRAME</span><div className="mt-0.5 text-[#b6e6ef]">{trimStart.toFixed(2)}s · f{Math.round(trimStart * trimFramesPerSecond)}</div></div>
+                <div className="rounded-[1px] border border-[#1d343a] bg-[#071014] px-2 py-1"><span className="text-[#52737c]">OUT / END FRAME</span><div className="mt-0.5 text-[#b6e6ef]">{trimEnd.toFixed(2)}s · f{Math.round(trimEnd * trimFramesPerSecond)}</div></div>
               </div>
               <div className="mt-2 flex flex-wrap gap-1.5">
                 <button type="button" disabled={!videoUrl} onClick={() => void playSelectedWindow()} className="rounded-[2px] border border-[#1d5362] px-2 py-1 uppercase tracking-[0.1em] text-[#6bc8dc] disabled:opacity-35">Play selected</button>
@@ -1719,7 +1721,7 @@ function GeneratedShotCard({
             className="mt-2 w-full resize-y rounded-[1px] border border-[#202020] bg-[#040404] px-2 py-1 font-mono text-[8px] leading-4 text-[#aaa] outline-none placeholder:text-[#444] focus:border-[#e05c00]"
           />
           <div className="mt-2 flex gap-1.5">
-            <button type="button" disabled={!videoUrl || !context} onClick={() => onUpdate({ ...asset, reviewStatus: "approved", reviewNotes: note })} className="flex-1 rounded-[2px] border border-[#245c2c] px-2 py-1 text-[8px] uppercase tracking-[0.1em] text-[#78c878] disabled:cursor-not-allowed disabled:opacity-40">Approve into Join</button>
+            <button type="button" disabled={!videoUrl || !context || Boolean(asset.identityVerification?.issuedPolicy)} onClick={() => onUpdate({ ...asset, reviewStatus: "approved", reviewNotes: note })} className="flex-1 rounded-[2px] border border-[#245c2c] px-2 py-1 text-[8px] uppercase tracking-[0.1em] text-[#78c878] disabled:cursor-not-allowed disabled:opacity-40">{asset.identityVerification?.issuedPolicy ? "Approve through reviewed draft" : "Approve into Join"}</button>
             <button type="button" onClick={() => onUpdate({ ...asset, reviewStatus: "rejected", reviewNotes: note })} className="flex-1 rounded-[2px] border border-[#743029] px-2 py-1 text-[8px] uppercase tracking-[0.1em] text-[#dc6257]">Reject</button>
             <button type="button" onClick={() => onUpdate({ ...asset, reviewStatus: "pending", reviewNotes: note })} className="rounded-[2px] border border-[#303030] px-2 py-1 text-[8px] uppercase tracking-[0.1em] text-[#777]">Reopen</button>
           </div>

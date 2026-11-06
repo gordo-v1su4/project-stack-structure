@@ -156,6 +156,9 @@ class DraftSimilarityFilter:
 
 
 def requested_draft_filter(value, verifier_metadata, manifest, gallery_profile):
+    if value.get("issuedPolicy") is not None:
+        from issued_policy import issued_draft_filter
+        return issued_draft_filter(value, verifier_metadata, manifest, gallery_profile)
     if value.get("draftSimilarityPolicyId") == FOREGROUND_POLICY_ID:
         from foreground_similarity_filter import ForegroundDraftSimilarityFilter
         return ForegroundDraftSimilarityFilter(value, verifier_metadata, manifest, gallery_profile)

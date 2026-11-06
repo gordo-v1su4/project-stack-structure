@@ -16,6 +16,8 @@ import { downloadH3ReferenceImage, pinH3JobReferences, readH3Job, updateH3Job } 
 import { buildH3Workflow } from "./h3Workflow";
 import { assessH3Identity } from "./h3IdentityVerification";
 import { planH3ReferenceConditioning } from "./h3ReferenceConditioning";
+import { prepareH3IdentityPolicy, type PreparedH3PolicyReference } from "./h3DraftPolicyPreparation";
+import { canonicalIdentityPolicyJson } from "@/components/studio/issuedIdentityPolicy";
 
 export type H3JobReference = { ownerId: string; projectId: string; jobId: string; mode?: "identity-recheck" };
 
@@ -72,9 +74,9 @@ export function h3OutputSubfolder(value: string | undefined, jobId: string) {
 
 function cancellationRequested(job: H3GenerationJob) { return Boolean(job.cancelRequestedAt) || job.state === "cancel_requested"; }
 
-async function uploadReference(baseUrl: string, job: H3GenerationJob, index: number, folder: string) {
+async function uploadReference(baseUrl: string, job: H3GenerationJob, index: number, folder: string, prepared?: PreparedH3PolicyReference) {
   const ref = job.references[index];
-  const media = await downloadH3ReferenceImage(ref);
+  const media = prepared ? { bytes: new Uint8Array(prepared.bytes).buffer, mime: prepared.mime } : await downloadH3ReferenceImage(ref);
   const extension = IMAGE_EXTENSIONS[media.mime];
   if (!extension || !media.bytes.byteLength || media.bytes.byteLength > MAX_IMAGE_BYTES) throw new Error("H3 references must be PNG, JPEG or WebP images smaller than 32 MiB.");
   const hash = createHash("sha256").update(Buffer.from(media.bytes)).digest("hex");
@@ -141,6 +143,9 @@ export async function runH3Generation(reference: H3JobReference, runId: string,
       if (current.state === "cancelled" && patch.state !== "cancelled") {
         throw new Error("This generation job was cancelled.");
       }
+      if (patch.identityPolicy && current.identityPolicy && canonicalIdentityPolicyJson(patch.identityPolicy) !== canonicalIdentityPolicyJson(current.identityPolicy)) {
+        throw new Error("An issued identity policy cannot be replaced on an existing job.");
+      }
       if (cancellationRequested(current) && patch.state && patch.state !== "cancelled") {
         if (patch.state === "rendering") return { ...current, ...patch, state: "cancel_requested" };
         throw new Error("This generation job was cancelled.");
@@ -179,6 +184,15 @@ export async function runH3Generation(reference: H3JobReference, runId: string,
     if (!job.promptId) {
       options.stage("Hydrating the named H3 references");
       await update({ state: "preparing" });
+      let policyReferences: PreparedH3PolicyReference[] | undefined;
+      if (job.request.identityPolicyFamily) {
+        options.stage("Checking the declared raw references before video generation");
+        const prepared = await prepareH3IdentityPolicy(job, temp);
+        policyReferences = prepared.references;
+        const { version, id, sha256, familyId, familySha256 } = prepared.policy;
+        await update({ identityPolicy: { version, id, sha256, familyId, familySha256 },
+          referenceHashes: prepared.references.map(reference => reference.raw.rawSha256) });
+      }
       // Health/schema probes do not enqueue GPU work.
       await providerJson(baseUrl, "system_stats");
       const contract = await providerJson(baseUrl, "object_info/MiniMaxH3ReferenceToVideo");
@@ -186,7 +200,7 @@ export async function runH3Generation(reference: H3JobReference, runId: string,
       const paths: string[] = [], hashes: string[] = [], conditioningHashes: string[] = [];
       const preparations: NonNullable<H3GenerationJob["conditioningPreparations"]> = [];
       for (let index = 0; index < job.references.length; index++) {
-        const uploaded = await uploadReference(baseUrl, job, index, temp);
+        const uploaded = await uploadReference(baseUrl, job, index, temp, policyReferences?.[index]);
         paths.push(uploaded.path); hashes.push(uploaded.hash);
         conditioningHashes.push(uploaded.conditioningHash); preparations.push(uploaded.preparation);
       }

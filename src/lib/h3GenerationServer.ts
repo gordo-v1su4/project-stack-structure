@@ -8,6 +8,7 @@ import { mediaUploadBelongsToOwner } from "./essentiaUpload";
 import type { SavedStudioProject } from "./studioProjectStore";
 import { normalizeStudioOwnerSegment, normalizeStudioProjectId } from "./studioStoragePaths";
 import { assertH3ConditioningProfile } from "./h3ReferenceConditioning";
+import { getH3PolicyFamily } from "@/components/studio/issuedIdentityPolicy";
 
 export class H3RequestError extends Error {
   constructor(message: string, public status = 400) { super(message); }
@@ -40,6 +41,9 @@ export function parseH3Request(value: unknown): H3GenerationRequest {
   if (typeof attempt !== "number" || !Number.isInteger(attempt) || attempt < 0 || attempt > 2) throw new H3RequestError("A shot permits an initial attempt and two deliberate revisions.");
   if (v.seed !== undefined && (typeof v.seed !== "number" || !Number.isSafeInteger(v.seed) || v.seed < 0)) throw new H3RequestError("Invalid seed.");
   if (v.draftRevision !== undefined && (typeof v.draftRevision !== "number" || !Number.isSafeInteger(v.draftRevision) || v.draftRevision < 0)) throw new H3RequestError("Invalid draft revision.");
+  if (v.identityPolicyFamily !== undefined && (typeof v.identityPolicyFamily !== "string" || !getH3PolicyFamily(v.identityPolicyFamily))) {
+    throw new H3RequestError("Choose a supported identity screen family.");
+  }
   const prompt = text(v.prompt, "shot direction", 6000);
   // The server compiles the native wrapper; input cannot redefine its reference map or cuts.
   if (/<(?:Subject|Picture|Video|Audio)\s|\[Shot\s|(?:^|\n)\s*(?:subject_definitions|detailed_description|summary)\s*:/i.test(prompt)) {
@@ -51,7 +55,8 @@ export function parseH3Request(value: unknown): H3GenerationRequest {
     timelineItemId: v.timelineItemId === undefined ? undefined : text(v.timelineItemId, "timeline item"),
     songStart, songEnd, prompt, referenceAssetIds: v.referenceAssetIds.map(id => text(id, "reference asset")),
     requestIntentId: requestIntentId.toLowerCase(), attempt, seed: v.seed as number | undefined,
-    draftRevision: v.draftRevision as number | undefined };
+    draftRevision: v.draftRevision as number | undefined,
+    ...(v.identityPolicyFamily === undefined ? {} : { identityPolicyFamily: v.identityPolicyFamily as H3GenerationRequest["identityPolicyFamily"] }) };
 }
 
 function digest(value: unknown) { return createHash("sha256").update(JSON.stringify(value)).digest("hex"); }
@@ -129,6 +134,12 @@ export function materializeH3Job(ownerId: string, saved: SavedStudioProject, req
   }
   for (const ref of references.filter(ref => ref.role === "identity")) {
     if (!mentions(ref.canonicalName)) throw new H3RequestError(`Use ${ref.canonicalName}'s exact name in the visible shot direction, or omit that identity reference.`);
+  }
+  if (request.identityPolicyFamily) {
+    const family = getH3PolicyFamily(request.identityPolicyFamily);
+    if (!family || options.profile !== "h3-ref2va-int8-v3" || references.filter(reference => reference.role === "identity").length !== family.scope.requiredIdentityCount) {
+      throw new H3RequestError("The selected identity screen does not match this generation profile and named reference count.");
+    }
   }
   const id = h3GenerationJobId(ownerId, request, references, options);
   const now = new Date().toISOString();

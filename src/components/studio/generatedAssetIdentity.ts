@@ -1,6 +1,7 @@
 import type { GeneratedStudioAsset } from "./generatedAssets";
 import { resolveH3DraftSimilarityPolicy } from "./identityDraftPolicy";
 import { copyForegroundFrameEvidence, foregroundEvidenceBlockReason, validForegroundFrameEvidence, type ForegroundFrameEvidence } from "./foregroundDraftEvidence";
+import { getH3PolicyFamily, normalizeH3PublicIssuedDraftPolicy, type H3PublicIssuedDraftPolicy } from "./issuedIdentityPolicy";
 
 export type IdentityFrameSample = {
   timeSeconds: number;
@@ -59,6 +60,7 @@ export type GeneratedAssetIdentityVerification = {
   coverage: "complete" | "incomplete" | "ambiguous" | "not_required";
   samples: IdentityFrameSample[];
   draftSimilarityFilter?: GeneratedAssetDraftSimilarityFilter;
+  issuedPolicy?: H3PublicIssuedDraftPolicy;
   reason?: string;
 };
 
@@ -109,6 +111,8 @@ export function normalizeGeneratedAssetDraftSimilarityFilter(value: unknown): Ge
 export function normalizeGeneratedAssetIdentityVerification(value: unknown): GeneratedAssetIdentityVerification | undefined {
   if (!value || typeof value !== "object") return undefined;
   const proof = value as GeneratedAssetIdentityVerification;
+  const issuedPolicy = proof.issuedPolicy === undefined ? undefined : normalizeH3PublicIssuedDraftPolicy(proof.issuedPolicy);
+  if (proof.issuedPolicy !== undefined && !issuedPolicy) return undefined;
   if (proof.version !== 1 || !["passed", "rejected", "unverifiable", "not_required"].includes(proof.status)
     || !boundedText(proof.assetId) || !boundedText(proof.jobId) || !boundedText(proof.generationModel)
     || !hash(proof.mediaSha256) || !hashes(proof.referenceHashes) || !hashes(proof.identityReferenceHashes)
@@ -138,6 +142,7 @@ export function normalizeGeneratedAssetIdentityVerification(value: unknown): Gen
     assessedAt: proof.assessedAt, verifier: { ...proof.verifier }, threshold: proof.threshold, coverage: proof.coverage,
     samples: copySamples(proof.samples),
     ...(draftSimilarityFilter ? { draftSimilarityFilter } : {}),
+    ...(issuedPolicy ? { issuedPolicy } : {}),
     reason: proof.reason,
   };
 }
@@ -190,15 +195,28 @@ export function generatedAssetIdentityBlockReason(asset: GeneratedStudioAsset): 
 /** Draft-only model eligibility; explicit whole-draft approval remains separate. */
 export function generatedAssetDraftIdentityBlockReason(asset: GeneratedStudioAsset): string | null {
   const strictBlock = generatedAssetIdentityBlockReason(asset);
-  if (strictBlock === null || strictBlock === "Rejected") return strictBlock;
+  if ((strictBlock === null && !asset.identityVerification?.issuedPolicy) || strictBlock === "Rejected") return strictBlock;
   const proof = normalizeGeneratedAssetIdentityVerification(asset.identityVerification);
   const filter = proof?.draftSimilarityFilter;
-  if (!proof || proof.status !== "unverifiable" || !filter) return strictBlock;
-  const policy = resolveH3DraftSimilarityPolicy(filter.policyId, filter.policySha256);
-  if (!policy) return "Unknown similarity filter policy";
-  const requiredHashes: readonly string[] = "identityReferenceSha256s" in policy ? policy.identityReferenceSha256s : [policy.identityReferenceSha256];
-  const jointBinding = "galleryBindings" in policy ? policy.galleryBindings.find(binding => sameHashes(binding.identityReferenceHashes, proof.identityReferenceHashes)) : undefined;
-  const preprocessVersion = "galleryBindings" in policy ? jointBinding && `opencv412-aligncrop112-rgb-f32-nchw-unit-centroid-v1-gallery-v2-${jointBinding.gallerySha256}` : policy.preprocessVersion;
+  if (!proof || proof.status !== "unverifiable" || !filter) return strictBlock ?? "Issued similarity evidence is incomplete";
+  const issued = proof.issuedPolicy, family = issued ? getH3PolicyFamily(issued.familyId) : undefined;
+  const fixed = resolveH3DraftSimilarityPolicy(filter.policyId, filter.policySha256);
+  if (issued && (!family || filter.policyId !== issued.id || filter.policySha256 !== issued.sha256
+    || !sameHashes(issued.body.references.map(ref => ref.rawSha256), proof.referenceHashes)
+    || !sameHashes(issued.body.identityReferenceHashes, proof.identityReferenceHashes))) return "Issued similarity policy does not match this clip";
+  if (!issued && !fixed) return "Unknown similarity filter policy";
+  const policy = issued && family ? { projectId: issued.body.projectId, generationModel: issued.body.generationModel,
+    threshold: family.threshold, minimumFrameCount: family.frontalGeometry.minimumIntendedFrameCount,
+    verifierModel: family.model.model, modelSha256: family.model.recognitionSha256, verifierVersion: family.model.verifierVersion } : fixed!;
+  const requiredHashes: readonly string[] = issued ? issued.body.identityReferenceHashes
+    : "identityReferenceSha256s" in fixed! ? fixed!.identityReferenceSha256s : [fixed!.identityReferenceSha256];
+  const jointBinding = fixed && "galleryBindings" in fixed ? fixed.galleryBindings.find(binding => sameHashes(binding.identityReferenceHashes, proof.identityReferenceHashes)) : undefined;
+  const preprocessVersion = issued ? issued.body.preprocessVersion : fixed && "galleryBindings" in fixed
+    ? jointBinding && `opencv412-aligncrop112-rgb-f32-nchw-unit-centroid-v1-gallery-v2-${jointBinding.gallerySha256}` : fixed?.preprocessVersion;
+  const foregroundRules = family?.scope.kind === "dominant-foreground" ? { geometry: family.frontalGeometry, dominance: family.scope }
+    : !issued && fixed && "foregroundDominance" in fixed ? { geometry: fixed.foregroundGeometry, dominance: fixed.foregroundDominance } : undefined;
+  const jointMargin = family?.scope.kind === "joint-frontal" ? family.scope.minimumAssignmentCosineMargin
+    : !issued && fixed && "minimumAssignmentCosineMargin" in fixed ? fixed.minimumAssignmentCosineMargin : undefined;
   if (proof.assetId !== asset.id || proof.jobId !== asset.jobId || proof.generationModel !== asset.model
     || asset.model !== policy.generationModel || asset.provider !== "swarmui"
     || !hash(asset.mediaSha256) || proof.mediaSha256 !== asset.mediaSha256
@@ -212,7 +230,7 @@ export function generatedAssetDraftIdentityBlockReason(asset: GeneratedStudioAss
   // additionally binds the current owned project and canonical stored H3 job.
   const parts = typeof asset.fullStorage?.objectKey === "string" ? asset.fullStorage.objectKey.split("/") : undefined;
   if (!parts || parts.length !== 7 || parts[0] !== "media-uploads" || parts[1] !== "projects"
-    || !/^[a-zA-Z0-9_-]+$/.test(parts[2]) || parts[3] !== "generated" || parts[4] !== policy.projectId
+    || !/^[a-zA-Z0-9_-]+$/.test(parts[2]) || (issued && parts[2] !== issued.body.ownerId) || parts[3] !== "generated" || parts[4] !== policy.projectId
     || parts[5] !== asset.jobId || parts[6] !== "shot.mp4"
     || !/^h3-[a-f0-9]{64}$/.test(asset.jobId ?? "")) return "Similarity filter is outside its project scope";
   if (filter.status !== "eligible") return filter.status === "ineligible" ? "Similarity filter did not pass" : "Similarity filter could not be assessed";
@@ -241,12 +259,12 @@ export function generatedAssetDraftIdentityBlockReason(asset: GeneratedStudioAss
       if (tracks.has(score.referenceHash) && tracks.get(score.referenceHash) !== score.trackId) return "Similarity filter has ambiguous tracking";
       tracks.set(score.referenceHash, score.trackId);
     }
-    if ("foregroundDominance" in policy) {
+    if (foregroundRules) {
       const block = foregroundEvidenceBlockReason({ evidence: sample.foreground, previous: filter.samples[index - 1]?.foreground,
-        assigned: sample.scores[0], candidates: sample.candidateScores, geometry: policy.foregroundGeometry, dominance: policy.foregroundDominance });
+        assigned: sample.scores[0], candidates: sample.candidateScores, geometry: foregroundRules.geometry, dominance: foregroundRules.dominance });
       if (block) return block;
     }
-    if ("minimumAssignmentCosineMargin" in policy) {
+    if (jointMargin !== undefined) {
       const candidates = sample.candidateScores;
       if (!candidates || candidates.length !== 4 || candidates.some(score => !requiredHashes.includes(score.referenceHash)
         || !sample.scores.some(assigned => assigned.trackId === score.trackId))) return "Similarity filter has incomplete assignment evidence";
@@ -255,8 +273,8 @@ export function generatedAssetDraftIdentityBlockReason(asset: GeneratedStudioAss
         const otherFace = candidates.filter(score => score.referenceHash === assigned.referenceHash && score.trackId !== assigned.trackId);
         const otherIdentity = candidates.filter(score => score.referenceHash !== assigned.referenceHash && score.trackId === assigned.trackId);
         if (own.length !== 1 || otherFace.length !== 1 || otherIdentity.length !== 1 || own[0].score !== assigned.score
-          || assigned.score - otherFace[0].score < policy.minimumAssignmentCosineMargin
-          || assigned.score - otherIdentity[0].score < policy.minimumAssignmentCosineMargin) return "Similarity filter has ambiguous assignment";
+          || assigned.score - otherFace[0].score < jointMargin
+          || assigned.score - otherIdentity[0].score < jointMargin) return "Similarity filter has ambiguous assignment";
       }
     }
   }

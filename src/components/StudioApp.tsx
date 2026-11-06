@@ -35,7 +35,7 @@ import {
 } from "./studio/projectPersistence";
 import type { StudioProjectSummary } from "@/lib/studioProjectStore";
 import { applyApprovedGeneratedAssets, buildGeneratedAssetContextPreview, buildGeneratedAssetPlaybackUrl, mergeGeneratedAssetDelivery, type GeneratedStudioAsset } from "./studio/generatedAssets";
-import { applyDraftGeneratedAssets, approveGeneratedDraft, captureGeneratedDraftReview, createGeneratedDraftSelection, rejectGeneratedDraftAsset, selectGeneratedDraftAsset, type GeneratedDraftReview, type GeneratedDraftSelection } from "./studio/generatedDraft";
+import { applyDraftGeneratedAssets, approveGeneratedDraft, captureGeneratedDraftReview, createGeneratedDraftSelection, prepareGeneratedDraftApprovalEvidence, rejectGeneratedDraftAsset, selectGeneratedDraftAsset, type GeneratedDraftReview, type GeneratedDraftSelection } from "./studio/generatedDraft";
 import { MiniMaxDraftPanel } from "./studio/panels/MiniMaxDraftPanel";
 import { createLocalReferenceAsset, uploadReferenceAssetToRustFs, type ReferenceAsset, type ReferenceAssetLibraryRole } from "./studio/referenceAssets";
 import { BrowserPreviewPlayer, createPreviewPlayerState, type PreviewPlayerState, type PreviewSegment } from "./studio/previewPlayer";
@@ -2141,12 +2141,15 @@ export default function StudioApp() {
   async function acceptGeneratedDraft(review: GeneratedDraftReview) {
     const startingProjectId = draftReviewLiveRef.current.projectId;
     const approvedAt = new Date().toISOString();
+    const startingState = draftReviewLiveRef.current.state;
+    if (!startingState.draft) throw new Error("Review the current assembled draft first.");
+    const approvalEvidenceSha256ById = await prepareGeneratedDraftApprovalEvidence(startingState.assets, startingState.draft);
     let savedProjectId = startingProjectId;
     const currentAcceptance = () => {
       const live = draftReviewLiveRef.current;
       if (live.projectId !== startingProjectId && live.projectId !== savedProjectId) throw new Error("The open project changed during draft acceptance.");
       if (!live.state.draft) throw new Error("Review the current assembled draft first.");
-      const result = approveGeneratedDraft({ draft: live.state.draft, assets: live.state.assets, segments: live.segments, review, approvedAt });
+      const result = approveGeneratedDraft({ draft: live.state.draft, assets: live.state.assets, segments: live.segments, review, approvedAt, approvalEvidenceSha256ById });
       if (result.error) throw new Error(result.error);
       return result;
     };
@@ -2171,7 +2174,7 @@ export default function StudioApp() {
           commitError = "Review the current assembled draft first.";
           return current;
         }
-        const result = approveGeneratedDraft({ draft: current.draft, assets: current.assets, segments: draftReviewLiveRef.current.segments, review, approvedAt });
+        const result = approveGeneratedDraft({ draft: current.draft, assets: current.assets, segments: draftReviewLiveRef.current.segments, review, approvedAt, approvalEvidenceSha256ById });
         commitError = result.error;
         return result.error ? current : { assets: result.assets, draft: result.draft };
       }));

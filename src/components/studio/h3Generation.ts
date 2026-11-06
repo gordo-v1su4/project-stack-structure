@@ -1,4 +1,5 @@
 import type { GeneratedStudioAsset, GeneratedStudioAssetTarget } from "./generatedAssets";
+import type { H3IdentityPolicyFamilyId, H3IssuedDraftPolicyBinding } from "./issuedIdentityPolicy";
 
 /** Browser input contains project identities, never provider paths or workflow JSON. */
 export type H3GenerationRequest = {
@@ -16,6 +17,8 @@ export type H3GenerationRequest = {
   seed?: number;
   /** Review revision at dispatch. Missing legacy revisions require explicit selection. */
   draftRevision?: number;
+  /** Explicit new-job opt-in; historical missing-field requests remain immutable. */
+  identityPolicyFamily?: H3IdentityPolicyFamilyId;
 };
 
 export type H3ReferenceSnapshot = {
@@ -77,6 +80,8 @@ export type H3GenerationJob = {
   compiledPrompt?: string;
   frames?: number;
   result?: { asset: GeneratedStudioAsset };
+  /** Server-issued immutable reference/gallery screen, never client-provided policy JSON. */
+  identityPolicy?: H3IssuedDraftPolicyBinding;
 };
 
 export const H3_FPS = 24;

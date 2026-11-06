@@ -10,9 +10,18 @@ import type { BeatJoinAnalysis } from "@/components/studio/types";
 import type { ReferenceAsset } from "@/components/studio/referenceAssets";
 import type { SavedStudioProject } from "@/lib/studioProjectStore";
 import { H3_DRAFT_SIMILARITY_POLICY_ID, H3_DRAFT_SIMILARITY_POLICY_SHA256, H3_DRAFT_SIMILARITY_PROJECT_ID, resolveH3DraftSimilarityPolicy } from "@/components/studio/identityDraftPolicy";
+import { currentIdentityEvidenceSha256, type H3IssuedDraftPolicy } from "@/components/studio/issuedIdentityPolicy";
+import { issuedPolicyFixture, issuedProofFixture } from "../helpers/issuedIdentityPolicy";
 
 let signedIn = true, dispatches: Array<Record<string, unknown>> = [], reads = 0;
 let saved: SavedStudioProject, job: H3GenerationJob, projectId = "project-1";
+let issuedPolicy: H3IssuedDraftPolicy | undefined;
+const { assertIssuedH3DraftPolicyMatchesJob } = await import("@/lib/h3DraftPolicyStore");
+mock.module("@/lib/h3DraftPolicyStore", () => ({ assertIssuedH3DraftPolicyMatchesJob,
+  readIssuedH3DraftPolicy: async (owner: string, project: string, binding: { id: string }) => {
+    expect(owner).toBe("github-test"); expect(project).toBe(projectId);
+    return issuedPolicy?.id === binding.id ? issuedPolicy : null;
+  } }));
 mock.module("@/lib/session", () => ({ getSessionUser: async () => signedIn ? { id: "github-test" } : null,
   unauthorizedResponse: () => Response.json({ success: false }, { status: 401 }) }));
 mock.module("@/lib/mediaGateway", () => ({ getMediaGatewayConfig: () => ({ bucket: "studio" }), normalizeMediaPath: (value: string) => value,
@@ -33,7 +42,7 @@ const hash = (byte: string) => byte.repeat(64);
 const mediaHash = createHash("sha256").update(new Uint8Array([1, 2, 3])).digest("hex");
 
 function reset(idForProject = "project-1") {
-  signedIn = true; dispatches = []; reads = 0;
+  signedIn = true; dispatches = []; reads = 0; issuedPolicy = undefined;
   projectId = idForProject; key = `media-uploads/projects/github-test/generated/${projectId}/${id}/shot.mp4`;
   const analysis: BeatJoinAnalysis = { sourceLabel: "master.wav", audioUrl: "", duration: 3, waveform: [], energy: [], beats: [], onsets: [], sections: [],
     storageBucket: "studio", storagePath: "media-uploads/github-test/source-audio/master.wav", storageUrl: "https://media.test/master.wav" };
@@ -98,6 +107,35 @@ function provisionalProof(): GeneratedAssetIdentityVerification {
 }
 
 describe("final export canonical identity and ownership boundary", () => {
+  function issuedSetup() {
+    reset(); job.profile = "h3-ref2va-int8-v3"; job.conditioningPreparationVersion = "canonical-front-crops-v2";
+    job.request.identityPolicyFamily = "sface-yunet-foreground-frontal-v1";
+    job.references.forEach((ref, index) => { ref.etag = `etag-${index}`; });
+    issuedPolicy = issuedPolicyFixture(job, job.referenceHashes).policy;
+    const { body: _body, issuedAt: _issuedAt, ...binding } = issuedPolicy; void _body; void _issuedAt; job.identityPolicy = binding;
+    const asset = job.result!.asset; asset.model = job.profile;
+    asset.identityVerification = issuedProofFixture(job, asset, issuedPolicy);
+    saved.draft.generatedAssets![0] = { ...structuredClone(asset), reviewStatus: "approved", approvedIdentityEvidenceSha256: currentIdentityEvidenceSha256(asset) };
+  }
+  test("exports a new project's server-issued numerical screen only after exact owner consent", async () => {
+    issuedSetup();
+    const response = await post(form());
+    expect(response.status).toBe(202); expect(dispatches).toHaveLength(1);
+    expect(job.result!.asset.identityVerification!.status).toBe("unverifiable");
+  });
+  for (const failure of ["missing receipt", "changed canonical evidence", "changed approval trim", "missing consent", "foreign policy", "changed gallery"]) {
+    test(`issued export refuses ${failure}`, async () => {
+      issuedSetup();
+      if (failure === "missing receipt") issuedPolicy = undefined;
+      if (failure === "changed canonical evidence") job.result!.asset.identityVerification!.draftSimilarityFilter!.warnings.push("CPU reassessment changed evidence");
+      if (failure === "changed approval trim") saved.draft.generatedAssets![0].trimStart = .1;
+      if (failure === "missing consent") delete saved.draft.generatedAssets![0].approvedIdentityEvidenceSha256;
+      if (failure === "foreign policy") issuedPolicy!.body.ownerId = "other-owner";
+      if (failure === "changed gallery") issuedPolicy!.body.galleries[0].faceRegions[0].rect[0] = .2;
+      const response = await post(form());
+      expect(response.status).toBeGreaterThanOrEqual(400); expect(dispatches).toHaveLength(0);
+    });
+  }
   test("uses canonical server evidence/media rather than client proof or hash claims", async () => {
     reset();
     saved.draft.generatedAssets![0].identityVerification!.samples[0].scores[0].score = 1;

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { generatedAssetDraftIdentityBlockReason, type GeneratedStudioAsset } from "../generatedAssets";
 import { generatedAssetDraftSimilarityLabel, generatedAssetDraftSimilarityWarnings } from "../generatedAssetIdentity";
 import { recheckH3Similarity } from "../h3SimilarityRecheck";
+import { identityPolicyChoiceForReferences } from "../issuedIdentityPolicy";
 import type { GeneratedDraftReview, GeneratedDraftSelection } from "../generatedDraft";
 import { createH3PickupWindow, enqueueH3DraftRequest, findH3TargetSegment, h3DraftBatchStorageKey, h3RequestWindowKey, h3WindowKey, nextH3Attempt, parseH3DraftBatch, planH3DraftWindows, selectH3PickupWindow, selectH3ReferenceAssetIds, type H3DraftBatch } from "../h3DraftPlan";
 import { isH3JobTerminal, type H3GenerationJob, type H3GenerationRequest } from "../h3Generation";
@@ -189,7 +190,9 @@ export function MiniMaxDraftPanel(props: Props) {
           requestIntentId: crypto.randomUUID(), attempt: 0, referenceAssetIds: [],
         };
         // Each request gets the current review revision just before dispatch.
-        return { ...input, draftRevision: undefined, referenceAssetIds: selectH3ReferenceAssetIds(latest.current.referenceAssets, direction) };
+        const referenceAssetIds = selectH3ReferenceAssetIds(latest.current.referenceAssets, direction);
+        return { ...input, ...(!previous ? identityPolicyChoiceForReferences(latest.current.referenceAssets, referenceAssetIds) : {}),
+          draftRevision: undefined, referenceAssetIds };
       });
       if (!requests.length) { setMessage("Every current song window already has footage."); return; }
       persistBatch({ version: 1, projectId, planSignature: requests[0].planSignature, requests, paused: false });
@@ -216,7 +219,9 @@ export function MiniMaxDraftPanel(props: Props) {
         sectionId: target.sectionId, songStart: target.songStart, songEnd: target.songEnd, prompt: direction,
         referenceAssetIds: [], requestIntentId: crypto.randomUUID(), attempt: 0, draftRevision: latest.current.draft?.revision ?? 0,
       };
-      persistBatch({ version: 1, projectId, planSignature: input.planSignature, requests: [{ ...input, referenceAssetIds: selectH3ReferenceAssetIds(latest.current.referenceAssets, direction) }], paused: false });
+      const referenceAssetIds = selectH3ReferenceAssetIds(latest.current.referenceAssets, direction);
+      persistBatch({ version: 1, projectId, planSignature: input.planSignature, requests: [{ ...input,
+        ...(!original ? identityPolicyChoiceForReferences(latest.current.referenceAssets, referenceAssetIds) : {}), referenceAssetIds }], paused: false });
       setReview(null); await runBatch();
     } catch (failure) { setError(failure instanceof Error ? failure.message : "Revision failed."); }
     finally { if (mounted.current && !running.current) setBusy(false); }
@@ -246,7 +251,8 @@ export function MiniMaxDraftPanel(props: Props) {
         sectionId: segment.sectionId, songStart: segment.musicStart, songEnd: segment.musicEnd, prompt: direction,
         requestIntentId: crypto.randomUUID(), attempt: 0, referenceAssetIds: [], draftRevision: latest.current.draft?.revision ?? 0,
       };
-      const request = { ...input, referenceAssetIds: selectH3ReferenceAssetIds(latest.current.referenceAssets, direction) };
+      const referenceAssetIds = selectH3ReferenceAssetIds(latest.current.referenceAssets, direction);
+      const request = { ...input, ...(!previous ? identityPolicyChoiceForReferences(latest.current.referenceAssets, referenceAssetIds) : {}), referenceAssetIds };
       persistBatch({ version: 1, projectId, planSignature: request.planSignature, requests: [request], paused: false });
       setReview(null); await runBatch();
     } catch (failure) { setError(failure instanceof Error ? failure.message : "Could not create this shot."); }
@@ -314,6 +320,7 @@ export function MiniMaxDraftPanel(props: Props) {
         <div className="max-w-2xl space-y-1">
           <h2 className="text-lg font-semibold text-fg-0">Bring the story to life</h2>
           <p className="text-sm text-fg-2">MiniMax creates the missing shots from your references and assembles them with the footage you already have.</p>
+          <p className="text-xs text-fg-3">New character shots receive a provisional similarity screen. Identity remains unverified; review the assembled cut.</p>
           <p className="text-xs text-fg-3">{missing.length ? `${missing.length} unfilled shot windows` : "Every song window has footage"}{activeJobs.length ? ` · ${activeJobs.length} renders in progress` : ""}. Review the cut before accepting it for Finish.</p>
         </div>
         <Button variant="primary" disabled={busy || accepting || Boolean(unavailable) || !missing.length || activeJobs.length > 0} reason={unavailable}

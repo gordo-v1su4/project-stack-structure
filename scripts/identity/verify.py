@@ -231,6 +231,9 @@ def assess(value, model_dir, sample_count=None):
     draft_filter = requested_draft_filter(value, report["verifier"], verifier.manifest, gallery_profile)
     if draft_filter is not None:
         report["draftSimilarityFilter"] = draft_filter.evidence
+        if value.get("issuedPolicy") is not None:
+            report["issuedPolicy"] = {key: value["issuedPolicy"][key] for key in
+                ["version", "id", "sha256", "familyId", "familySha256", "body"]}
     if not value["identityReferenceHashes"]:
         report.update(status="not_required", coverage="not_required", reason="The shot has no identity-conditioning references.")
         return report

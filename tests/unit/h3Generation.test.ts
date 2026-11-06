@@ -5,6 +5,16 @@ import { assertH3ShotProfile, buildH3Workflow, compileH3Prompt } from "@/lib/h3W
 import { h3ProjectFixture } from "../helpers/h3Project";
 
 describe("owned plan-bound H3 generation", () => {
+  test("an explicit supported screen family creates a new job without changing historical requests", () => {
+    const { saved, request } = h3ProjectFixture();
+    const historical = parseH3Request(request);
+    expect(Object.hasOwn(historical, "identityPolicyFamily")).toBe(false);
+    const screened = parseH3Request({ ...request, identityPolicyFamily: "sface-yunet-foreground-frontal-v1" });
+    expect(materializeH3Job("github-test", saved, screened, "studio").id).not.toBe(materializeH3Job("github-test", saved, historical, "studio").id);
+    expect(() => parseH3Request({ ...request, identityPolicyFamily: "client-chosen-loose-threshold" })).toThrow();
+    expect(() => materializeH3Job("github-test", saved, { ...request, identityPolicyFamily: "sface-yunet-joint-frontal-v1" }, "studio")).toThrow("named reference count");
+    expect(() => materializeH3Job("github-test", saved, screened, "studio", { profile: "h3-ref2va-int8-v2", conditioningPreparationVersion: "canonical-front-crop-v1" })).toThrow("generation profile");
+  });
   test("accepts zero source footage with named owned reference images and current approved story", () => {
     const { saved, request } = h3ProjectFixture();
     const job = materializeH3Job("github-test", saved, parseH3Request(request), "studio");

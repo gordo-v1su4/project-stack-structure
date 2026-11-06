@@ -7,6 +7,7 @@ import {
   type GeneratedStudioAsset,
 } from "./generatedAssets";
 import type { EditPlanPreviewSegment } from "./musicVideoProject";
+import { approvedIdentityEvidenceSha256, currentIdentityEvidenceSha256 } from "./issuedIdentityPolicy";
 
 /** Candidate selection for an audition. It does not grant approval for export. */
 export type GeneratedDraftSelection = {
@@ -117,6 +118,7 @@ export function captureGeneratedDraftReview(
       id: asset.id, mediaSha256: asset.mediaSha256, mediaFrameCount: asset.mediaFrameCount, mediaFrameRate: asset.mediaFrameRate,
       generationReferenceHashes: asset.generationReferenceHashes, identityReferenceHashes: asset.identityReferenceHashes,
       identityVerification: asset.identityVerification,
+      target: asset.target, trimStart: asset.trimStart ?? 0, approvedIdentityEvidenceSha256: asset.approvedIdentityEvidenceSha256,
     })),
     segments: applyDraftGeneratedAssets(segments, assets, draft),
   });
@@ -133,16 +135,24 @@ export function rejectGeneratedDraftAsset({ draft, assets, assetId, expectedRevi
   const assetIds = draft.assetIds.filter(id => id !== assetId);
   return {
     draft: { ...draft, revision: draft.revision + 1, assetIds },
-    assets: assets.map(asset => asset.id === assetId ? { ...asset, reviewStatus: "rejected", approvedAt: undefined } : asset),
+    assets: assets.map(asset => asset.id === assetId ? { ...asset, reviewStatus: "rejected", approvedAt: undefined, approvedIdentityEvidenceSha256: undefined } : asset),
   };
 }
 
-export function approveGeneratedDraft({ draft, assets, segments, review, approvedAt = new Date().toISOString() }: {
+/** Invoke only from explicit Use this draft consent, then revalidate the viewed snapshot after awaiting. */
+export async function prepareGeneratedDraftApprovalEvidence(assets: GeneratedStudioAsset[], draft: GeneratedDraftSelection): Promise<Record<string, string>> {
+  const selected = new Set(draft.assetIds);
+  return Object.fromEntries(await Promise.all(assets.filter(asset => selected.has(asset.id) && asset.identityVerification?.issuedPolicy)
+    .map(async asset => [asset.id, await approvedIdentityEvidenceSha256(asset)])));
+}
+
+export function approveGeneratedDraft({ draft, assets, segments, review, approvedAt = new Date().toISOString(), approvalEvidenceSha256ById }: {
   draft: GeneratedDraftSelection;
   assets: GeneratedStudioAsset[];
   segments: EditPlanPreviewSegment[];
   review: GeneratedDraftReview;
   approvedAt?: string;
+  approvalEvidenceSha256ById?: Readonly<Record<string, string>>;
 }): { draft: GeneratedDraftSelection; assets: GeneratedStudioAsset[]; error: string | null } {
   const current = captureGeneratedDraftReview(segments, assets, draft);
   if (!current || review.planSignature !== current.planSignature || review.revision !== current.revision || review.fingerprint !== current.fingerprint) {
@@ -153,6 +163,10 @@ export function approveGeneratedDraft({ draft, assets, segments, review, approve
     return { draft, assets, error: "Unfilled song windows remain. Complete the draft before accepting it." };
   }
   const selected = new Set(draft.assetIds);
+  if (assets.some(asset => selected.has(asset.id) && asset.identityVerification?.issuedPolicy
+    && approvalEvidenceSha256ById?.[asset.id] !== currentIdentityEvidenceSha256(asset))) {
+    return { draft, assets, error: "Similarity evidence changed. Review the current draft before accepting it." };
+  }
   const requestedApprovalTime = Date.parse(approvedAt);
   if (!Number.isFinite(requestedApprovalTime)) return { draft, assets, error: "Approval time is invalid. Review the draft again." };
   const approvalTime = assets.reduce((latest, asset) => {
@@ -164,7 +178,8 @@ export function approveGeneratedDraft({ draft, assets, segments, review, approve
   const approvals = new Map(draft.assetIds.map((id, index) => [id, new Date(approvalTime + index).toISOString()]));
   return {
     draft: { ...draft, revision: draft.revision + 1, assetIds: [] },
-    assets: assets.map(asset => selected.has(asset.id) ? { ...asset, reviewStatus: "approved", approvedAt: approvals.get(asset.id) } : asset),
+    assets: assets.map(asset => selected.has(asset.id) ? { ...asset, reviewStatus: "approved", approvedAt: approvals.get(asset.id),
+      ...(asset.identityVerification?.issuedPolicy ? { approvedIdentityEvidenceSha256: approvalEvidenceSha256ById![asset.id] } : {}) } : asset),
     error: null,
   };
 }

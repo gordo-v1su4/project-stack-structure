@@ -3,6 +3,7 @@ import type { MediaGatewayUploadResult } from "@/lib/mediaGateway";
 import type { EditPlanPreviewSegment, TimelineItem } from "./musicVideoProject";
 import type { StoryboardJob, VideoFrameRole } from "./storyboardGeneration";
 import { generatedAssetDraftIdentityBlockReason, normalizeGeneratedAssetIdentityVerification, type GeneratedAssetIdentityVerification } from "./generatedAssetIdentity";
+import { currentIdentityEvidenceSha256, isIdentityPolicySha256 } from "./issuedIdentityPolicy";
 export { generatedAssetIdentityBlockReason, generatedAssetDraftIdentityBlockReason } from "./generatedAssetIdentity";
 export type { GeneratedAssetIdentityVerification } from "./generatedAssetIdentity";
 
@@ -57,12 +58,34 @@ export type GeneratedStudioAsset = {
   generationReferenceHashes?: string[];
   identityReferenceHashes?: string[];
   identityVerification?: GeneratedAssetIdentityVerification;
+  /** Consent to exact issued-policy media, trim, target and evidence; absent on historical jobs. */
+  approvedIdentityEvidenceSha256?: string;
 };
+
+export function hasCurrentGeneratedIdentityApproval(asset: GeneratedStudioAsset): boolean {
+  if (!asset.identityVerification?.issuedPolicy) return true;
+  try { return isIdentityPolicySha256(asset.approvedIdentityEvidenceSha256)
+    && currentIdentityEvidenceSha256(asset) === asset.approvedIdentityEvidenceSha256; }
+  catch { return false; }
+}
 
 /** A repeated delivery for one immutable job cannot undo a saved rejection. */
 export function mergeGeneratedAssetDelivery(existing: GeneratedStudioAsset | undefined, incoming: GeneratedStudioAsset): GeneratedStudioAsset {
   if (existing?.id === incoming.id && (existing.reviewStatus === "rejected" || existing.identityVerification?.status === "rejected")) {
-    return { ...existing, reviewStatus: "rejected", approvedAt: undefined };
+    return { ...existing, reviewStatus: "rejected", approvedAt: undefined, approvedIdentityEvidenceSha256: undefined };
+  }
+  if (incoming.reviewStatus === "rejected" || incoming.identityVerification?.status === "rejected") {
+    return { ...incoming, reviewStatus: "rejected", approvedAt: undefined, approvedIdentityEvidenceSha256: undefined };
+  }
+  if (existing?.id === incoming.id && (existing.identityVerification?.issuedPolicy || incoming.identityVerification?.issuedPolicy)) {
+    let unchanged = false;
+    try { unchanged = hasCurrentGeneratedIdentityApproval(existing) && Boolean(existing.approvedIdentityEvidenceSha256)
+      && existing.approvedIdentityEvidenceSha256 === currentIdentityEvidenceSha256(incoming); } catch { /* Invalid evidence cannot preserve consent. */ }
+    const explicitReopen = incoming.reviewStatus === "pending" && incoming.approvedIdentityEvidenceSha256 === existing.approvedIdentityEvidenceSha256;
+    if (existing.reviewStatus === "approved" && unchanged && !explicitReopen) return { ...incoming, reviewStatus: "approved",
+      approvedAt: existing.approvedAt, approvedIdentityEvidenceSha256: existing.approvedIdentityEvidenceSha256 };
+    return { ...incoming, reviewStatus: "pending",
+      approvedAt: undefined, approvedIdentityEvidenceSha256: undefined };
   }
   return incoming;
 }
@@ -143,6 +166,7 @@ export function resolveGeneratedAssetTrimWindow({
 
 export function sanitizeGeneratedStudioAssetForStorage(asset: GeneratedStudioAsset): GeneratedStudioAsset {
   const rejected = asset.reviewStatus === "rejected" || asset.identityVerification?.status === "rejected";
+  const currentApproval = hasCurrentGeneratedIdentityApproval(asset);
   return {
     id: asset.id,
     provider: asset.provider,
@@ -164,14 +188,15 @@ export function sanitizeGeneratedStudioAssetForStorage(asset: GeneratedStudioAss
     mediaKind: asset.mediaKind,
     durationSeconds: asset.durationSeconds,
     trimStart: asset.trimStart,
-    reviewStatus: rejected ? "rejected" : asset.reviewStatus,
+    reviewStatus: rejected ? "rejected" : !currentApproval && asset.reviewStatus === "approved" ? "pending" : asset.reviewStatus,
     reviewNotes: asset.reviewNotes,
     target: asset.target,
     storyboard: asset.storyboard,
     panelReviews: asset.panelReviews,
     frameRole: asset.frameRole,
     triggerRunId: asset.triggerRunId,
-    approvedAt: rejected ? undefined : asset.approvedAt,
+    approvedAt: rejected || !currentApproval ? undefined : asset.approvedAt,
+    approvedIdentityEvidenceSha256: rejected || !currentApproval ? undefined : asset.approvedIdentityEvidenceSha256,
     mediaSha256: asset.mediaSha256,
     mediaFrameCount: asset.mediaFrameCount,
     mediaFrameRate: asset.mediaFrameRate,
@@ -269,6 +294,7 @@ export function buildGeneratedAssetPlaybackUrl(asset: GeneratedStudioAsset): str
 
 export function listApprovedGeneratedVideoAssets(assets: GeneratedStudioAsset[]) {
   return assets.filter((asset) => asset.status === "completed" && asset.mediaKind === "video" && asset.reviewStatus === "approved"
+    && hasCurrentGeneratedIdentityApproval(asset)
     && generatedAssetDraftIdentityBlockReason(asset) === null
     && asset.target && Boolean(buildGeneratedAssetPlaybackUrl(asset)) && Number.isFinite(asset.durationSeconds) && (asset.durationSeconds ?? 0) > 0);
 }

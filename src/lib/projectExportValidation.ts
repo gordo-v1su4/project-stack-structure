@@ -10,6 +10,8 @@ import { resolveDurableInput, type DurableExportInput } from "./exportInputs";
 import { readH3Job } from "./h3JobStore";
 import { readStudioProject } from "./studioProjectStore";
 import { normalizeStudioOwnerSegment } from "./studioStoragePaths";
+import { canonicalIdentityPolicyJson, currentIdentityEvidenceSha256, normalizeH3PublicIssuedDraftPolicy } from "@/components/studio/issuedIdentityPolicy";
+import { assertIssuedH3DraftPolicyMatchesJob, readIssuedH3DraftPolicy } from "./h3DraftPolicyStore";
 
 export class ProjectExportError extends Error { constructor(message: string, readonly status: 400 | 403 | 409 = 409) { super(message); } }
 export type ProjectExportContext = { projectId: string; planSignature: string; placementRevision: number; draftRevision: number };
@@ -91,7 +93,20 @@ export async function reconcileProjectFinalExport(params: {
       throw new ProjectExportError("The canonical take does not match its actual generation references.");
     }
     const authoritative: GeneratedStudioAsset = { ...canonical, id: canonical.id, jobId: job.id, provider: "swarmui", model: job.profile,
-      target: job.target, trimStart: asset.trimStart ?? 0, reviewStatus: "approved", approvedAt: asset.approvedAt };
+      target: job.target, trimStart: asset.trimStart ?? 0, reviewStatus: "approved", approvedAt: asset.approvedAt,
+      approvedIdentityEvidenceSha256: asset.approvedIdentityEvidenceSha256 };
+    if (job.request.identityPolicyFamily) {
+      if (!job.identityPolicy) throw new ProjectExportError("The take has no canonical issued identity policy.");
+      const policy = await readIssuedH3DraftPolicy(ownerId, context.projectId, job.identityPolicy);
+      if (!policy) throw new ProjectExportError("The canonical identity policy is unavailable.");
+      assertIssuedH3DraftPolicyMatchesJob(policy, job, job.referenceHashes);
+      const publicPolicy = normalizeH3PublicIssuedDraftPolicy(policy);
+      if (!publicPolicy || !canonical.identityVerification?.issuedPolicy || canonical.identityVerification.status !== "unverifiable"
+        || canonicalIdentityPolicyJson(canonical.identityVerification.issuedPolicy) !== canonicalIdentityPolicyJson(publicPolicy)
+        || asset.approvedIdentityEvidenceSha256 !== currentIdentityEvidenceSha256(authoritative)) {
+        throw new ProjectExportError("The issued identity evidence changed after approval. View and approve this exact draft again.");
+      }
+    }
     // Owner approval is consent to this snapshot; eligibility comes only from worker evidence.
     const reason = generatedAssetDraftIdentityBlockReason(authoritative);
     if (reason) throw new ProjectExportError(`${reason}. This take cannot enter final export.`);

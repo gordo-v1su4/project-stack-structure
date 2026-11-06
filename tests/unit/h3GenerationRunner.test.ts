@@ -11,6 +11,10 @@ const previousSwarm = process.env.SWARMUI_URL;
 const previousLocal = process.env.LOCAL_SWARMUI_URL;
 const uploads: string[] = [];
 let persisted = 0;
+let preflightCalls = 0;
+mock.module("@/lib/h3DraftPolicyPreparation", () => ({ prepareH3IdentityPolicy: async () => {
+  preflightCalls++; throw new Error("Reference preflight needs a clear coherent frontal authority; no GPU render was submitted.");
+} }));
 const videoProbe = { duration: 124 / 24, primaryVideoStream: { codecName: "h264", width: 1344, height: 768, frameRate: 24 } } as ProbedMediaFile;
 
 mock.module("@/lib/h3JobStore", () => ({
@@ -44,10 +48,10 @@ afterEach(() => {
 });
 
 function setup() {
-  job = materializeH3Job("github-test", fixture.saved, fixture.request, "studio");
+  job = materializeH3Job("github-test", fixture.saved, structuredClone(fixture.request), "studio");
   process.env.SWARMUI_URL = "http://swarm.test:7861";
   delete process.env.LOCAL_SWARMUI_URL;
-  uploads.length = 0; persisted = 0;
+  uploads.length = 0; persisted = 0; preflightCalls = 0;
 }
 function json(value: unknown) { return new Response(JSON.stringify(value), { headers: { "content-type": "application/json" } }); }
 function providerFetch(failAfterSubmission = false, providerError = false, acknowledgement: "normal" | "missing" | "diagnostics" = "normal") {
@@ -82,6 +86,17 @@ function providerFetch(failAfterSubmission = false, providerError = false, ackno
 }
 
 describe("durable native H3 execution", () => {
+  test("unsuitable opted-in references stop before any Swarm request or GPU submission", async () => {
+    setup(); job.request.identityPolicyFamily = "sface-yunet-foreground-frontal-v1";
+    const originalId = job.id;
+    // The in-memory store represents the same explicitly opted-in canonical request.
+    const candidate = materializeH3Job(job.ownerId, fixture.saved, job.request, "studio");
+    job.id = candidate.id;
+    let requests = 0; globalThis.fetch = (async () => { requests++; throw new Error("Provider must not be reached"); }) as typeof fetch;
+    await expect(runH3Generation({ ownerId: job.ownerId, projectId: job.projectId, jobId: job.id }, "preflight-run", { wait: async () => {}, stage: () => {} })).rejects.toThrow("no GPU render");
+    expect(job.id).not.toBe(originalId); expect(preflightCalls).toBe(1); expect(requests).toBe(0);
+    expect(job.state).toBe("failed"); expect(persisted).toBe(0);
+  });
   test("hydrates owned images through Swarm, records provider ID, probes and persists a target-bound pending candidate", async () => {
     setup(); const count = providerFetch();
     const result = await runH3Generation({ ownerId: job.ownerId, projectId: job.projectId, jobId: job.id }, "run-1", { wait: async () => {}, stage: () => {} });
