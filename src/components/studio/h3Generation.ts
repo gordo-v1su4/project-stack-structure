@@ -74,6 +74,8 @@ export type H3GenerationJob = {
   createdAt: string;
   updatedAt: string;
   runId?: string;
+  /** Server-owned worker dispatch receipts; a missing runId is an uncertain ACK, not a new creative attempt. */
+  workerRecoveries?: { requestIntentId: string; previousRunId?: string; createdAt: string; runId?: string }[];
   promptId?: string;
   error?: string;
   cancelRequestedAt?: string;

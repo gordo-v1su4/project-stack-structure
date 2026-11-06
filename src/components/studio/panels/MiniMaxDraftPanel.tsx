@@ -303,7 +303,8 @@ export function MiniMaxDraftPanel(props: Props) {
         await runBatch(); return;
       }
       if (action === "cancel" && batchRef.current) persistBatch({ ...batchRef.current, paused: true });
-      const intent = recoveryIntents.current.get(job.id) ?? crypto.randomUUID();
+      const intent = job.workerRecoveries?.find(recovery => !recovery.runId)?.requestIntentId
+        ?? recoveryIntents.current.get(job.id) ?? crypto.randomUUID();
       recoveryIntents.current.set(job.id, intent);
       const response = await fetch("/api/generate/h3", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ projectId: job.projectId, jobId: job.id, action, requestIntentId: intent }) });
       const payload = await response.json() as { error?: string };
@@ -311,7 +312,8 @@ export function MiniMaxDraftPanel(props: Props) {
       recoveryIntents.current.delete(job.id);
       await readJobs(job.projectId);
       if (action === "resume" && batchRef.current) { persistBatch({ ...batchRef.current, paused: false }); await runBatch(); }
-      setMessage(action === "cancel" ? "This shot is stopping safely. Other GPU work is not interrupted." : "Checking the existing render. No replacement render was submitted.");
+      setMessage(action === "cancel" ? "This shot is stopping safely. Other GPU work is not interrupted." : job.promptId || job.compiledPrompt
+        ? "Checking the existing render. No replacement render was submitted." : "Resuming this shot's worker with the same saved inputs.");
     } catch (failure) { setError(failure instanceof Error ? failure.message : "Job recovery failed."); }
     finally { if (mounted.current && !running.current) setBusy(false); }
   }
@@ -451,8 +453,12 @@ export function MiniMaxDraftPanel(props: Props) {
             <span className="text-fg-3">Source {preciseClock(range?.trimStart ?? asset.trimStart ?? 0)}–{preciseClock(range?.trimEnd ?? (asset.trimStart ?? 0) + job.target.songEnd-job.target.songStart)}</span>
             <Button disabled={busy || accepting || !range} onClick={() => void checkSimilarity(job)}>Check similarity</Button>
           </> : null}
-          {(["submission_unknown", "rendering", "persisting"] as string[]).includes(job.state) ? <Button disabled={busy || accepting} onClick={() => void recoverJob(job, "resume")}>Check existing render</Button> : null}
-          {job.state === "failed" || job.state === "cancelled" ? <Button disabled={busy || accepting || attemptsLeft(job) <= 0 || !findH3TargetSegment(props.segments, job.target)} onClick={() => void recoverJob(job, "retry")}>Retry shot ({attemptsLeft(job)} left)</Button> : null}
+          {(["submission_unknown", "rendering", "persisting"] as string[]).includes(job.state) && !job.workerRecoveries?.some(recovery => !recovery.runId)
+            ? <Button disabled={busy || accepting} onClick={() => void recoverJob(job, "resume")}>Check existing render</Button> : null}
+          {(job.state !== "cancelled" && job.workerRecoveries?.some(recovery => !recovery.runId))
+            || (job.state === "failed" && job.runId && !job.promptId && !job.compiledPrompt && !job.result && !job.cancelRequestedAt)
+            ? <Button disabled={busy || accepting} onClick={() => void recoverJob(job, "resume")}>Resume worker</Button>
+            : job.state === "failed" || job.state === "cancelled" ? <Button disabled={busy || accepting || attemptsLeft(job) <= 0 || !findH3TargetSegment(props.segments, job.target)} onClick={() => void recoverJob(job, "retry")}>Retry shot ({attemptsLeft(job)} left)</Button> : null}
           {!isH3JobTerminal(job) && job.state !== "cancel_requested" ? <Button variant="danger" disabled={accepting} onClick={() => void recoverJob(job, "cancel")}>Cancel this shot</Button> : null}
         </span>
         {job.state === "ready" && asset?.identityVerification?.status === "unverifiable" && !rejected && range ? <NativeHandleDetails asset={asset} range={range} disabled={busy || accepting} onStartFrame={frame=>{

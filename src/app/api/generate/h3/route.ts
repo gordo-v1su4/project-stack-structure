@@ -25,7 +25,7 @@ async function reconcileWorker(job: Awaited<ReturnType<typeof createH3Job>>) {
     return { ...current, state: unknown ? "submission_unknown" : "failed",
       error: current.cancelRequestedAt ? "The cancellation worker ended. Resume cancellation reconciliation; the result remains excluded."
         : unknown ? "The worker ended before saving completion. Resume the existing render; generation has not been repeated."
-        : "The worker ended before submitting a video. Create a deliberate retry." };
+        : "The worker ended before submitting a video. Resume its worker to keep this shot's saved inputs." };
   });
 }
 
@@ -74,7 +74,9 @@ export async function POST(request: Request) {
     try { compileH3Prompt(proposed); } catch (error) { throw new H3RequestError((error as Error).message, 422); }
     await claimH3GenerationIntent(proposed);
     const job = await createH3Job(proposed);
-    if (job.runId || job.state === "ready") return Response.json({ success: true, runId: job.runId, jobId: job.id, job }, { status: 202 });
+    if (job.runId || job.state === "ready" || job.workerRecoveries?.some(recovery => !recovery.runId)) {
+      return Response.json({ success: true, runId: job.runId, jobId: job.id, job }, { status: 202 });
+    }
     const handle = await triggerH3Generation(job);
     const dispatched = await updateH3Job(user.id, input.projectId, job.id, current => ({ ...current, runId: current.runId ?? handle.id }));
     return Response.json({ success: true, queued: true, orchestration: "trigger.dev", runId: handle.id, jobId: job.id, job: dispatched }, { status: 202 });
@@ -154,21 +156,57 @@ export async function PATCH(request: Request) {
       return Response.json({ success: true, job: cancelled });
     }
     if (body.action !== "resume" || !body.requestIntentId || !/^[a-f0-9-]{36}$/i.test(body.requestIntentId)) throw new H3RequestError("A resume intent UUID is required.");
-    if (job.state === "ready") return Response.json({ success: true, job });
-    if (job.runId) {
-      const run = await retrieveTriggerRun(job.runId);
-      if (!run.isCompleted && !run.isFailed && !run.isCancelled) throw new H3RequestError("The current worker is still active.", 409);
+    const intent = body.requestIntentId;
+    const acknowledged = job.workerRecoveries?.find(recovery => recovery.requestIntentId === intent && recovery.runId);
+    // A replay of a historical receipt must never clear or replace a newer worker.
+    if (acknowledged) return Response.json({ success: true, runId: acknowledged.runId, jobId: job.id, job }, { status: 202 });
+    const pending = job.workerRecoveries?.find(recovery => !recovery.runId);
+    if (pending && pending.requestIntentId !== intent) throw new H3RequestError("A worker recovery is awaiting its receipt. Resume that same saved intent.", 409);
+    if (job.state === "cancelled") throw new H3RequestError("This shot was cancelled.", 409);
+    let resumable = job;
+    if (!pending) {
+      if (job.state === "ready") return Response.json({ success: true, job });
+      if (job.runId) {
+        const run = await retrieveTriggerRun(job.runId);
+        if (!run.isCompleted && !run.isFailed && !run.isCancelled) throw new H3RequestError("The current worker is still active.", 409);
+      }
+      const beforeSubmission = job.state === "failed" && Boolean(job.runId) && !job.promptId && !job.compiledPrompt && !job.result && !job.cancelRequestedAt;
+      const providerStates = ["submission_unknown", "rendering", "persisting", "cancel_requested"];
+      if (!beforeSubmission && !providerStates.includes(job.state)) {
+        throw new H3RequestError("Resume an existing render or a terminal worker that ended before submission; revise rejected shots explicitly.", 409);
+      }
+      // Claim the recovery UUID with the owner transition before attempting dispatch.
+      // On an uncertain ACK a reload can replay this exact key, never the initial key.
+      resumable = await updateH3Job(user.id, job.projectId, job.id, current => {
+        const claimed = current.workerRecoveries?.find(recovery => recovery.requestIntentId === intent);
+        if (claimed) return current;
+        if (current.workerRecoveries?.some(recovery => !recovery.runId) || current.runId !== job.runId) {
+          throw new H3RequestError("Another resume request already owns this job.", 409);
+        }
+        if (beforeSubmission ? current.state !== "failed" || Boolean(current.promptId || current.compiledPrompt || current.result || current.cancelRequestedAt)
+          : !providerStates.includes(current.state)) {
+          throw new H3RequestError("The shot's submission state changed. Refresh before resuming.", 409);
+        }
+        return { ...current, runId: undefined, ...(beforeSubmission ? { state: "queued" as const, error: undefined } : {}),
+          workerRecoveries: [...(current.workerRecoveries ?? []), { requestIntentId: intent, previousRunId: job.runId, createdAt: new Date().toISOString() }] };
+      });
     }
-    if (job.state !== "submission_unknown" && job.state !== "rendering" && job.state !== "persisting" && job.state !== "cancel_requested") {
-      throw new H3RequestError("Only an existing provider submission can be resumed; create an explicit revision for a rejected job.", 409);
+    const receipt = resumable.workerRecoveries?.find(recovery => recovery.requestIntentId === intent);
+    if (!receipt) throw new H3RequestError("The saved worker recovery is unavailable.", 409);
+    if (receipt.runId) return Response.json({ success: true, runId: receipt.runId, jobId: job.id, job: resumable }, { status: 202 });
+    // Never outlive the existing Trigger idempotency-key TTL and accidentally enqueue anew.
+    if (!Number.isFinite(Date.parse(receipt.createdAt)) || Date.now() - Date.parse(receipt.createdAt) >= 30 * 86_400_000) {
+      throw new H3RequestError("The uncertain worker receipt expired. No replacement worker was dispatched.", 409);
     }
-    // Clear worker ownership conditionally; provider prompt identity remains immutable.
-    const resumable = await updateH3Job(user.id, job.projectId, job.id, current => {
-      if (current.runId !== job.runId) throw new H3RequestError("Another resume request already owns this job.", 409);
-      return { ...current, runId: undefined };
+    const handle = await triggerH3Generation(resumable, intent);
+    const dispatched = await updateH3Job(user.id, job.projectId, job.id, current => {
+      const claim = current.workerRecoveries?.find(recovery => recovery.requestIntentId === intent);
+      if (!claim || (claim.runId && claim.runId !== handle.id) || (current.runId && current.runId !== handle.id)) {
+        throw new H3RequestError("Worker ownership changed before its receipt arrived. Refresh before resuming.", 409);
+      }
+      return { ...current, runId: current.runId ?? handle.id,
+        workerRecoveries: current.workerRecoveries!.map(recovery => recovery.requestIntentId === intent ? { ...recovery, runId: handle.id } : recovery) };
     });
-    const handle = await triggerH3Generation(resumable, body.requestIntentId);
-    const dispatched = await updateH3Job(user.id, job.projectId, job.id, current => ({ ...current, runId: current.runId ?? handle.id }));
     return Response.json({ success: true, runId: handle.id, jobId: job.id, job: dispatched }, { status: 202 });
   } catch (error) { return failure(error); }
 }

@@ -131,6 +131,24 @@ Use the private ops runbook for checkout paths, SSH entry points, and registry U
 
 The deploy script refuses non-Linux hosts, verifies SDK/build/React hooks share one pin, runs the Trigger CLI through `bunx`, uses `--local-build`, and pushes the built image to the production registry.
 
+The application build snapshots the clean top-level JavaScript entry/chunk names,
+lengths and SHA256 digests before Docker copies them. After the complete `/app`
+copy and the pinned controller patch, an image-build command requires that exact
+file set and bytes, rejects literal NULs, verifies the controller patch digest,
+and runs bounded `node --check` on every entry/chunk and the controller. It does
+not import worker code or print source, environment or parser diagnostics.
+Any mismatch fails the image build. Verify the published immutable image as well
+before its first acceptance job; a deployed task inventory alone does not prove
+that its JavaScript starts successfully.
+
+If an H3 worker ends before a provider submission, **Resume worker** retains the
+saved shot, creative attempt, first-frame artifact and references. The server
+requires a terminal prior worker and absent submission/cancellation markers.
+Recovery keeps a durable request ID and reconciles its same Trigger idempotency
+key after an uncertain acknowledgement or reload. A known provider submission
+continues through **Check existing render**, preserving its original prompt ID.
+Neither operation turns a rejected video into an approved take.
+
 It anchors execution to its own application checkout and sources only the BWS-generated application deployment env. It does not read a Trigger platform `.env`, invoke Compose, change Dockhand settings, or upgrade the control plane. `--dry-run` still performs dependency installation, registry login, and CLI build preparation; it is a deployment preflight, not a read-only diagnostic.
 
 For the current MiniMax release, use an isolated detached VM100 application worktree and the [completion deployment/acceptance checklist](minimax-completion-release.md). H3 reuses `local-ai-generation`; the inventory remains 17 tasks. Confirm the newly emitted worker version/source commit and execute a reference-bound H3 job: an unchanged task inventory cannot prove the new implementation was deployed.
