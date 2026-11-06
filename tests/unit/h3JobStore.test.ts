@@ -122,6 +122,10 @@ describe("conditional durable H3 job records", () => {
     const job = setup();
     metadataError = failure(403);
     await expect(pinH3JobReferences(job)).rejects.toThrow("Reference metadata lookup failed (storage HTTP 403)");
+    metadataError.name = "SignatureDoesNotMatch";
+    await expect(pinH3JobReferences(job)).rejects.toThrow("storage HTTP 403, SignatureDoesNotMatch");
+    metadataError.name = "private-transport-detail";
+    await expect(pinH3JobReferences(job)).rejects.toThrow("Reference metadata lookup failed (storage HTTP 403).");
     metadataError = new Error("fetch failed secret transport detail");
     await expect(pinH3JobReferences(job)).rejects.toThrow("Reference metadata lookup could not reach durable storage.");
     metadataError = undefined;

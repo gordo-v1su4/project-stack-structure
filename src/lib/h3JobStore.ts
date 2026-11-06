@@ -54,7 +54,10 @@ export async function pinH3JobReferences(job: H3GenerationJob): Promise<H3Genera
         { abortSignal: AbortSignal.timeout(15_000) });
     } catch (error) {
       const httpStatus = status(error);
-      throw new H3RequestError(httpStatus ? `Reference metadata lookup failed (storage HTTP ${httpStatus}).`
+      const name = error instanceof Error ? error.name : "";
+      const providerCode = ["AccessDenied", "SignatureDoesNotMatch", "InvalidAccessKeyId", "RequestTimeTooSkewed", "NoSuchKey",
+        "ExpiredToken", "InvalidToken", "PermanentRedirect", "AuthorizationHeaderMalformed"].includes(name) ? `, ${name}` : "";
+      throw new H3RequestError(httpStatus ? `Reference metadata lookup failed (storage HTTP ${httpStatus}${providerCode}).`
         : "Reference metadata lookup could not reach durable storage.", 503);
     }
     const etag = metadata.ETag;
