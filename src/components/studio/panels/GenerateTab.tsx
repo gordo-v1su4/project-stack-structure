@@ -22,6 +22,7 @@ import {
   type GeneratedStudioAsset,
 } from "../generatedAssets";
 import { uploadGeneratedClipToRustFs } from "../generatedClipUpload";
+import { createImportedVideoAsset, type ExternalClipImportKind } from "../externalClipImport";
 import { buildSeedanceContinuationPacket, serializeSeedanceContinuationPacket, type SeedanceVideoModel } from "../seedanceContinuation";
 import { buildSeedanceAudioPlacementKey } from "../seedanceAudioReference";
 import { buildAdaptiveCueMap } from "../adaptiveCueMap";
@@ -181,6 +182,7 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
   const [selectedPresetTitle, setSelectedPresetTitle] = useState(LOCAL_SWARM_PRESETS[0].title);
   const [generatedImportStatus, setGeneratedImportStatus] = useState("Select exactly one resolved cut below, then import its completed Seedance candidates.");
   const [isImportingGenerated, setIsImportingGenerated] = useState(false);
+  const [externalImportKind, setExternalImportKind] = useState<ExternalClipImportKind>("seedance");
   const cueMap = useMemo(() => buildAdaptiveCueMap({
     analysis,
     project,
@@ -224,42 +226,31 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
 
   const importGeneratedClips = async (files: File[]) => {
     if (!selectedReturnSegment || !files.length) {
-      setGeneratedImportStatus("Select exactly one resolved cut below before importing its generated replacement.");
+      setGeneratedImportStatus("Select exactly one resolved cut below before importing its video replacement.");
       return;
     }
     const videos = files.filter((file) => file.type.startsWith("video/") || /\.(mp4|mov|webm)$/i.test(file.name));
     if (!videos.length) {
-      setGeneratedImportStatus("Choose at least one MP4, MOV, or WebM generated clip.");
+      setGeneratedImportStatus("Choose at least one MP4, MOV, or WebM video clip.");
       return;
     }
     setIsImportingGenerated(true);
-    setGeneratedImportStatus(`Uploading ${videos.length} generated clip${videos.length === 1 ? "" : "s"} to RustFS...`);
+    setGeneratedImportStatus(`Uploading ${videos.length} ${externalImportKind === "original-footage" ? "edited footage" : "generated"} clip${videos.length === 1 ? "" : "s"} to RustFS...`);
     try {
       for (const file of videos) {
         const durationSeconds = await readVideoDuration(file);
         const payload = await uploadGeneratedClipToRustFs({
           file,
-          folder: `media-uploads/generated/higgsfield/seedance/${project?.id ?? "draft"}/${selectedReturnSlot?.item.id ?? `cut-${selectedPreviewRange!.startIndex + 1}`}`,
+          folder: `${externalImportKind === "original-footage" ? "media-uploads/editorial/original-footage" : "media-uploads/generated/higgsfield/seedance"}/${project?.id ?? "draft"}/${selectedReturnSlot?.item.id ?? `cut-${selectedPreviewRange!.startIndex + 1}`}`,
           onPartUploaded: (uploaded, total) => {
             setGeneratedImportStatus(`Uploading ${file.name}: part ${uploaded}/${total} to RustFS...`);
           },
         });
-        const resultUrl = payload.mediaUrl ?? payload.publicUrl;
-        const model = inferSeedanceModel(file.name);
-        onGeneratedAsset({
-          id: `seedance:${crypto.randomUUID()}`,
-          provider: "higgsfield",
-          model,
-          title: file.name.replace(/\.[^.]+$/, ""),
-          prompt: "Imported completed Seedance continuation for explicit review.",
-          createdAt: new Date().toISOString(),
-          status: "completed",
-          resultUrl,
-          fullStorage: payload,
-          mediaKind: "video",
+        onGeneratedAsset(createImportedVideoAsset({
+          kind: externalImportKind,
+          fileName: file.name,
+          storage: payload,
           durationSeconds,
-          trimStart: 0,
-          reviewStatus: "pending",
           target: {
             timelineItemId: selectedReturnSegment.timelineItemId ?? selectedReturnSlot?.item.id ?? `resolved-cut-${selectedPreviewRange!.startIndex + 1}`,
             planSignature: selectedReturnSegment.planSignature,
@@ -271,11 +262,11 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
             songStart: selectedReturnSegment.musicStart,
             songEnd: selectedReturnSegment.musicEnd,
           },
-        });
+        }));
       }
-      setGeneratedImportStatus(`Returned ${videos.length} generated clip${videos.length === 1 ? "" : "s"} to cut ${selectedPreviewRange!.startIndex + 1} at ${fmtCutTime(selectedReturnSegment.musicStart)}–${fmtCutTime(selectedReturnSegment.musicEnd)}. Review before Join.`);
+      setGeneratedImportStatus(`Returned ${videos.length} ${externalImportKind === "original-footage" ? "edited footage" : "generated"} clip${videos.length === 1 ? "" : "s"} to cut ${selectedPreviewRange!.startIndex + 1} at ${fmtCutTime(selectedReturnSegment.musicStart)}–${fmtCutTime(selectedReturnSegment.musicEnd)}. Review before Join.`);
     } catch (error) {
-      setGeneratedImportStatus(error instanceof Error ? error.message : "Generated clip import failed.");
+      setGeneratedImportStatus(error instanceof Error ? error.message : "Video clip import failed.");
     } finally {
       setIsImportingGenerated(false);
     }
@@ -504,11 +495,23 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
       <section className="rounded-[2px] border border-[#1a1a1a] bg-[#0b0b0b] p-3">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Generated shot bank / approval queue</div>
-            <div className="mt-1 text-[11px] text-[#6d6d6d]">Select one resolved cut, return its completed Seedance candidates, then approve exactly what enters Join. Rejected clips remain attached as review history and never replace the edit.</div>
+            <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Shot bank / approval queue</div>
+            <div className="mt-1 text-[11px] text-[#6d6d6d]">{externalImportKind === "original-footage" ? "Import an edit of original footage for the selected cut, then use the pending candidate in Draft and review the assembled cut." : "Select one resolved cut, return its completed Seedance candidates, then approve exactly what enters Join. Rejected clips remain attached as review history and never replace the edit."}</div>
           </div>
+          <label className="flex items-center gap-2 text-xs text-fg-2">
+            Clip type
+            <select className="rounded-md border border-line bg-ink-2 px-2 py-1 text-fg-1" value={externalImportKind} disabled={isImportingGenerated}
+              onChange={event => {
+                const kind = event.target.value === "original-footage" ? "original-footage" : "seedance";
+                setExternalImportKind(kind);
+                setGeneratedImportStatus(kind === "original-footage" ? "Select exactly one resolved cut below, then import its edited original footage for draft review." : "Select exactly one resolved cut below, then import its completed Seedance candidates.");
+              }}>
+              <option value="seedance">Seedance video</option>
+              <option value="original-footage">Edited original footage</option>
+            </select>
+          </label>
           <label className={`rounded-[2px] border border-[#6e3425] bg-[#160905] px-3 py-2 text-[8px] uppercase tracking-[0.12em] text-[#d26c42] ${isImportingGenerated || !selectedReturnSegment ? "cursor-not-allowed opacity-45" : "cursor-pointer hover:border-[#e05c00]"}`}>
-            {isImportingGenerated ? "Importing..." : "Import generated clips"}
+            {isImportingGenerated ? "Importing..." : externalImportKind === "original-footage" ? "Import edited footage" : "Import generated clips"}
             <input
               type="file"
               accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm"
@@ -1606,7 +1609,7 @@ function GeneratedShotCard({
   return (
     <article className={`rounded-[2px] border bg-[#080808] p-2 ${reviewStatus === "approved" ? "border-[#245c2c]" : reviewStatus === "rejected" ? "border-[#743029]" : "border-[#695019]"}`}>
           <div className="mb-2 flex items-center justify-between gap-2">
-            <div className="min-w-0 truncate font-mono text-[9px] uppercase tracking-[0.14em] text-[#d0d0d0]">GEN_{String(index + 1).padStart(2, "0")} · {asset.model}</div>
+            <div className="min-w-0 truncate font-mono text-[9px] uppercase tracking-[0.14em] text-[#d0d0d0]">{asset.provider === "editorial" ? "EDIT" : "GEN"}_{String(index + 1).padStart(2, "0")} · {asset.model}</div>
             <span className={`rounded-[2px] border px-1.5 py-0.5 text-[7px] uppercase tracking-[0.1em] ${reviewStatus === "approved" ? "border-[#245c2c] text-[#78c878]" : reviewStatus === "rejected" ? "border-[#743029] text-[#dc6257]" : "border-[#695019] text-[#d3a236]"}`}>{reviewStatus}</span>
           </div>
           <div className="overflow-hidden rounded-[1px] border border-[#1b1b1b] bg-black">
@@ -1727,12 +1730,6 @@ function GeneratedShotCard({
           </div>
     </article>
   );
-}
-
-function inferSeedanceModel(filename: string) {
-  if (/seedance[-_. ]?2[._-]?5/i.test(filename)) return "seedance_2_5";
-  if (/seedance[-_. ]?2[._-]?0/i.test(filename)) return "seedance_2_0";
-  return "seedance";
 }
 
 function readVideoDuration(file: File) {

@@ -7,7 +7,7 @@ import { currentIdentityEvidenceSha256, isIdentityPolicySha256 } from "./issuedI
 export { generatedAssetIdentityBlockReason, generatedAssetDraftIdentityBlockReason } from "./generatedAssetIdentity";
 export type { GeneratedAssetIdentityVerification } from "./generatedAssetIdentity";
 
-export type GeneratedStudioAssetProvider = "higgsfield" | "swarmui";
+export type GeneratedStudioAssetProvider = "higgsfield" | "swarmui" | "editorial";
 export type GeneratedStudioAssetReviewStatus = "pending" | "approved" | "rejected";
 
 export type GeneratedStudioAssetTarget = {
@@ -260,8 +260,8 @@ export function applyGeneratedAssetOverlays(segments: EditPlanPreviewSegment[], 
       if (window.songStart > segment.musicStart + 0.001) pieces.push(sliceSegment(segment, segment.musicStart, window.songStart));
       pieces.push({ ...segment, kind: "source", gapReason: undefined, videoUrl,
         musicStart: window.songStart, musicEnd: window.songEnd, startTime: window.sourceStart, endTime: window.sourceEnd,
-        label: asset.title ?? `${asset.model} generated replacement`, momentId: undefined, sourceClipId: undefined,
-        sourceRefLabel: `GEN · ${asset.model}`, thumbnailUrl: asset.thumbnailUrl });
+        label: asset.title ?? `${asset.model} ${asset.provider === "editorial" ? "footage edit" : "generated replacement"}`, momentId: undefined, sourceClipId: undefined,
+        sourceRefLabel: `${asset.provider === "editorial" ? "EDIT" : "GEN"} · ${asset.model}`, thumbnailUrl: asset.thumbnailUrl });
       if (window.songEnd < segment.musicEnd - 0.001) pieces.push(sliceSegment(segment, window.songEnd, segment.musicEnd));
       return pieces;
     });
@@ -276,9 +276,10 @@ export function buildGeneratedAssetContextPreview(segments: EditPlanPreviewSegme
   const radius = Math.max(0, Math.floor(contextRadius));
   const startIndex = Math.max(0, targetIndex - radius);
   const endIndex = Math.min(segments.length - 1, targetIndex + radius);
-  const previewAsset = { ...asset, reviewStatus: "approved" as const, title: `GENERATED CANDIDATE · ${asset.model} · ${asset.title ?? asset.target?.sectionLabel}` };
+  const prefix = asset.provider === "editorial" ? "EDIT" : "GEN";
+  const previewAsset = { ...asset, reviewStatus: "approved" as const, title: `${asset.provider === "editorial" ? "EDITED FOOTAGE" : "GENERATED"} CANDIDATE · ${asset.model} · ${asset.title ?? asset.target?.sectionLabel}` };
   const context = applyApprovedGeneratedAssets(segments.slice(startIndex, endIndex + 1), [previewAsset]);
-  for (const segment of context) if (segment.sourceRefLabel === `GEN · ${asset.model}`) segment.sourceRefLabel = `PREVIEW GEN · ${asset.model}`;
+  for (const segment of context) if (segment.sourceRefLabel === `${prefix} · ${asset.model}`) segment.sourceRefLabel = `PREVIEW ${prefix} · ${asset.model}`;
   return { segments: context, startIndex, endIndex, targetIndex };
 }
 
