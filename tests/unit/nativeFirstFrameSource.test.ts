@@ -5,7 +5,7 @@ import { currentReferenceIdentityFixture } from "../helpers/currentReferenceIden
 import { withCurrentReferenceIdentity } from "@/components/studio/currentReferenceIdentity";
 import { nativeFirstFrameSelection, assertNativeFirstFrameReceipt } from "@/components/studio/nativeFirstFrame";
 import { h3FirstFrameDigest } from "@/components/studio/h3FirstFrame";
-const objects = new Map<string, Buffer>(); let reads = 0, writes = 0, declared: number | undefined;
+const objects = new Map<string, Buffer>(); let reads = 0, writes = 0, declared: number | undefined, hideNextIndexRead = false;
 let fixture = currentReferenceIdentityFixture(), corruptCanonical = false;
 class GetObjectCommand { constructor(public input: Record<string, unknown>) {} }
 class PutObjectCommand { constructor(public input: Record<string, unknown>) {} }
@@ -14,6 +14,7 @@ const status = (code: number) => Object.assign(new Error("private-storage-test-e
 const client = { async send(command: GetObjectCommand | PutObjectCommand) {
   const key = String(command.input.Key);
   if (command instanceof GetObjectCommand) {
+    if (key.includes("/by-job/") && hideNextIndexRead) { hideNextIndexRead = false; throw status(404); }
     reads++; const bytes = objects.get(key); if (!bytes) throw status(404);
     return { ContentLength: declared ?? bytes.length, Body: { async *[Symbol.asyncIterator]() { yield bytes; }, transformToByteArray: async () => bytes, destroy() {} } };
   }
@@ -30,7 +31,7 @@ mock.module("@/lib/h3IdentityAssessmentStore", () => ({ readH3IdentityAssessment
 mock.module("@/lib/currentIdentityStore", () => ({ readCurrentIdentityAssessment: async () => corruptCanonical ? { ...fixture.assessment, assessedAt: "2026-11-08T00:00:00Z" } : fixture.assessment, readCurrentIdentityPolicy: async () => fixture.currentPolicy }));
 const { registerNativeFirstFrame, canonicalNativeFirstFrameSource, nativePngFrameSha256, readNativeFirstFrameReceipt, readNativeFirstFrameReceiptForJob } = await import("@/lib/nativeFirstFrameSource");
 const names = ["RUSTFS_S3_ENDPOINT", "RUSTFS_ACCESS_KEY", "RUSTFS_SECRET_KEY"] as const, previous = names.map(name => process.env[name]);
-beforeEach(() => { objects.clear(); reads = writes = 0; declared = undefined; corruptCanonical = false; process.env.RUSTFS_S3_ENDPOINT = "https://storage.test"; process.env.RUSTFS_ACCESS_KEY = "test-only"; process.env.RUSTFS_SECRET_KEY = "test-only"; });
+beforeEach(() => { objects.clear(); reads = writes = 0; declared = undefined; hideNextIndexRead = false; corruptCanonical = false; process.env.RUSTFS_S3_ENDPOINT = "https://storage.test"; process.env.RUSTFS_ACCESS_KEY = "test-only"; process.env.RUSTFS_SECRET_KEY = "test-only"; });
 afterEach(() => names.forEach((name, index) => { if (previous[index] === undefined) delete process.env[name]; else process.env[name] = previous[index]; }));
 const hash = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 async function setup() {
@@ -54,6 +55,71 @@ test("exact owned old/current pixels create a distinct immutable receipt without
   expect(await readNativeFirstFrameReceiptForJob(input.ownerId, input.saved.project.id, first.sourceReceipt.body.targetJobId)).toEqual(first.sourceReceipt);
   expect(() => assertNativeFirstFrameReceipt(first.sourceReceipt, input.source, first.artifact, input.shot)).not.toThrow();
   expect(objects.size).toBe(5);
+});
+
+test("a fresh revision-only retry recovers the original immutable source receipt", async () => {
+  const input = await setup(), first = await registerNativeFirstFrame(input), count = objects.size;
+  const retry = await registerNativeFirstFrame({ ...input, saved: { ...input.saved, revision: "new-project-revision" }, baselineSha256: "c".repeat(64) });
+  expect(retry).toEqual(first);
+  expect(objects.size).toBe(count);
+  expect(retry.sourceReceipt.body.projectRevision).toBe(input.saved.revision);
+  expect(retry.sourceReceipt.body.baselineSha256).toBe(input.baselineSha256);
+});
+
+test("recovery still rejects authority drift before and after reading the existing receipt", async () => {
+  const input = await setup(), first = await registerNativeFirstFrame(input), count = objects.size;
+  for (const failAt of [1, 3]) {
+    let checks = 0;
+    await expect(registerNativeFirstFrame({ ...input, isCurrent: async () => ++checks !== failAt })).rejects.toThrow("saved project changed");
+  }
+  expect(objects.size).toBe(count);
+  expect(await readNativeFirstFrameReceiptForJob(input.ownerId, input.saved.project.id, first.sourceReceipt.body.targetJobId)).toEqual(first.sourceReceipt);
+});
+
+test("equal pixels from another exact native frame cannot reuse the same target origin", async () => {
+  const input = await setup(), first = await registerNativeFirstFrame(input), count = objects.size;
+  const otherFrame = nativeFirstFrameSelection(withCurrentReferenceIdentity([fixture.asset], fixture.context)[0], 13);
+  expect(otherFrame.frameSha256).toBe(input.source.frameSha256);
+  await expect(registerNativeFirstFrame({ ...input, source: otherFrame })).rejects.toThrow("different native source");
+  expect(objects.size).toBe(count);
+  expect(await readNativeFirstFrameReceiptForJob(input.ownerId, input.saved.project.id, first.sourceReceipt.body.targetJobId)).toEqual(first.sourceReceipt);
+});
+
+test("recovery compares every origin field including range, proofs, current references and request", async () => {
+  const input = await setup(), first = await registerNativeFirstFrame(input);
+  const receiptKey = [...objects.keys()].find(key => key.endsWith(`/${first.sourceReceipt.id}.json`))!;
+  const indexKey = [...objects.keys()].find(key => key.includes("/by-job/"))!;
+  for (const alter of [
+    (body: typeof first.sourceReceipt.body) => { body.source.trimStart = .25; },
+    (body: typeof first.sourceReceipt.body) => { body.source.originalProofSha256 = "a".repeat(64); },
+    (body: typeof first.sourceReceipt.body) => { body.source.current!.contextSha256 = "a".repeat(64); },
+    (body: typeof first.sourceReceipt.body) => { body.source.current!.proofSha256 = "a".repeat(64); },
+    (body: typeof first.sourceReceipt.body) => { body.requestSha256 = "a".repeat(64); },
+    (body: typeof first.sourceReceipt.body) => { body.descriptorSha256 = "a".repeat(64); },
+    (body: typeof first.sourceReceipt.body) => { body.pngSha256 = "a".repeat(64); },
+  ]) {
+    const changed = structuredClone(first.sourceReceipt); alter(changed.body);
+    changed.sha256 = h3FirstFrameDigest(changed.body); changed.id = `h3-native-source-${changed.sha256}`;
+    objects.set(receiptKey.replace(first.sourceReceipt.id, changed.id), Buffer.from(JSON.stringify(changed)));
+    objects.set(indexKey, Buffer.from(JSON.stringify({ receiptId: changed.id })));
+    await expect(registerNativeFirstFrame(input)).rejects.toThrow("different native source");
+  }
+});
+
+test("a concurrent equivalent enrollment returns the immutable index winner despite another revision", async () => {
+  const input = await setup(), first = await registerNativeFirstFrame(input);
+  hideNextIndexRead = true; // Winner becomes visible only when the conditional index PUT loses.
+  const result = await registerNativeFirstFrame({ ...input, saved: { ...input.saved, revision: "concurrent-revision" }, baselineSha256: "c".repeat(64) });
+  expect(result).toEqual(first);
+  expect(await readNativeFirstFrameReceiptForJob(input.ownerId, input.saved.project.id, first.sourceReceipt.body.targetJobId)).toEqual(first.sourceReceipt);
+});
+
+test("a concurrent different native-frame origin cannot replace the immutable index winner", async () => {
+  const input = await setup(), first = await registerNativeFirstFrame(input);
+  hideNextIndexRead = true;
+  const source = nativeFirstFrameSelection(withCurrentReferenceIdentity([fixture.asset], fixture.context)[0], 13);
+  await expect(registerNativeFirstFrame({ ...input, source })).rejects.toThrow("different native source");
+  expect(await readNativeFirstFrameReceiptForJob(input.ownerId, input.saved.project.id, first.sourceReceipt.body.targetJobId)).toEqual(first.sourceReceipt);
 });
 test("one changed pixel cannot be enrolled under the claimed exact frame, even with a correct encoded upload SHA", async () => {
   const input = await setup(); const changed = await sharp({ create: { width: 1344, height: 768, channels: 3, background: { r: 12, g: 53, b: 89 } } }).png().toBuffer();

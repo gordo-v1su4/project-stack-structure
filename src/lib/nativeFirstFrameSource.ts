@@ -92,6 +92,12 @@ export async function readNativeFirstFrameReceiptForJob(ownerId: string, project
   if (!receipt || receipt.body.targetJobId !== jobId) throw new H3RequestError("Native-source index differs from its canonical target job.", 409);
   return receipt;
 }
+function nativeSourceOriginSha256(body: NativeFirstFrameReceipt["body"]): string {
+  // These record authority at first enrollment. Every retry separately proves fresh authority;
+  // neither belongs to the immutable source/target identity used to recover that enrollment.
+  const origin = Object.fromEntries(Object.entries(body).filter(([key]) => key !== "baselineSha256" && key !== "projectRevision"));
+  return h3FirstFrameDigest(origin);
+}
 export async function registerNativeFirstFrame(params: { ownerId: string; saved: SavedStudioProject; target: H3GenerationJob; shot: H3GenerationRequest;
   source: NativeFirstFrameSelection; upload: { bucket: string; objectKey: string }; expectedSha256: string; baselineSha256: string; isCurrent: () => Promise<boolean> }) {
   const { ownerId, saved, target, shot, upload, expectedSha256 } = params, config = getMediaGatewayConfig();
@@ -122,6 +128,15 @@ export async function registerNativeFirstFrame(params: { ownerId: string; saved:
     targetJobId: h3GenerationJobId(ownerId, conditioned, target.references, { profile: H3_FIRST_FRAME_PROFILE, conditioningPreparationVersion: H3_FIRST_FRAME_PREPARATION, firstFrame: artifact }),
     requestSha256: h3FirstFrameDigest(shot), baselineSha256: params.baselineSha256, projectRevision: saved.revision! };
   const sha256 = h3FirstFrameDigest(body), receipt: NativeFirstFrameReceipt = { version: 1, id: `h3-native-source-${sha256}`, sha256, body };
+  const recover = async (existing: NativeFirstFrameReceipt) => {
+    if (nativeSourceOriginSha256(existing.body) !== nativeSourceOriginSha256(body)) throw new H3RequestError("Immutable target job already has a different native source.", 409);
+    if (!await params.isCurrent()) throw new H3RequestError("The saved project changed while recovering native-source enrollment. No generation was submitted.", 409);
+    return { artifact, sourceReceipt: existing };
+  };
+  // Only recover after canonical old/current proof, exact PNG and fresh project validation above.
+  const existing = await readNativeFirstFrameReceiptForJob(ownerId, saved.project.id, body.targetJobId);
+  if (existing) return recover(existing);
+  if (!await params.isCurrent()) throw new H3RequestError("The saved project changed before native-source enrollment. No generation was submitted.", 409);
   const { client, bucket } = sourceConfirmationStorage();
   try { await client.send(new PutObjectCommand({ Bucket: bucket, Key: receiptKey(ownerId, saved.project.id, receipt.id), Body: JSON.stringify(receipt), ContentType: "application/json", IfNoneMatch: "*" }), { abortSignal: AbortSignal.timeout(15_000) }); }
   catch (error) {
@@ -131,7 +146,10 @@ export async function registerNativeFirstFrame(params: { ownerId: string; saved:
   try { await client.send(new PutObjectCommand({ Bucket: bucket, Key: jobIndexKey(ownerId, saved.project.id, body.targetJobId), Body: JSON.stringify({ receiptId: receipt.id }), ContentType: "application/json", IfNoneMatch: "*" }), { abortSignal: AbortSignal.timeout(15_000) }); }
   catch (error) {
     if (![409, 412].includes((error as { $metadata?: { httpStatusCode?: number } })?.$metadata?.httpStatusCode ?? 0)) throw error;
-    if (h3FirstFrameDigest(await readNativeFirstFrameReceiptForJob(ownerId, saved.project.id, body.targetJobId)) !== h3FirstFrameDigest(receipt)) throw new H3RequestError("Immutable target job already has a different native source.", 409);
+    const winner = await readNativeFirstFrameReceiptForJob(ownerId, saved.project.id, body.targetJobId);
+    if (!winner) throw new H3RequestError("Native-source enrollment could not be recovered.", 409);
+    return recover(winner);
   }
+  if (!await params.isCurrent()) throw new H3RequestError("The saved project changed while enrolling native-source evidence. No generation was submitted.", 409);
   return { artifact, sourceReceipt: receipt };
 }
