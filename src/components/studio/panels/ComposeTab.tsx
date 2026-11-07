@@ -1,5 +1,7 @@
 "use client";
 
+import { formatTimelineBlockCount } from "../previewBlockSummary";
+
 import {
   getMusicVideoShaderPreset,
   MUSIC_VIDEO_SHADER_PRESETS,
@@ -82,7 +84,7 @@ export function ComposeTab({
   const readyChecks = [
     { label: "Master song", value: analysis ? `${analysis.duration.toFixed(1)}s` : "Missing", ready: Boolean(analysis) },
     { label: "Story edit plan", value: storyGenerated ? `${editSlotCount} slots` : "Generate Story", ready: storyGenerated && editSlotCount > 0 },
-    { label: "Preview cuts", value: storySegmentCount ? `${storySegmentCount} segments` : "No cuts", ready: storySegmentCount > 0 },
+    { label: "Preview timeline", value: formatTimelineBlockCount(storySegmentCount), ready: storySegmentCount > 0 },
     { label: "Lyric timing", value: lyricChunkCount ? `${lyricChunkCount} chunks` : "Optional", ready: lyricChunkCount > 0 },
     { label: "Source clips", value: videoSourceCount ? `${videoSourceCount} clips` : "Missing", ready: videoSourceCount > 0 },
   ];

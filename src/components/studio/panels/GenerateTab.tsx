@@ -1,6 +1,7 @@
 "use client";
 
 import { referenceAwareCaption } from "../referenceLanguage";
+import { describePreviewBlocks } from "../previewBlockSummary";
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { fmt } from "../math";
@@ -405,9 +406,9 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Resolved preview clips</div>
-            <div className="mt-1 text-[11px] text-[#6d6d6d]">Every card is an actual preview cut. Its thumbnail, source ID, scene, source time, and song time now come from the resolved edit—not the section&apos;s repeated primary Match image.</div>
+            <div className="mt-1 text-[11px] text-[#6d6d6d]">Each card is a resolved timeline block. A block can contain multiple camera cuts or a footage gap. Thumbnails, source IDs, scenes, source times, and song times come from the resolved edit.</div>
           </div>
-          <div className="font-mono text-[10px] text-[#777]">{previewSegments.length} resolved cuts · {describePreviewSelection(previewSegments, selectedPreviewRange)}</div>
+          <div className="font-mono text-[10px] text-[#777]">{describePreviewBlocks(previewSegments)} · {describePreviewSelection(previewSegments, selectedPreviewRange)}</div>
         </div>
         <ResolvedClipQueue
           project={project}
@@ -760,7 +761,7 @@ function ResolvedClipQueue({
   onSelectedPreviewRange: (range: PreviewCutRange | null) => void;
   onAuditionPreviewRange: (range: PreviewCutRange) => void;
 }) {
-  if (!segments.length) return <EmptyState label="No resolved preview cuts" detail="Generate Story and finish Match so the actual source sequence can be resolved." />;
+  if (!segments.length) return <EmptyState label="No resolved timeline blocks" detail="Generate Story and finish Match so the actual source sequence can be resolved." />;
   const duration = Math.max(segments[segments.length - 1]?.musicEnd ?? 0, 0.001);
   const momentsById = new Map(project?.videoMoments.map((moment) => [moment.id, moment]) ?? []);
   const cards = segments.map((segment, index) => {
@@ -881,7 +882,7 @@ function describePreviewSelection(segments: EditPlanPreviewSegment[], range: Pre
   const selected = segments.slice(range.startIndex, range.endIndex + 1);
   const first = selected[0];
   const last = selected[selected.length - 1];
-  if (!first || !last) return "no cut selected";
+  if (!first || !last) return "no timeline block selected";
   return `${selected.length} selected · song ${fmtCutTime(first.musicStart)}–${fmtCutTime(last.musicEnd)}`;
 }
 

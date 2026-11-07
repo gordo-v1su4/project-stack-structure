@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { buildRoughCutSections, type ReviewSelection } from "../songSectionReview";
 import { fmt } from "../math";
+import { describePreviewBlocks } from "../previewBlockSummary";
 import type { EditPlanPreviewSegment } from "../musicVideoProject";
 import { Button, Surface } from "../ui";
 
@@ -65,12 +66,12 @@ export function JoinTab({ previewSegments, sectionLabels, existingFootage, activ
       <Surface>
         <div className="mb-3 flex items-center justify-between gap-3">
           <div><h3 className="text-sm font-medium text-fg-1">{selectionLabel}</h3>
-            <p className="mt-1 text-xs text-fg-3">{time(cuts[0]!.segment.musicStart)}–{time(cuts.at(-1)!.segment.musicEnd)} · {cuts.length} {cuts.length === 1 ? "shot" : "shots"}</p></div>
+            <p className="mt-1 text-xs text-fg-3">{time(cuts[0]!.segment.musicStart)}–{time(cuts.at(-1)!.segment.musicEnd)} · {describePreviewBlocks(cuts.map(cut => cut.segment))}</p></div>
           <Button size="sm" disabled={busy} onClick={() => onPlaySelection(cuts[0]!.index, cuts.at(-1)!.index)}>Play selection</Button>
         </div>
         <div className="flex gap-2 overflow-x-auto pb-2">
           {cuts.map(({ segment, index }) => <button key={`${segment.placementId}:${index}`} type="button" aria-pressed={index === selectedIndex}
-            onClick={() => onActiveClip(index)} aria-label={`Review shot ${index + 1}: ${segment.label}`}
+            onClick={() => onActiveClip(index)} aria-label={`Review timeline block ${index + 1}: ${segment.label}`}
             className={`w-40 shrink-0 overflow-hidden rounded-md border text-left ${index === selectedIndex ? "border-accent bg-accent-tint" : segment.kind === "gap" ? "border-dashed border-warn-lo bg-warn-tint" : "border-line bg-ink-1 hover:border-line-3"}`}>
             <div className="relative aspect-video bg-ink-0">
               {segment.kind !== "gap" && segment.thumbnailUrl ?
