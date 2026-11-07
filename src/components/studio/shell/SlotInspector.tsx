@@ -1,7 +1,7 @@
 "use client";
 
 import { fmt } from "../math";
-import { Button, Kicker } from "../ui";
+import { Button, Kicker, TONE_TEXT } from "../ui";
 import type { SlotEvidence } from "./spineSlots";
 
 type SlotInspectorProps = {
@@ -53,7 +53,7 @@ export function SlotInspector({ evidence, onClose, onPlayFrom, onSelectTake, onR
         </div>
 
         {generated && generated.reviewStatus !== "approved" ? (
-          <p className="text-[12px] leading-5 text-warn">Pending draft review · Review the assembled draft before accepting this take.</p>
+          <p className={`text-[12px] leading-5 ${TONE_TEXT.review}`}>Pending draft review · Review the assembled draft before accepting this take.</p>
         ) : null}
 
         {lyrics.length ? (

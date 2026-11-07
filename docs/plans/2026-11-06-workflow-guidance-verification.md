@@ -30,6 +30,14 @@ passed 31 tests; `bun run typecheck` passed. Targeted ESLint passed with two
 pre-existing StudioApp warnings (unused transcript-failure argument and unused
 disable directive).
 
+After the inspector follow-up, the full isolated `bun run test` runner passed
+1,224 tests with 23 skips and no failures. Skips cover unavailable local media
+fixtures and two offline Trigger bundle fixtures; they do not establish live
+media or deployment acceptance. Final typecheck passed and targeted ESLint
+retained only the same two existing StudioApp warnings. Standards review aligned
+the pending-review indicator with the shared `TONE_TEXT.review` token; its
+affected inspector tests and lint were rerun after that presentation-only fix.
+
 ## Remaining acceptance
 
 This code-level evidence does not prove a deployed authenticated browser pass,
