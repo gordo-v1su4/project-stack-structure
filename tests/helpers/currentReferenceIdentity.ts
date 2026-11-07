@@ -4,8 +4,9 @@ import {CURRENT_IDENTITY_PURPOSE,buildCurrentIdentityScope,currentIdentityOrigin
 import {generationScopeSha256,generationSemanticSha256,type GenerationScopeReceipt} from "@/components/studio/generationScope";
 import {identityPolicySha256,issuedGalleryProfileSha256} from "@/components/studio/issuedIdentityPolicy";
 /** Synthetic protocol fixtures; these are not an authority certificate or actual face measurements. */
-export function currentReferenceIdentityFixture(){
+export function currentReferenceIdentityFixture(frameSha256?:string){
   const fixture=issuedDraftAssetFixture("foreground",2),{job,asset}=fixture,{saved}=h3ProjectFixture();
+  if(frameSha256){Object.assign(asset,{width:1344,height:768});for(const sample of [...asset.identityVerification!.samples,...asset.identityVerification!.draftSimilarityFilter!.samples])sample.frameSha256=frameSha256;}
   saved.project.id=job.projectId;saved.project.ownerId=job.ownerId;saved.revision='"revision-1"';
   const original=fixture.policy,oldHash=original.body.identityReferenceHashes[0],newHash="e".repeat(64);
   const galleries=original.body.galleries.map(gallery=>({...gallery,rawSha256:gallery.rawSha256===oldHash?newHash:gallery.rawSha256}));
