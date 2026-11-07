@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { materializeH3Job } from "@/lib/h3GenerationServer";
 import { h3ProjectFixture } from "../helpers/h3Project";
 
@@ -74,6 +75,12 @@ function setup() {
 afterEach(() => { globalThis.fetch = originalFetch; for (const name of names) { if (previous[name] === undefined) delete process.env[name]; else process.env[name] = previous[name]; } });
 
 describe("conditional durable H3 job records", () => {
+  test("selected aesthetic originals must match their recorded byte hash after conditional download", async () => {
+    const job = setup(), pinned = await pinH3JobReferences(job);
+    const reference = { ...pinned.references[0], aesthetic: { purpose: "shot" as const, guidance: "Low camera", originalSha256: createHash("sha256").update(new Uint8Array([1, 2, 3])).digest("hex") } };
+    expect((await downloadH3ReferenceImage(reference)).bytes.byteLength).toBe(3);
+    await expect(downloadH3ReferenceImage({ ...reference, aesthetic: { ...reference.aesthetic, originalSha256: "0".repeat(64) } })).rejects.toThrow(/original uploaded bytes/);
+  });
   test("retries one signature rejection with the same pinned signed conditional GET", async () => {
     const job = setup(), pinned = await pinH3JobReferences(job); imageReads = [];
     conditionalImageErrors = [Object.assign(failure(403), { name: "SignatureDoesNotMatch" })];
