@@ -1,4 +1,7 @@
 "use client";
+import { AestheticReferenceLibrary } from "./studio/AestheticReferenceLibrary";
+import { EMPTY_AESTHETIC_REFERENCES, type AestheticReferenceLibrary as AestheticLibrary } from "./studio/aestheticReferences";
+
 
 import { ClipAudioSettings } from "./studio/ClipAudioSettings";
 import { acquireMediaPlaybackOwnership } from "./studio/mediaPlaybackOwnership";
@@ -183,6 +186,7 @@ export default function StudioApp() {
   const [roughCutUndo, setRoughCutUndo] = useState<{ before: MusicVideoProject; afterPlan: string } | null>(null);
   const [captionMode, setCaptionMode] = useState<SceneCaptionMode>("smart");
   const [referenceAssets, setReferenceAssets] = useState<ReferenceAsset[]>([]);
+  const [aestheticReferences, setAestheticReferences] = useState<AestheticLibrary>(EMPTY_AESTHETIC_REFERENCES);
   const [generatedReviewState, setGeneratedReviewState] = useState<{ assets: GeneratedStudioAsset[]; draft: GeneratedDraftSelection | null }>({ assets: [], draft: null });
   const { assets: rawGeneratedAssets, draft: generatedDraft } = generatedReviewState;
   const setGeneratedAssets = useCallback((update: SetStateAction<GeneratedStudioAsset[]>) => {
@@ -353,6 +357,7 @@ export default function StudioApp() {
         storyState,
         musicVideoProject,
         referenceAssets,
+        aestheticReferences,
         generatedAssets: rawGeneratedAssets,
         generatedDraft,
         clipAudioSettings,
@@ -384,7 +389,7 @@ export default function StudioApp() {
       return;
     }
     setSaveState((current) => (current.kind === "dirty" || current.kind === "saving" ? current : { ...current, kind: "dirty" }));
-  }, [activeProjectId, activeProjectName, beatJoinAnalysis, clipAudioSettings, captionMode, colorGradient, committedBeatSplit, draftRestored, finalExportIntent, finalExportCueCount, finalExportName, finalExportStatus, finalExportUrl, rawGeneratedAssets, generatedDraft, isPreviewExpanded, matchLyricCueBlend, matchLyricMergeWindow, matchMode, matchOnsetDensity, musicVideoProject, referenceAssets, shaderAccentKinds, shaderPresetId, splitMode, storyState, tab, videoSources]);
+  }, [activeProjectId, activeProjectName, beatJoinAnalysis, clipAudioSettings, captionMode, colorGradient, committedBeatSplit, draftRestored, finalExportIntent, finalExportCueCount, finalExportName, finalExportStatus, finalExportUrl, rawGeneratedAssets, generatedDraft, isPreviewExpanded, matchLyricCueBlend, matchLyricMergeWindow, matchMode, matchOnsetDensity, musicVideoProject, referenceAssets, aestheticReferences, shaderAccentKinds, shaderPresetId, splitMode, storyState, tab, videoSources]);
 
   useEffect(() => {
     if (!draftRestored) return;
@@ -457,7 +462,7 @@ export default function StudioApp() {
     return () => {
       if (saveTimer !== null) window.clearTimeout(saveTimer);
     };
-  }, [draftRestored, referenceAssets]);
+  }, [draftRestored, referenceAssets, aestheticReferences]);
 
   useEffect(() => {
     if (!draftRestored || !vocalStemAutosaveRequestedRef.current) return;
@@ -585,6 +590,7 @@ export default function StudioApp() {
     setCaptionMode(restoredCaptionMode);
     setMusicVideoProject(draft.musicVideoProject);
     setReferenceAssets(draft.referenceAssets ?? []);
+    setAestheticReferences(draft.aestheticReferences ?? EMPTY_AESTHETIC_REFERENCES);
     setGeneratedReviewState({ assets: draft.generatedAssets ?? [], draft: draft.generatedDraft ?? null });
     const workflowUi = draft.workflowUiSettings;
     if (workflowUi?.activeTab && NAV.some((item) => item.key === workflowUi.activeTab)) setTab(workflowUi.activeTab);
@@ -1262,6 +1268,7 @@ export default function StudioApp() {
         storyState,
         musicVideoProject,
         referenceAssets,
+        aestheticReferences,
         generatedAssets: rawGeneratedAssets,
         generatedDraft,
         clipAudioSettings,
@@ -2129,6 +2136,7 @@ export default function StudioApp() {
     storyState,
     musicVideoProject,
     referenceAssets,
+        aestheticReferences,
     generatedAssets: rawGeneratedAssets,
     generatedDraft,
     clipAudioSettings,
@@ -2148,7 +2156,7 @@ export default function StudioApp() {
       finalExportIntent,
       finalExport: finalExportUrl ? { videoUrl: finalExportUrl, downloadFileName: finalExportName ?? "stack-structure-final.mp4", cueCount: finalExportCueCount, status: finalExportStatus } : undefined,
     },
-  }), [beatJoinAnalysis, clipAudioSettings, captionMode, colorGradient, committedBeatSplit, finalExportIntent, finalExportCueCount, finalExportName, finalExportStatus, finalExportUrl, rawGeneratedAssets, generatedDraft, isPreviewExpanded, matchLyricCueBlend, matchLyricMergeWindow, matchMode, matchOnsetDensity, musicVideoProject, referenceAssets, shaderAccentKinds, shaderPresetId, splitMode, storyState, tab, videoSources]);
+  }), [beatJoinAnalysis, clipAudioSettings, captionMode, colorGradient, committedBeatSplit, finalExportIntent, finalExportCueCount, finalExportName, finalExportStatus, finalExportUrl, rawGeneratedAssets, generatedDraft, isPreviewExpanded, matchLyricCueBlend, matchLyricMergeWindow, matchMode, matchOnsetDensity, musicVideoProject, referenceAssets, aestheticReferences, shaderAccentKinds, shaderPresetId, splitMode, storyState, tab, videoSources]);
 
   const draftReviewLiveRef = useRef({ state: currentGeneratedReviewState, segments: baseStoryPreviewSegments, project: persistableProjectDraft, projectId: activeProjectId, projectName: activeProjectName });
   useLayoutEffect(() => {
@@ -2742,7 +2750,7 @@ export default function StudioApp() {
               onOpenMatch={() => handleSelectTab("shuffle")} matchReady={storyState.storyGenerated}
               editSettings={storyState.editSettings}
             /> : null}
-            {tab === "generate" ? <MiniMaxDraftPanel projectId={activeProjectId} segments={draftPreviewSegments}
+            {tab === "generate" ? <MiniMaxDraftPanel aestheticReferences={aestheticReferences} onAestheticSelection={(shotId, ids) => { referenceAutosaveRequestedRef.current = true; setAestheticReferences(library => ({ ...library, shots: { ...library.shots, [shotId]: ids } })); }} projectId={activeProjectId} segments={draftPreviewSegments}
               storyApproved={storyState.storyGenerated && Boolean(storyState.confirmedTreatmentId)
                 && Boolean(storyState.storyContentSignature) && Boolean(musicVideoProject && isPlacementPlanCurrent(musicVideoProject))}
               assets={generatedAssets} draft={generatedDraft} referenceAssets={referenceAssets}
@@ -2761,6 +2769,7 @@ export default function StudioApp() {
               disabled={isFinalExporting || isShaderCaptureExporting || Boolean(previewState.activeRequestKey)}
               onChange={value => { invalidateArrangementOutput(); setClipAudioSettings(value); }} />
             {tab === "review" && (
+              <>
               <IngestTab
                 clipAudioSettings={clipAudioSettings}
                 analysis={beatJoinAnalysis}
@@ -2794,6 +2803,10 @@ export default function StudioApp() {
                 onVocalStemTranscriptComplete={handleVocalStemTranscriptComplete}
                 onVocalStemTranscriptFailed={handleVocalStemTranscriptFailed}
               />
+              <AestheticReferenceLibrary key={activeProjectId ?? "unsaved"} value={aestheticReferences} onChange={update => { referenceAutosaveRequestedRef.current = true; setAestheticReferences(update); }}
+                sections={(musicVideoProject?.storySections ?? []).map(section => ({ id: section.id, label: section.label }))}
+                shots={(musicVideoProject?.editPlan.timelineItems ?? []).map(item => ({ id: item.id, label: item.label }))} />
+              </>
             )}
             {tab === "split" && (
               <SplitTab

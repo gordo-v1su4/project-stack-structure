@@ -8,9 +8,11 @@ import { recheckH3Similarity } from "../h3SimilarityRecheck";
 import { currentIdentityEvidenceSha256, identityPolicyChoiceForReferences, identityPolicySha256 } from "../issuedIdentityPolicy";
 import { createNativeHandleAudition } from "../nativeHandleAudition";
 import type { GeneratedDraftReview, GeneratedDraftSelection } from "../generatedDraft";
-import { createH3PickupWindow, enqueueH3DraftRequest, findH3TargetSegment, h3DraftBatchStorageKey, h3RequestWindowKey, h3WindowKey, nextH3Attempt, parseH3DraftBatch, planH3DraftWindows, readH3DraftJobs, selectH3PickupWindow, selectH3ReferenceAssetIds, prepareH3PickupRequest, type H3DraftBatch } from "../h3DraftPlan";
+import { appendH3AestheticReferenceIds, createH3PickupWindow, enqueueH3DraftRequest, findH3TargetSegment, h3DraftBatchStorageKey, h3RequestWindowKey, h3WindowKey, nextH3Attempt, parseH3DraftBatch, planH3DraftWindows, readH3DraftJobs, selectH3PickupWindow, selectH3ReferenceAssetIds, prepareH3PickupRequest, type H3DraftBatch } from "../h3DraftPlan";
 import { isH3JobTerminal, type H3GenerationJob, type H3GenerationRequest } from "../h3Generation";
 import type { EditPlanPreviewSegment } from "../musicVideoProject";
+import { aestheticReferenceApplies, type AestheticReferenceLibrary } from "../aestheticReferences";
+import { ReferenceSheetPreview } from "../ReferenceSheetPreview";
 import type { ReferenceAsset } from "../referenceAssets";
 import { Button, StatusDot, Surface } from "../ui";
 import { uploadFileDirectlyToRustFs } from "../directUploadClient";
@@ -30,6 +32,8 @@ type Props = {
   assets: GeneratedStudioAsset[];
   draft: GeneratedDraftSelection | null;
   referenceAssets: ReferenceAsset[];
+  aestheticReferences?: AestheticReferenceLibrary;
+  onAestheticSelection?: (shotId: string, ids: string[]) => void;
   onEnsureSavedProject: () => Promise<string>;
   onGeneratedAsset: (asset: GeneratedStudioAsset, expectedRevision?: number) => void;
   onReviewDraft: () => Promise<GeneratedDraftReview>;
@@ -239,7 +243,7 @@ export function MiniMaxDraftPanel(props: Props) {
           requestIntentId: crypto.randomUUID(), attempt: 0, referenceAssetIds: [],
         };
         // Each request gets the current review revision just before dispatch.
-        const referenceAssetIds = selectH3ReferenceAssetIds(latest.current.referenceAssets, direction, previous?.references.filter(ref => ref.role === "crowd").map(ref => ref.assetId));
+        const referenceAssetIds = appendH3AestheticReferenceIds(selectH3ReferenceAssetIds(latest.current.referenceAssets, direction, previous?.references.filter(ref => ref.role === "crowd").map(ref => ref.assetId)), latest.current.aestheticReferences, segment);
         return { ...input, ...(!previous ? identityPolicyChoiceForReferences(latest.current.referenceAssets, referenceAssetIds) : {}),
           draftRevision: undefined, referenceAssetIds };
       });
@@ -271,7 +275,7 @@ export function MiniMaxDraftPanel(props: Props) {
         sectionId: target.sectionId, songStart: target.songStart, songEnd: target.songEnd, prompt: direction,
         referenceAssetIds: [], requestIntentId: crypto.randomUUID(), attempt: 0, draftRevision: latest.current.draft?.revision ?? 0,
       };
-      const referenceAssetIds = selectH3ReferenceAssetIds(latest.current.referenceAssets, direction, original?.references.filter(ref => ref.role === "crowd").map(ref => ref.assetId));
+      const referenceAssetIds = appendH3AestheticReferenceIds(selectH3ReferenceAssetIds(latest.current.referenceAssets, direction, original?.references.filter(ref => ref.role === "crowd").map(ref => ref.assetId)), latest.current.aestheticReferences, segment);
       persistBatch(queueH3ReviewRevision(batchRef.current, { ...input,
         ...(!original ? identityPolicyChoiceForReferences(latest.current.referenceAssets, referenceAssetIds) : {}), referenceAssetIds }));
       setReview(null); await runBatch();
@@ -298,7 +302,8 @@ export function MiniMaxDraftPanel(props: Props) {
       const segment = createH3PickupWindow(currentWindow, duration);
       const previous = existingJobs.filter(job => h3RequestWindowKey(job.request) === h3WindowKey(segment)).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
       if (previous && !isH3JobTerminal(previous)) throw new Error("This exact shot already has a submission. Check its existing render in Generation progress.");
-      const referenceAssetIds = selectH3ReferenceAssetIds(latest.current.referenceAssets, direction, pickupMode === "references" ? pickupCrowdIds : []);
+      const authorities = selectH3ReferenceAssetIds(latest.current.referenceAssets, direction, pickupMode === "references" ? pickupCrowdIds : []);
+      const referenceAssetIds = pickupMode === "references" ? appendH3AestheticReferenceIds(authorities, latest.current.aestheticReferences, segment) : authorities;
       const input: H3GenerationRequest = {
         projectId, planSignature: segment.planSignature!, requirementId: segment.requirementId, timelineItemId: segment.timelineItemId,
         sectionId: segment.sectionId, songStart: segment.musicStart, songEnd: segment.musicEnd, prompt: direction,
@@ -416,7 +421,7 @@ export function MiniMaxDraftPanel(props: Props) {
   const crowdAssets = props.referenceAssets.filter(ref => ref.kind === "crowd" || ref.role === "crowd");
   let pickupReferenceIds: string[] = [];
   let pickupReferenceError: string | null = null;
-  try { pickupReferenceIds = selectH3ReferenceAssetIds(props.referenceAssets, pickupDirection, pickupMode === "references" ? pickupCrowdIds : []); }
+  try { const authorities = selectH3ReferenceAssetIds(props.referenceAssets, pickupDirection, pickupMode === "references" ? pickupCrowdIds : []); pickupReferenceIds = pickupMode === "references" && pickupWindow ? appendH3AestheticReferenceIds(authorities, props.aestheticReferences, pickupWindow) : authorities; }
   catch (failure) { pickupReferenceError = failure instanceof Error ? failure.message : "Check this shot's references."; }
   const pickupIdentityIds=props.referenceAssets.filter(ref=>pickupReferenceIds.includes(ref.id)&&(ref.kind==="character"||ref.role.startsWith("character"))).map(ref=>ref.id);
   const earlierFrame=pickupWindow?earlierH3FirstFrameSource(props.assets,props.projectId,pickupWindow.planSignature,pickupWindow.musicStart,pickupIdentityIds):undefined;
@@ -532,6 +537,22 @@ export function MiniMaxDraftPanel(props: Props) {
               {pickupMode === "first-frame" ? <p className="text-xs text-fg-3">First-frame video uses only the frozen PNG for visual conditioning. Crowd sheets selected here are reference-mode inputs.</p> : <p className="text-xs text-fg-3">{pickupReferenceIds.length}/9 total references for this shot.</p>}
             </fieldset>
             {pickupReferenceError ? <p role="alert" className="text-xs text-danger">{pickupReferenceError}</p> : null}
+            <fieldset className="space-y-2 rounded-md border border-line p-3" disabled={editingBlocked || pickupMode !== "references"}>
+              <legend className="px-1 text-xs text-fg-2">Shot and style refs · choose up to three for this shot</legend>
+              <p className="text-xs text-fg-3">Character sheets remain identity and wardrobe authorities. First-frame video uses its screened PNG only.</p>
+              {(props.aestheticReferences?.assets ?? []).filter(asset => aestheticReferenceApplies(asset, pickupWindow)).map(asset => {
+                const ids = props.aestheticReferences?.shots[pickupWindow.timelineItemId ?? ""] ?? [];
+                return <div key={asset.id} className="flex items-center gap-2 text-xs text-fg-2"><label className="flex items-center gap-2">
+                  <input type="checkbox" checked={ids.includes(asset.id)} disabled={asset.storageStatus !== "uploaded" || (!ids.includes(asset.id) && ids.length >= 3)} onChange={event => {
+                    if (pickupWindow.timelineItemId) props.onAestheticSelection?.(pickupWindow.timelineItemId, event.target.checked ? [...ids, asset.id] : ids.filter(id => id !== asset.id));
+                  }} />
+                  {asset.displayName} · {asset.purpose}</label>
+                  <div className="h-12 w-20 overflow-hidden"><ReferenceSheetPreview src={asset.previewUrl} name={asset.displayName} /></div>
+                </div>;
+              })}
+              {(props.aestheticReferences?.shots[pickupWindow.timelineItemId ?? ""] ?? []).filter(id => !(props.aestheticReferences?.assets ?? []).some(asset => asset.id === id && aestheticReferenceApplies(asset, pickupWindow))).map(id => <button type="button" key={id} onClick={() => props.onAestheticSelection?.(pickupWindow.timelineItemId!, (props.aestheticReferences?.shots[pickupWindow.timelineItemId!] ?? []).filter(value => value !== id))} className="text-xs text-danger">Remove unavailable selection · {id}</button>)}
+              {!props.aestheticReferences?.assets.length ? <p className="text-xs text-fg-3">Add originals in Setup.</p> : null}
+            </fieldset>
             <label className="block text-xs text-fg-3">Edit duration (seconds)<input aria-label="One shot edit duration" type="number" step="any"
               min={Math.min(1, pickupMaximum)} max={pickupMaximum} value={pickupDuration} disabled={editingBlocked}
               onChange={event => setPickupEdits(current => ({ ...current, [pickupEditKey]: { ...current[pickupEditKey], duration: event.target.value } }))}
