@@ -38,7 +38,7 @@ export function UploadControl({
 
   function handleFiles(fileList: FileList | null) {
     const files = fileList ? Array.from(fileList) : [];
-    if (!files.length) return;
+    if (disabled || !files.length) return;
     void onFiles(files);
   }
 
@@ -46,7 +46,7 @@ export function UploadControl({
     return (
       <label
         htmlFor={inputId}
-        className={`text-[10px] uppercase tracking-[0.12em] px-2 py-[2px] border rounded-[2px] cursor-pointer ${
+        className={`text-[10px] uppercase tracking-[0.12em] px-2 py-[2px] border rounded-[2px] cursor-pointer focus-within:ring-2 focus-within:ring-accent ${
           disabled ? "border-[#404040] text-[#707070]" : "border-[#1e1e1e] text-[#a0a0a0] hover:border-[#2f2f2f]"
         }`}
       >
@@ -56,7 +56,8 @@ export function UploadControl({
           type="file"
           accept={accept}
           multiple={multiple}
-          className="hidden"
+          className="sr-only"
+          aria-label={actionLabel}
           disabled={disabled}
           onChange={(event) => {
             handleFiles(event.target.files);
@@ -80,7 +81,7 @@ export function UploadControl({
         setIsDragging(false);
         if (!disabled) handleFiles(event.dataTransfer.files);
       }}
-      className={`block border rounded-[2px] px-4 py-8 text-center cursor-pointer transition-colors ${
+      className={`block border rounded-[2px] px-4 py-8 text-center cursor-pointer transition-colors focus-within:ring-2 focus-within:ring-accent ${
         disabled
           ? "border-[#2a2a2a] bg-[#0b0b0b] text-[#5a5a5a]"
           : isDragging
@@ -117,7 +118,8 @@ export function UploadControl({
         type="file"
         accept={accept}
         multiple={multiple}
-        className="hidden"
+        className="sr-only"
+        aria-label={actionLabel}
         disabled={disabled}
         onChange={(event) => {
           handleFiles(event.target.files);

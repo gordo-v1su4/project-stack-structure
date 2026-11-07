@@ -10,6 +10,7 @@ import { sceneCaptionMatchesMode } from "../sceneCaptioning";
 import { SourceVideoLibrary } from "../SourceVideoLibrary";
 import { IngestVocalStemLane } from "../IngestVocalStemLane";
 import { UploadControl } from "../UploadControl";
+import { ReferenceFileDropTarget } from "../ReferenceFileDropTarget";
 import { Button, Kicker, StatusDot, TONE_TEXT, type StatusTone } from "../ui";
 import type { DeepgramTranscriptSummary } from "../deepgramUtils";
 import { REFERENCE_ASSET_SLOT_DETAILS, REFERENCE_ASSET_SLOT_LABELS, type ReferenceAsset, type ReferenceAssetKind, type ReferenceAssetLibraryRole, type ReferenceAssetRole } from "../referenceAssets";
@@ -569,53 +570,57 @@ function CrowdReferenceTray({
   const readyCount = assets.filter((asset) => asset.storageStatus === "uploaded" && asset.storageUrl).length;
 
   return (
-    <details className="mt-2 rounded-[2px] border border-[#202020] bg-[#070707]">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 marker:hidden">
-        <div className="min-w-0">
-          <div className="text-[9px] uppercase tracking-[0.16em] text-[#d0d0d0]">Crowd / extras · expandable library</div>
-          <div className="mt-1 truncate text-[9px] text-[#555]">Store as many background-cast sheets as needed; Generate selects up to three for the current shot.</div>
-        </div>
-        <div className="shrink-0 font-mono text-[8px] uppercase tracking-[0.12em] text-[#78c878]">{readyCount}/{assets.length} ready</div>
-      </summary>
-      <div className="border-t border-[#181818] p-2">
-        <div className="mb-2 flex items-center justify-between gap-2">
-          <div className="text-[9px] leading-4 text-[#666]">These sheets control background-dancer variety and wardrobe only. They never replace a named lead or the location reference.</div>
-          <UploadControl accept="image/*" multiple title="" detail="" actionLabel="Add crowd sheets" variant="button" onFiles={onUpload} />
-        </div>
-        {assets.length ? (
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            {assets.map((asset) => {
-              const ready = asset.storageStatus === "uploaded" && Boolean(asset.storageUrl);
-              const failed = asset.storageStatus === "failed";
-              return (
-                <article key={asset.id} className={`w-[220px] shrink-0 rounded-[2px] border bg-[#050505] p-2 ${failed ? "border-[#743029]" : ready ? "border-[#245c2c]" : "border-[#6e5522]"}`}>
-                  <div className="relative aspect-video overflow-hidden rounded-[2px] border border-[#181818] bg-black">
-                    {asset.previewUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={asset.previewUrl} alt={asset.displayName} className="h-full w-full object-contain" loading="lazy" decoding="async" />
-                    ) : <div className="flex h-full items-center justify-center text-[8px] uppercase tracking-[0.12em] text-[#444]">No preview</div>}
-                    <span className="absolute right-1 top-1 rounded-[1px] bg-[#000000c7] px-1.5 py-0.5 font-mono text-[7px] uppercase text-[#aaa]">{asset.storageStatus}</span>
-                  </div>
-                  <input
-                    value={asset.displayName}
-                    onChange={(event) => onUpdate(asset.id, { displayName: event.target.value })}
-                    className="mt-2 h-[28px] w-full rounded-[2px] border border-[#202020] bg-[#050505] px-2 font-mono text-[9px] text-[#c0c0c0] outline-none focus:border-[#e05c00]"
-                    placeholder="Crowd sheet name"
-                  />
-                  <div className="mt-2 flex items-center justify-between gap-2">
-                    <div className="min-w-0 truncate font-mono text-[7px] text-[#555]" title={asset.storagePath}>{asset.storagePath ?? asset.fileName}</div>
-                    <button type="button" onClick={() => onRemove(asset.id)} className="shrink-0 text-[8px] uppercase tracking-[0.12em] text-[#777] hover:text-[#d24b3f]">Remove</button>
-                  </div>
-                  {asset.storageError ? <div className="mt-2 text-[8px] leading-4 text-[#d24b3f]">{asset.storageError}</div> : null}
-                </article>
-              );
-            })}
+    <ReferenceFileDropTarget label="Crowd / extras" multiple onFiles={onUpload} className="mt-2 rounded-md border border-line-2 bg-ink-0 p-2">
+      {(acceptFiles, disabled) => (
+        <details className="rounded-md">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 marker:hidden">
+            <div className="min-w-0">
+              <div className="text-[9px] uppercase tracking-[0.16em] text-[#d0d0d0]">Crowd / extras · expandable library</div>
+              <div className="mt-1 truncate text-[9px] text-[#555]">Store as many background-cast sheets as needed; Generate selects up to three for the current shot.</div>
+            </div>
+            <div className="shrink-0 font-mono text-[8px] uppercase tracking-[0.12em] text-[#78c878]">{readyCount}/{assets.length} ready</div>
+          </summary>
+          <div className="border-t border-[#181818] p-2">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div className="text-[9px] leading-4 text-[#666]">These sheets control background-dancer variety and wardrobe only. They never replace a named lead or the location reference.</div>
+              <UploadControl accept="image/*" multiple title="" detail="" actionLabel="Add crowd sheets" variant="button" disabled={disabled} onFiles={acceptFiles} />
+            </div>
+            {assets.length ? (
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {assets.map((asset) => {
+                  const ready = asset.storageStatus === "uploaded" && Boolean(asset.storageUrl);
+                  const failed = asset.storageStatus === "failed";
+                  return (
+                    <article key={asset.id} className={`w-[220px] shrink-0 rounded-[2px] border bg-[#050505] p-2 ${failed ? "border-[#743029]" : ready ? "border-[#245c2c]" : "border-[#6e5522]"}`}>
+                      <div className="relative aspect-video overflow-hidden rounded-[2px] border border-[#181818] bg-black">
+                        {asset.previewUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={asset.previewUrl} alt={asset.displayName} className="h-full w-full object-contain" loading="lazy" decoding="async" />
+                        ) : <div className="flex h-full items-center justify-center text-[8px] uppercase tracking-[0.12em] text-[#444]">No preview</div>}
+                        <span className="absolute right-1 top-1 rounded-[1px] bg-[#000000c7] px-1.5 py-0.5 font-mono text-[7px] uppercase text-[#aaa]">{asset.storageStatus}</span>
+                      </div>
+                      <input
+                        value={asset.displayName}
+                        onChange={(event) => onUpdate(asset.id, { displayName: event.target.value })}
+                        className="mt-2 h-[28px] w-full rounded-[2px] border border-[#202020] bg-[#050505] px-2 font-mono text-[9px] text-[#c0c0c0] outline-none focus:border-[#e05c00]"
+                        placeholder="Crowd sheet name"
+                      />
+                      <div className="mt-2 flex items-center justify-between gap-2">
+                        <div className="min-w-0 truncate font-mono text-[7px] text-[#555]" title={asset.storagePath}>{asset.storagePath ?? asset.fileName}</div>
+                        <button type="button" onClick={() => onRemove(asset.id)} className="shrink-0 text-[8px] uppercase tracking-[0.12em] text-[#777] hover:text-[#d24b3f]">Remove</button>
+                      </div>
+                      {asset.storageError ? <div className="mt-2 text-[8px] leading-4 text-[#d24b3f]">{asset.storageError}</div> : null}
+                    </article>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="rounded-[2px] border border-dashed border-[#242424] px-3 py-5 text-center text-[9px] uppercase tracking-[0.14em] text-[#555]">No crowd sheets yet</div>
+            )}
           </div>
-        ) : (
-          <div className="rounded-[2px] border border-dashed border-[#242424] px-3 py-5 text-center text-[9px] uppercase tracking-[0.14em] text-[#555]">No crowd sheets yet</div>
-        )}
-      </div>
-    </details>
+        </details>
+      )}
+    </ReferenceFileDropTarget>
   );
 }
 
@@ -638,78 +643,83 @@ function ReferenceSlotCard({
   const border = "border-line-2";
 
   return (
-    <div className={`flex flex-col rounded-md border ${border} bg-ink-0 p-2`}>
-      <div className="mb-2 flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="text-[9px] uppercase tracking-[0.16em] text-fg-2">{REFERENCE_ASSET_SLOT_LABELS[role]}</div>
-          <div className="mt-0.5 line-clamp-2 text-[9px] leading-4 text-fg-4">{REFERENCE_ASSET_SLOT_DETAILS[role]}</div>
-        </div>
-        <StatusDot tone={failed ? "failed" : ready ? "ready" : uploading ? "processing" : "waiting"} pulse={uploading} />
-      </div>
-
-      {asset ? (
-        <div className="flex flex-col">
-          <div className="relative h-[120px] overflow-hidden rounded-sm border border-line bg-ink-1">
-            {asset.previewUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={asset.previewUrl} alt={asset.displayName} className="h-full w-full object-contain" loading="lazy" decoding="async" />
-            ) : <div className="flex h-full items-center justify-center text-[8px] uppercase tracking-[0.12em] text-fg-4">No preview</div>}
-            <span className="absolute left-1 top-1 rounded-sm bg-ink-0/90 px-1.5 py-0.5 font-mono text-[7px] uppercase tracking-[0.1em] text-fg-2">{asset.kind}</span>
-            <span className="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-ink-0/95 to-transparent px-2 pb-1 pt-4 font-mono text-[10px] font-medium text-fg-0">{asset.displayName || REFERENCE_ASSET_SLOT_LABELS[role]}</span>
-          </div>
-          <div className="mt-2 grid gap-1.5">
-            <input
-              value={asset.displayName}
-              onChange={(event) => onUpdate(asset.id, { displayName: event.target.value })}
-              className="h-[28px] w-full rounded-sm border border-line-2 bg-ink-1 px-2 font-mono text-[10px] text-fg-1 outline-none focus:border-accent"
-              placeholder="Canonical name (e.g. Diego)"
-              aria-label={`${REFERENCE_ASSET_SLOT_LABELS[role]} display name`}
-            />
-            <select
-              value={asset.kind}
-              onChange={(event) => onUpdate(asset.id, { kind: event.target.value as ReferenceAssetKind })}
-              className="h-[28px] w-full rounded-sm border border-line-2 bg-ink-1 px-2 font-mono text-[10px] text-fg-2 outline-none focus:border-accent"
-              aria-label={`${REFERENCE_ASSET_SLOT_LABELS[role]} kind`}
-            >
-              {(["character", "environment", "crowd", "prop", "vehicle", "wardrobe", "custom"] as const).map((kind) => <option key={kind} value={kind}>{kind}</option>)}
-            </select>
-            <textarea
-              value={asset.promptHint}
-              onChange={(event) => onUpdate(asset.id, { promptHint: event.target.value })}
-              rows={2}
-              className="h-[44px] w-full resize-none rounded-sm border border-line-2 bg-ink-1 px-2 py-1 text-[10px] leading-4 text-fg-2 outline-none focus:border-accent"
-              placeholder="Identity lock note for captions / Nano Banana"
-            />
-          </div>
-          <div className="mt-1.5 min-h-[20px]">
-            {asset.storageError ? <div className="rounded-sm border border-danger-lo bg-danger-tint p-1.5 text-[9px] leading-4 text-danger">{asset.storageError}</div> : null}
-          </div>
-          <div className="mt-2 flex gap-1.5">
-            <UploadControl accept="image/*" title="Replace reference" detail="Upload a new reference image." actionLabel="Replace" variant="button" onFiles={onUpload} />
-            <button type="button" onClick={() => onRemove(asset.id)} className="rounded-sm border border-line-2 px-2 py-[2px] text-[10px] uppercase tracking-[0.12em] text-fg-3 hover:border-danger-lo hover:text-danger">Remove</button>
-          </div>
-        </div>
-      ) : (
-        <div className="flex flex-col">
-          <div className="flex h-[120px] items-center justify-center rounded-sm border border-dashed border-line-2 bg-ink-1 px-4 text-center">
-            <div>
-              <div className="text-[11px] text-fg-2">Upload {REFERENCE_ASSET_SLOT_LABELS[role]}</div>
-              <div className="mt-2 text-[9px] uppercase tracking-[0.14em] text-fg-4">RustFS · used in captions</div>
+    <ReferenceFileDropTarget label={REFERENCE_ASSET_SLOT_LABELS[role]} onFiles={onUpload} disabled={uploading} className={`flex flex-col rounded-md border ${border} bg-ink-0 p-2`}>
+      {(acceptFiles, disabled) => (
+        <>
+          <div className="mb-2 flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <div className="text-[9px] uppercase tracking-[0.16em] text-fg-2">{REFERENCE_ASSET_SLOT_LABELS[role]}</div>
+              <div className="mt-0.5 line-clamp-2 text-[9px] leading-4 text-fg-4">{REFERENCE_ASSET_SLOT_DETAILS[role]}</div>
             </div>
+            <StatusDot tone={failed ? "failed" : ready ? "ready" : uploading ? "processing" : "waiting"} pulse={uploading} />
           </div>
-          <div className="mt-2">
-            <UploadControl
-              accept="image/*"
-              title=""
-              detail=""
-              actionLabel="Add reference"
-              variant="button"
-              onFiles={onUpload}
-            />
-          </div>
-        </div>
+
+          {asset ? (
+            <div className="flex flex-col">
+              <div className="relative h-[120px] overflow-hidden rounded-sm border border-line bg-ink-1">
+                {asset.previewUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={asset.previewUrl} alt={asset.displayName} className="h-full w-full object-contain" loading="lazy" decoding="async" />
+                ) : <div className="flex h-full items-center justify-center text-[8px] uppercase tracking-[0.12em] text-fg-4">No preview</div>}
+                <span className="absolute left-1 top-1 rounded-sm bg-ink-0/90 px-1.5 py-0.5 font-mono text-[7px] uppercase tracking-[0.1em] text-fg-2">{asset.kind}</span>
+                <span className="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-ink-0/95 to-transparent px-2 pb-1 pt-4 font-mono text-[10px] font-medium text-fg-0">{asset.displayName || REFERENCE_ASSET_SLOT_LABELS[role]}</span>
+              </div>
+              <div className="mt-2 grid gap-1.5">
+                <input
+                  value={asset.displayName}
+                  onChange={(event) => onUpdate(asset.id, { displayName: event.target.value })}
+                  className="h-[28px] w-full rounded-sm border border-line-2 bg-ink-1 px-2 font-mono text-[10px] text-fg-1 outline-none focus:border-accent"
+                  placeholder="Canonical name (e.g. Diego)"
+                  aria-label={`${REFERENCE_ASSET_SLOT_LABELS[role]} display name`}
+                />
+                <select
+                  value={asset.kind}
+                  onChange={(event) => onUpdate(asset.id, { kind: event.target.value as ReferenceAssetKind })}
+                  className="h-[28px] w-full rounded-sm border border-line-2 bg-ink-1 px-2 font-mono text-[10px] text-fg-2 outline-none focus:border-accent"
+                  aria-label={`${REFERENCE_ASSET_SLOT_LABELS[role]} kind`}
+                >
+                  {(["character", "environment", "crowd", "prop", "vehicle", "wardrobe", "custom"] as const).map((kind) => <option key={kind} value={kind}>{kind}</option>)}
+                </select>
+                <textarea
+                  value={asset.promptHint}
+                  onChange={(event) => onUpdate(asset.id, { promptHint: event.target.value })}
+                  rows={2}
+                  className="h-[44px] w-full resize-none rounded-sm border border-line-2 bg-ink-1 px-2 py-1 text-[10px] leading-4 text-fg-2 outline-none focus:border-accent"
+                  placeholder="Identity lock note for captions / Nano Banana"
+                />
+              </div>
+              <div className="mt-1.5 min-h-[20px]">
+                {asset.storageError ? <div className="rounded-sm border border-danger-lo bg-danger-tint p-1.5 text-[9px] leading-4 text-danger">{asset.storageError}</div> : null}
+              </div>
+              <div className="mt-2 flex gap-1.5">
+                <UploadControl accept="image/*" title="Replace reference" detail="Upload a new reference image." actionLabel="Replace" variant="button" disabled={disabled} onFiles={acceptFiles} />
+                <button type="button" onClick={() => onRemove(asset.id)} className="rounded-sm border border-line-2 px-2 py-[2px] text-[10px] uppercase tracking-[0.12em] text-fg-3 hover:border-danger-lo hover:text-danger">Remove</button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col">
+              <div className="flex h-[120px] items-center justify-center rounded-sm border border-dashed border-line-2 bg-ink-1 px-4 text-center">
+                <div>
+                  <div className="text-[11px] text-fg-2">Upload {REFERENCE_ASSET_SLOT_LABELS[role]}</div>
+                  <div className="mt-2 text-[9px] uppercase tracking-[0.14em] text-fg-4">RustFS · used in captions</div>
+                </div>
+              </div>
+              <div className="mt-2">
+                <UploadControl
+                  accept="image/*"
+                  title=""
+                  detail=""
+                  actionLabel="Add reference"
+                  variant="button"
+                  disabled={disabled}
+                  onFiles={acceptFiles}
+                />
+              </div>
+            </div>
+          )}
+        </>
       )}
-    </div>
+    </ReferenceFileDropTarget>
   );
 }
 
