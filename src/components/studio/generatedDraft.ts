@@ -1,3 +1,4 @@
+import {currentIdentityReviewSha256,currentReferenceIdentityApprovalSha256} from "./currentReferenceIdentity";
 import {
   applyApprovedGeneratedAssets,
   applyGeneratedAssetOverlays,
@@ -11,6 +12,7 @@ import { approvedIdentityEvidenceSha256, currentIdentityEvidenceSha256 } from ".
 
 /** Candidate selection for an audition. It does not grant approval for export. */
 export type GeneratedDraftSelection = {
+  currentIdentityApprovalSha256?: string;
   planSignature: string;
   revision: number;
   assetIds: string[];
@@ -37,7 +39,9 @@ export function sanitizeGeneratedDraftSelection(value: unknown): GeneratedDraftS
     || !Array.isArray(draft.assetIds) || !draft.assetIds.every(id => typeof id === "string" && id.trim())) return null;
   if (draft.sourceConfirmationSha256 !== undefined && !/^[a-f0-9]{64}$/.test(draft.sourceConfirmationSha256)) return null;
   if (draft.sourceReviewRequired !== undefined && typeof draft.sourceReviewRequired !== "boolean") return null;
+  if(draft.currentIdentityApprovalSha256!==undefined&&!/^[a-f0-9]{64}$/.test(draft.currentIdentityApprovalSha256))return null;
   return { planSignature: draft.planSignature, revision: draft.revision!, assetIds: [...new Set(draft.assetIds)],
+    ...(draft.currentIdentityApprovalSha256?{currentIdentityApprovalSha256:draft.currentIdentityApprovalSha256}:{}),
     ...(draft.sourceConfirmationSha256 ? { sourceConfirmationSha256: draft.sourceConfirmationSha256, sourceReviewRequired: draft.sourceReviewRequired !== false } : {}) };
 }
 
@@ -112,6 +116,8 @@ export function captureGeneratedDraftReview(
     revision: draft.revision,
     sourceConfirmationSha256: draft.sourceConfirmationSha256,
     sourceReviewRequired: draft.sourceReviewRequired,
+    currentIdentityReviewSha256:assets.find(asset=>asset.currentReferenceIdentity)?.currentReferenceIdentity
+      ?currentIdentityReviewSha256(assets.find(asset=>asset.currentReferenceIdentity)!.currentReferenceIdentity!.context):undefined,
     assetIds: draft.assetIds,
     candidates: selected.map(asset => ({
       id: asset.id, status: asset.status, reviewStatus: asset.reviewStatus, prompt: asset.prompt,
@@ -125,7 +131,7 @@ export function captureGeneratedDraftReview(
       id: asset.id, mediaSha256: asset.mediaSha256, mediaFrameCount: asset.mediaFrameCount, mediaFrameRate: asset.mediaFrameRate,
       generationReferenceHashes: asset.generationReferenceHashes, identityReferenceHashes: asset.identityReferenceHashes,
       identityVerification: asset.identityVerification, identityAssessmentId: asset.identityAssessmentId, identityAssessmentTrimStart: asset.identityAssessmentTrimStart,
-      target: asset.target, trimStart: asset.trimStart ?? 0, approvedIdentityEvidenceSha256: asset.approvedIdentityEvidenceSha256,
+      target: asset.target, trimStart: asset.trimStart ?? 0, approvedIdentityEvidenceSha256: asset.approvedIdentityEvidenceSha256,approvedCurrentReferenceEvidenceSha256:asset.approvedCurrentReferenceEvidenceSha256,
     })),
     segments: applyDraftGeneratedAssets(segments, assets, draft),
   });
@@ -149,7 +155,7 @@ export function rejectGeneratedDraftAsset({ draft, assets, assetId, expectedRevi
 /** Invoke only from explicit Use this draft consent, then revalidate the viewed snapshot after awaiting. */
 export async function prepareGeneratedDraftApprovalEvidence(assets: GeneratedStudioAsset[], draft: GeneratedDraftSelection): Promise<Record<string, string>> {
   const selected = new Set(draft.assetIds);
-  return Object.fromEntries(await Promise.all(assets.filter(asset => selected.has(asset.id) && (asset.identityVerification?.issuedPolicy || asset.identityAssessmentId))
+  return Object.fromEntries(await Promise.all(assets.filter(asset => selected.has(asset.id) && (asset.identityVerification?.issuedPolicy || asset.identityAssessmentId || asset.currentReferenceIdentity))
     .map(async asset => [asset.id, await approvedIdentityEvidenceSha256(asset)])));
 }
 
@@ -170,7 +176,7 @@ export function approveGeneratedDraft({ draft, assets, segments, review, approve
     return { draft, assets, error: "Unfilled song windows remain. Complete the draft before accepting it." };
   }
   const selected = new Set(draft.assetIds);
-  if (assets.some(asset => selected.has(asset.id) && (asset.identityVerification?.issuedPolicy || asset.identityAssessmentId)
+  if (assets.some(asset => selected.has(asset.id) && (asset.identityVerification?.issuedPolicy || asset.identityAssessmentId || asset.currentReferenceIdentity)
     && approvalEvidenceSha256ById?.[asset.id] !== currentIdentityEvidenceSha256(asset))) {
     return { draft, assets, error: "Similarity evidence changed. Review the current draft before accepting it." };
   }
@@ -184,9 +190,11 @@ export function approveGeneratedDraft({ draft, assets, segments, review, approve
   // user chose an older generated take over a newer approved take.
   const approvals = new Map(draft.assetIds.map((id, index) => [id, new Date(approvalTime + index).toISOString()]));
   return {
-    draft: { ...draft, revision: draft.revision + 1, assetIds: [], ...(draft.sourceConfirmationSha256 ? { sourceReviewRequired: false } : {}) },
+    draft: { ...draft, revision: draft.revision + 1, assetIds: [], ...(draft.sourceConfirmationSha256 ? { sourceReviewRequired: false } : {}),
+      ...(assets.find(asset=>asset.currentReferenceIdentity)?.currentReferenceIdentity?{currentIdentityApprovalSha256:currentIdentityReviewSha256(assets.find(asset=>asset.currentReferenceIdentity)!.currentReferenceIdentity!.context)}:{}) },
     assets: assets.map(asset => selected.has(asset.id) ? { ...asset, reviewStatus: "approved", approvedAt: approvals.get(asset.id),
-      ...((asset.identityVerification?.issuedPolicy || asset.identityAssessmentId) ? { approvedIdentityEvidenceSha256: approvalEvidenceSha256ById![asset.id] } : {}) } : asset),
+      ...(asset.currentReferenceIdentity?{approvedCurrentReferenceEvidenceSha256:currentReferenceIdentityApprovalSha256(asset)}:{}),
+      ...((asset.identityVerification?.issuedPolicy || asset.identityAssessmentId || asset.currentReferenceIdentity) ? { approvedIdentityEvidenceSha256: approvalEvidenceSha256ById![asset.id] } : {}) } : asset),
     error: null,
   };
 }

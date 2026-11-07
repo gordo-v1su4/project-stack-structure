@@ -38,6 +38,7 @@ export type LocalGeneratedAsset = {
 };
 
 export type LocalGenerationOutput = {
+  currentIdentityRequest?: import("@/lib/currentIdentityStore").CurrentIdentityRequestOutcome;
   provider: "swarmui" | "comfyui";
   status: "completed";
   message: string;
@@ -72,7 +73,7 @@ export const localGenerationTask = task({
         },
         timeoutSeconds: Math.max(30, Math.min(payload.timeoutSeconds ?? 1500, 1700)),
       });
-      markWorkCompleted(payload.h3Job.mode === "identity-recheck" ? "Shot similarity measurements updated" : "H3 shot persisted for draft review", { completedItems: 1, totalItems: 1 });
+      markWorkCompleted(payload.h3Job.mode === "current-reference-assessment" ? "Current-reference CPU assessment stored; project selection unchanged" : payload.h3Job.mode === "identity-recheck" ? "Shot similarity measurements updated" : "H3 shot persisted for draft review", { completedItems: 1, totalItems: 1 });
       return result;
     }
     assertReferenceLanguage(payload.request.prompt);

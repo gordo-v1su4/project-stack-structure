@@ -28,11 +28,18 @@ export type ExistingSourceReprise = { version: 1; status: "pending-review"; plac
   mediaContentSha256: string; placementsSha256: string; overlapSeconds: 2.026 };
 export type ScopeRawReference = { assetId: string; bucket: string; objectKey: string; etag: string; sha256: string; byteLength: number };
 export type ScopeSourceMediaVersion = { id: string; bucket: string; objectKey: string; etag: string; byteLength: number; sha256?: string };
-export type GenerationScopeReceiptBody = { version: 1; kind: "baseline" | "additive-reference"; ownerId: string; projectId: string; baselineRevision: string;
+export type ReferenceVersionMigration = { version: 1; authority: "r31-approved-diego-e71-v1"; contextSha256: string; baselineSha256:string; adoptionSha256:string;
+  replacements: { assetId: string; fromSha256: string; toSha256: string }[];
+  historicalReferences: { assetId: string; bucket: string; objectKey: string; etag: string; sha256: string }[];
+  historicalBackups?: ScopeRawReference[];
+  requeuedApprovedAssetIds?:string[];
+  origins: { jobId: string; originalJobSha256: string; originalTargetSha256: string; originalProofSha256: string }[] };
+export type GenerationScopeReceiptBody = { version: 1; kind: "baseline" | "additive-reference" | "reference-version-migration"; ownerId: string; projectId: string; baselineRevision: string;
   fromSourceContext: string; toSourceContext: string; fromInputSignature: string; toInputSignature: string; scopeSignature: string;
   semanticSha256: string; references: SourceReferenceManifest; rawReferences: ScopeRawReference[]; sourceMediaVersions: ScopeSourceMediaVersion[];
   appendedReferenceIds: string[]; previousReceiptSha256?: string;
-  storySha256: string; sourceInventorySha256: string; reprise?: ExistingSourceReprise };
+  storySha256: string; sourceInventorySha256: string; reprise?: ExistingSourceReprise;
+  referenceMigration?: ReferenceVersionMigration; currentIdentityMigrationSha256?: string };
 export type GenerationScopeReceipt = { version: 1; id: string; sha256: string; body: GenerationScopeReceiptBody };
 
 export function normalizeGenerationScopeReceipt(value: unknown): GenerationScopeReceipt | undefined {
@@ -51,9 +58,18 @@ export function normalizeGenerationScopeReceipt(value: unknown): GenerationScope
       || !/^[a-f0-9]{64}$/.test(reference.sha256) || !Number.isSafeInteger(reference.byteLength) || reference.byteLength < 1 || reference.byteLength > 32 * 1024 * 1024)
     || !Array.isArray(body.sourceMediaVersions) || body.sourceMediaVersions.some(media => !media || !media.id || !media.bucket || !media.objectKey || !media.etag
       || !Number.isSafeInteger(media.byteLength) || media.byteLength < 1 || media.sha256 !== undefined && !/^[a-f0-9]{64}$/.test(media.sha256))
-    || !["baseline", "additive-reference"].includes(body.kind) || !Array.isArray(body.appendedReferenceIds)
-    || (body.kind === "additive-reference" ? !body.appendedReferenceIds.length : body.appendedReferenceIds.length !== 0
-      || body.fromSourceContext !== body.toSourceContext || body.fromInputSignature !== body.toInputSignature)
+    || !["baseline", "additive-reference", "reference-version-migration"].includes(body.kind) || !Array.isArray(body.appendedReferenceIds)
+    || (body.kind === "additive-reference" ? !body.appendedReferenceIds.length : body.kind === "baseline" && (body.appendedReferenceIds.length !== 0
+      || body.fromSourceContext !== body.toSourceContext || body.fromInputSignature !== body.toInputSignature))
+    || (body.kind === "reference-version-migration" && (!body.referenceMigration || body.referenceMigration.version !== 1
+      || body.referenceMigration.authority !== "r31-approved-diego-e71-v1" || !/^[a-f0-9]{64}$/.test(body.referenceMigration.contextSha256)
+      || ![body.referenceMigration.baselineSha256,body.referenceMigration.adoptionSha256].every(hash=>/^[a-f0-9]{64}$/.test(hash))
+      || !Array.isArray(body.referenceMigration.replacements) || body.referenceMigration.replacements.length !== 1
+      || body.referenceMigration.replacements.some(reference=>!reference?.assetId||![reference.fromSha256,reference.toSha256].every(hash=>/^[a-f0-9]{64}$/.test(hash))||reference.fromSha256===reference.toSha256)
+      || !Array.isArray(body.referenceMigration.historicalReferences)||body.referenceMigration.historicalReferences.length>32
+      || !Array.isArray(body.referenceMigration.origins) || !body.referenceMigration.origins.length || body.referenceMigration.origins.length > 128
+      || new Set(body.referenceMigration.origins.map(origin=>origin.jobId)).size!==body.referenceMigration.origins.length
+      || body.referenceMigration.origins.some(origin=>!/^h3-[a-f0-9]{64}$/.test(origin.jobId)||![origin.originalJobSha256,origin.originalProofSha256,origin.originalTargetSha256].every(hash=>/^[a-f0-9]{64}$/.test(hash)))))
     || ![body.semanticSha256, body.storySha256, body.sourceInventorySha256].every(hash => /^[a-f0-9]{64}$/.test(hash))) return undefined;
   return receipt;
 }

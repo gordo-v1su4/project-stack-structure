@@ -1,3 +1,4 @@
+import { withCurrentReferenceIdentity } from "./currentReferenceIdentity";
 import { normalizeClipAudioSettings, type ClipAudioSettings } from "./clipAudio";
 import { compactProjectMatches } from "./compactProjectMatches";
 import type { DeepgramTranscriptSummary } from "./deepgramUtils";
@@ -224,7 +225,7 @@ export function hydrateStudioProjectDraft(params: {
     storyState: normalizePersistedStoryState(params.draft.storyState, params.draft.version < 3),
     musicVideoProject: params.draft.musicVideoProject ? compactProjectMatches(params.draft.musicVideoProject) : null,
     referenceAssets: hydrateReferenceAssets(params.draft.referenceAssets ?? []),
-    generatedAssets: hydrateGeneratedStudioAssets(params.draft.generatedAssets ?? []),
+    generatedAssets: withCurrentReferenceIdentity(hydrateGeneratedStudioAssets(params.draft.generatedAssets ?? []),params.draft.musicVideoProject?.currentIdentity),
     generatedDraft: sanitizeGeneratedDraftSelection(params.draft.generatedDraft),
     clipAudioSettings: normalizeClipAudioSettings(params.draft.clipAudioSettings),
     captionSettings: sanitizeCaptionSettings(params.draft.captionSettings),

@@ -234,6 +234,16 @@ export async function triggerH3Generation(job: H3GenerationJob, resumeIntentId?:
 }
 
 /** Reassess existing bytes without submitting a new provider render. */
+export async function triggerCurrentIdentityRequest(job:H3GenerationJob,request:import("@/components/studio/currentReferenceIdentity").CurrentIdentityRequest){
+  assertTriggerConfigured();
+  const dispatch=await buildDispatchContext(["stack-structure","local-generation","h3","current-reference-assessment"],{stageLabel:"Checking current approved references against existing footage",progressMode:"provider"});
+  if(dispatch.userId!==job.ownerId||request.scope.ownerId!==job.ownerId||request.scope.projectId!==job.projectId||request.scope.jobId!==job.id)throw new Error("Current-reference request belongs to another user or shot.");
+  const idempotencyKey=await idempotencyKeys.create(`h3-current-${request.id}`,{scope:"global"});
+  return tasks.trigger<typeof localGenerationTask>(STACK_STRUCTURE_TRIGGER_TASKS.localGeneration,{request:{provider:"swarmui",kind:"video",prompt:job.request.prompt},
+    h3Job:{ownerId:job.ownerId,projectId:job.projectId,jobId:job.id,mode:"current-reference-assessment",currentRequestId:request.id}},
+    {idempotencyKey,idempotencyKeyTTL:"30d",maxAttempts:1,tags:[...dispatch.tags,`project:${job.projectId}`,`h3:${job.id}`,`current-identity:${request.scope.requestIntentId}`],metadata:dispatch.metadata}) as Promise<{id:string}>;
+}
+
 export async function triggerH3IdentityRecheck(job: H3GenerationJob, requestIntentId: string, assessment?: H3IdentityAssessmentScope) {
   assertTriggerConfigured();
   if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(requestIntentId)) {

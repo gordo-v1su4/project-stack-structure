@@ -1,3 +1,4 @@
+import { currentReferenceIdentityBindingBlockReason } from "./currentReferenceIdentity";
 import type { GeneratedStudioAsset } from "./generatedAssets";
 import { resolveH3DraftSimilarityPolicy } from "./identityDraftPolicy";
 import { copyForegroundFrameEvidence, foregroundEvidenceBlockReason, validForegroundFrameEvidence, type ForegroundFrameEvidence } from "./foregroundDraftEvidence";
@@ -108,15 +109,13 @@ export function normalizeGeneratedAssetDraftSimilarityFilter(value: unknown): Ge
     samples: copySamples(filter.samples), warnings: [...filter.warnings] };
 }
 
-/** Malformed persisted evidence is discarded; it can never grant eligibility. */
-export function normalizeGeneratedAssetIdentityVerification(value: unknown): GeneratedAssetIdentityVerification | undefined {
-  if (!value || typeof value !== "object") return undefined;
-  const proof = value as GeneratedAssetIdentityVerification;
-  const issuedPolicy = proof.issuedPolicy === undefined ? undefined : normalizeH3PublicIssuedDraftPolicy(proof.issuedPolicy);
-  if (proof.issuedPolicy !== undefined && !issuedPolicy) return undefined;
+/** Provenance-neutral shape normalization shared by historical and current-purpose reports. */
+export function normalizeIdentityFrameEvidence(value:unknown):Omit<GeneratedAssetIdentityVerification,"referenceHashes"|"identityReferenceHashes"|"issuedPolicy">|undefined {
+  if(!value||typeof value!=="object")return undefined;
+  const proof=value as GeneratedAssetIdentityVerification;
   if (proof.version !== 1 || !["passed", "rejected", "unverifiable", "not_required"].includes(proof.status)
     || !boundedText(proof.assetId) || !boundedText(proof.jobId) || !boundedText(proof.generationModel)
-    || !hash(proof.mediaSha256) || !hashes(proof.referenceHashes) || !hashes(proof.identityReferenceHashes)
+    || !hash(proof.mediaSha256)
     || !Number.isFinite(proof.durationSeconds) || proof.durationSeconds <= 0 || proof.durationSeconds > 86_400
     || !Number.isFinite(proof.frameRate) || proof.frameRate <= 0 || proof.frameRate > 240
     || ![proof.frameCount, proof.verifiedStartFrame, proof.verifiedEndFrameExclusive, proof.examinedFrameCount, proof.unverifiableFrameCount, proof.ambiguousFrameCount].every(frameCount)
@@ -131,21 +130,27 @@ export function normalizeGeneratedAssetIdentityVerification(value: unknown): Gen
     || (proof.threshold !== undefined && (!Number.isFinite(proof.threshold) || proof.threshold <= 0 || proof.threshold > 1))
     || !validSamples(proof.samples)
     || (proof.reason !== undefined && (typeof proof.reason !== "string" || proof.reason.length > 2048))) return undefined;
-  const draftSimilarityFilter = proof.draftSimilarityFilter === undefined ? undefined
-    : normalizeGeneratedAssetDraftSimilarityFilter(proof.draftSimilarityFilter);
-  if (proof.draftSimilarityFilter !== undefined && !draftSimilarityFilter) return undefined;
-  return {
-    version: 1, status: proof.status, assetId: proof.assetId, jobId: proof.jobId, generationModel: proof.generationModel,
-    mediaSha256: proof.mediaSha256, referenceHashes: [...proof.referenceHashes], identityReferenceHashes: [...proof.identityReferenceHashes],
-    durationSeconds: proof.durationSeconds, frameCount: proof.frameCount, frameRate: proof.frameRate, examinedFrameCount: proof.examinedFrameCount,
-    verifiedStartFrame: proof.verifiedStartFrame, verifiedEndFrameExclusive: proof.verifiedEndFrameExclusive,
-    unverifiableFrameCount: proof.unverifiableFrameCount, ambiguousFrameCount: proof.ambiguousFrameCount,
-    assessedAt: proof.assessedAt, verifier: { ...proof.verifier }, threshold: proof.threshold, coverage: proof.coverage,
-    samples: copySamples(proof.samples),
-    ...(draftSimilarityFilter ? { draftSimilarityFilter } : {}),
-    ...(issuedPolicy ? { issuedPolicy } : {}),
-    reason: proof.reason,
-  };
+  const draftSimilarityFilter=proof.draftSimilarityFilter===undefined?undefined:normalizeGeneratedAssetDraftSimilarityFilter(proof.draftSimilarityFilter);
+  if(proof.draftSimilarityFilter!==undefined&&!draftSimilarityFilter)return undefined;
+  return {version:1,status:proof.status,assetId:proof.assetId,jobId:proof.jobId,generationModel:proof.generationModel,mediaSha256:proof.mediaSha256,
+    durationSeconds:proof.durationSeconds,frameCount:proof.frameCount,frameRate:proof.frameRate,examinedFrameCount:proof.examinedFrameCount,
+    verifiedStartFrame:proof.verifiedStartFrame,verifiedEndFrameExclusive:proof.verifiedEndFrameExclusive,unverifiableFrameCount:proof.unverifiableFrameCount,
+    ambiguousFrameCount:proof.ambiguousFrameCount,assessedAt:proof.assessedAt,verifier:{method:proof.verifier.method,model:proof.verifier.model,modelSha256:proof.verifier.modelSha256,
+      version:proof.verifier.version,preprocessVersion:proof.verifier.preprocessVersion,calibrationId:proof.verifier.calibrationId},threshold:proof.threshold,coverage:proof.coverage,
+    samples:copySamples(proof.samples),...(draftSimilarityFilter?{draftSimilarityFilter}:{}),reason:proof.reason};
+}
+/** Malformed persisted evidence is discarded; historical reference fields keep their original meaning and order. */
+export function normalizeGeneratedAssetIdentityVerification(value: unknown): GeneratedAssetIdentityVerification | undefined {
+  if(!value||typeof value!=="object")return undefined;
+  const proof=value as GeneratedAssetIdentityVerification,common=normalizeIdentityFrameEvidence(value);
+  const issuedPolicy=proof.issuedPolicy===undefined?undefined:normalizeH3PublicIssuedDraftPolicy(proof.issuedPolicy);
+  if(!common||!hashes(proof.referenceHashes)||!hashes(proof.identityReferenceHashes)||(proof.issuedPolicy!==undefined&&!issuedPolicy))return undefined;
+  return {version:1,status:common.status,assetId:common.assetId,jobId:common.jobId,generationModel:common.generationModel,
+    mediaSha256:common.mediaSha256,referenceHashes:[...proof.referenceHashes],identityReferenceHashes:[...proof.identityReferenceHashes],
+    durationSeconds:common.durationSeconds,frameCount:common.frameCount,frameRate:common.frameRate,examinedFrameCount:common.examinedFrameCount,
+    verifiedStartFrame:common.verifiedStartFrame,verifiedEndFrameExclusive:common.verifiedEndFrameExclusive,unverifiableFrameCount:common.unverifiableFrameCount,
+    ambiguousFrameCount:common.ambiguousFrameCount,assessedAt:common.assessedAt,verifier:common.verifier,threshold:common.threshold,coverage:common.coverage,
+    samples:common.samples,...(common.draftSimilarityFilter?{draftSimilarityFilter:common.draftSimilarityFilter}:{}),...(issuedPolicy?{issuedPolicy}:{}),reason:common.reason};
 }
 
 /** The shared UI/draft/export gate. Legacy providers retain their existing review flow. */
@@ -194,7 +199,7 @@ export function generatedAssetIdentityBlockReason(asset: GeneratedStudioAsset): 
 }
 
 /** Draft-only model eligibility; explicit whole-draft approval remains separate. */
-export function generatedAssetDraftIdentityBlockReason(asset: GeneratedStudioAsset): string | null {
+function originalGeneratedAssetDraftIdentityBlockReason(asset: GeneratedStudioAsset): string | null {
   if(asset.model===H3_FIRST_FRAME_PROFILE){
     const receipt=normalizeH3FirstFrameReceipt(asset.firstFrame),policy=asset.identityVerification?.issuedPolicy;
     if(!receipt||receipt.assessment.status!=="eligible"||!policy||h3FirstFrameDigest(policy.body.firstFrame??null)!==h3FirstFrameDigest(h3FirstFrameBinding(receipt.artifact))
@@ -247,6 +252,10 @@ export function generatedAssetDraftIdentityBlockReason(asset: GeneratedStudioAss
     || !/^[a-zA-Z0-9_-]+$/.test(parts[2]) || (issued && parts[2] !== issued.body.ownerId) || parts[3] !== "generated" || parts[4] !== policy.projectId
     || parts[5] !== asset.jobId || parts[6] !== "shot.mp4"
     || !/^h3-[a-f0-9]{64}$/.test(asset.jobId ?? "")) return "Similarity filter is outside its project scope";
+  return framedDraftSimilarityEvidenceBlockReason(asset, proof, filter, requiredHashes, policy, foregroundRules, jointMargin);
+}
+
+export function framedDraftSimilarityEvidenceBlockReason(asset: GeneratedStudioAsset, proof: Pick<GeneratedAssetIdentityVerification, "verifiedStartFrame" | "verifiedEndFrameExclusive" | "frameRate" | "frameCount" | "durationSeconds" | "ambiguousFrameCount" | "examinedFrameCount" | "samples">, filter: GeneratedAssetDraftSimilarityFilter, requiredHashes: readonly string[], policy: { threshold: number; minimumFrameCount: number }, foregroundRules?: {geometry: Parameters<typeof foregroundEvidenceBlockReason>[0]["geometry"]; dominance: Parameters<typeof foregroundEvidenceBlockReason>[0]["dominance"]}, jointMargin?: number): string | null {
   if (filter.status !== "eligible") return filter.status === "ineligible" ? "Similarity filter did not pass" : "Similarity filter could not be assessed";
   const count = proof.verifiedEndFrameExclusive - proof.verifiedStartFrame;
   if (filter.threshold !== policy.threshold || count < policy.minimumFrameCount
@@ -293,6 +302,28 @@ export function generatedAssetDraftIdentityBlockReason(asset: GeneratedStudioAss
     }
   }
   return null;
+}
+
+
+/** Historical eligibility is necessary; a migrated project additionally requires its independent current-reference screen. */
+export function generatedAssetDraftIdentityBlockReason(asset: GeneratedStudioAsset): string | null {
+  const original=originalGeneratedAssetDraftIdentityBlockReason(asset);
+  if(original)return original;
+  const binding=currentReferenceIdentityBindingBlockReason(asset);
+  if(binding)return binding;
+  if(!asset.currentReferenceIdentity?.required)return null;
+  const proof=asset.currentReferenceIdentity.assessment;
+  if(!proof||proof.status!=="ready"||!proof.proof.draftSimilarityFilter)return "Current-reference screen is incomplete";
+  const evidence=proof.proof, policy=evidence.evaluationPolicy.body, family=getH3PolicyFamily(policy.familyId);
+  if(!family||evidence.status!=="unverifiable"||evidence.verifier.modelSha256!==family.model.recognitionSha256
+    ||evidence.generationModel!==asset.model||evidence.verifier.model!==family.model.model||evidence.verifier.method!==family.model.method
+    ||evidence.verifier.version!==family.model.verifierVersion||evidence.verifier.preprocessVersion!==policy.preprocessVersion
+    ||evidence.draftSimilarityFilter!.policyId!==proof.scope.policyId||evidence.draftSimilarityFilter!.policySha256!==proof.scope.policySha256)
+    return "Current-reference model or policy changed";
+  const foreground=policy.originalPolicy.kind!=="legacy"&&family.scope.kind==="dominant-foreground"?{geometry:family.frontalGeometry,dominance:family.scope}:undefined;
+  return framedDraftSimilarityEvidenceBlockReason(asset,evidence,evidence.draftSimilarityFilter!,policy.identityReferenceHashes,
+    {threshold:family.threshold,minimumFrameCount:family.frontalGeometry.minimumIntendedFrameCount},foreground,
+    policy.originalPolicy.kind!=="legacy"&&family.scope.kind==="joint-frontal"?family.scope.minimumAssignmentCosineMargin:undefined);
 }
 
 export function generatedAssetDraftSimilarityLabel(asset: GeneratedStudioAsset): string | null {

@@ -5,6 +5,7 @@ import type { StoryboardJob, VideoFrameRole } from "./storyboardGeneration";
 import { generatedAssetDraftIdentityBlockReason, normalizeGeneratedAssetIdentityVerification, type GeneratedAssetIdentityVerification } from "./generatedAssetIdentity";
 import { currentIdentityEvidenceSha256, isIdentityPolicySha256 } from "./issuedIdentityPolicy";
 import { normalizeH3FirstFrameReceipt, type H3FirstFrameReceipt } from "./h3FirstFrame";
+import {currentReferenceIdentityApprovalSha256} from "./currentReferenceIdentity";
 export { generatedAssetIdentityBlockReason, generatedAssetDraftIdentityBlockReason } from "./generatedAssetIdentity";
 export type { GeneratedAssetIdentityVerification } from "./generatedAssetIdentity";
 
@@ -24,6 +25,8 @@ export type GeneratedStudioAssetTarget = {
 };
 
 export type GeneratedStudioAsset = {
+  /** Derived from the project current-reference context; deliberately never stored in the bank. */
+  currentReferenceIdentity?: import("./currentReferenceIdentity").CurrentIdentityRuntimeBinding;
   id: string;
   provider: GeneratedStudioAssetProvider;
   model: string;
@@ -65,13 +68,18 @@ export type GeneratedStudioAsset = {
   identityAssessmentTrimStart?: number;
   /** Consent to exact issued-policy media, trim, target and evidence; absent on historical jobs. */
   approvedIdentityEvidenceSha256?: string;
+  approvedCurrentReferenceEvidenceSha256?:string;
 };
 
-export function hasCurrentGeneratedIdentityApproval(asset: GeneratedStudioAsset): boolean {
+function hasHistoricalGeneratedIdentityApproval(asset: GeneratedStudioAsset): boolean {
   if (!asset.identityVerification?.issuedPolicy && !asset.identityAssessmentId) return true;
   try { return isIdentityPolicySha256(asset.approvedIdentityEvidenceSha256)
     && currentIdentityEvidenceSha256(asset) === asset.approvedIdentityEvidenceSha256; }
   catch { return false; }
+}
+export function hasCurrentGeneratedIdentityApproval(asset:GeneratedStudioAsset):boolean{
+  return hasHistoricalGeneratedIdentityApproval(asset)&&(!asset.currentReferenceIdentity
+    ||asset.approvedCurrentReferenceEvidenceSha256===currentReferenceIdentityApprovalSha256(asset));
 }
 
 /** A repeated delivery for one immutable job cannot undo a saved rejection. */
@@ -171,7 +179,7 @@ export function resolveGeneratedAssetTrimWindow({
 
 export function sanitizeGeneratedStudioAssetForStorage(asset: GeneratedStudioAsset): GeneratedStudioAsset {
   const rejected = asset.reviewStatus === "rejected" || asset.identityVerification?.status === "rejected";
-  const currentApproval = hasCurrentGeneratedIdentityApproval(asset);
+  const currentApproval = hasHistoricalGeneratedIdentityApproval(asset);
   return {
     id: asset.id,
     provider: asset.provider,
@@ -202,6 +210,7 @@ export function sanitizeGeneratedStudioAssetForStorage(asset: GeneratedStudioAss
     triggerRunId: asset.triggerRunId,
     approvedAt: rejected || !currentApproval ? undefined : asset.approvedAt,
     approvedIdentityEvidenceSha256: rejected || !currentApproval ? undefined : asset.approvedIdentityEvidenceSha256,
+    ...(asset.approvedCurrentReferenceEvidenceSha256?{approvedCurrentReferenceEvidenceSha256:asset.approvedCurrentReferenceEvidenceSha256}:{}),
     mediaSha256: asset.mediaSha256,
     mediaFrameCount: asset.mediaFrameCount,
     mediaFrameRate: asset.mediaFrameRate,

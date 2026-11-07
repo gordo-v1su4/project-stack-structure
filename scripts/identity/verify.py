@@ -54,13 +54,25 @@ def validate_input(value):
     for field in ["assetId", "jobId", "generationModel", "videoPath"]:
         if not isinstance(value.get(field), str) or not value[field].strip():
             raise ValueError("Missing identity binding: " + field)
-    for field in ["generationReferenceHashes", "identityReferenceHashes"]:
+    current = value.get("purpose") == "current-reference-assessment-v1"
+    if "purpose" in value and not current: raise ValueError("Unsupported identity purpose")
+    if current:
+        origin = value.get("origin")
+        if (not isinstance(origin, dict) or "generationReferenceHashes" in value
+            or not all(HASH.fullmatch(origin.get(field, "")) for field in
+                ["originalJobSha256", "originalTargetSha256", "originalProofSha256", "selectedProofSha256", "contextSha256"])):
+            raise ValueError("Missing historical origin for current-reference assessment")
+        hashes = origin.get("generationReferenceHashes")
+        if not isinstance(hashes, list) or not hashes or len(hashes) > 32 or len(set(hashes)) != len(hashes) or any(not HASH.fullmatch(h) for h in hashes):
+            raise ValueError("Invalid historical generation package")
+    package_field = "evaluationReferenceHashes" if current else "generationReferenceHashes"
+    for field in [package_field, "identityReferenceHashes"]:
         hashes = value.get(field)
         if not isinstance(hashes, list) or len(hashes) > 32 or len(set(hashes)) != len(hashes) or any(not isinstance(h, str) or not HASH.fullmatch(h) for h in hashes):
             raise ValueError("Invalid identity binding hashes: " + field)
     if not HASH.fullmatch(value.get("mediaSha256", "")):
         raise ValueError("Missing media SHA256")
-    if not set(value["identityReferenceHashes"]).issubset(value["generationReferenceHashes"]):
+    if not set(value["identityReferenceHashes"]).issubset(value[package_field]):
         raise ValueError("Identity references are outside the generation package")
     if not isinstance(value.get("frameCount"), int) or not 1 <= value["frameCount"] <= 512:
         raise ValueError("Identity verification requires 1–512 measured video frames")
@@ -96,9 +108,9 @@ def validate_input(value):
                 raise ValueError("Invalid normalized reference face region")
             if min(rect) < 0 or rect[2] <= 0 or rect[3] <= 0 or rect[0] + rect[2] > 1 or rect[1] + rect[3] > 1:
                 raise ValueError("Reference face region is outside its image")
-    if set(by_hash) != set(value["generationReferenceHashes"]):
+    if set(by_hash) != set(value[package_field]):
         raise ValueError("Reference files do not match the generation package")
-    declared_identity_hashes = [h for h in value["generationReferenceHashes"] if by_hash[h].get("role") == "identity"]
+    declared_identity_hashes = [h for h in value[package_field] if by_hash[h].get("role") == "identity"]
     if declared_identity_hashes != value["identityReferenceHashes"]:
         raise ValueError("Identity hashes do not match the ordered identity-conditioning references")
     for reference_hash in value["identityReferenceHashes"]:
@@ -206,6 +218,8 @@ class Verifier:
 
 def assess(value, model_dir, sample_count=None):
     value = validate_input(value)
+    current = value.get("purpose") == "current-reference-assessment-v1"
+    package_field = "evaluationReferenceHashes" if current else "generationReferenceHashes"
     if sha256_file(value["videoPath"]) != value["mediaSha256"]:
         raise ValueError("Video bytes changed from the worker binding")
     for reference in value["references"]:
@@ -216,7 +230,7 @@ def assess(value, model_dir, sample_count=None):
     start, end = value["verifiedStartFrame"], value["verifiedEndFrameExclusive"]
     report = {"version": 1, "status": "unverifiable", "assetId": value["assetId"], "jobId": value["jobId"],
         "generationModel": value["generationModel"], "mediaSha256": value["mediaSha256"],
-        "referenceHashes": value["generationReferenceHashes"], "identityReferenceHashes": value["identityReferenceHashes"],
+        ("evaluationReferenceHashes" if current else "referenceHashes"): value[package_field], "identityReferenceHashes": value["identityReferenceHashes"],
         "durationSeconds": value["durationSeconds"], "frameCount": value["frameCount"], "frameRate": value["fps"],
         "verifiedStartFrame": start, "verifiedEndFrameExclusive": end, "examinedFrameCount": 0,
         "unverifiableFrameCount": 0, "ambiguousFrameCount": 0,
@@ -228,10 +242,15 @@ def assess(value, model_dir, sample_count=None):
         "diagnostics": {"runtime": {**verifier.versions, "python": platform.python_version(), "recognitionProvider": "CPUExecutionProvider",
         "intraOpThreads": 2, "interOpThreads": 1, "opencvThreads": 2}, "modelManifest": verifier.manifest,
         "qualityLimitsStatus": "provisional-not-calibrated", "galleryProfile": gallery_profile, "galleries": {}, "frames": []}}
+    if current:
+        report["purpose"] = "current-reference-assessment-v1"
+        report["origin"] = value["origin"]
     draft_filter = requested_draft_filter(value, report["verifier"], verifier.manifest, gallery_profile)
     if draft_filter is not None:
         report["draftSimilarityFilter"] = draft_filter.evidence
-        if value.get("issuedPolicy") is not None:
+        if current:
+            report["evaluationPolicy"] = value["evaluationPolicy"]
+        elif value.get("issuedPolicy") is not None:
             report["issuedPolicy"] = {key: value["issuedPolicy"][key] for key in
                 ["version", "id", "sha256", "familyId", "familySha256", "body"]}
     if not value["identityReferenceHashes"]:
