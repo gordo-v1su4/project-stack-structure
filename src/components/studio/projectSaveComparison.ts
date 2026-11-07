@@ -13,5 +13,9 @@ function canonical(value: unknown): string {
 export function isExactProjectSave(saved: SavedStudioProject, projectId: string, name: string, draft: PersistedStudioProjectDraft): boolean {
   return Boolean(saved.revision && saved.project.id === projectId
     && saved.project.name === (name.trim().replace(/\s+/g, " ").slice(0, 120) || "Untitled project")
-    && canonical({ ...saved.draft, savedAt: undefined }) === canonical({ ...draft, savedAt: undefined }));
+    && projectDraftFingerprint(saved.draft) === projectDraftFingerprint(draft));
+}
+
+export function projectDraftFingerprint(draft: PersistedStudioProjectDraft): string {
+  return canonical({ ...draft, savedAt: undefined });
 }

@@ -33,6 +33,7 @@ import {
 } from "./studio/projectPersistence";
 import { loadStudioProjectSelection, readStudioProjectSelection, rememberStudioProjectSelection } from "./studio/projectSelection";
 import { ProjectSaveSession } from "./studio/projectSaveSession";
+import { saveVersionedStudioProject } from "./studio/preparedProjectSave";
 import type { StudioProjectSummary } from "@/lib/studioProjectStore";
 import { applyApprovedGeneratedAssets, buildGeneratedAssetContextPreview, buildGeneratedAssetPlaybackUrl, mergeGeneratedAssetDelivery, type GeneratedStudioAsset } from "./studio/generatedAssets";
 import { applyDraftGeneratedAssets, approveGeneratedDraft, captureGeneratedDraftReview, createGeneratedDraftSelection, prepareGeneratedDraftApprovalEvidence, rejectGeneratedDraftAsset, selectGeneratedDraftAsset, type GeneratedDraftReview, type GeneratedDraftSelection } from "./studio/generatedDraft";
@@ -111,12 +112,9 @@ type PendingStudioAutosave = {
 export default function StudioApp() {
   const projectSaveSessionRef = useRef<ProjectSaveSession | null>(null);
   if (!projectSaveSessionRef.current) projectSaveSessionRef.current = new ProjectSaveSession();
-  const saveVersionedProject = useCallback((params: Parameters<typeof saveNamedStudioProject>[0], options: Parameters<typeof saveNamedStudioProject>[1] = {}, contextEpoch?: number, isCurrent?: () => boolean) => {
-    return projectSaveSessionRef.current!.save(params.projectId?.trim() || null,
-      expectedRevision => {
-        if (params.expectedRevision && params.expectedRevision !== expectedRevision) throw new Error("The confirmed source revision is no longer this editor's saved revision. Reopen the project before saving it.");
-        return saveNamedStudioProject({ ...params, expectedRevision }, { ...options, cache: false });
-      }, contextEpoch, isCurrent);
+  const saveVersionedProject = useCallback((params: Parameters<typeof saveNamedStudioProject>[0], options: Parameters<typeof saveNamedStudioProject>[1] = {}, contextEpoch?: number, saveKind: "prepared" | "autosave" = "prepared") => {
+    return saveVersionedStudioProject(projectSaveSessionRef.current!, params, options, contextEpoch,
+      saveKind === "prepared" ? () => draftReviewLiveRef.current : undefined);
   }, []);
   const videoSourcesRef = useRef<UploadedVideoSource[]>([]);
   const referenceAssetsRef = useRef<ReferenceAsset[]>([]);
@@ -391,7 +389,7 @@ export default function StudioApp() {
               projectId: pending.projectId,
               name: pending.projectName,
               draft: createPersistableStudioProjectDraft(pending.params),
-            }, {}, pending.contextEpoch).then((saved) => saved.draft)
+            }, {}, pending.contextEpoch, "autosave").then((saved) => saved.draft)
           : await saveStudioProjectDraft(pending.params, {
               audioFile: audioFileRef.current,
               videoFilesByMediaKey: videoFilesByMediaKeyRef.current,
