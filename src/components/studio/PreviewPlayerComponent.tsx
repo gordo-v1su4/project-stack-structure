@@ -1,5 +1,7 @@
 "use client";
 
+import { describePreviewBlocks } from "./previewBlockSummary";
+
 import { useEffect, useRef, useCallback, useState } from "react";
 import {
   BrowserPreviewPlayer,
@@ -585,7 +587,7 @@ function PreviewEditTimeline({
           viewBox={`0 0 ${viewWidth} ${viewHeight}`}
           preserveAspectRatio="none"
           role="img"
-          aria-label="Song-length waveform with beat, onset, and edit cut blocks"
+          aria-label="Song-length waveform with beat, onset, and timeline blocks"
         >
           <rect x="0" y="0" width={viewWidth} height={viewHeight} fill="#050505" />
           <line x1="0" y1={waveTop + waveHeight / 2} x2={viewWidth} y2={waveTop + waveHeight / 2} stroke="#222" strokeWidth="1" />
@@ -684,7 +686,7 @@ function PreviewEditTimeline({
       </div>
       <div className="flex justify-between font-mono text-[8px] uppercase tracking-[0.12em] text-[#3f3f3f]">
         <span>Song-length waveform · beats/onsets · duration-scaled edit blocks</span>
-        <span>{segments.length} cuts · {formatTime(duration)}</span>
+        <span>{describePreviewBlocks(segments)} · {formatTime(duration)}</span>
       </div>
     </div>
   );
