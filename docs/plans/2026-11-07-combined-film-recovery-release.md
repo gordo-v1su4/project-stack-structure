@@ -89,3 +89,31 @@ repeated against the corrected web deployment before declaring that acceptance.
 Exact local proof files are under the `1f42fb9` release evidence directory in
 `.tmp/release21/`, including both protected-state observations and the conflict
 screenshot. These technical results provide no creative approval or export.
+
+## Corrected rollout and save acceptance
+
+UI source `eee54d56c492dee1be70429870f18e0e5bf298b0` reached READY as
+`dpl_HkEoBxubFujMSQeCSQQJYLyeadC4` on the production alias, with exact remote
+`reviewedCommit` metadata. Its only code difference from worker source `1f42fb9`
+is the restore-only guard in `StudioApp.tsx`; the verified worker remains `.3`.
+
+The controlled signed-in browser repeat passed on the same isolated technical
+project. Both editors restored WINNER with no durable version/hash change.
+Editor A then saved WINNER 2, changed clip audio to On after that manual save,
+and used the normal stage checkpoint. Editor B's deliberate STALE USER EDIT was
+held with an explicit conflict; its local attempted name remained visible.
+Reload restored WINNER 2 and clip audio On. Separate actual owned GETs observed
+the identical winning revision and draft hash after the stale attempt and after
+reload. No network acknowledgment was mocked or intercepted.
+
+All three protected projects retained identical saved/draft hashes and revisions
+from the recorded pre-fixture baseline through final cleanup. The technical
+project remains clearly labeled in the library; both technical tabs were closed.
+
+Local acceptance proof:
+`.tmp/release21/evidence-eee54d56c492dee1be70429870f18e0e5bf298b0-20261107T045500Z-restore-ui/browser-cas-acceptance.json`.
+The same directory holds exact readbacks and both browser screenshots. This closes
+the deployed project-save conflict/restoration check only. Source-confirmation
+application remains blocked on the user's reference-authority choice. Film
+revision 31, 28 selected takes and 66 bank assets remain saved; genuine zero-footage
+completion, full-song review/consent and final export/download remain open.
