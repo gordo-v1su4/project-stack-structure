@@ -56,8 +56,8 @@ Exact local logs are retained in `.tmp/workflow-integration/` (ignored by Git):
 
 The 23 skips concern unavailable media/environment fixtures, including offline
 Trigger bundles. These local checks establish combined code behavior only.
-Still required: review of this integration branch, a separately authorized
-deployment, and authenticated two-editor testing on a separate technical
+Still required: review of this integration branch, a production deployment
+coordinated with the active film execution owner, and authenticated two-editor testing on a separate technical
 fixture that proves a stale editor cannot erase a winning save. Reload and
 durable-storage checks must use the actual deployed route.
 
