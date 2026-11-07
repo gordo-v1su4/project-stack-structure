@@ -44,6 +44,9 @@ const STATE_LABELS: Record<H3GenerationJob["state"], string> = {
 
 export function MiniMaxDraftPanel(props: Props) {
   const [jobs, setJobs] = useState<H3GenerationJob[]>([]);
+  const [jobHistory, setJobHistory] = useState({ projectId: props.projectId, limit: 40 });
+  const visibleJobLimit = jobHistory.projectId === props.projectId ? jobHistory.limit : 40;
+  if (jobHistory.projectId !== props.projectId) setJobHistory({ projectId: props.projectId, limit: 40 });
   const [busy, setBusy] = useState(false);
   const [accepting, setAccepting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -519,7 +522,7 @@ export function MiniMaxDraftPanel(props: Props) {
     </Surface>
     {jobs.length ? <Surface aria-label="Generation progress">
       <h3 className="mb-2 text-sm font-semibold">Generation progress</h3>
-      <ul className="divide-y divide-line">{jobs.slice(0, 40).map(job => {
+      <ul className="divide-y divide-line">{jobs.slice(0, visibleJobLimit).map(job => {
         const asset = props.assets.find(candidate => candidate.id === job.result?.asset.id) ?? job.result?.asset;
         const identityBlock = asset ? generatedAssetDraftIdentityBlockReason(asset) : null;
         const rejected = asset?.reviewStatus === "rejected" || identityBlock === "Rejected";
@@ -546,6 +549,9 @@ export function MiniMaxDraftPanel(props: Props) {
           }}/> : null}
         {asset ? <SimilarityFilterNote asset={asset} /> : null}
       </li>; })}</ul>
+      {jobs.length > visibleJobLimit ? <Button onClick={() => setJobHistory({ projectId: props.projectId, limit: visibleJobLimit + 40 })}>
+        Show earlier generation jobs ({Math.min(40, jobs.length - visibleJobLimit)} more)
+      </Button> : null}
     </Surface> : null}
     {selected.length ? <Surface aria-label="Review generated shots">
       <h3 className="text-sm font-semibold">Revise individual shots</h3>
