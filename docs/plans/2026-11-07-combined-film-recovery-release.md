@@ -1,7 +1,8 @@
 # Combined workflow and source-confirmation release
 
 Prepared November 7, 2026 UTC in the film execution worktree. This records
-application verification; it does not establish a finished film or a deployment.
+application verification; it does not establish a finished film. Deployment and
+save acceptance evidence are recorded below.
 
 ## Combined implementation
 
@@ -37,22 +38,21 @@ Owned conditional reads and full hashes verified all 22 source/master objects
 (510,437,769 bytes) against their historical certificate. Reference images are
 verified separately. The original Diego object no longer accepts its historical
 ETag: the actual conditional read returns 412. A diagnostic read pinned to the
-current ETag found PNG `e71f4d43…`, 1448×1086, rather than approved PNG
+current ETag found PNG `e71f4d43…`, 1448×1086, rather than historical PNG
 `47d77269…`, 1402×1122. FFmpeg RGB24 and RGBA comparisons confirm different
 decoded pixels. This is not an equivalent re-encoding. Valentina and the world
 sheet still match their historical conditional bytes.
 
 The application correctly refuses source reuse. No replacement, restoration,
 re-enrollment, project save, consent, or film generation was performed to bypass
-that refusal. Both sheets were shown to the user; the authority choice remains
-pending. Existing takes, rejected outputs and saved cuts are preserved.
+that refusal. The initial audit mistakenly treated the authority choice as
+pending. The approval reconciliation below supersedes that status. Existing
+takes, rejected outputs and saved cuts are preserved.
 
 ## Remaining acceptance
 
-Deploy the combined reviewed source through the existing application release
-owner, verify the actual worker digest/tasks and web source, then exercise a
-two-editor conflict and durable reload on an isolated technical project. These
-checks can proceed independently of the reference choice. Film reconciliation,
+The rollout and isolated two-editor acceptance below close those technical
+checks. Film reconciliation,
 remaining footage, genuine zero-footage completion, full-song playback, fresh
 exact-draft user consent and final export/download remain open.
 
@@ -114,6 +114,35 @@ Local acceptance proof:
 `.tmp/release21/evidence-eee54d56c492dee1be70429870f18e0e5bf298b0-20261107T045500Z-restore-ui/browser-cas-acceptance.json`.
 The same directory holds exact readbacks and both browser screenshots. This closes
 the deployed project-save conflict/restoration check only. Source-confirmation
-application remains blocked on the user's reference-authority choice. Film
+application still requires explicit reference-version migration. Film
 revision 31, 28 selected takes and 66 bank assets remain saved; genuine zero-footage
 completion, full-song review/consent and final export/download remain open.
+
+## Approved reference version reconciliation
+
+The original user messages were read directly from the planning chat's session
+log. At **2026-11-07 03:39:26.898 UTC**, Robert supplied the sharper sheet and
+requested only the name change to Diego, retaining the registered asset name
+and key. At **03:46:32.201 UTC**, Robert approved the result: “Awesome looks good.
+Let's continue.” The existing [current completion map](2026-11-06-current-completion-map.md)
+already records its exact approved SHA-256:
+`e71f4d4325a61641d98de57604ff09e425aeefd07f994606f189c06f88c47c4a`.
+No further authority choice is outstanding. The later request to choose again
+was an audit error; it does not revoke that approval.
+
+The sharper sheet is a new content version. Historical generation used
+`47d77269…`; those records must remain truthful. The additive source-confirmation
+route correctly rejects different raw pixels and must keep doing so. A distinct
+reference-version migration and current-reference assessment are required.
+Archived R31 inventory identifies **11 Diego-scoped selected H3 takes, 498
+physical frames**, plus nine Valentina-only and seven environment-only takes
+whose references are unchanged. Fresh owned readback must confirm this inventory
+before any film save. Selected IDs, trims, bank assets, original job policies,
+failed assessments and generation proofs stay intact during reconciliation.
+
+Under Robert's existing delegation of routine implementation choices, the
+bounded design retains original generation eligibility and adds a separate
+current-reference assessment tied to exact media, selected frames, original
+proof and approved current sheet. Affected takes require both forms of evidence
+before review/export. New full-cut approval is still required. This design
+record authorizes no claim that reassessment or migration has already run.
