@@ -17,6 +17,7 @@ import { uploadFileDirectlyToRustFs } from "../directUploadClient";
 import { normalizeH3FirstFrameArtifact } from "../h3FirstFrame";
 import { captureH3FirstFrame } from "../captureH3FirstFrame";
 import { earlierH3FirstFrameSource } from "../h3FirstFrameSource";
+import { currentReferenceBankCheckBlockReason } from "../currentReferenceReview";
 
 type Props = {
   projectId: string | null;
@@ -30,6 +31,7 @@ type Props = {
   onAcceptDraft: (review: GeneratedDraftReview) => Promise<void>;
   onRejectAsset: (assetId: string) => void;
   onSelectAsset: (asset: GeneratedStudioAsset) => void;
+  onCheckCurrentReferences?: (assetId: string) => Promise<void>;
 };
 
 const STATE_LABELS: Record<H3GenerationJob["state"], string> = {
@@ -59,6 +61,7 @@ export function MiniMaxDraftPanel(props: Props) {
   const batchRef = useRef<H3DraftBatch | null>(null);
   const running = useRef(false);
   const preparingPickup = useRef(false);
+  const checkingCurrentReferences = useRef(false);
   const continueBatch = useRef<(() => Promise<void>) | null>(null);
   const recoveryIntents = useRef(new Map<string, string>());
   useEffect(() => { latest.current = props; }, [props]);
@@ -363,6 +366,22 @@ export function MiniMaxDraftPanel(props: Props) {
   catch (failure) { pickupReferenceError = failure instanceof Error ? failure.message : "Check this shot's references."; }
   const pickupIdentityIds=props.referenceAssets.filter(ref=>pickupReferenceIds.includes(ref.id)&&(ref.kind==="character"||ref.role.startsWith("character"))).map(ref=>ref.id);
   const earlierFrame=pickupWindow?earlierH3FirstFrameSource(props.assets,props.projectId,pickupWindow.planSignature,pickupWindow.musicStart,pickupIdentityIds):undefined;
+  async function checkBankReferences(assetId: string) {
+    const check = latest.current.onCheckCurrentReferences;
+    if (!check || checkingCurrentReferences.current) return;
+    const projectId = latest.current.projectId;
+    checkingCurrentReferences.current = true; setBusy(true); setError(null); setMessage(null); setReview(null);
+    try {
+      await check(assetId);
+      if (mounted.current && latest.current.projectId === projectId) setMessage("Updated-reference check saved. Review the result before choosing this take.");
+    } catch (failure) {
+      if (mounted.current && latest.current.projectId === projectId) setError(failure instanceof Error ? failure.message : "Could not check this take against the updated references.");
+    } finally {
+      checkingCurrentReferences.current = false;
+      if (mounted.current) setBusy(false);
+    }
+  }
+
   const activeJobs = jobs.filter(job => !isH3JobTerminal(job));
   const attemptsLeft = (job: H3GenerationJob) => 2 - Math.max(job.request.attempt ?? 0, ...jobs.filter(candidate => candidate.request.requestIntentId === job.request.requestIntentId).map(candidate => candidate.request.attempt ?? 0));
   const selectedIds = new Set(props.draft?.assetIds ?? []);
@@ -512,7 +531,11 @@ export function MiniMaxDraftPanel(props: Props) {
       <h3 className="mb-2 text-sm font-semibold">Other takes</h3>
       {props.assets.filter(asset => !selectedIds.has(asset.id) && asset.mediaKind === "video" && asset.status === "completed" && asset.reviewStatus === "pending").map(asset => {
         const block = generatedAssetDraftIdentityBlockReason(asset);
-        return <div key={asset.id} className="py-2 text-sm"><div className="flex items-center justify-between gap-2"><span>{asset.title}{block ? ` · ${block}` : ""}</span><Button disabled={busy || accepting || Boolean(block) || !asset.target || !findH3TargetSegment(props.segments, asset.target)} reason={block} onClick={() => { props.onSelectAsset(asset); setReview(null); }}>Use in draft</Button></div><SimilarityFilterNote asset={asset} /></div>;
+        const checkBlock = asset.currentReferenceIdentity?.required ? currentReferenceBankCheckBlockReason(asset, props.segments) : null;
+        return <div key={asset.id} className="py-2 text-sm"><div className="flex flex-wrap items-center justify-between gap-2"><span>{asset.title}{block ? ` · ${block}` : ""}</span><div className="flex flex-wrap gap-2">
+          {asset.currentReferenceIdentity?.required && props.onCheckCurrentReferences ? <Button disabled={busy || accepting || Boolean(checkBlock)} reason={checkBlock}
+            onClick={() => void checkBankReferences(asset.id)}>Check against updated references</Button> : null}
+          <Button disabled={busy || accepting || Boolean(block) || !asset.target || !findH3TargetSegment(props.segments, asset.target)} reason={block} onClick={() => { props.onSelectAsset(asset); setReview(null); }}>Use in draft</Button></div></div><SimilarityFilterNote asset={asset} /></div>;
       })}
     </Surface> : null}
   </div>;
