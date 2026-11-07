@@ -11,6 +11,7 @@ import type { SourceTimelineSegment, SplitMode } from "./sourceTimeline";
 import type { SavedStudioProject, StudioProjectSummary } from "@/lib/studioProjectStore";
 import type { StoryBrief, StoryGenerationMeta, StoryTreatment } from "./storyTreatments";
 import { encodeStudioJsonRequest, STUDIO_JSON_TRANSPORT_HEADERS } from "@/lib/studioJsonTransport";
+import { normalizeFinalExportIntent, type FinalExportIntent } from "./finalExportRecovery";
 
 export const STUDIO_PROJECT_STORAGE_KEY = "project-stack-structure:studio-project:v1";
 export { ACTIVE_STUDIO_PROJECT_KEY } from "./projectSelection";
@@ -57,6 +58,7 @@ export type PersistedWorkflowUiSettings = {
   isPreviewExpanded?: boolean;
   committedSplit?: PersistedCommittedSplit;
   finalExport?: PersistedFinalExport;
+  finalExportIntent?: FinalExportIntent;
 };
 
 export type PersistedFinalExport = {
@@ -379,7 +381,7 @@ export async function saveNamedStudioProject(params: {
   projectId?: string | null;
   name: string;
   draft: PersistedStudioProjectDraft;
-}): Promise<SavedStudioProject> {
+}, options: { cache?: boolean } = {}): Promise<SavedStudioProject> {
   const projectId = params.projectId?.trim() || null;
   const response = await fetch(projectId ? `/api/studio/projects/${encodeURIComponent(projectId)}` : "/api/studio/projects", {
     method: projectId ? "PUT" : "POST",
@@ -387,7 +389,7 @@ export async function saveNamedStudioProject(params: {
   });
   const payload = await readProjectApiResponse<{ saved?: SavedStudioProject }>(response);
   if (!response.ok || !payload.success || !payload.saved) throw new Error(payload.error || `Project save failed (${response.status})`);
-  cacheSavedStudioProject(payload.saved);
+  if (options.cache !== false) cacheSavedStudioProject(payload.saved);
   return payload.saved;
 }
 
@@ -556,6 +558,8 @@ function sanitizeWorkflowUiSettings(settings: PersistedWorkflowUiSettings | unde
   if (committedSplit) next.committedSplit = committedSplit;
   const finalExport = sanitizeFinalExport(settings?.finalExport);
   if (finalExport) next.finalExport = finalExport;
+  const finalExportIntent = normalizeFinalExportIntent(settings?.finalExportIntent);
+  if (finalExportIntent) next.finalExportIntent = finalExportIntent;
   return next;
 }
 

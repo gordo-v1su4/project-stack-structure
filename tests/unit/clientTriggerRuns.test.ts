@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { isRetryableTriggerTransportError, nextTriggerPollInterval, triggerPollSleepDuration, waitForTriggerRunOutput } from "@/lib/clientTriggerRuns";
+import { TriggerRunTerminalError, isRetryableTriggerTransportError, nextTriggerPollInterval, triggerPollSleepDuration, waitForTriggerRunOutput } from "@/lib/clientTriggerRuns";
 
 const originalFetch = globalThis.fetch;
 
@@ -107,6 +107,7 @@ describe("client Trigger run polling", () => {
       } catch (caught) {
         error = caught;
       }
+      expect(error instanceof TriggerRunTerminalError).toBe(true);
       expect(error instanceof Error ? error.message : "").toContain("provider failed");
     } finally {
       restoreFetch();

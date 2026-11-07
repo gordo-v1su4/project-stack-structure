@@ -80,6 +80,30 @@ This slice does not require a new story treatment, vocal stem/SRT, manual Seedan
 
 ## Remaining end-to-end gates
 
+### Final-export interruption recovery
+
+The local recovery implementation saves a project/cut/settings-bound export intent
+before dispatch and the acknowledged Trigger run before waiting. Reopening a saved
+running export reattaches that run. An uncertain acknowledgement retains the same
+request key; replay is bounded to 23 hours inside Trigger's 24-hour deduplication
+window. An expired unknown acknowledgement requires reconciling the original run.
+Byte-upload fallback cannot assume stable gateway object keys: an unknown ACK is
+held for original-run reconciliation; an acknowledged run still reattaches normally.
+Owned-media migration rebinds only a rejected, unsubmitted intent after checking
+the original project/cut again, then saves the new refs and same request atomically.
+The canonical snapshot excludes save timestamps and navigation/receipt metadata,
+so an ordinary autosave cannot change the same request's worker deduplication key.
+Changed project, master, references, selection, evidence, trims, clip audio or shader
+settings prevent a late completion from becoming the current download.
+Unselected pending bank arrivals do not change the cut fingerprint. A stale cut
+releases only its own busy preview, and background save ACKs do not change this
+tab's project selection or browser mirror.
+
+Local tests cover serialized reload/reattach, late project/arrangement results,
+unknown-ACK replay bounds and canonical snapshot stability. Production browser
+reload during export, project switching during an active export, durable download
+and actual playback remain live release acceptance gates; no export is claimed here.
+
 - Pass code checks/build, then prove the same web/worker release live; local tests do not deploy either half.
 - Exercise a recoverable failure/resume and reload while a job is active. Confirm correlation survives and no second logical asset/inference appears. Test stale-reference/plan rejection without discarding accepted footage.
 - Exercise master-only/zero-footage planning and generation/review without caption or lyric prerequisites, independently of completing the existing film first.

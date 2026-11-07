@@ -123,6 +123,16 @@ function provisionalProof(): GeneratedAssetIdentityVerification {
 }
 
 describe("final export canonical identity and ownership boundary", () => {
+  test("replaying the same cut retains its canonical snapshot across autosaves and export ACK persistence", async () => {
+    reset();
+    expect((await post(form())).status).toBe(202);
+    const first = dispatches[0].projectSnapshot;
+    saved.draft.savedAt = "2026-11-07T02:30:00Z";
+    saved.draft.workflowUiSettings = { ...saved.draft.workflowUiSettings, activeTab: "compose", isPreviewExpanded: true,
+      finalExportIntent: { version: 1, projectId, requestKey: "final-export-replayed", snapshotSha256: "a".repeat(64), createdAt: "2026-11-07T02:00:00Z", state: "running", runId: "run_existing" } };
+    expect((await post(form())).status).toBe(202);
+    expect(dispatches[1].projectSnapshot).toEqual(first);
+  });
   function lateEnvironmentSetup() {
     reset("project-1", 1.59);
     job.references = job.references.filter(reference => reference.role === "environment");

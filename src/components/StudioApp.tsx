@@ -67,7 +67,8 @@ import type { StatusTone } from "./studio/ui";
 import { buildStudioPipelineInput } from "./studio/buildStudioPipelineInput";
 import { buildPipelineState } from "./studio/studioPipeline";
 import { isStoryPlanConfirmable, selectedTreatment, type StoryTreatment } from "./studio/storyTreatments";
-import { waitForTriggerRunOutput } from "@/lib/clientTriggerRuns";
+import { TriggerRunTerminalError, waitForTriggerRunOutput } from "@/lib/clientTriggerRuns";
+import { assertFinalExportReplayAllowed, finalExportSnapshotSha256, isFinalExportIntentCurrent, rebindFinalExportAfterMigration, releaseStaleFinalExportPreview, waitForCurrentFinalExport, type FinalExportIntent } from "./studio/finalExportRecovery";
 import {
   createSectionRecomputeState,
   failSectionRecompute,
@@ -178,6 +179,8 @@ export default function StudioApp() {
   const [finalExportName, setFinalExportName] = useState<string | null>(null);
   const [finalExportCueCount, setFinalExportCueCount] = useState(0);
   const [isFinalExporting, setIsFinalExporting] = useState(false);
+  const [finalExportIntent, setFinalExportIntent] = useState<FinalExportIntent | undefined>();
+  const finalExportFlightRef = useRef<object | null>(null);
   const [isShaderCaptureExporting, setIsShaderCaptureExporting] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>(() => createSaveState("local"));
   const [draftRestored, setDraftRestored] = useState(false);
@@ -340,6 +343,7 @@ export default function StudioApp() {
           shaderAccentKinds,
           isPreviewExpanded,
           committedSplit: committedBeatSplit ?? undefined,
+          finalExportIntent,
           finalExport: finalExportUrl ? {
             videoUrl: finalExportUrl,
             downloadFileName: finalExportName ?? "stack-structure-final.mp4",
@@ -355,7 +359,7 @@ export default function StudioApp() {
       return;
     }
     setSaveState((current) => (current.kind === "dirty" || current.kind === "saving" ? current : { ...current, kind: "dirty" }));
-  }, [activeProjectId, activeProjectName, beatJoinAnalysis, clipAudioSettings, captionMode, colorGradient, committedBeatSplit, draftRestored, finalExportCueCount, finalExportName, finalExportStatus, finalExportUrl, generatedAssets, generatedDraft, isPreviewExpanded, matchLyricCueBlend, matchLyricMergeWindow, matchMode, matchOnsetDensity, musicVideoProject, referenceAssets, shaderAccentKinds, shaderPresetId, splitMode, storyState, tab, videoSources]);
+  }, [activeProjectId, activeProjectName, beatJoinAnalysis, clipAudioSettings, captionMode, colorGradient, committedBeatSplit, draftRestored, finalExportIntent, finalExportCueCount, finalExportName, finalExportStatus, finalExportUrl, generatedAssets, generatedDraft, isPreviewExpanded, matchLyricCueBlend, matchLyricMergeWindow, matchMode, matchOnsetDensity, musicVideoProject, referenceAssets, shaderAccentKinds, shaderPresetId, splitMode, storyState, tab, videoSources]);
 
   useEffect(() => {
     if (!draftRestored) return;
@@ -513,7 +517,7 @@ export default function StudioApp() {
     return () => {
       if (saveTimer !== null) window.clearTimeout(saveTimer);
     };
-  }, [committedBeatSplit, draftRestored, finalExportUrl]);
+  }, [committedBeatSplit, draftRestored, finalExportIntent, finalExportUrl]);
 
   useEffect(() => {
     referenceAssetsRef.current = referenceAssets;
@@ -521,6 +525,7 @@ export default function StudioApp() {
 
   useEffect(() => {
     return () => {
+      finalExportFlightRef.current = null;
       revokePreparedVideoSources(videoSourcesRef.current);
       for (const asset of referenceAssetsRef.current) {
         if (asset.previewUrl.startsWith("blob:")) URL.revokeObjectURL(asset.previewUrl);
@@ -529,6 +534,11 @@ export default function StudioApp() {
   }, []);
 
   function applyRestoredProjectDraft(draft: RuntimeStudioProjectDraft) {
+    finalExportFlightRef.current = null;
+    setIsFinalExporting(false);
+    setFinalExportIntent(draft.workflowUiSettings?.finalExportIntent);
+    setFinalExportError(null);
+    setPreviewState(createSectionRecomputeState());
     audioFileRef.current = null;
     videoFilesByMediaKeyRef.current.clear();
     setBeatJoinAnalysis(draft.analysis);
@@ -1235,6 +1245,7 @@ export default function StudioApp() {
           shaderAccentKinds,
           isPreviewExpanded,
           committedSplit: committedBeatSplit ?? undefined,
+          finalExportIntent,
           finalExport: finalExportUrl ? { videoUrl: finalExportUrl, downloadFileName: finalExportName ?? "stack-structure-final.mp4", cueCount: finalExportCueCount, status: finalExportStatus } : undefined,
         },
       },
@@ -1250,8 +1261,25 @@ export default function StudioApp() {
     };
   }
 
+  async function saveFinalExportIntent(intent: FinalExportIntent) {
+    while (autosaveInFlightRef.current) await new Promise(resolve => setTimeout(resolve, 50));
+    const live = draftReviewLiveRef.current;
+    if (!intent.projectId || !isFinalExportIntentCurrent(intent, live.projectId, live.project)) throw new Error("The project or arrangement changed before saving export recovery.");
+    autosaveInFlightRef.current = true;
+    try {
+      flushSync(() => setFinalExportIntent(intent));
+      await saveNamedStudioProject({ projectId: intent.projectId, name: live.projectName,
+        draft: { ...live.project, workflowUiSettings: { ...live.project.workflowUiSettings, finalExportIntent: intent } } }, { cache: false });
+      if (!isFinalExportIntentCurrent(intent, draftReviewLiveRef.current.projectId, draftReviewLiveRef.current.project)) {
+        const latest = draftReviewLiveRef.current;
+        if (latest.projectId === intent.projectId) await saveNamedStudioProject({ projectId: latest.projectId, name: latest.projectName, draft: latest.project }, { cache: false });
+        throw new Error("The project or arrangement changed while saving export recovery.");
+      }
+    } finally { autosaveInFlightRef.current = false; }
+  }
+
   async function runFinalExport() {
-    if (isFinalExporting || isShaderCaptureExporting || previewState.activeRequestKey) return;
+    if (finalExportFlightRef.current || isShaderCaptureExporting || previewState.activeRequestKey) return;
     if (!beatJoinAnalysis) {
       setFinalExportError("Upload and analyze the master song before final export.");
       return;
@@ -1266,7 +1294,25 @@ export default function StudioApp() {
       return;
     }
 
-    const requestKey = `final-export-${Date.now()}`;
+    const flight = {};
+    finalExportFlightRef.current = flight;
+    let intent = finalExportIntent;
+    const startingProjectId = draftReviewLiveRef.current.projectId;
+    const startingFingerprint = finalExportSnapshotSha256(draftReviewLiveRef.current.project);
+    const isCurrent = () => finalExportFlightRef.current === flight && Boolean(intent)
+      && isFinalExportIntentCurrent(intent!, draftReviewLiveRef.current.projectId, draftReviewLiveRef.current.project);
+    const assertCurrent = () => { if (!isCurrent()) throw new Error("The project or arrangement changed during export. Its original run remains recoverable."); };
+    const releaseStalePreview = () => {
+      if (!intent || finalExportFlightRef.current !== flight || draftReviewLiveRef.current.projectId !== intent.projectId) return;
+      const currentIntent = intent;
+      const message = "The arrangement changed during export. Review the current cut before exporting again.";
+      setPreviewState(current => releaseStaleFinalExportPreview(current, currentIntent, draftReviewLiveRef.current.projectId));
+      setFinalExportStatus(message);
+      setFinalExportError(message);
+    };
+    const requestKey = intent && ["dispatching", "running"].includes(intent.state)
+      && isFinalExportIntentCurrent(intent, startingProjectId, draftReviewLiveRef.current.project)
+      ? intent.requestKey : `final-export-${crypto.randomUUID()}`;
     setIsFinalExporting(true);
     setDone(false);
     setProgress(5);
@@ -1285,230 +1331,196 @@ export default function StudioApp() {
     setPreviewState((current) => markSectionRecomputeRunning(current, requestKey));
 
     try {
-      // Project exports are checked against a fresh owner-scoped named snapshot.
-      const saveForExport: typeof saveStudioProjectDraft = async (params, media) => activeProjectId
-        ? (await saveNamedStudioProject({ projectId: activeProjectId, name: activeProjectName, draft: createPersistableStudioProjectDraft(params) })).draft
-        : saveStudioProjectDraft(params, media);
-      await saveForExport(
-        {
-          analysis: beatJoinAnalysis,
-          videoSources,
-          storyState,
-          musicVideoProject,
-          referenceAssets,
-          generatedAssets,
-          generatedDraft,
-          clipAudioSettings,
-          captionSettings: buildSceneCaptionSettings(captionMode, beatJoinAnalysis, storyState, referenceAssets),
-          workflowUiSettings: {
-            activeTab: tab,
-            splitMode,
-            matchMode,
-            matchOnsetDensity,
-            matchLyricCueBlend,
-            matchLyricMergeWindow,
-            colorGradient,
-            shaderPresetId,
-            shaderAccentKinds,
-            isPreviewExpanded,
-            committedSplit: committedBeatSplit ?? undefined,
-            finalExport: finalExportUrl ? { videoUrl: finalExportUrl, downloadFileName: finalExportName ?? "stack-structure-final.mp4", cueCount: finalExportCueCount, status: finalExportStatus } : undefined,
-          },
-        },
-        {
-          audioFile: audioFileRef.current,
-          videoFilesByMediaKey: videoFilesByMediaKeyRef.current,
-        },
-      );
-
-      const uniqueVideoUrls = [...new Set(storyPreviewSegments.map((segment) => segment.videoUrl))];
-      const videoUrlIndex = new Map(uniqueVideoUrls.map((url, index) => [url, index]));
-
-      // Durable refs keep large media out of the serverless body cap (ef03ffe contract).
-      const audioRef = beatJoinAnalysis.storageBucket && beatJoinAnalysis.storagePath
-        ? { bucket: beatJoinAnalysis.storageBucket, objectKey: beatJoinAnalysis.storagePath }
-        : null;
-      const videoRefs: Array<{ bucket: string; objectKey: string; chunks?: Array<{ bucket: string; objectKey: string }> }> = [];
-      let missingVideoRef = false;
-      for (const url of uniqueVideoUrls) {
-        const source = videoSourcesRef.current.find((item) => item.videoUrl === url);
-        const generated = generatedAssets.find((asset) => buildGeneratedAssetPlaybackUrl(asset) === url);
-        const generatedObjectKey = generated?.fullStorage?.objectKey ?? generated?.fullStorage?.storagePath;
-        if (source?.storageBucket && source?.storagePath) {
-          videoRefs.push({ bucket: source.storageBucket, objectKey: source.storagePath,
-            ...(source.uploadChunks?.chunks.length ? { chunks: source.uploadChunks.chunks } : {}) });
-        } else if (generated?.fullStorage?.bucket && generatedObjectKey) {
-          videoRefs.push({ bucket: generated.fullStorage.bucket, objectKey: generatedObjectKey });
-        } else {
-          missingVideoRef = true;
-          break;
-        }
+      // Give every export a durable named owner/project before reserving its intent.
+      if (!startingProjectId) {
+        const projectId = await ensureH3ProjectSaved();
+        flushSync(() => setActiveProjectId(projectId));
+        if (finalExportFlightRef.current !== flight || finalExportSnapshotSha256(draftReviewLiveRef.current.project) !== startingFingerprint) throw new Error("The arrangement changed while saving the project.");
       }
-
-      setProgress(20);
-      setPreviewState((current) => updateSectionRecomputeProgress(current, { requestKey, progress: 20 }));
-
-      const segments = storyPreviewSegments.map((segment) => {
-        return {
-          useClipAudio: segment.useClipAudio === true,
-          sourceIndex: videoUrlIndex.get(segment.videoUrl) ?? 0,
-          startTime: segment.startTime,
-          endTime: segment.endTime,
-          musicStart: segment.musicStart,
-          musicEnd: segment.musicEnd,
-          label: segment.label,
-        };
-      });
-
-      const buildBaseForm = () => {
-        const form = new FormData();
-        form.set("segments", JSON.stringify(segments));
-        form.set("beats", JSON.stringify(beatJoinAnalysis.beats));
-        form.set("lyricChunks", JSON.stringify(musicVideoProject.lyricChunks));
-        form.set("shaderCues", JSON.stringify(shaderEffectCues));
-        if (Object.keys(shaderAccentKinds).length > 0) {
-          form.set("accentKinds", JSON.stringify(shaderAccentKinds));
-        }
-        form.set("shaderPresetId", shaderPresetId);
-        form.set("requestKey", requestKey);
-        if (activeProjectId && audioRef && !missingVideoRef && videoRefs.length && musicVideoProject.placementPlan) {
-          form.set("projectId", activeProjectId);
-          form.set("planSignature", musicVideoProject.placementPlan.inputSignature);
-          form.set("placementRevision", String(musicVideoProject.placementPlan.revision));
-          form.set("draftRevision", String(generatedDraft?.revision ?? 0));
-        }
-        return form;
+      const live = draftReviewLiveRef.current;
+      intent = intent?.requestKey === requestKey ? intent : {
+        version: 1, projectId: live.projectId, requestKey, snapshotSha256: finalExportSnapshotSha256(live.project),
+        createdAt: new Date().toISOString(), state: "dispatching",
       };
-      const attachDurableRefs = (
-        form: FormData,
-        audioRef: { bucket: string; objectKey: string },
-        videoRefs: Array<{ bucket: string; objectKey: string }>,
-      ) => {
-        form.set("audioRef", JSON.stringify(audioRef));
-        form.set("videoRefs", JSON.stringify(videoRefs));
-      };
+      assertCurrent();
+      assertFinalExportReplayAllowed(intent);
+      await saveFinalExportIntent(intent);
+      assertCurrent();
+      if (!intent.runId) {
+        const uniqueVideoUrls = [...new Set(storyPreviewSegments.map((segment) => segment.videoUrl))];
+        const videoUrlIndex = new Map(uniqueVideoUrls.map((url, index) => [url, index]));
 
-      setProgress(45);
-      setFinalExportStatus(`Rendering MP4 with ${MUSIC_VIDEO_SHADER_PRESETS.find((preset) => preset.id === shaderPresetId)?.label ?? shaderPresetId} shader cues...`);
-      setPreviewState((current) => updateSectionRecomputeProgress(current, { requestKey, progress: 45 }));
-
-      type ExportDispatchOutcome = {
-        response: Response;
-        payload: { success?: boolean; error?: string; runId?: string };
-      };
-      const sendExportForm = async (form: FormData): Promise<ExportDispatchOutcome> => {
-        const response = await fetch("/api/export/final", { method: "POST", body: form });
-        const rawBody = await response.text();
-        let payload: { success?: boolean; error?: string; runId?: string };
-        try {
-          payload = JSON.parse(rawBody) as { success?: boolean; error?: string; runId?: string };
-        } catch {
-          throw new Error(response.ok ? "Final export returned an invalid response." : `Final export failed (${response.status}).`);
-        }
-        return { response, payload };
-      };
-
-      let outcome: ExportDispatchOutcome | null = null;
-      if (audioRef && !missingVideoRef && videoRefs.length > 0) {
-        const form = buildBaseForm();
-        attachDurableRefs(form, audioRef, videoRefs);
-        outcome = await sendExportForm(form);
-
-        // Possession-based migration: pre-scoping keys are re-uploaded through
-        // the owner-scoped storage path, then the export retries once.
-        if (outcome.response.status === 403 && /not registered to this account/i.test(outcome.payload.error ?? "")) {
-          setFinalExportStatus("Re-registering project media under your account before rendering...");
-          const resolveMigratableAudio = async (): Promise<File> => {
-            try {
-              return await resolveMasterAudioFile(beatJoinAnalysis, audioFileRef.current);
-            } catch {
-              // Reloaded legacy sessions may hold only the durable audio ref;
-              // recover a fresh download URL through the authenticated route.
-              if (!beatJoinAnalysis.storageBucket || !beatJoinAnalysis.storagePath) {
-                throw new Error("Master audio could not be recovered for migration; re-upload the song.");
-              }
-              return fetchStoredMediaAsFile(
-                beatJoinAnalysis.storageBucket,
-                beatJoinAnalysis.storagePath,
-                `${beatJoinAnalysis.sourceLabel || "master-audio"}.wav`,
-                "audio/wav",
-              );
-            }
-          };
-          const audioFile = await resolveMigratableAudio();
-          const scopedAudio = await reuploadThroughScopedPath(audioFile, "media-uploads/source-audio");
-          const scopedVideoRefs: Array<{ bucket: string; objectKey: string }> = [];
-          for (const [index, url] of uniqueVideoUrls.entries()) {
-            const bytes = await fetchMediaUrlAsFile(url, `migrate${index}.mp4`, "video/mp4");
-            scopedVideoRefs.push(await reuploadThroughScopedPath(bytes, "media-uploads/video-source"));
+        // Durable refs keep large media out of the serverless body cap (ef03ffe contract).
+        const audioRef = beatJoinAnalysis.storageBucket && beatJoinAnalysis.storagePath
+          ? { bucket: beatJoinAnalysis.storageBucket, objectKey: beatJoinAnalysis.storagePath }
+          : null;
+        const videoRefs: Array<{ bucket: string; objectKey: string; chunks?: Array<{ bucket: string; objectKey: string }> }> = [];
+        let missingVideoRef = false;
+        for (const url of uniqueVideoUrls) {
+          const source = videoSourcesRef.current.find((item) => item.videoUrl === url);
+          const generated = generatedAssets.find((asset) => buildGeneratedAssetPlaybackUrl(asset) === url);
+          const generatedObjectKey = generated?.fullStorage?.objectKey ?? generated?.fullStorage?.storagePath;
+          if (source?.storageBucket && source?.storagePath) {
+            videoRefs.push({ bucket: source.storageBucket, objectKey: source.storagePath,
+              ...(source.uploadChunks?.chunks.length ? { chunks: source.uploadChunks.chunks } : {}) });
+          } else if (generated?.fullStorage?.bucket && generatedObjectKey) {
+            videoRefs.push({ bucket: generated.fullStorage.bucket, objectKey: generatedObjectKey });
+          } else {
+            missingVideoRef = true;
+            break;
           }
-          setBeatJoinAnalysis((current) => (current ? { ...current, storageBucket: scopedAudio.bucket, storagePath: scopedAudio.objectKey } : current));
-          setVideoSources((current) => current.map((source) => {
-            const index = uniqueVideoUrls.indexOf(source.videoUrl);
-            const scoped = index >= 0 ? scopedVideoRefs[index] : undefined;
-            return scoped ? { ...source, storageBucket: scoped.bucket, storagePath: scoped.objectKey, uploadChunks: null } : source;
-          }));
-
-          // Persist the migrated references immediately so a reload before the
-          // next autosave cannot resurrect the unscoped keys.
-          const migratedAnalysis = { ...beatJoinAnalysis, storageBucket: scopedAudio.bucket, storagePath: scopedAudio.objectKey };
-          const migratedSources = videoSources.map((source) => {
-            const index = uniqueVideoUrls.indexOf(source.videoUrl);
-            const scoped = index >= 0 ? scopedVideoRefs[index] : undefined;
-            return scoped ? { ...source, storageBucket: scoped.bucket, storagePath: scoped.objectKey, uploadChunks: null } : source;
-          });
-          await saveForExport(
-            {
-              analysis: migratedAnalysis,
-              videoSources: migratedSources,
-              storyState,
-              musicVideoProject,
-              referenceAssets,
-              generatedAssets,
-              generatedDraft,
-              clipAudioSettings,
-              captionSettings: buildSceneCaptionSettings(captionMode, beatJoinAnalysis, storyState, referenceAssets),
-              workflowUiSettings: {
-                activeTab: tab,
-                splitMode,
-                matchMode,
-                matchOnsetDensity,
-                matchLyricCueBlend,
-                matchLyricMergeWindow,
-                colorGradient,
-                shaderPresetId,
-                shaderAccentKinds,
-                isPreviewExpanded,
-                committedSplit: committedBeatSplit ?? undefined,
-                finalExport: finalExportUrl ? { videoUrl: finalExportUrl, downloadFileName: finalExportName ?? "stack-structure-final.mp4", cueCount: finalExportCueCount, status: finalExportStatus } : undefined,
-              },
-            },
-            {
-              audioFile: audioFileRef.current,
-              videoFilesByMediaKey: videoFilesByMediaKeyRef.current,
-            },
-          );
-
-          const retryForm = buildBaseForm();
-          attachDurableRefs(retryForm, scopedAudio, scopedVideoRefs);
-          outcome = await sendExportForm(retryForm);
         }
-      } else {
-        const form = buildBaseForm();
-        // Byte-upload fallback for sessions without durable storage refs.
-        const audioFile = await resolveMasterAudioFile(beatJoinAnalysis, audioFileRef.current);
-        const sourceFiles = await Promise.all(uniqueVideoUrls.map((url, index) => fetchMediaUrlAsFile(url, `source${index}.mp4`, "video/mp4")));
-        form.set("audio", audioFile);
-        sourceFiles.forEach((file, index) => form.set(`file:${index}`, file));
-        outcome = await sendExportForm(form);
-      }
-      const { response, payload } = outcome;
 
-      if (!response.ok || !payload.success || !payload.runId) {
-        throw new Error(payload.error ?? "Final export failed.");
+        setProgress(20);
+        setPreviewState((current) => updateSectionRecomputeProgress(current, { requestKey, progress: 20 }));
+
+        const segments = storyPreviewSegments.map((segment) => {
+          return {
+            useClipAudio: segment.useClipAudio === true,
+            sourceIndex: videoUrlIndex.get(segment.videoUrl) ?? 0,
+            startTime: segment.startTime,
+            endTime: segment.endTime,
+            musicStart: segment.musicStart,
+            musicEnd: segment.musicEnd,
+            label: segment.label,
+          };
+        });
+
+        const buildBaseForm = () => {
+          const form = new FormData();
+          form.set("segments", JSON.stringify(segments));
+          form.set("beats", JSON.stringify(beatJoinAnalysis.beats));
+          form.set("lyricChunks", JSON.stringify(musicVideoProject.lyricChunks));
+          form.set("shaderCues", JSON.stringify(shaderEffectCues));
+          if (Object.keys(shaderAccentKinds).length > 0) {
+            form.set("accentKinds", JSON.stringify(shaderAccentKinds));
+          }
+          form.set("shaderPresetId", shaderPresetId);
+          form.set("requestKey", requestKey);
+          if (intent!.projectId && audioRef && !missingVideoRef && videoRefs.length && musicVideoProject.placementPlan) {
+            form.set("projectId", intent!.projectId);
+            form.set("planSignature", musicVideoProject.placementPlan.inputSignature);
+            form.set("placementRevision", String(musicVideoProject.placementPlan.revision));
+            form.set("draftRevision", String(generatedDraft?.revision ?? 0));
+          }
+          return form;
+        };
+        const attachDurableRefs = (
+          form: FormData,
+          audioRef: { bucket: string; objectKey: string },
+          videoRefs: Array<{ bucket: string; objectKey: string }>,
+        ) => {
+          form.set("audioRef", JSON.stringify(audioRef));
+          form.set("videoRefs", JSON.stringify(videoRefs));
+        };
+
+        setProgress(45);
+        setFinalExportStatus(`Rendering MP4 with ${MUSIC_VIDEO_SHADER_PRESETS.find((preset) => preset.id === shaderPresetId)?.label ?? shaderPresetId} shader cues...`);
+        setPreviewState((current) => updateSectionRecomputeProgress(current, { requestKey, progress: 45 }));
+
+        type ExportDispatchOutcome = {
+          response: Response;
+          payload: { success?: boolean; error?: string; runId?: string };
+        };
+        const sendExportForm = async (form: FormData): Promise<ExportDispatchOutcome> => {
+          assertCurrent();
+          const response = await fetch("/api/export/final", { method: "POST", body: form });
+          const rawBody = await response.text();
+          let payload: { success?: boolean; error?: string; runId?: string };
+          try {
+            payload = JSON.parse(rawBody) as { success?: boolean; error?: string; runId?: string };
+          } catch {
+            throw new Error(response.ok ? "Final export returned an invalid response." : `Final export failed (${response.status}).`);
+          }
+          return { response, payload };
+        };
+
+        let outcome: ExportDispatchOutcome | null = null;
+        if (audioRef && !missingVideoRef && videoRefs.length > 0) {
+          const form = buildBaseForm();
+          attachDurableRefs(form, audioRef, videoRefs);
+          outcome = await sendExportForm(form);
+
+          // Possession-based migration: pre-scoping keys are re-uploaded through
+          // the owner-scoped storage path, then the export retries once.
+          if (outcome.response.status === 403 && /not registered to this account/i.test(outcome.payload.error ?? "")) {
+            setFinalExportStatus("Re-registering project media under your account before rendering...");
+            const resolveMigratableAudio = async (): Promise<File> => {
+              try {
+                return await resolveMasterAudioFile(beatJoinAnalysis, audioFileRef.current);
+              } catch {
+                // Reloaded legacy sessions may hold only the durable audio ref;
+                // recover a fresh download URL through the authenticated route.
+                if (!beatJoinAnalysis.storageBucket || !beatJoinAnalysis.storagePath) {
+                  throw new Error("Master audio could not be recovered for migration; re-upload the song.");
+                }
+                return fetchStoredMediaAsFile(
+                  beatJoinAnalysis.storageBucket,
+                  beatJoinAnalysis.storagePath,
+                  `${beatJoinAnalysis.sourceLabel || "master-audio"}.wav`,
+                  "audio/wav",
+                );
+              }
+            };
+            const audioFile = await resolveMigratableAudio();
+            const scopedAudio = await reuploadThroughScopedPath(audioFile, "media-uploads/source-audio");
+            const scopedVideoRefs: Array<{ bucket: string; objectKey: string }> = [];
+            for (const [index, url] of uniqueVideoUrls.entries()) {
+              const bytes = await fetchMediaUrlAsFile(url, `migrate${index}.mp4`, "video/mp4");
+              scopedVideoRefs.push(await reuploadThroughScopedPath(bytes, "media-uploads/video-source"));
+            }
+            assertCurrent();
+            const beforeMigration = draftReviewLiveRef.current;
+            const migratedAnalysis = { ...beatJoinAnalysis, storageBucket: scopedAudio.bucket, storagePath: scopedAudio.objectKey };
+            const migratedSources = videoSources.map((source) => {
+              const index = uniqueVideoUrls.indexOf(source.videoUrl);
+              const scoped = index >= 0 ? scopedVideoRefs[index] : undefined;
+              return scoped ? { ...source, storageBucket: scoped.bucket, storagePath: scoped.objectKey, uploadChunks: null } : source;
+            });
+            const migratedDraft = createPersistableStudioProjectDraft({
+              ...hydrateStudioProjectDraft({ draft: beforeMigration.project }), analysis: migratedAnalysis, videoSources: migratedSources,
+            });
+            intent = rebindFinalExportAfterMigration(intent, beforeMigration.projectId, beforeMigration.project, migratedDraft);
+            flushSync(() => {
+              setBeatJoinAnalysis(migratedAnalysis);
+              setVideoSources(migratedSources);
+              setFinalExportIntent(intent);
+            });
+            // Persist the new owned refs and the same unsubmitted request together before its one retry.
+            await saveFinalExportIntent(intent);
+            assertCurrent();
+
+            const retryForm = buildBaseForm();
+            attachDurableRefs(retryForm, scopedAudio, scopedVideoRefs);
+            outcome = await sendExportForm(retryForm);
+          }
+        } else {
+          const form = buildBaseForm();
+          // Byte-upload fallback for sessions without durable storage refs.
+          const audioFile = await resolveMasterAudioFile(beatJoinAnalysis, audioFileRef.current);
+          const sourceFiles = await Promise.all(uniqueVideoUrls.map((url, index) => fetchMediaUrlAsFile(url, `source${index}.mp4`, "video/mp4")));
+          form.set("audio", audioFile);
+          sourceFiles.forEach((file, index) => form.set(`file:${index}`, file));
+          // Gateway byte uploads may receive different object keys. A lost ACK must never re-upload and infer again.
+          intent = { ...intent, replayable: false };
+          await saveFinalExportIntent(intent);
+          assertCurrent();
+          outcome = await sendExportForm(form);
+        }
+        const { response, payload } = outcome;
+
+        if (!response.ok || !payload.success || !payload.runId) {
+          throw new Error(payload.error ?? "Final export failed.");
+        }
+        assertCurrent();
+        intent = { ...intent, runId: payload.runId, state: "running" };
+        await saveFinalExportIntent(intent);
+        assertCurrent();
       }
       setFinalExportStatus("Final export queued through Trigger.dev; waiting for the media worker...");
-      const asset = await waitForTriggerRunOutput(payload.runId, { timeoutMs: 30 * 60 * 1_000, pollIntervalMs: 3_000 }) as {
+      const asset = await waitForCurrentFinalExport(intent, {
+        waitForOutput: runId => waitForTriggerRunOutput(runId, { timeoutMs: 30 * 60 * 1_000, pollIntervalMs: 3_000 }), isCurrent,
+      }) as {
         requestKey: string;
         assetKey: string;
         duration: number;
@@ -1517,7 +1529,8 @@ export default function StudioApp() {
         downloadFileName?: string;
         effectCues?: unknown[];
       };
-
+      if (!asset.videoUrl || !/^https:\/\//i.test(asset.videoUrl) || !Number.isFinite(asset.duration) || asset.duration <= 0) throw new Error("Final export returned invalid durable media.");
+      assertCurrent();
       setProgress(90);
       setPreviewState((current) => updateSectionRecomputeProgress(current, { requestKey, progress: 90 }));
       setPreviewState((current) => markSectionReady(current, asset));
@@ -1526,16 +1539,27 @@ export default function StudioApp() {
       setFinalExportName(asset.downloadFileName ?? "stack-structure-final.mp4");
       setFinalExportCueCount(asset.effectCues?.length ?? 0);
       setFinalExportStatus(`Final MP4 ready · ${(asset.duration || 0).toFixed(1)}s · ${asset.effectCues?.length ?? 0} synced shader cues.`);
+      setFinalExportIntent({ ...intent, state: "ready" });
       workflowCheckpointAutosaveRequestedRef.current = true;
       setProgress(100);
       setDone(true);
     } catch (error) {
+      if (finalExportFlightRef.current !== flight) return;
+      if (intent && !isFinalExportIntentCurrent(intent, draftReviewLiveRef.current.projectId, draftReviewLiveRef.current.project)) {
+        releaseStalePreview();
+        return;
+      }
+      if (intent && error instanceof TriggerRunTerminalError) {
+        intent = { ...intent, state: "failed" };
+        await saveFinalExportIntent(intent).catch(() => { /* Keep the receipt in memory for the next autosave. */ });
+      }
+      if (finalExportFlightRef.current !== flight || (intent && !isFinalExportIntentCurrent(intent, draftReviewLiveRef.current.projectId, draftReviewLiveRef.current.project))) { releaseStalePreview(); return; }
       const message = error instanceof Error ? error.message : "Unknown final export error.";
       setFinalExportError(message);
-      setFinalExportStatus("Final export failed.");
+      setFinalExportStatus(error instanceof TriggerRunTerminalError ? "Final export failed. You can start a new export." : "Final export interrupted. Reopen or retry to recover the saved request.");
       setPreviewState((current) => failSectionRecompute(current, { requestKey, message }));
     } finally {
-      setIsFinalExporting(false);
+      if (finalExportFlightRef.current === flight) { finalExportFlightRef.current = null; setIsFinalExporting(false); }
     }
   }
 
@@ -1772,6 +1796,9 @@ export default function StudioApp() {
   }, []);
 
   function invalidateArrangementOutput() {
+    finalExportFlightRef.current = null;
+    setFinalExportIntent(undefined);
+    setIsFinalExporting(false);
     setRoughCutSelection(null);
     previewPlayerRef.current.load([]);
     setRetainedBrowserPreviewSegments([]);
@@ -2079,14 +2106,23 @@ export default function StudioApp() {
       shaderAccentKinds,
       isPreviewExpanded,
       committedSplit: committedBeatSplit ?? undefined,
+      finalExportIntent,
       finalExport: finalExportUrl ? { videoUrl: finalExportUrl, downloadFileName: finalExportName ?? "stack-structure-final.mp4", cueCount: finalExportCueCount, status: finalExportStatus } : undefined,
     },
-  }), [beatJoinAnalysis, clipAudioSettings, captionMode, colorGradient, committedBeatSplit, finalExportCueCount, finalExportName, finalExportStatus, finalExportUrl, generatedAssets, generatedDraft, isPreviewExpanded, matchLyricCueBlend, matchLyricMergeWindow, matchMode, matchOnsetDensity, musicVideoProject, referenceAssets, shaderAccentKinds, shaderPresetId, splitMode, storyState, tab, videoSources]);
+  }), [beatJoinAnalysis, clipAudioSettings, captionMode, colorGradient, committedBeatSplit, finalExportIntent, finalExportCueCount, finalExportName, finalExportStatus, finalExportUrl, generatedAssets, generatedDraft, isPreviewExpanded, matchLyricCueBlend, matchLyricMergeWindow, matchMode, matchOnsetDensity, musicVideoProject, referenceAssets, shaderAccentKinds, shaderPresetId, splitMode, storyState, tab, videoSources]);
 
   const draftReviewLiveRef = useRef({ state: generatedReviewState, segments: baseStoryPreviewSegments, project: persistableProjectDraft, projectId: activeProjectId, projectName: activeProjectName });
   useLayoutEffect(() => {
     draftReviewLiveRef.current = { state: generatedReviewState, segments: baseStoryPreviewSegments, project: persistableProjectDraft, projectId: activeProjectId, projectName: activeProjectName };
   }, [activeProjectId, activeProjectName, baseStoryPreviewSegments, generatedReviewState, persistableProjectDraft]);
+
+  useEffect(() => {
+    if (!draftRestored || !finalExportIntent || !["dispatching", "running"].includes(finalExportIntent.state)
+      || finalExportFlightRef.current || !isFinalExportIntentCurrent(finalExportIntent, activeProjectId, persistableProjectDraft)) return;
+    void runFinalExport();
+    // Recover only when a saved receipt is restored or receives its ACK. Progress renders do not restart polling.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftRestored, activeProjectId, finalExportIntent?.requestKey, finalExportIntent?.runId]);
 
   async function ensureH3ProjectSaved() {
     const startingProjectId = draftReviewLiveRef.current.projectId;
@@ -2098,11 +2134,12 @@ export default function StudioApp() {
       projectId: live.projectId,
       name: live.projectName === "Untitled project" ? live.project.analysis?.sourceLabel ?? "Music video" : live.projectName,
       draft: live.project,
-    });
+    }, { cache: false });
     if (draftReviewLiveRef.current.projectId !== startingProjectId
       || draftReviewLiveRef.current.project.musicVideoProject?.placementPlan?.inputSignature !== live.project.musicVideoProject.placementPlan?.inputSignature) {
       throw new Error("The open project or story changed while saving. Continue from its current draft.");
     }
+    rememberStudioProjectSelection(saved.project.id);
     setActiveProjectId(saved.project.id);
     setActiveProjectName(saved.project.name);
     setSaveState({ kind: "saved", at: Date.now(), scope: "project", detail: "Story and references saved before generation." });

@@ -41,6 +41,28 @@ async function decode(response: Response) {
 }
 
 describe("bounded authenticated project JSON transport", () => {
+  test("a delayed export save ACK cannot switch this tab back to the old project", async () => {
+    const oldWindow = Object.getOwnPropertyDescriptor(globalThis, "window"), oldFetch = globalThis.fetch;
+    const mirror = new Map([[ACTIVE_STUDIO_PROJECT_KEY, "project-old"], [STUDIO_PROJECT_STORAGE_KEY, "old draft"]]);
+    Object.defineProperty(globalThis, "window", { configurable: true, value: { localStorage: {
+      setItem: (key: string, value: string) => mirror.set(key, value), removeItem: (key: string) => mirror.delete(key),
+    } } });
+    let acknowledge!: (response: Response) => void, markEntered!: () => void;
+    const entered = new Promise<void>(resolve => { markEntered = resolve; });
+    globalThis.fetch = (() => { markEntered(); return new Promise<Response>(resolve => { acknowledge = resolve; }); }) as typeof fetch;
+    try {
+      const pending = saveNamedStudioProject({ projectId: "project-old", name: "Old film", draft: smallDraft }, { cache: false });
+      await entered;
+      mirror.set(ACTIVE_STUDIO_PROJECT_KEY, "project-new"); mirror.set(STUDIO_PROJECT_STORAGE_KEY, "new draft");
+      acknowledge(Response.json({ success: true, saved: { version: 1, project: { id: "project-old" }, draft: smallDraft } }));
+      expect((await pending).project.id).toBe("project-old");
+      expect(mirror.get(ACTIVE_STUDIO_PROJECT_KEY)).toBe("project-new");
+      expect(mirror.get(STUDIO_PROJECT_STORAGE_KEY)).toBe("new draft");
+    } finally {
+      globalThis.fetch = oldFetch;
+      if (oldWindow) Object.defineProperty(globalThis, "window", oldWindow); else Reflect.deleteProperty(globalThis, "window");
+    }
+  });
   test("round trips a multi-megabyte 21-source project without removing story or accepted placements", async () => {
     reset();
     const accepted = Array.from({ length: 13 }, (_, id) => ({ id: `accepted-${id}`, sourceStart: id * 0.137, songStart: id * 2.7 }));

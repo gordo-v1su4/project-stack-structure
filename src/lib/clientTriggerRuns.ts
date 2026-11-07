@@ -9,6 +9,8 @@ export type TriggerRunStatus = {
   error?: string;
 };
 
+export class TriggerRunTerminalError extends Error {}
+
 export async function waitForTriggerRunOutput(
   runId: string,
   options: { timeoutMs: number; pollIntervalMs?: number },
@@ -40,11 +42,11 @@ export async function waitForTriggerRunOutput(
 
     const run = payload as unknown as TriggerRunStatus;
     if (run.isFailed || run.isCancelled) {
-      throw new Error(run.error || `Trigger run ${runId} ended with ${run.status}.`);
+      throw new TriggerRunTerminalError(run.error || `Trigger run ${runId} ended with ${run.status}.`);
     }
     if (run.isCompleted) {
       if (run.isSuccess) return run.output;
-      throw new Error(run.error || `Trigger run ${runId} ended with ${run.status}.`);
+      throw new TriggerRunTerminalError(run.error || `Trigger run ${runId} ended with ${run.status}.`);
     }
 
     const elapsedMs = Date.now() - startedAt;

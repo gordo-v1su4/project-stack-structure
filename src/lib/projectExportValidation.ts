@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { applyApprovedGeneratedAssets, buildGeneratedAssetPlaybackUrl, generatedAssetDraftIdentityBlockReason, type GeneratedStudioAsset } from "@/components/studio/generatedAssets";
 import { buildEditPlanPreviewSegments, isPlacementPlanCurrent } from "@/components/studio/musicVideoProject";
 import { hydrateStudioProjectDraft } from "@/components/studio/projectPersistence";
+import { finalExportSnapshotSha256 } from "@/components/studio/finalExportRecovery";
 import { buildStudioSourceContextSignature } from "@/components/studio/studioSourceContext";
 import { buildStoryContentSignature } from "@/components/studio/storyTreatments";
 import { clipAudioKey, normalizeClipAudioSettings, usesClipAudio } from "@/components/studio/clipAudio";
@@ -219,5 +220,5 @@ export async function reconcileProjectFinalExport(params: {
   }
   if (!near(songCursor, project.duration)) throw new ProjectExportError("The accepted cut does not cover the full master song.");
   return { audio, videos, segments, projectSnapshot: { ownerId, projectId: context.projectId, planSignature: context.planSignature,
-    placementRevision: context.placementRevision, draftRevision: context.draftRevision, acceptedSnapshotSha256: digest(draft), h3: receipts } };
+    placementRevision: context.placementRevision, draftRevision: context.draftRevision, acceptedSnapshotSha256: finalExportSnapshotSha256(draft), h3: receipts } };
 }
