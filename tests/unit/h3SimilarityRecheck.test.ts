@@ -14,7 +14,7 @@ function fixture() {
 test("checks an unselected native handle through its exact assessment ID without replacing original proof",async()=>{
   const {job,record,scope}=h3IdentityAssessmentFixture(),before=JSON.stringify(job),requests:Array<{method:string;url:string;body?:unknown}>=[];
   const result=await recheckH3Similarity(job,{requestIntentId:scope.requestIntentId,asset:{...job.result!.asset,trimStart:.5},wait:async()=>{},
-    fetchImpl:(async(url,init)=>{requests.push({method:init?.method??"GET",url:String(url),body:typeof init?.body==="string"?JSON.parse(init.body):undefined});
+    fetchImpl:(async(url,init)=>{if(init?.method!=="PATCH")expect(new Headers(init?.headers).get("x-studio-json-transport")).toBe("gzip");requests.push({method:init?.method??"GET",url:String(url),body:typeof init?.body==="string"?JSON.parse(init.body):undefined});
       return Response.json(init?.method==="PATCH"?{verificationRunId:"cpu",assessmentId:scope.id}:{jobId:job.id,assessment:record});})as typeof fetch});
   expect(result.identityAssessmentId).toBe(scope.id);expect(result.trimStart).toBe(.5);expect(result.reviewStatus).toBe("pending");
   expect(requests[0].body).toMatchObject({trimStart:.5,action:"recheck_identity"});expect(requests[1].url).toContain(`assessmentId=${scope.id}`);
@@ -33,6 +33,7 @@ test("rechecks existing bytes once, waits for changed canonical evidence and nev
   let reads = 0;
   const asset = await recheckH3Similarity(job, { requestIntentId: "new-recheck-intent", wait: async () => {},
     fetchImpl: (async (_url, init) => {
+      if (init?.method !== "PATCH") expect(new Headers(init?.headers).get("x-studio-json-transport")).toBe("gzip");
       requests.push({ method: init?.method ?? "GET", body: typeof init?.body === "string" ? JSON.parse(init.body) : undefined });
       if (init?.method === "PATCH") return Response.json({ verificationRunId: "cpu-check" });
       return Response.json({ job: ++reads === 1 ? job : fresh });

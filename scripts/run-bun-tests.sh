@@ -16,6 +16,7 @@ readonly isolated_tests=(
   "tests/unit/h3JobStore.test.ts"
   "tests/unit/h3DraftPolicyStore.test.ts"
   "tests/unit/h3GenerationRoute.test.ts"
+  "tests/unit/h3HistoryTransport.test.ts"
   "tests/unit/studioJsonTransportRoute.test.ts"
   "tests/unit/projectExportValidation.test.ts"
   "tests/unit/h3IdentityRecheckDispatch.test.ts"

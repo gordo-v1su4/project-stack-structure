@@ -76,6 +76,14 @@ checks large 21-source save/reload, authentication before decompression, malform
 input, expansion limits and browser cache quota handling. See the
 [transport contract](../docs/protocols/studio-project-json-transport.md).
 
+`bun run test h3HistoryTransport h3SimilarityRecheck h3GenerationRoute h3IdentityRangeRoute`
+checks the same negotiated response transport for complete H3 histories,
+individual jobs and range assessments. The synthetic 64-job history retains
+varied 124-frame numeric proofs and failed attempts beyond 4 MB raw, while auth,
+ownership, bounded gzip/expansion and unchanged dispatch/recovery remain covered.
+It dispatches no generation and reads no live projects. A deployed browser
+reload remains a separate acceptance gate.
+
 ## Probe command
 Use the local fixture lane to generate a canonical probe manifest:
 

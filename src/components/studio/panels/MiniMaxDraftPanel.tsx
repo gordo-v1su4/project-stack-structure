@@ -8,7 +8,7 @@ import { recheckH3Similarity } from "../h3SimilarityRecheck";
 import { currentIdentityEvidenceSha256, identityPolicyChoiceForReferences } from "../issuedIdentityPolicy";
 import { createNativeHandleAudition } from "../nativeHandleAudition";
 import type { GeneratedDraftReview, GeneratedDraftSelection } from "../generatedDraft";
-import { createH3PickupWindow, enqueueH3DraftRequest, findH3TargetSegment, h3DraftBatchStorageKey, h3RequestWindowKey, h3WindowKey, nextH3Attempt, parseH3DraftBatch, planH3DraftWindows, selectH3PickupWindow, selectH3ReferenceAssetIds, type H3DraftBatch } from "../h3DraftPlan";
+import { createH3PickupWindow, enqueueH3DraftRequest, findH3TargetSegment, h3DraftBatchStorageKey, h3RequestWindowKey, h3WindowKey, nextH3Attempt, parseH3DraftBatch, planH3DraftWindows, readH3DraftJobs, selectH3PickupWindow, selectH3ReferenceAssetIds, type H3DraftBatch } from "../h3DraftPlan";
 import { isH3JobTerminal, type H3GenerationJob, type H3GenerationRequest } from "../h3Generation";
 import type { EditPlanPreviewSegment } from "../musicVideoProject";
 import type { ReferenceAsset } from "../referenceAssets";
@@ -66,10 +66,7 @@ export function MiniMaxDraftPanel(props: Props) {
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
 
   const readJobs = useCallback(async (projectId: string) => {
-    const response = await fetch(`/api/generate/h3?projectId=${encodeURIComponent(projectId)}`, { cache: "no-store" });
-    const payload = await response.json() as { error?: string; jobs?: H3GenerationJob[] };
-    if (!response.ok) throw new Error(payload.error || "Could not restore generation progress.");
-    const restored = payload.jobs ?? [];
+    const restored = await readH3DraftJobs(projectId);
     if (!mounted.current || latest.current.projectId !== projectId) return restored;
     setJobs(restored);
     // A reload can expose several completed jobs. Preserve dispatch order so

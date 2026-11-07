@@ -2,6 +2,7 @@ import { H3_MAX_SHOT_SECONDS, isH3JobTerminal, type H3GenerationJob, type H3Gene
 import type { GeneratedStudioAssetTarget } from "./generatedAssets";
 import type { EditPlanPreviewSegment } from "./musicVideoProject";
 import type { ReferenceAsset } from "./referenceAssets";
+import { STUDIO_JSON_TRANSPORT_HEADERS } from "@/lib/studioJsonTransport";
 
 /** Generation covers editorial holes; inference handles never extend song time. */
 export function planH3DraftWindows(segments: EditPlanPreviewSegment[]) {
@@ -62,6 +63,16 @@ export function createH3PickupWindow(window: EditPlanPreviewSegment, duration: n
   }
   const musicEnd = Math.min(window.musicStart + duration, window.musicEnd);
   return { ...window, musicEnd, startTime: 0, endTime: musicEnd - window.musicStart };
+}
+
+/** Fetch decodes negotiated gzip before JSON parsing; keep every historical job and proof. */
+export async function readH3DraftJobs(projectId: string, fetchImpl: typeof fetch = fetch): Promise<H3GenerationJob[]> {
+  const response = await fetchImpl(`/api/generate/h3?projectId=${encodeURIComponent(projectId)}`, {
+    cache: "no-store", headers: STUDIO_JSON_TRANSPORT_HEADERS,
+  });
+  const payload = await response.json() as { error?: string; jobs?: H3GenerationJob[] };
+  if (!response.ok) throw new Error(payload.error || "Could not restore generation progress.");
+  return payload.jobs ?? [];
 }
 
 /** A response loss retries transport with the same intent; existing submissions are never re-enqueued. */

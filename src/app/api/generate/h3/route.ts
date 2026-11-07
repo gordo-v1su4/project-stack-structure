@@ -10,6 +10,7 @@ import { assertH3IdentityAssessmentScope, buildH3IdentityAssessmentScope, identi
 import { claimH3IdentityAssessment, readH3IdentityAssessment } from "@/lib/h3IdentityAssessmentStore";
 import { H3_FIRST_FRAME_PROFILE, H3_FIRST_FRAME_PREPARATION } from "@/components/studio/h3FirstFrame";
 import { readH3FirstFrame, assertH3FirstFrameMatchesJob } from "@/lib/h3FirstFrameStore";
+import { studioJsonResponse } from "@/lib/studioJsonTransportServer";
 
 export const runtime = "nodejs";
 
@@ -98,7 +99,7 @@ export async function GET(request: Request) {
       for (let offset = 0; offset < stored.length; offset += 8) {
         jobs.push(...await Promise.all(stored.slice(offset, offset + 8).map(reconcileWorker)));
       }
-      return Response.json({ success: true, jobs });
+      return studioJsonResponse(request, { success: true, jobs });
     }
     const job = await readH3Job(user.id, projectId, jobId);
     if (!job) throw new H3RequestError("Generation job not found.", 404);
@@ -110,9 +111,9 @@ export async function GET(request: Request) {
         assertH3IdentityAssessmentScope(assessment.scope,job);
         if (assessment.status === "ready") identityAssessmentAsset(assessment,job);
       }
-      return Response.json({ success: true, jobId, assessment });
+      return studioJsonResponse(request, { success: true, jobId, assessment });
     }
-    return Response.json({ success: true, job: await reconcileWorker(job) });
+    return studioJsonResponse(request, { success: true, job: await reconcileWorker(job) });
   } catch (error) { return failure(error); }
 }
 

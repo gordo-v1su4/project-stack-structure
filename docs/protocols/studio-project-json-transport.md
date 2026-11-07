@@ -23,6 +23,16 @@ Existing draft-shape and owner-scoped storage validation still applies. Large
 responses require negotiation and obey the same bounds. No credentials or
 client-supplied storage paths are added to this protocol.
 
+H3 history, individual-job and range-assessment GET responses use this same
+transport. The Studio history client and similarity polling client negotiate
+gzip; Fetch decodes the response before their existing JSON readers run. Full
+jobs, failed attempts, ordering and canonical proof/report fields are preserved.
+POST/PATCH dispatch and recovery request/acknowledgment formats are unchanged.
+Small GET callers without the negotiation header remain compatible; larger
+unnegotiated responses return a bounded 413 asking the caller to update rather
+than overflowing the hosting response limit. Update older observers to send the
+header before using them against a large history after deployment.
+
 After a successful durable save/load, the browser's local-storage mirror is best
 effort. Quota exhaustion does not report a failed cloud save, and a stale draft
 mirror is removed if it cannot be replaced. The active project pointer remains

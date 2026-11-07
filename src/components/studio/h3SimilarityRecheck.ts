@@ -1,6 +1,7 @@
 import type { H3GenerationJob } from "./h3Generation";
 import type { GeneratedStudioAsset } from "./generatedAssets";
 import { buildH3IdentityAssessmentScope, identityAssessmentAsset, type H3IdentityAssessment } from "./h3IdentityAssessment";
+import { STUDIO_JSON_TRANSPORT_HEADERS } from "@/lib/studioJsonTransport";
 
 /** Reassess the existing durable video; never resume or submit GPU inference. */
 export async function recheckH3Similarity(job: H3GenerationJob, options: {
@@ -28,7 +29,7 @@ export async function recheckH3Similarity(job: H3GenerationJob, options: {
   if (scope && result.assessmentId !== scope.id) throw new Error("The confirmed range assessment does not match this selected trim.");
   while (now() < deadline) {
     const response = await fetchImpl(`/api/generate/h3?${new URLSearchParams({ projectId: job.projectId, jobId: job.id, ...(scope ? { assessmentId: scope.id } : {}) })}`,
-      { cache: "no-store", signal: AbortSignal.timeout(Math.max(1, Math.min(15_000, deadline - now()))) });
+      { cache: "no-store", headers: STUDIO_JSON_TRANSPORT_HEADERS, signal: AbortSignal.timeout(Math.max(1, Math.min(15_000, deadline - now()))) });
     const body = await response.json() as { job?: H3GenerationJob; jobId?: string; assessment?: H3IdentityAssessment; error?: string };
     if (scope) {
       if (!response.ok || body.jobId !== job.id) throw new Error(body.error || "Could not read the exact range assessment.");
