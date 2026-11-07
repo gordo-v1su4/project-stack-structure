@@ -3,7 +3,9 @@ import { fmt } from "../math";
 import type { AdaptiveCueMap, OnsetMarker } from "../adaptiveCueMap";
 import type { MusicVideoProject } from "../musicVideoProject";
 
-export function MatchMusicCueTimeline({ cueMap, project }: { cueMap: AdaptiveCueMap; project: MusicVideoProject | null }) {
+export function MatchMusicCueTimeline({ cueMap, project, selectedChunkId, onSelectChunk }: {
+  cueMap: AdaptiveCueMap; project: MusicVideoProject | null; selectedChunkId?: string; onSelectChunk?: (id: string) => void;
+}) {
   const duration = cueMap.duration || project?.duration || 0;
   if (!duration) {
     return <div className="rounded-[2px] border border-dashed border-[#202020] bg-[#070707] px-3 py-8 text-center text-[10px] uppercase tracking-[0.14em] text-[#4f4f4f]">Upload/analyze master song to show adaptive cut blocks.</div>;
@@ -44,7 +46,10 @@ export function MatchMusicCueTimeline({ cueMap, project }: { cueMap: AdaptiveCue
             <button
               key={chunk.id}
               type="button"
-              className="absolute bottom-2 top-6 border border-[#0c0c0c] text-left transition-colors hover:border-[#e05c00]"
+              aria-label={`Suggested block ${chunk.start.toFixed(3)} to ${chunk.end.toFixed(3)} seconds`}
+              aria-pressed={onSelectChunk ? selectedChunkId === chunk.id : undefined}
+              onClick={onSelectChunk ? () => onSelectChunk(chunk.id) : undefined}
+              className={`absolute bottom-2 top-6 border text-left transition-colors hover:border-accent focus-visible:outline-2 focus-visible:outline-accent ${selectedChunkId === chunk.id ? "border-accent outline-1 outline-accent" : "border-line"}`}
               style={{
                 left: `${left}%`,
                 width: `${width}%`,

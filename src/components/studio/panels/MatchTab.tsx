@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ParamSlider } from "../ParamSlider";
 import { CollapsibleSection, StatusDot } from "../ui";
 import type { BeatJoinAnalysis, UploadedVideoSource } from "../types";
 import { buildAdaptiveCueMap } from "../adaptiveCueMap";
@@ -12,7 +11,7 @@ import { analyzeEditPlanCoverage } from "../editPlanCoverage";
 import { buildTrackLaneStack } from "../trackLaneStack";
 import { TrackLaneStackBoard } from "./TrackLaneStackBoard";
 import { MatchCard, ThumbMatchCard } from "./MatchCards";
-import { MatchMusicCueTimeline } from "./MatchMusicCueTimeline";
+import { MusicCutExplorer } from "./MusicCutExplorer";
 import type { MatchMode } from "./matchModes";
 
 export type { MatchMode } from "./matchModes";
@@ -102,20 +101,9 @@ export function MatchTab({
         </CollapsibleSection>
       </section>
 
-      <section className="rounded-[2px] border border-line bg-ink-2 p-3">
-        <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <div className="text-[10px] uppercase tracking-[0.18em] text-accent">Suggested cut timing · 4–6 second pace</div>
-            <div className="mt-1 text-[11px] text-fg-3">Orange marks musical accents; cyan marks lyric phrases. These controls adjust this suggestion graph, not your saved rough cut. Lower density suggests fewer cuts. Lyric influence adds phrase boundaries; combine nearby cues keeps close music and lyric cues together. Short section edges remain visible as timing markers.</div>
-          </div>
-          <div className="grid min-w-[320px] flex-1 gap-2 md:min-w-[640px] md:grid-cols-3 md:gap-3">
-            <ParamSlider label="Cue density" commitOnRelease value={onsetDensity} min={5} max={100} step={5} unit="%" layout="stack" onChange={onOnsetDensity} />
-            <ParamSlider label="Lyric influence" commitOnRelease value={lyricCueBlend} min={0} max={100} step={5} unit="%" accent="#32c7d7" layout="stack" onChange={onLyricCueBlend} />
-            <ParamSlider label="Combine nearby cues" commitOnRelease value={lyricMergeWindow} min={0} max={5} step={0.5} unit="s" accent="#75d767" layout="stack" onChange={onLyricMergeWindow} />
-          </div>
-        </div>
-        <MatchMusicCueTimeline cueMap={cueMap} project={project} />
-      </section>
+      <MusicCutExplorer analysis={analysis} project={project} onsetDensity={onsetDensity}
+        lyricCueBlend={lyricCueBlend} lyricMergeWindow={lyricMergeWindow}
+        onOnsetDensity={onOnsetDensity} onLyricCueBlend={onLyricCueBlend} onLyricMergeWindow={onLyricMergeWindow} />
 
       <section className="rounded-[2px] border border-line bg-ink-2 p-3">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">

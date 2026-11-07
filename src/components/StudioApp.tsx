@@ -52,6 +52,7 @@ import { GenerateTab, type SeedanceMasterAudioRef } from "./studio/panels/Genera
 import { JoinTab } from "./studio/panels/JoinTab";
 import { RampTab } from "./studio/panels/RampTab";
 import { MatchTab, type MatchMode } from "./studio/panels/MatchTab";
+import { MusicCutExplorer } from "./studio/panels/MusicCutExplorer";
 import { SplitTab } from "./studio/panels/SplitTab";
 import { createDefaultStoryTabState, StoryTab } from "./studio/panels/StoryTab";
 import { ActRail } from "./studio/shell/ActRail";
@@ -2740,7 +2741,14 @@ export default function StudioApp() {
               />
             ) : null}
 
-            <main className={`studio-fade-in min-h-0 flex-1 space-y-3 overflow-y-auto ${monitorFocused || activeStageBlocked ? "hidden" : ""}`}>
+            <main className={`studio-fade-in min-h-0 flex-1 space-y-3 overflow-y-auto ${monitorFocused || (activeStageBlocked && !["story", "generate", "join"].includes(tab)) ? "hidden" : ""}`}>
+            {["story", "generate", "join"].includes(tab) ? <MusicCutExplorer
+              analysis={beatJoinAnalysis} project={musicVideoProject}
+              onsetDensity={matchOnsetDensity} lyricCueBlend={matchLyricCueBlend} lyricMergeWindow={matchLyricMergeWindow}
+              onOnsetDensity={setMatchOnsetDensity} onLyricCueBlend={setMatchLyricCueBlend} onLyricMergeWindow={setMatchLyricMergeWindow}
+              onOpenMatch={() => handleSelectTab("shuffle")} matchReady={storyState.storyGenerated}
+            /> : null}
+            {activeStageBlocked ? null : <>
             {(tab === "story" || tab === "generate") && musicVideoProject
               && (musicVideoProject.currentIdentity || (!isPlacementPlanCurrent(musicVideoProject) && generatedAssets.length > 0)) ?
               <CurrentReferenceReviewPanel key={activeProjectId} migrated={Boolean(musicVideoProject.currentIdentity)}
@@ -2750,7 +2758,6 @@ export default function StudioApp() {
             <ClipAudioSettings value={clipAudioSettings} sources={videoSources}
               disabled={isFinalExporting || isShaderCaptureExporting || Boolean(previewState.activeRequestKey)}
               onChange={value => { invalidateArrangementOutput(); setClipAudioSettings(value); }} />
-            {activeStageBlocked ? null : <>
             {tab === "review" && (
               <IngestTab
                 clipAudioSettings={clipAudioSettings}
