@@ -2151,9 +2151,16 @@ export default function StudioApp() {
     if (!activeProjectId || autosaveInFlightRef.current || finalExportFlightRef.current || previewState.activeRequestKey) {
       throw new Error("Save this project and wait for the current operation before confirming its sources.");
     }
+    const contextEpoch = projectSaveSessionRef.current!.contextEpoch;
+    const startingProjectId = activeProjectId;
+    await flushPendingAutosaveRef.current?.();
+    if (projectSaveSessionRef.current!.contextEpoch !== contextEpoch || draftReviewLiveRef.current.projectId !== startingProjectId) {
+      throw new Error("The open project changed while saving. Confirm sources from its current draft.");
+    }
     const starting = draftReviewLiveRef.current;
     const baselineSha = sourceConfirmationBaselineSha256(starting.project);
-    const isCurrent = () => draftReviewLiveRef.current.projectId === starting.projectId
+    const isCurrent = () => projectSaveSessionRef.current!.contextEpoch === contextEpoch
+      && draftReviewLiveRef.current.projectId === starting.projectId
       && sourceConfirmationBaselineSha256(draftReviewLiveRef.current.project) === baselineSha;
     // This lock serializes only this editor. The remote expected revision protects other tabs.
     autosaveInFlightRef.current = true;
@@ -2161,12 +2168,11 @@ export default function StudioApp() {
       const candidate = await prepareAppendedSourceConfirmation({ projectId: activeProjectId, baseline: starting.project, isCurrent });
       if (!isCurrent()) throw new Error("The open project changed. The confirmation candidate was not saved.");
       const update = { projectId: activeProjectId, name: starting.projectName, draft: candidate.draft, expectedRevision: candidate.expectedRevision };
-      const saved = await saveNamedStudioProject(update, { cache: false });
+      const saved = await saveVersionedProject(update, { cache: false }, contextEpoch);
       if (!isCurrent()) throw new Error("The open project changed while saving confirmation. Reload its saved draft before continuing.");
       flushSync(() => {
-        skipNextDirtyMarkRef.current = true;
         invalidateArrangementOutput();
-        applyRestoredProjectDraft(hydrateStudioProjectDraft({ draft: saved.draft }));
+        handleProjectSelected(saved.project, hydrateStudioProjectDraft({ draft: saved.draft }), saved.revision);
         setSaveState({ kind: "saved", at: Date.now(), scope: "project", detail: "Appended sheets confirmed; review the assembled cut before export." });
       });
     } finally { autosaveInFlightRef.current = false; }
