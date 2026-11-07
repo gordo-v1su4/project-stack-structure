@@ -42,7 +42,7 @@ import { MiniMaxDraftPanel } from "./studio/panels/MiniMaxDraftPanel";
 import { attachCurrentIdentityAssessments, stripCurrentReferenceIdentity, withCurrentReferenceIdentity } from "./studio/currentReferenceIdentity";
 import { checkCurrentReferenceRange, prepareReferenceMigration } from "./studio/currentReferenceClient";
 import { CurrentReferenceReviewPanel } from "./studio/panels/CurrentReferenceReviewPanel";
-import { assetsForCurrentReferenceReview } from "./studio/currentReferenceReview";
+import { assetsForCurrentReferenceCheck, assetsForCurrentReferenceReview } from "./studio/currentReferenceReview";
 import { createLocalReferenceAsset, uploadReferenceAssetToRustFs, type ReferenceAsset, type ReferenceAssetLibraryRole } from "./studio/referenceAssets";
 import { BrowserPreviewPlayer, createPreviewPlayerState, type PreviewPlayerState, type PreviewSegment } from "./studio/previewPlayer";
 import { buildEffectsTimeline, selectStoryAssemblyPreview, usesStoryAssembly, type PreviewCutRange } from "./studio/resolvedPreviewSelection";
@@ -2227,13 +2227,14 @@ export default function StudioApp() {
     } finally { autosaveInFlightRef.current = false; }
   }
 
-  async function assessUpdatedReferences() {
+  async function assessUpdatedReferences(explicitAssetId?: string) {
     if (!activeProjectId || autosaveInFlightRef.current || finalExportFlightRef.current || previewState.activeRequestKey) {
       throw new Error("Save this project and wait for the current operation before checking its references.");
     }
     const contextEpoch = projectSaveSessionRef.current!.contextEpoch;
     const projectId = activeProjectId;
     await flushPendingAutosaveRef.current?.();
+    if (autosaveInFlightRef.current) throw new Error("Another save or reference check started while saving. Wait for it to finish before checking this take.");
     if (projectSaveSessionRef.current!.contextEpoch !== contextEpoch || draftReviewLiveRef.current.projectId !== projectId) {
       throw new Error("The open project changed while saving. Check references from its current draft.");
     }
@@ -2251,8 +2252,7 @@ export default function StudioApp() {
         || sourceConfirmationBaselineSha256(fresh.draft) !== baselineSha256) {
         throw new Error("The saved project changed. Reload its current reference review before checking takes.");
       }
-      const affected = assetsForCurrentReferenceReview(starting.state.assets, starting.state.draft, starting.segments)
-        .filter(asset => asset.currentReferenceIdentity?.required);
+      const affected = assetsForCurrentReferenceCheck(starting.state.assets, starting.state.draft, starting.segments, explicitAssetId);
       if (!affected.length) throw new Error("No selected or approved takes require an updated-reference check.");
       const records = [];
       // Bounded serial CPU checks keep recovery tied to one durable intent per take.
@@ -2871,6 +2871,7 @@ export default function StudioApp() {
                 assets={generatedAssets} draft={generatedDraft} referenceAssets={referenceAssets}
                 onEnsureSavedProject={ensureH3ProjectSaved} onGeneratedAsset={receiveGeneratedAsset}
                 onReviewDraft={reviewGeneratedDraft} onAcceptDraft={acceptGeneratedDraft}
+                onCheckCurrentReferences={assessUpdatedReferences}
                 onRejectAsset={rejectGeneratedShot} onSelectAsset={asset => receiveGeneratedAsset(asset, generatedDraft?.revision ?? 0)} />
               <details className="rounded-md border border-line bg-ink-2 p-3">
               <summary className="cursor-pointer text-sm text-fg-3">Advanced generation and external imports</summary>

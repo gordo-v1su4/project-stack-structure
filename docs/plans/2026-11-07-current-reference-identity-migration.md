@@ -35,6 +35,12 @@ Focused verification: 154 Bun tests / 577 assertions passed; the final exact-abs
 
 Root owns the separate thin UI/client/PUT seam integration, one combined full check/build and release. No live film save, enrollment, canonical assessment, generation, deployment or creative approval occurred in this implementation worktree. The original R31 inventory and proposed later selections remain independent acceptance evidence; numerical diagnostics do not activate any take.
 
+## Bank-take review followup
+
+The web-only followup from `fcacc353` adds an explicit **Check against updated references** action to pending bank takes. It uses the existing assessment/save/recovery flow for one exact asset ID, preserving its saved trim and historical assessment alias. Original eligibility, the canonical job ID and the current target must already match; current-reference failure or pending evidence does not prevent requesting the separate check. The ordinary selected/approved-cut batch retains its existing inventory. Neither path chooses a bank take automatically, and selection remains blocked until both numerical screens pass.
+
+Focused verification passed 65 tests / 157 assertions, including static rendering of the enabled check alongside disabled selection, exact-bank/trim/history preservation and unsafe candidate rejection. Type checking passed; focused lint reported zero errors and two existing StudioApp warnings. No worker/server source changed, full-suite/build repetition or live action was performed for this followup. Actual P20/E33 browser acceptance follows the parent's release and explicit activation gates.
+
 ## Reviewed browser integration
 
 The Story and Draft views expose explicit reference adoption and checks for the takes represented in the cut. Runtime current-reference eligibility is projected onto immutable stored bank records. Pending and failing selected cuts remain visible. Adoption and result attachment flush pending saves, bind the complete baseline and project epoch, then perform the existing versioned save before restoring its acknowledged draft. Canonical migration validation runs before the server's conditional project write; stale revisions and invalid adoption cause no writes.
