@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { aestheticReferenceRole, normalizeAestheticReferences, selectedAestheticReferences } from "@/components/studio/aestheticReferences";
 import { assertMaterializationGenerationScope } from "./generationScopeServer";
 import { H3_MAX_SHOT_SECONDS, H3_PROFILE, H3_LEGACY_PROFILE, H3_CONDITIONING_PREPARATION_VERSION, type H3GenerationProfileOptions, type H3GenerationJob, type H3GenerationRequest, type H3ReferenceSnapshot } from "@/components/studio/h3Generation";
 import { isPlacementPlanCurrent } from "@/components/studio/musicVideoProject";
@@ -124,8 +125,15 @@ export function materializeH3Job(ownerId: string, saved: SavedStudioProject, req
   const placement = project.placementPlan.placements.find(placement => placement.timelineItemId === item?.id
     && placement.songStart <= request.songStart + 0.001 && placement.songEnd >= request.songEnd - 0.001);
   if (!item || !placement) throw new H3RequestError("The requested shot does not belong to the current edit window.", 409);
+  const library = normalizeAestheticReferences(draft.aestheticReferences);
+  const aestheticIds = request.referenceAssetIds.filter(id => id.startsWith("aesthetic-"));
+  if (aestheticIds.length && options.profile === H3_FIRST_FRAME_PROFILE) throw new H3RequestError("Shot and style refs are reference-mode inputs, not accepted first frames.");
+  let aesthetics;
+  try { aesthetics = selectedAestheticReferences(library, { sectionId: item.sectionId, timelineItemId: item.id }, aestheticIds); }
+  catch (error) { throw new H3RequestError(error instanceof Error ? error.message : "Check this shot's aesthetic references."); }
   const references: H3ReferenceSnapshot[] = request.referenceAssetIds.map(id => {
-    const asset = draft.referenceAssets?.find(asset => asset.id === id);
+    const aesthetic = aesthetics.find(asset => asset.id === id);
+    const asset = aesthetic ? { ...aesthetic, role: "custom", kind: "custom" } : draft.referenceAssets?.find(asset => asset.id === id);
     if (!asset || asset.storageStatus !== "uploaded" || !asset.storagePath || asset.storageBucket !== bucket
       || !mediaUploadBelongsToOwner(asset.storagePath, ownerId)
       || asset.storagePath.includes("\\") || /[\x00-\x1f]/.test(asset.storagePath)
@@ -134,13 +142,16 @@ export function materializeH3Job(ownerId: string, saved: SavedStudioProject, req
     }
     const canonicalName = text(asset.displayName, "canonical reference name", 120);
     if (/[<>\r\n]/.test(canonicalName)) throw new H3RequestError("Reference names cannot contain prompt labels or newlines.");
-    const role: H3ReferenceSnapshot["role"] = asset.kind === "character" || asset.role.startsWith("character") ? "identity"
+    const role: H3ReferenceSnapshot["role"] = aesthetic ? aestheticReferenceRole(aesthetic) : asset.kind === "character" || asset.role.startsWith("character") ? "identity"
       : asset.kind === "environment" || asset.role === "environment" ? "environment"
       : asset.kind === "crowd" || asset.role === "crowd" ? "crowd"
       : asset.kind === "prop" || asset.kind === "vehicle" || asset.kind === "wardrobe" ? asset.kind : "composition";
     // Upload keys include an immutable UUID; include metadata so relabeling or reordering invalidates reuse.
-    const version = digest([asset.id, asset.storageBucket, asset.storagePath, asset.createdAt, role, canonicalName]);
-    return { assetId: id, canonicalName, role, bucket, objectKey: asset.storagePath, version };
+    const restriction = aesthetic ? { purpose: aesthetic.purpose, guidance: text(aesthetic.guidance || "Use the selected visual aspect only.", "aesthetic guidance", 500), originalSha256: aesthetic.sha256 } : undefined;
+    const metadata = [asset.id, asset.storageBucket, asset.storagePath, asset.createdAt, role, canonicalName];
+    // Preserve byte-identical historical job identities when no aesthetic input is attached.
+    const version = digest(restriction ? [...metadata, restriction, aesthetic!.scope] : metadata);
+    return { assetId: id, canonicalName, role, bucket, objectKey: asset.storagePath, version, ...(restriction ? { aesthetic: restriction } : {}) };
   });
   if (!references.some(reference => reference.role === "environment")) throw new H3RequestError("Attach the named environment reference.");
   if (new Set(references.map(ref => ref.canonicalName.toLowerCase())).size !== references.length) {

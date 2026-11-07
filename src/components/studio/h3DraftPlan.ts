@@ -1,3 +1,4 @@
+import { selectedAestheticReferences, type AestheticReferenceLibrary } from "./aestheticReferences";
 import { H3_MAX_SHOT_SECONDS, isH3JobTerminal, type H3GenerationJob, type H3GenerationRequest } from "./h3Generation";
 import type { GeneratedStudioAssetTarget } from "./generatedAssets";
 import type { EditPlanPreviewSegment } from "./musicVideoProject";
@@ -163,4 +164,11 @@ export function parseH3DraftBatch(raw: string | null, projectId: string): H3Draf
       || value.pauseAfterRequest !== `${value.requests[0]?.requestIntentId}:${value.requests[0]?.attempt ?? 0}`)) return null;
     return { ...value, paused: Boolean(value.paused) };
   } catch { return null; }
+}
+
+/** Explicit scoped inputs only; storing references never opts a shot in. */
+export function appendH3AestheticReferenceIds(authorityIds: string[], library: AestheticReferenceLibrary | undefined, target: { sectionId: string; timelineItemId?: string }, selectedIds?: string[]) {
+  const ids = [...authorityIds, ...selectedAestheticReferences(library, target, selectedIds).map(asset => asset.id)];
+  if (ids.length > 9 || new Set(ids).size !== ids.length) throw new Error("Choose at most 9 distinct references, including identities, environment, crowd and shot/style refs.");
+  return ids;
 }
