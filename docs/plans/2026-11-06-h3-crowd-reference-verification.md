@@ -51,3 +51,44 @@ No browser interaction, live GPU generation, saved-project write, rendered video
 review, upload, push, PR, or deployment was performed. The 23 skipped tests do not
 establish media integration acceptance. Keep this branch isolated for coordinated
 integration with the film owner's release.
+
+## Isolated integration with film source-version guards
+
+Verified November 7, 2026 UTC in the same isolated crowd worktree. Starting
+branch `codex/crowd-reference-selection` was clean at
+`2e48afe122dc51623b4cc27ba40deaf43c12ce15`. The immutable film release
+`1f42fb94ba5bb2b1f41c39099614df662b213aeb` and the crowd branch shared merge
+base `f43eedd5ff4449caf9e32cc92efa080bbda280e8`.
+
+Git's normal `ort` merge completed without conflicts at
+`846f00cbb0a269791789f40c3586e04289457a1a`. Its first parent is
+`2e48afe122dc51623b4cc27ba40deaf43c12ce15`; its second parent is
+`1f42fb94ba5bb2b1f41c39099614df662b213aeb`. Both parent ancestry checks passed.
+No manual code changes were needed. This combines the optional per-shot crowd
+packet and frozen retry/new-intent behavior with the film release's raw-media
+and source-version approval, dispatch and export guards.
+
+Checks run against the exact merge commit:
+
+- `bun run test h3 generationScope sourceConfirmation finalExportRecovery
+  projectSaveRecovery projectExportValidation studioSourceContext`: 319 passed,
+  zero failed, 1,907 assertions. The normal isolated test runner was used with
+  Git Bash on PATH.
+- `bun run check`: 1,322 passed, 23 skipped, zero failed, 5,879 assertions;
+  typecheck passed. ESLint reported zero errors and the same five existing
+  warnings recorded above.
+- `bun run build`: passed, including the source-confirmation route.
+- `git diff --check`: passed; the worktree remained clean after checks.
+- Local logs: `.tmp/crowd-release-integration/focused.log`, `check.log`, and
+  `build.log` in that directory.
+- Graft tally for this integration: zero calls and zero refreshes. No code
+  context or conflict resolution was needed; the previously refreshed crowd
+  graph was retained.
+
+This follow-up changes only this verification document after testing. No tests
+were rerun for the documentation-only evidence commit. No other worktree or
+branch, saved film data, GPU, service, deployment, push or PR was changed. The
+film release owner retains deployment ownership. Browser, creative/render and
+live source-authority acceptance remain separate; these synthetic local checks
+do not resolve the film reference-authority gate described in the combined
+release document.
