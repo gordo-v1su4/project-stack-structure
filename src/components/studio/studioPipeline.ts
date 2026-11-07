@@ -18,6 +18,8 @@ export interface PipelineStageInput {
   gapSlotCount: number;
   /** Display coverage of the eligible selected draft; approved coverage still gates Finish. */
   draftGapSlotCount?: number;
+  /** A current selected replacement still requires exact-draft consent, even over existing coverage. */
+  draftSelectionNeedsReview?: boolean;
   weakMatchSlotCount: number;
   shortReviewSlotCount: number;
   storySegmentCount: number;
@@ -72,7 +74,7 @@ export function buildPipelineState(input: PipelineStageInput): PipelineState {
     && input.editSlotCount > 0;
   const splitReady = storyReady && (input.videoCount === 0 || input.hasCommittedSplit);
   const matchReady = storyReady && (input.videoCount === 0 || input.captionReadyCount > 0);
-  const generateReady = storyReady && input.gapSlotCount === 0;
+  const generateReady = storyReady && input.gapSlotCount === 0 && !input.draftSelectionNeedsReview;
   // Rough-cut review includes empty song windows; coverage gates final export only.
   const joinReady = storyReady && input.storySegmentCount > 0;
   const effectsReady = joinReady;
@@ -80,7 +82,7 @@ export function buildPipelineState(input: PipelineStageInput): PipelineState {
   const exportComplete = exportReady && input.finalExportReady;
   const displayedGapCount = input.draftGapSlotCount ?? input.gapSlotCount;
   const gapLabel = `${displayedGapCount} gap${displayedGapCount === 1 ? "" : "s"}`;
-  const draftNeedsReview = displayedGapCount === 0 && input.gapSlotCount > 0;
+  const draftNeedsReview = displayedGapCount === 0 && (Boolean(input.draftSelectionNeedsReview) || input.gapSlotCount > 0);
 
   const stages: Omit<PipelineStage, "step" | "active" | "isNext">[] = [
     {
@@ -197,7 +199,7 @@ export function buildPipelineState(input: PipelineStageInput): PipelineState {
         : input.gapSlotCount > 0
         ? `Fill ${gapLabel} before final export.${joinReady ? " The whole-song rough cut is available in Join." : ""}`
         : "Finish Join and review Effects before opening export controls.",
-      prerequisiteKey: exportReady ? null : input.gapSlotCount > 0 ? "generate" : "ramp",
+      prerequisiteKey: exportReady ? null : draftNeedsReview || input.gapSlotCount > 0 ? "generate" : "ramp",
       status: exportComplete ? "MP4 ready" : draftNeedsReview
         ? "Draft review required · final export blocked"
         : input.gapSlotCount > 0

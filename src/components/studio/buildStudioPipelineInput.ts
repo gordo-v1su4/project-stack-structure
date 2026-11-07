@@ -1,5 +1,6 @@
 import { analyzeEditPlanCoverage } from "./editPlanCoverage";
 import type { GeneratedStudioAsset } from "./generatedAssets";
+import { isGeneratedDraftCurrent, type GeneratedDraftSelection } from "./generatedDraft";
 import { hasRequiredIngestReferences } from "./ingestLanes";
 import type { EditPlanPreviewSegment, MusicVideoProject } from "./musicVideoProject";
 import { planH3DraftWindows } from "./h3DraftPlan";
@@ -21,6 +22,7 @@ export function buildStudioPipelineInput(params: {
   storyPlanConfirmed: boolean;
   musicVideoProject: MusicVideoProject | null;
   generatedAssets: GeneratedStudioAsset[];
+  generatedDraft?: GeneratedDraftSelection | null;
   resolvedDraftSegments?: EditPlanPreviewSegment[];
   storySegmentCount: number;
   hasCommittedSplit: boolean;
@@ -45,6 +47,8 @@ export function buildStudioPipelineInput(params: {
     matchedSlotCount: coverage.matchedSlotCount,
     gapSlotCount: coverage.trueGapCount,
     draftGapSlotCount: params.resolvedDraftSegments ? planH3DraftWindows(params.resolvedDraftSegments).length : undefined,
+    draftSelectionNeedsReview: isGeneratedDraftCurrent(params.resolvedDraftSegments ?? [], params.generatedDraft)
+      && params.generatedDraft.assetIds.length > 0,
     weakMatchSlotCount: coverage.weakReviewCount,
     shortReviewSlotCount: coverage.shortReviewCount,
     storySegmentCount: params.storySegmentCount,

@@ -2,6 +2,7 @@ import { buildGeneratedAssetPlaybackUrl, type GeneratedStudioAsset } from "../ge
 import type { EditPlanPreviewSegment, MusicVideoProject, SemanticClipMatch, StorySection, VideoMoment } from "../musicVideoProject";
 import { buildMatchCandidateRailItems, type MatchCandidateRailItem } from "../panels/matchCandidateRailModel";
 import { getDisplayCaption } from "../panels/matchCaptions";
+import type { Tab } from "../types";
 
 export type SpineSlotKind = "footage" | "generated";
 
@@ -45,6 +46,8 @@ export function slotId(segment: Pick<EditPlanPreviewSegment, "sectionId" | "musi
 
 export function buildSpineSlots(params: {
   segments: EditPlanPreviewSegment[];
+  draftSegments?: EditPlanPreviewSegment[];
+  activeTab?: Tab;
   project: MusicVideoProject | null;
   generatedAssets: GeneratedStudioAsset[];
 }): SpineSlot[] {
@@ -55,7 +58,9 @@ export function buildSpineSlots(params: {
     if (url) generatedByUrl.set(url, asset);
   }
 
-  return params.segments.map((segment, index) => {
+  // Draft review plays pending selections; other steps retain approved coverage.
+  const segments = params.activeTab === "generate" ? params.draftSegments ?? params.segments : params.segments;
+  return segments.map((segment, index) => {
     const generated = generatedByUrl.get(segment.videoUrl) ?? null;
     return {
       id: slotId(segment, index),

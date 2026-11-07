@@ -2056,6 +2056,7 @@ export default function StudioApp() {
       && Boolean(musicVideoProject && isPlacementPlanCurrent(musicVideoProject)),
     musicVideoProject,
     generatedAssets,
+    generatedDraft,
     resolvedDraftSegments: draftPreviewSegments,
     storySegmentCount: storyPreviewSegments.length,
     hasCommittedSplit: isCommittedSplitCurrent,
@@ -2080,6 +2081,7 @@ export default function StudioApp() {
     shaderPresetSummary.preset.label,
     finalExportUrl,
     generatedAssets,
+    generatedDraft,
   ]);
   const activePipelineStage = pipeline.stages.find((stage) => stage.active) ?? null;
   const activeStageBlocked = Boolean(activePipelineStage && !activePipelineStage.available);
@@ -2477,10 +2479,10 @@ export default function StudioApp() {
     onStopPlayback: handleTransportStop,
     onOpenShortcuts: openShortcuts,
   });
-  // Slots on the spine: the resolved cut (with approved generated shots) in song time.
+  // Match the current step's full assembly, including pending takes during Draft review.
   const spineSlots = useMemo(
-    () => buildSpineSlots({ segments: storyPreviewSegments, project: musicVideoProject, generatedAssets }),
-    [generatedAssets, musicVideoProject, storyPreviewSegments],
+    () => buildSpineSlots({ segments: storyPreviewSegments, draftSegments: draftPreviewSegments, activeTab: tab, project: musicVideoProject, generatedAssets }),
+    [draftPreviewSegments, generatedAssets, musicVideoProject, storyPreviewSegments, tab],
   );
   const selectedSlot = useMemo(() => spineSlots.find((slot) => slot.id === selectedSlotId) ?? null, [selectedSlotId, spineSlots]);
   const slotEvidence = useMemo(
