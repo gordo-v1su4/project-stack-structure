@@ -66,3 +66,53 @@ labels and exact review gating. Physical file interactions, public-app H3
 generation, candidate identity/action/continuity review, full-song playback,
 approval, durable export, and watched downloaded output remain distinct gates.
 The separate film execution chat owns live film writes and GPU submissions.
+
+## Prepared-save caller correction
+
+Integration review identified one remaining P2 wiring defect: the session's
+prepared-snapshot callback existed, but Studio's production callers did not
+supply it. The exact generated-review fingerprint does not include every saved
+project setting. Changing clip audio or shader accents during an approval ACK
+could therefore leave newer local settings unsaved while reporting the prepared
+snapshot as saved. This was not evidence of permanent in-memory erasure; the
+durable compare-and-swap protection remained correct.
+
+Code commit `27a211ec5ac03e838bf8a4a62bebbf560077894f`, based on
+`32cd1d54b704caa59b5d28936572a1e2f7f8630c`, corrects the caller boundary in
+the isolated `prepared-save-guard` worktree (`codex/prepared-save-guard`):
+
+- Every explicit Studio prepared save (approval, export recovery, generation
+  prerequisite, project library, and their reconciliation saves) captures the
+  complete live source project, ID, and name at the save boundary. The guard
+  compares that source before writing and after the ACK, separately from the
+  deliberately derived approval/export payload. Save timestamps alone are ignored.
+- Concurrent local edits reject the success continuation and preserve the local
+  changes. A completed prepared write with a changed source holds subsequent
+  writes for explicit reconciliation. Ordinary autosave retains its existing
+  pending-dirty behavior and serialized revision advancement.
+- Regression tests exercise the production-used boundary, real save session, and
+  real named-project HTTP transport against delayed synthetic ACKs. Clip-audio
+  and shader-accent edits prevent success/approval continuation and further
+  writes. Additional cases cover unchanged derived snapshots and a source
+  superseded before its queued write. No static source-string assertion is used.
+
+Checks against that code commit:
+
+- Affected save tests: **17 passed**, zero failures.
+- Typecheck and focused ESLint: passed; two existing Studio warnings, zero errors.
+- `bun run check`: **1,250 passed, 23 skipped**, zero failures; five existing lint
+  warnings, zero errors.
+- `bun run build`: passed, including all 33 static pages. The existing Node
+  deprecation and unavailable-localStorage warnings remain.
+- `git diff --check`: passed.
+
+Local evidence under `.tmp/prepared-save-guard/` (ignored by Git):
+
+| Log | SHA-256 |
+| --- | --- |
+| `check.log` | `E2AD9D5C252BC067D8624F324F0FF49DA43772E6B2DC2BE73CAA8E844786C424` |
+| `build.log` | `EC33180880CA481E405056B3B803138684E4E6423A601EA4133ABF5681100C95` |
+
+No push, PR, deployment, film write, GPU submission, or existing-worktree change
+was performed. The deployed two-editor and creative/media acceptance gates above
+remain outstanding.
