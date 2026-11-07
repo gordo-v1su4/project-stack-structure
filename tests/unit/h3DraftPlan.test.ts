@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createH3PickupWindow, enqueueH3DraftRequest, findH3TargetSegment, h3RequestWindowKey, nextH3Attempt, parseH3DraftBatch, planH3DraftWindows, selectH3PickupWindow, selectH3ReferenceAssetIds, h3WindowKey, type H3DraftBatch } from "../../src/components/studio/h3DraftPlan";
+import { createH3PickupWindow, enqueueH3DraftRequest, findH3TargetSegment, h3RequestWindowKey, nextH3Attempt, parseH3DraftBatch, planH3DraftWindows, selectH3PickupWindow, selectH3ReferenceAssetIds, prepareH3PickupRequest, h3WindowKey, type H3DraftBatch } from "../../src/components/studio/h3DraftPlan";
 import type { H3GenerationJob } from "@/components/studio/h3Generation";
 import { prepareApprovedPlacements } from "@/components/studio/musicVideoProject";
 import { materializeH3Job, parseH3Request } from "@/lib/h3GenerationServer";
@@ -117,11 +117,22 @@ describe("H3 draft coverage planning", () => {
       return Response.json({ jobId: job.id, job });
     }) as typeof fetch;
     await enqueueH3DraftRequest(input, [], transport);
-    const revision = nextH3Attempt({ ...job, state: "failed" }, [], 1, "Diego crosses the room.");
+    const revision = prepareH3PickupRequest({ ...input, requestIntentId: crypto.randomUUID(), draftRevision: 1, prompt: "Diego crosses the room." }, { ...job, state: "failed" }, [], "references");
+    expect(revision.requestIntentId).toBe(input.requestIntentId);
+    expect(revision.attempt).toBe(1);
     const batch: H3DraftBatch = { version: 1, projectId: input.projectId, planSignature: input.planSignature, requests: [revision], paused: true };
     await enqueueH3DraftRequest(parseH3DraftBatch(JSON.stringify(batch), input.projectId)!.requests[0], [], transport);
     expect(posted.map(value => value.referenceAssetIds)).toEqual([["diego", "club", "crowd-b"], ["diego", "club", "crowd-b"]]);
     expect(selectH3ReferenceAssetIds(references, request.prompt)).toEqual(["diego", "club"]);
+    for (const crowdIds of [[], ["crowd-a"], ["crowd-b", "crowd-a"]]) {
+      const fresh = { ...input, requestIntentId: crypto.randomUUID(), referenceAssetIds: selectH3ReferenceAssetIds(references, request.prompt, crowdIds) };
+      const changed = prepareH3PickupRequest(fresh, { ...job, state: "failed" }, [], "references");
+      expect(changed.requestIntentId).toBe(fresh.requestIntentId);
+      expect(changed.requestIntentId).not.toBe(job.request.requestIntentId);
+      expect(changed.attempt).toBe(0);
+      await enqueueH3DraftRequest(changed, [], transport);
+      expect(posted.at(-1)?.referenceAssetIds).toEqual(fresh.referenceAssetIds);
+    }
   });
 
   test("selected crowd cannot disappear, bypass upload readiness, masquerade as a lead, or exceed nine sockets", () => {

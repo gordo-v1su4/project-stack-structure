@@ -129,6 +129,15 @@ export function selectH3ReferenceAssetIds(assets: ReferenceAsset[], direction: s
   return ids;
 }
 
+/** Only the same ordered packet and conditioning mode continue a pickup's retry chain. */
+export function prepareH3PickupRequest(request: H3GenerationRequest, previous: H3GenerationJob | undefined, siblings: H3GenerationJob[], mode: "references" | "first-frame"): H3GenerationRequest {
+  if (previous && Boolean(previous.request.conditioning) === (mode === "first-frame")
+    && JSON.stringify(previous.request.referenceAssetIds) === JSON.stringify(request.referenceAssetIds)) {
+    return nextH3Attempt(previous, siblings, request.draftRevision ?? 0, request.prompt);
+  }
+  return request;
+}
+
 /** Retrying transport reuses a request unchanged; a deliberate new render increments its bounded attempt. */
 export function nextH3Attempt(job: H3GenerationJob, siblings: H3GenerationJob[], draftRevision: number, prompt = job.request.prompt): H3GenerationRequest {
   const intent = siblings.filter(candidate => candidate.request.requestIntentId === job.request.requestIntentId);

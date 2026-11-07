@@ -8,7 +8,7 @@ import { recheckH3Similarity } from "../h3SimilarityRecheck";
 import { currentIdentityEvidenceSha256, identityPolicyChoiceForReferences } from "../issuedIdentityPolicy";
 import { createNativeHandleAudition } from "../nativeHandleAudition";
 import type { GeneratedDraftReview, GeneratedDraftSelection } from "../generatedDraft";
-import { createH3PickupWindow, enqueueH3DraftRequest, findH3TargetSegment, h3DraftBatchStorageKey, h3RequestWindowKey, h3WindowKey, nextH3Attempt, parseH3DraftBatch, planH3DraftWindows, readH3DraftJobs, selectH3PickupWindow, selectH3ReferenceAssetIds, type H3DraftBatch } from "../h3DraftPlan";
+import { createH3PickupWindow, enqueueH3DraftRequest, findH3TargetSegment, h3DraftBatchStorageKey, h3RequestWindowKey, h3WindowKey, nextH3Attempt, parseH3DraftBatch, planH3DraftWindows, readH3DraftJobs, selectH3PickupWindow, selectH3ReferenceAssetIds, prepareH3PickupRequest, type H3DraftBatch } from "../h3DraftPlan";
 import { isH3JobTerminal, type H3GenerationJob, type H3GenerationRequest } from "../h3Generation";
 import type { EditPlanPreviewSegment } from "../musicVideoProject";
 import type { ReferenceAsset } from "../referenceAssets";
@@ -253,14 +253,14 @@ export function MiniMaxDraftPanel(props: Props) {
       const segment = createH3PickupWindow(currentWindow, duration);
       const previous = existingJobs.filter(job => h3RequestWindowKey(job.request) === h3WindowKey(segment)).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
       if (previous && !isH3JobTerminal(previous)) throw new Error("This exact shot already has a submission. Check its existing render in Generation progress.");
-      const sameModePrevious=previous&&Boolean(previous.request.conditioning)===(pickupMode==="first-frame")?previous:undefined;
-      const input: H3GenerationRequest = sameModePrevious ? nextH3Attempt(sameModePrevious, existingJobs, latest.current.draft?.revision ?? 0, direction) : {
+      const referenceAssetIds = selectH3ReferenceAssetIds(latest.current.referenceAssets, direction, pickupMode === "references" ? pickupCrowdIds : []);
+      const input: H3GenerationRequest = {
         projectId, planSignature: segment.planSignature!, requirementId: segment.requirementId, timelineItemId: segment.timelineItemId,
         sectionId: segment.sectionId, songStart: segment.musicStart, songEnd: segment.musicEnd, prompt: direction,
-        requestIntentId: crypto.randomUUID(), attempt: 0, referenceAssetIds: [], draftRevision: latest.current.draft?.revision ?? 0,
+        requestIntentId: crypto.randomUUID(), attempt: 0, referenceAssetIds, draftRevision: latest.current.draft?.revision ?? 0,
+        ...identityPolicyChoiceForReferences(latest.current.referenceAssets, referenceAssetIds),
       };
-      const referenceAssetIds = selectH3ReferenceAssetIds(latest.current.referenceAssets, direction, pickupMode === "references" ? pickupCrowdIds : []);
-      const request: H3GenerationRequest = { ...input, ...(!sameModePrevious ? identityPolicyChoiceForReferences(latest.current.referenceAssets, referenceAssetIds) : {}), referenceAssetIds };
+      const request = prepareH3PickupRequest(input, previous, existingJobs, pickupMode);
       if(pickupMode==="first-frame"){
         if(!firstFrameFile)throw new Error("Choose a prepared native-size first-frame PNG. It will receive a CPU similarity screen before rendering.");
         if(firstFrameFile.type!=="image/png"||firstFrameFile.size>32*1024*1024)throw new Error("Choose a PNG smaller than 32 MiB.");
