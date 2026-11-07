@@ -19,12 +19,14 @@ export class ProjectSaveSession {
     projectId: string | null,
     write: (expectedRevision: string | undefined) => Promise<T>,
     expectedEpoch = this.epoch,
+    isCurrent?: () => boolean,
   ): Promise<T> {
     const operation = this.tail.then(async () => {
       if (expectedEpoch !== this.epoch || (projectId !== null && projectId !== this.projectId)) {
         throw new Error("The open project changed before this save. Its obsolete snapshot was not written.");
       }
       if (this.blocked) throw this.blocked;
+      if (isCurrent && !isCurrent()) throw new Error("The local draft changed before this save. Its prepared snapshot was not written.");
       if (projectId && !this.revision) throw new Error("Reload this saved project before saving it; this window has no saved revision.");
       let result: T;
       try { result = await write(projectId ? this.revision : undefined); }
@@ -36,6 +38,12 @@ export class ProjectSaveSession {
         throw this.blocked ?? error;
       }
       if (expectedEpoch !== this.epoch) throw new Error("The open project changed while this save completed. Its old acknowledgment was not applied to the current editor.");
+      let unchanged = true;
+      try { unchanged = !isCurrent || isCurrent(); } catch { unchanged = false; }
+      if (!unchanged) {
+        this.blocked = new Error("The local draft changed while its prepared snapshot was saved. Automatic saving is paused; reopen the saved project to reconcile both versions.");
+        throw this.blocked;
+      }
       if (expectedEpoch === this.epoch) {
         if (!result.revision) {
           this.blocked = new Error("The save acknowledgment has no revision. Reopen the saved project before saving again.");

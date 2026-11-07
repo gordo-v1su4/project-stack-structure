@@ -111,12 +111,12 @@ type PendingStudioAutosave = {
 export default function StudioApp() {
   const projectSaveSessionRef = useRef<ProjectSaveSession | null>(null);
   if (!projectSaveSessionRef.current) projectSaveSessionRef.current = new ProjectSaveSession();
-  const saveVersionedProject = useCallback((params: Parameters<typeof saveNamedStudioProject>[0], options: Parameters<typeof saveNamedStudioProject>[1] = {}, contextEpoch?: number) => {
+  const saveVersionedProject = useCallback((params: Parameters<typeof saveNamedStudioProject>[0], options: Parameters<typeof saveNamedStudioProject>[1] = {}, contextEpoch?: number, isCurrent?: () => boolean) => {
     return projectSaveSessionRef.current!.save(params.projectId?.trim() || null,
       expectedRevision => {
         if (params.expectedRevision && params.expectedRevision !== expectedRevision) throw new Error("The confirmed source revision is no longer this editor's saved revision. Reopen the project before saving it.");
         return saveNamedStudioProject({ ...params, expectedRevision }, { ...options, cache: false });
-      }, contextEpoch);
+      }, contextEpoch, isCurrent);
   }, []);
   const videoSourcesRef = useRef<UploadedVideoSource[]>([]);
   const referenceAssetsRef = useRef<ReferenceAsset[]>([]);

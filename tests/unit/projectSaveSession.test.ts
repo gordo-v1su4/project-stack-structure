@@ -57,3 +57,21 @@ test("missing revision and missing ACK revision both fail closed", async () => {
   editor.restore("film", "v1");
   await expect(editor.save("film", async () => ({ project: { id: "film" } }))).rejects.toThrow("acknowledgment has no revision");
 });
+
+test("same-project edits during a derived snapshot save hold later autosaves until reconciliation", async () => {
+  const editor = new ProjectSaveSession(); editor.restore("film", "v1");
+  let current = true, calls = 0;
+  await expect(editor.save("film", async () => {
+    calls++; current = false; return { project: { id: "film" }, revision: "confirmed-v2" };
+  }, editor.contextEpoch, () => current)).rejects.toThrow("reconcile both versions");
+  await expect(editor.save("film", async () => { calls++; return { project: { id: "film" }, revision: "must-not-write" }; })).rejects.toThrow("reconcile both versions");
+  expect(calls).toBe(1);
+  editor.restore("film", "confirmed-v2");
+  await editor.save("film", async base => { expect(base).toBe("confirmed-v2"); return { project: { id: "film" }, revision: "v3" }; });
+});
+
+test("an already obsolete prepared snapshot performs no write and does not block current edits", async () => {
+  const editor = new ProjectSaveSession(); editor.restore("film", "v1");
+  await expect(editor.save("film", async () => { throw Error("must not write"); }, editor.contextEpoch, () => false)).rejects.toThrow("prepared snapshot was not written");
+  await editor.save("film", async base => { expect(base).toBe("v1"); return { project: { id: "film" }, revision: "v2" }; });
+});
