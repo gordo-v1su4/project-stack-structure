@@ -2747,6 +2747,7 @@ export default function StudioApp() {
               onsetDensity={matchOnsetDensity} lyricCueBlend={matchLyricCueBlend} lyricMergeWindow={matchLyricMergeWindow}
               onOnsetDensity={setMatchOnsetDensity} onLyricCueBlend={setMatchLyricCueBlend} onLyricMergeWindow={setMatchLyricMergeWindow}
               onOpenMatch={() => handleSelectTab("shuffle")} matchReady={storyState.storyGenerated}
+              editSettings={storyState.editSettings}
             /> : null}
             {activeStageBlocked ? null : <>
             {(tab === "story" || tab === "generate") && musicVideoProject

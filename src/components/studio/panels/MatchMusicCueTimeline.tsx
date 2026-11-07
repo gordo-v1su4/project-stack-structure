@@ -91,8 +91,8 @@ export function MatchMusicCueTimeline({ cueMap, project, selectedChunkId, onSele
                 opacity: marker.active || absorbedLyric ? 0.92 : 0.3,
               }}
               title={absorbedLyric
-                ? `onset ${fmt(marker.time)} + SRT ${fmt(absorbedLyric.time)} merged${absorbedLyric.text ? ` · ${absorbedLyric.text}` : ""}`
-                : `onset ${fmt(marker.time)} · strength ${marker.strength.toFixed(2)}${marker.active ? " · section-kept" : " · filtered"}`}
+                ? `${marker.kind} ${fmt(marker.time)} + SRT ${fmt(absorbedLyric.time)} merged${absorbedLyric.text ? ` · ${absorbedLyric.text}` : ""}`
+                : `${marker.kind} ${fmt(marker.time)} · strength ${marker.strength.toFixed(2)}${marker.active ? " · section-kept" : " · filtered"}`}
             />
           );
         })}
@@ -104,7 +104,7 @@ export function MatchMusicCueTimeline({ cueMap, project, selectedChunkId, onSele
       ) : null}
       <div className="mt-2 flex items-center justify-between font-mono text-[9px] text-[#555]">
         <span>0:00</span>
-        <span>{cueMap.chunks.length} blocks · {cueMap.onsetActiveCount} active onsets · {cueMap.lyricActiveCount}/{cueMap.lyricCount} SRT cuts · {cueMap.lyricMergedCount} merged into onsets · {cueMap.beatCount} beats</span>
+        <span>{cueMap.chunks.length} blocks · {cueMap.onsetActiveCount} active music cues · {cueMap.lyricActiveCount}/{cueMap.lyricCount} SRT cuts · {cueMap.lyricMergedCount} merged into music cues · {cueMap.beatCount} beats</span>
         <span>{fmt(duration)}</span>
       </div>
     </div>

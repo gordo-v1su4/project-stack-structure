@@ -64,6 +64,7 @@ export function MatchTab({
     density: onsetDensity / 100,
     lyricBlend: lyricCueBlend / 100,
     lyricMergeWindowSeconds: lyricMergeWindow,
+    editSettings: project?.placementPlan?.settings,
   }), [analysis, lyricCueBlend, lyricMergeWindow, onsetDensity, project]);
   const matchedItems = project?.editPlan.timelineItems ?? [];
   const weakCount = matchedItems.filter((item) => (item.semanticMatch?.score ?? 0) < 0.45).length;

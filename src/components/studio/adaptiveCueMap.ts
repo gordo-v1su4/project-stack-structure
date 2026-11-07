@@ -1,8 +1,8 @@
 import { buildSongSectionReview } from "./songSectionReview";
 import type { BeatJoinAnalysis } from "./types";
-import type { LyricChunk, MusicVideoProject } from "./musicVideoProject";
+import { normalizeStoryEditSettings, type LyricChunk, type MusicVideoProject, type StoryEditSettings } from "./musicVideoProject";
 
-export type CueMarkerKind = "onset" | "lyric";
+export type CueMarkerKind = "onset" | "beat" | "lyric";
 
 export type OnsetMarker = {
   time: number;
@@ -58,6 +58,8 @@ export function buildAdaptiveCueMap(params: {
   density: number;
   lyricBlend?: number;
   lyricMergeWindowSeconds?: number;
+  /** Optional exploratory pace. Omission preserves the legacy suggestion map exactly. */
+  editSettings?: StoryEditSettings;
 }): AdaptiveCueMap {
   const { analysis, project } = params;
   const duration = analysis?.duration ?? project?.duration ?? 0;
@@ -66,9 +68,15 @@ export function buildAdaptiveCueMap(params: {
   const density = clamp(params.density, 0.05, 1);
   const lyricBlend = clamp(params.lyricBlend ?? 0, 0, 1);
   const lyricMergeWindowSeconds = clamp(params.lyricMergeWindowSeconds ?? 0, 0, 8);
-  const onsets = uniqueSortedTimes(analysis.onsets, duration).map((time) => ({
+  const pace = params.editSettings ? normalizeStoryEditSettings(params.editSettings) : undefined;
+  // Same Fast threshold and minimum as the existing Story placement policy.
+  const fast = Boolean(pace && pace.cutDensity >= 0.8);
+  const minimumCutSeconds = fast ? 1 : 4;
+  const onsetKeys = new Set(uniqueSortedTimes(analysis.onsets, duration).map(timeKey));
+  const onsets = uniqueSortedTimes(fast ? [...analysis.onsets, ...analysis.beats] : analysis.onsets, duration).map((time) => ({
     time,
     strength: clamp(sampleSeries(analysis.energy, duration, time) * 0.62 + sampleSeries(analysis.waveform, duration, time) * 0.38, 0.05, 1),
+    kind: onsetKeys.has(timeKey(time)) ? "onset" as const : "beat" as const,
   }));
   const lyricBoundaries = buildLyricBoundaries(project?.lyricChunks ?? [], duration);
   const sections = buildCoverageWindows(buildSongSectionReview(project?.storySections ?? []), duration);
@@ -115,15 +123,18 @@ export function buildAdaptiveCueMap(params: {
 
     const cutTimes = [start];
     for (const cue of uniqueSortedTimes([...onsetCutTimes, ...lyricCutTimes], duration)) {
-      if (cue - cutTimes.at(-1)! >= 4 && end - cue >= 4) cutTimes.push(cue);
+      if (cue - cutTimes.at(-1)! >= minimumCutSeconds && end - cue >= minimumCutSeconds) cutTimes.push(cue);
     }
     cutTimes.push(end);
     // Strength-ranked selection clusters cuts where the music is loud and can
     // leave the rest of a window as one giant block. Split oversized gaps at
     // an unused onset inside them (midpoint when none exists). Four-second
     // minimum spacing takes priority over the suggested maximum.
-    const maxChunkSeconds = 6 - density * 2;
-    enforceMaxChunkDuration({ cutTimes, onsets: sectionOnsets, maxChunkSeconds, activeOnsetKeys });
+    // Fast density controls cadence as well as accent selection: low density
+    // leaves up to three seconds, high density seeks roughly 1.5-second cuts.
+    const maxChunkSeconds = fast ? 3 - density * 1.5 : 6 - (pace?.cutDensity ?? density) * 2;
+    enforceMaxChunkDuration({ cutTimes, onsets: sectionOnsets, maxChunkSeconds, activeOnsetKeys,
+      minimumCutSeconds, allowSpacingFallback: !fast });
 
     const retained = new Set(cutTimes.map(timeKey));
     for (const onset of sectionOnsets) if (!retained.has(timeKey(onset.time))) activeOnsetKeys.delete(timeKey(onset.time));
@@ -155,7 +166,6 @@ export function buildAdaptiveCueMap(params: {
 
   const onsetMarkers = onsets.map((onset) => ({
     ...onset,
-    kind: "onset" as const,
     position: clamp01(onset.time / duration),
     active: activeOnsetKeys.has(timeKey(onset.time)),
   }));
@@ -309,8 +319,10 @@ function enforceMaxChunkDuration(params: {
   onsets: Array<{ time: number; strength: number }>;
   maxChunkSeconds: number;
   activeOnsetKeys: Set<string>;
+  minimumCutSeconds?: number;
+  allowSpacingFallback?: boolean;
 }) {
-  const { cutTimes, onsets, maxChunkSeconds, activeOnsetKeys } = params;
+  const { cutTimes, onsets, maxChunkSeconds, activeOnsetKeys, minimumCutSeconds = 4, allowSpacingFallback = true } = params;
   const used = new Set(cutTimes.map(timeKey));
 
   let index = 0;
@@ -318,15 +330,16 @@ function enforceMaxChunkDuration(params: {
   while (index < cutTimes.length - 1 && guard-- > 0) {
     const gapStart = cutTimes[index]!;
     const gapEnd = cutTimes[index + 1]!;
-    if (gapEnd - gapStart <= maxChunkSeconds || gapEnd - gapStart < 8) {
+    if (gapEnd - gapStart <= maxChunkSeconds || gapEnd - gapStart < minimumCutSeconds * 2) {
       index += 1;
       continue;
     }
 
-    const margin = 4;
+    const margin = minimumCutSeconds;
     const candidate = onsets
       .filter((onset) => onset.time >= gapStart + margin && onset.time <= gapEnd - margin && !used.has(timeKey(onset.time)))
       .sort((left, right) => right.strength - left.strength)[0];
+    if (!candidate && !allowSpacingFallback) { index += 1; continue; }
     const splitTime = roundTime(candidate ? candidate.time : (gapStart + gapEnd) / 2);
     if (used.has(timeKey(splitTime))) {
       index += 1;
