@@ -3,6 +3,8 @@ import type { PersistedStudioProjectDraft } from "@/components/studio/projectPer
 import { readStudioProject, saveStudioProject } from "@/lib/studioProjectStore";
 import { requireStudioProjectRevision, StudioProjectConflictError } from "@/lib/studioProjectObjectStore";
 import { readStudioJsonBody, studioJsonBodyErrorResponse, studioJsonResponse } from "@/lib/studioJsonTransportServer";
+import { validateReferenceMigrationAdoption } from "@/lib/referenceMigrationServer";
+import { SourceConfirmationError } from "@/lib/generationScopeServer";
 
 export const runtime = "nodejs";
 
@@ -34,10 +36,13 @@ export async function PUT(request: Request, context: RouteContext) {
   if (!existing) return Response.json({ success: false, error: "Project not found." }, { status: 404 });
   const name = typeof body.name === "string" ? body.name : existing?.project.name || "Untitled project";
   try {
+    if (existing.revision !== expectedRevision) throw new StudioProjectConflictError();
+    await validateReferenceMigrationAdoption(session.user.id, existing, body.draft, expectedRevision);
     const saved = await saveStudioProject({ ownerId: session.user.id, projectId, name, draft: body.draft, expectedRevision });
     return studioJsonResponse(request, { success: true, saved });
   } catch (error) {
     if (error instanceof StudioProjectConflictError) return Response.json({ success: false, error: error.message, code: "PROJECT_SAVE_CONFLICT" }, { status: error.status });
+    if (error instanceof SourceConfirmationError) return Response.json({ success: false, error: error.message, code: "REFERENCE_MIGRATION_INVALID" }, { status: error.status });
     throw error;
   }
 }

@@ -5,6 +5,16 @@ const objects = new Map<string, { body: string; etag: string }>();
 const writes: Record<string, unknown>[] = [];
 let serial = 0, loseAckFor: string | undefined;
 let authenticated = true;
+let rejectMigration = false;
+let migrationValidation: { ownerId: string; projectId: string; expectedRevision: string } | undefined;
+class SourceConfirmationError extends Error { status = 409; }
+mock.module("@/lib/generationScopeServer", () => ({ SourceConfirmationError }));
+mock.module("@/lib/referenceMigrationServer", () => ({
+  validateReferenceMigrationAdoption: async (ownerId: string, current: { project: { id: string } }, _candidate: unknown, expectedRevision: string) => {
+    migrationValidation = { ownerId, projectId: current.project.id, expectedRevision };
+    if (rejectMigration) throw new SourceConfirmationError("Canonical migration differs.");
+  },
+}));
 class GetObjectCommand { constructor(public input: Record<string, unknown>) {} }
 class PutObjectCommand { constructor(public input: Record<string, unknown>) {} }
 const failure = (code: number) => Object.assign(Error(`S3 ${code}`), { $metadata: { httpStatusCode: code } });
@@ -43,6 +53,7 @@ const ownerId = "github-test", projectId = "film", key = `media-uploads/projects
 
 function setup() {
   objects.clear(); writes.length = 0; serial = 0; loseAckFor = undefined; authenticated = true;
+  rejectMigration = false; migrationValidation = undefined;
   Object.assign(process.env, { NODE_ENV: "production" }); process.env.RUSTFS_S3_ENDPOINT = "https://storage.example";
   process.env.RUSTFS_ACCESS_KEY = "test-only-access"; process.env.RUSTFS_SECRET_KEY = "test-only-secret";
   globalThis.fetch = (async input => {
@@ -85,6 +96,31 @@ test("an old client without If-Match is rejected before any write", async () => 
   const count = writes.length;
   const response = await PUT(new Request("https://app.example/api/studio/projects/film", { method: "PUT", body: JSON.stringify({ name: "Film", draft: draft("old") }) }), { params: Promise.resolve({ projectId }) });
   expect(response.status).toBe(428); expect(writes.length).toBe(count);
+});
+
+test("project PUT validates reference adoption before its conditional write", async () => {
+  setup();
+  const created = await saveStudioProject({ ownerId, projectId, name: "Film", draft: draft("kept"), expectedRevision: null });
+  const before = objects.get(key)!.body, count = writes.length;
+  rejectMigration = true;
+  const response = await PUT(new Request("https://app.example/api/studio/projects/film", {
+    method: "PUT", headers: { "if-match": created.revision! }, body: JSON.stringify({ draft: draft("invalid-migration") }),
+  }), { params: Promise.resolve({ projectId }) });
+  expect(response.status).toBe(409);
+  expect((await response.json()).code).toBe("REFERENCE_MIGRATION_INVALID");
+  expect(migrationValidation).toEqual({ ownerId, projectId, expectedRevision: created.revision! });
+  expect(writes.length).toBe(count); expect(objects.get(key)!.body).toBe(before);
+});
+
+test("a stale project revision is rejected before reference adoption validation", async () => {
+  setup();
+  const created = await saveStudioProject({ ownerId, projectId, name: "Film", draft: draft("initial"), expectedRevision: null });
+  await saveStudioProject({ ownerId, projectId, name: "Film", draft: draft("winner"), expectedRevision: created.revision });
+  const count = writes.length;
+  const response = await PUT(new Request("https://app.example/api/studio/projects/film", {
+    method: "PUT", headers: { "if-match": created.revision! }, body: JSON.stringify({ draft: draft("obsolete") }),
+  }), { params: Promise.resolve({ projectId }) });
+  expect(response.status).toBe(409); expect(migrationValidation).toBe(undefined); expect(writes.length).toBe(count);
 });
 
 test("auth remains first and another owner cannot read a record", async () => {

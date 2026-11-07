@@ -496,6 +496,9 @@ export function MiniMaxDraftPanel(props: Props) {
       <p className="mt-1 text-xs text-fg-3">Edit this shot direction while keeping the named people and location. The rest of the story stays intact.</p>
       <div className="mt-3 space-y-3">{selected.map(asset => <div key={asset.id} className="rounded-md border border-line p-3">
         <div className="mb-2 flex items-center justify-between gap-2"><span className="text-sm">{asset.title}</span><span className="text-xs text-fg-3">{clock(asset.target?.songStart ?? 0)}</span></div>
+        {generatedAssetDraftIdentityBlockReason(asset) ? <p className="mb-2 text-xs text-warning">
+          Selected cut retained · {generatedAssetDraftIdentityBlockReason(asset)}. Review and export wait for this check.
+        </p> : null}
         <SimilarityFilterNote asset={asset} />
         <label className="block text-xs text-fg-3">Shot direction<textarea aria-label={`Revision for ${asset.title}`} rows={2}
           value={revisionText[asset.id] ?? jobs.find(job => job.id === asset.jobId || job.id === asset.id)?.request.prompt ?? ""} placeholder={asset.target?.sectionLabel ?? "Describe the complete revised action"}

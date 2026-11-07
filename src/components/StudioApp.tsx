@@ -39,6 +39,10 @@ import type { StudioProjectSummary } from "@/lib/studioProjectStore";
 import { applyApprovedGeneratedAssets, buildGeneratedAssetContextPreview, buildGeneratedAssetPlaybackUrl, mergeGeneratedAssetDelivery, type GeneratedStudioAsset } from "./studio/generatedAssets";
 import { applyDraftGeneratedAssets, approveGeneratedDraft, captureGeneratedDraftReview, createGeneratedDraftSelection, prepareGeneratedDraftApprovalEvidence, rejectGeneratedDraftAsset, selectGeneratedDraftAsset, type GeneratedDraftReview, type GeneratedDraftSelection } from "./studio/generatedDraft";
 import { MiniMaxDraftPanel } from "./studio/panels/MiniMaxDraftPanel";
+import { attachCurrentIdentityAssessments, stripCurrentReferenceIdentity, withCurrentReferenceIdentity } from "./studio/currentReferenceIdentity";
+import { checkCurrentReferenceRange, prepareReferenceMigration } from "./studio/currentReferenceClient";
+import { CurrentReferenceReviewPanel } from "./studio/panels/CurrentReferenceReviewPanel";
+import { assetsForCurrentReferenceReview } from "./studio/currentReferenceReview";
 import { createLocalReferenceAsset, uploadReferenceAssetToRustFs, type ReferenceAsset, type ReferenceAssetLibraryRole } from "./studio/referenceAssets";
 import { BrowserPreviewPlayer, createPreviewPlayerState, type PreviewPlayerState, type PreviewSegment } from "./studio/previewPlayer";
 import { buildEffectsTimeline, selectStoryAssemblyPreview, usesStoryAssembly, type PreviewCutRange } from "./studio/resolvedPreviewSelection";
@@ -177,7 +181,7 @@ export default function StudioApp() {
   const [captionMode, setCaptionMode] = useState<SceneCaptionMode>("smart");
   const [referenceAssets, setReferenceAssets] = useState<ReferenceAsset[]>([]);
   const [generatedReviewState, setGeneratedReviewState] = useState<{ assets: GeneratedStudioAsset[]; draft: GeneratedDraftSelection | null }>({ assets: [], draft: null });
-  const { assets: generatedAssets, draft: generatedDraft } = generatedReviewState;
+  const { assets: rawGeneratedAssets, draft: generatedDraft } = generatedReviewState;
   const setGeneratedAssets = useCallback((update: SetStateAction<GeneratedStudioAsset[]>) => {
     setGeneratedReviewState(current => ({ ...current, assets: typeof update === "function" ? update(current.assets) : update }));
   }, []);
@@ -269,6 +273,11 @@ export default function StudioApp() {
       ? { ...storedMusicVideoProject.placementPlan, inputSignature: `stale-source:${sourceContextSignature}` }
       : undefined };
   }, [storedMusicVideoProject, sourceContextSignature]);
+  // Current-reference eligibility is a projection; historical bank records stay intact.
+  const generatedAssets = useMemo(() => withCurrentReferenceIdentity(rawGeneratedAssets, musicVideoProject?.currentIdentity),
+    [rawGeneratedAssets, musicVideoProject?.currentIdentity]);
+  const currentGeneratedReviewState = useMemo(() => ({ ...generatedReviewState, assets: generatedAssets }),
+    [generatedReviewState, generatedAssets]);
 
   useEffect(() => {
     let cancelled = false;
@@ -347,7 +356,7 @@ export default function StudioApp() {
         storyState,
         musicVideoProject,
         referenceAssets,
-        generatedAssets,
+        generatedAssets: rawGeneratedAssets,
         generatedDraft,
         clipAudioSettings,
         captionSettings: buildSceneCaptionSettings(captionMode, beatJoinAnalysis, storyState, referenceAssets),
@@ -378,7 +387,7 @@ export default function StudioApp() {
       return;
     }
     setSaveState((current) => (current.kind === "dirty" || current.kind === "saving" ? current : { ...current, kind: "dirty" }));
-  }, [activeProjectId, activeProjectName, beatJoinAnalysis, clipAudioSettings, captionMode, colorGradient, committedBeatSplit, draftRestored, finalExportIntent, finalExportCueCount, finalExportName, finalExportStatus, finalExportUrl, generatedAssets, generatedDraft, isPreviewExpanded, matchLyricCueBlend, matchLyricMergeWindow, matchMode, matchOnsetDensity, musicVideoProject, referenceAssets, shaderAccentKinds, shaderPresetId, splitMode, storyState, tab, videoSources]);
+  }, [activeProjectId, activeProjectName, beatJoinAnalysis, clipAudioSettings, captionMode, colorGradient, committedBeatSplit, draftRestored, finalExportIntent, finalExportCueCount, finalExportName, finalExportStatus, finalExportUrl, rawGeneratedAssets, generatedDraft, isPreviewExpanded, matchLyricCueBlend, matchLyricMergeWindow, matchMode, matchOnsetDensity, musicVideoProject, referenceAssets, shaderAccentKinds, shaderPresetId, splitMode, storyState, tab, videoSources]);
 
   useEffect(() => {
     if (!draftRestored) return;
@@ -725,6 +734,8 @@ export default function StudioApp() {
 
   const storyPreviewSegments = useMemo(() => applyApprovedGeneratedAssets(baseStoryPreviewSegments, generatedAssets), [baseStoryPreviewSegments, generatedAssets]);
   const draftPreviewSegments = useMemo(() => applyDraftGeneratedAssets(baseStoryPreviewSegments, generatedAssets, generatedDraft), [baseStoryPreviewSegments, generatedAssets, generatedDraft]);
+  const currentReferenceReviewAssets = useMemo(() => assetsForCurrentReferenceReview(generatedAssets, generatedDraft, baseStoryPreviewSegments),
+    [generatedAssets, generatedDraft, baseStoryPreviewSegments]);
 
   const effectsTimeline = useMemo(() => buildEffectsTimeline(storyPreviewSegments), [storyPreviewSegments]);
 
@@ -1254,7 +1265,7 @@ export default function StudioApp() {
         storyState,
         musicVideoProject,
         referenceAssets,
-        generatedAssets,
+        generatedAssets: rawGeneratedAssets,
         generatedDraft,
         clipAudioSettings,
         captionSettings: buildSceneCaptionSettings(captionMode, migratedAnalysis, storyState, referenceAssets),
@@ -2121,7 +2132,7 @@ export default function StudioApp() {
     storyState,
     musicVideoProject,
     referenceAssets,
-    generatedAssets,
+    generatedAssets: rawGeneratedAssets,
     generatedDraft,
     clipAudioSettings,
     captionSettings: buildSceneCaptionSettings(captionMode, beatJoinAnalysis, storyState, referenceAssets),
@@ -2140,12 +2151,12 @@ export default function StudioApp() {
       finalExportIntent,
       finalExport: finalExportUrl ? { videoUrl: finalExportUrl, downloadFileName: finalExportName ?? "stack-structure-final.mp4", cueCount: finalExportCueCount, status: finalExportStatus } : undefined,
     },
-  }), [beatJoinAnalysis, clipAudioSettings, captionMode, colorGradient, committedBeatSplit, finalExportIntent, finalExportCueCount, finalExportName, finalExportStatus, finalExportUrl, generatedAssets, generatedDraft, isPreviewExpanded, matchLyricCueBlend, matchLyricMergeWindow, matchMode, matchOnsetDensity, musicVideoProject, referenceAssets, shaderAccentKinds, shaderPresetId, splitMode, storyState, tab, videoSources]);
+  }), [beatJoinAnalysis, clipAudioSettings, captionMode, colorGradient, committedBeatSplit, finalExportIntent, finalExportCueCount, finalExportName, finalExportStatus, finalExportUrl, rawGeneratedAssets, generatedDraft, isPreviewExpanded, matchLyricCueBlend, matchLyricMergeWindow, matchMode, matchOnsetDensity, musicVideoProject, referenceAssets, shaderAccentKinds, shaderPresetId, splitMode, storyState, tab, videoSources]);
 
-  const draftReviewLiveRef = useRef({ state: generatedReviewState, segments: baseStoryPreviewSegments, project: persistableProjectDraft, projectId: activeProjectId, projectName: activeProjectName });
+  const draftReviewLiveRef = useRef({ state: currentGeneratedReviewState, segments: baseStoryPreviewSegments, project: persistableProjectDraft, projectId: activeProjectId, projectName: activeProjectName });
   useLayoutEffect(() => {
-    draftReviewLiveRef.current = { state: generatedReviewState, segments: baseStoryPreviewSegments, project: persistableProjectDraft, projectId: activeProjectId, projectName: activeProjectName };
-  }, [activeProjectId, activeProjectName, baseStoryPreviewSegments, generatedReviewState, persistableProjectDraft]);
+    draftReviewLiveRef.current = { state: currentGeneratedReviewState, segments: baseStoryPreviewSegments, project: persistableProjectDraft, projectId: activeProjectId, projectName: activeProjectName };
+  }, [activeProjectId, activeProjectName, baseStoryPreviewSegments, currentGeneratedReviewState, persistableProjectDraft]);
 
   useEffect(() => {
     if (!draftRestored || !finalExportIntent || !["dispatching", "running"].includes(finalExportIntent.state)
@@ -2186,6 +2197,84 @@ export default function StudioApp() {
     } finally { autosaveInFlightRef.current = false; }
   }
 
+  async function adoptUpdatedReferences() {
+    if (!activeProjectId || autosaveInFlightRef.current || finalExportFlightRef.current || previewState.activeRequestKey) {
+      throw new Error("Save this project and wait for the current operation before updating its references.");
+    }
+    const contextEpoch = projectSaveSessionRef.current!.contextEpoch;
+    const projectId = activeProjectId;
+    await flushPendingAutosaveRef.current?.();
+    if (projectSaveSessionRef.current!.contextEpoch !== contextEpoch || draftReviewLiveRef.current.projectId !== projectId) {
+      throw new Error("The open project changed while saving. Update references from its current draft.");
+    }
+    const starting = draftReviewLiveRef.current;
+    const baselineSha = sourceConfirmationBaselineSha256(starting.project);
+    const isCurrent = () => projectSaveSessionRef.current!.contextEpoch === contextEpoch
+      && draftReviewLiveRef.current.projectId === projectId
+      && sourceConfirmationBaselineSha256(draftReviewLiveRef.current.project) === baselineSha;
+    autosaveInFlightRef.current = true;
+    try {
+      const candidate = await prepareReferenceMigration({ projectId, baseline: starting.project, isCurrent });
+      if (!isCurrent()) throw new Error("The open draft changed. Updated references were not adopted.");
+      const saved = await saveVersionedProject({ projectId, name: starting.projectName,
+        draft: candidate.draft, expectedRevision: candidate.expectedRevision }, { cache: false }, contextEpoch);
+      if (!isCurrent()) throw new Error("The open draft changed while references were saved. Reload its saved draft before continuing.");
+      flushSync(() => {
+        invalidateArrangementOutput();
+        handleProjectSelected(saved.project, hydrateStudioProjectDraft({ draft: saved.draft }), saved.revision);
+        setSaveState({ kind: "saved", at: Date.now(), scope: "project", detail: "Updated references saved; affected takes await a new check and full-cut review." });
+      });
+    } finally { autosaveInFlightRef.current = false; }
+  }
+
+  async function assessUpdatedReferences() {
+    if (!activeProjectId || autosaveInFlightRef.current || finalExportFlightRef.current || previewState.activeRequestKey) {
+      throw new Error("Save this project and wait for the current operation before checking its references.");
+    }
+    const contextEpoch = projectSaveSessionRef.current!.contextEpoch;
+    const projectId = activeProjectId;
+    await flushPendingAutosaveRef.current?.();
+    if (projectSaveSessionRef.current!.contextEpoch !== contextEpoch || draftReviewLiveRef.current.projectId !== projectId) {
+      throw new Error("The open project changed while saving. Check references from its current draft.");
+    }
+    const starting = draftReviewLiveRef.current;
+    const baselineSha256 = sourceConfirmationBaselineSha256(starting.project);
+    const isCurrent = () => projectSaveSessionRef.current!.contextEpoch === contextEpoch
+      && draftReviewLiveRef.current.projectId === projectId
+      && sourceConfirmationBaselineSha256(draftReviewLiveRef.current.project) === baselineSha256;
+    autosaveInFlightRef.current = true;
+    try {
+      const fresh = await loadSavedStudioProject(projectId, { cache: false });
+      const context = fresh.draft.musicVideoProject?.currentIdentity;
+      const migrationId = fresh.draft.musicVideoProject?.generationScope?.id;
+      if (!isCurrent() || !fresh.revision || !context || !migrationId
+        || sourceConfirmationBaselineSha256(fresh.draft) !== baselineSha256) {
+        throw new Error("The saved project changed. Reload its current reference review before checking takes.");
+      }
+      const affected = assetsForCurrentReferenceReview(starting.state.assets, starting.state.draft, starting.segments)
+        .filter(asset => asset.currentReferenceIdentity?.required);
+      if (!affected.length) throw new Error("No selected or approved takes require an updated-reference check.");
+      const records = [];
+      // Bounded serial CPU checks keep recovery tied to one durable intent per take.
+      for (const asset of affected) {
+        if (!asset.jobId || !isCurrent()) throw new Error("The cut changed or a take has no canonical generation record. Existing checks remain saved.");
+        records.push(await checkCurrentReferenceRange({ projectId, expectedRevision: fresh.revision, baselineSha256,
+          migrationId, contextSha256: context.contextSha256, jobId: asset.jobId, assetId: asset.id,
+          trimStart: asset.trimStart ?? 0, identityAssessmentId: asset.identityAssessmentId, isCurrent }));
+      }
+      if (!isCurrent()) throw new Error("The cut changed while checking. Results remain saved; they were not applied.");
+      const candidate = attachCurrentIdentityAssessments(starting.project, records);
+      const saved = await saveVersionedProject({ projectId, name: starting.projectName,
+        draft: candidate, expectedRevision: fresh.revision }, { cache: false }, contextEpoch);
+      if (!isCurrent()) throw new Error("The open draft changed while check results were saved. Reload before continuing.");
+      flushSync(() => {
+        invalidateArrangementOutput();
+        handleProjectSelected(saved.project, hydrateStudioProjectDraft({ draft: saved.draft }), saved.revision);
+        setSaveState({ kind: "saved", at: Date.now(), scope: "project", detail: "Current-reference checks saved; review failed or pending takes before full-cut acceptance." });
+      });
+    } finally { autosaveInFlightRef.current = false; }
+  }
+
   async function ensureH3ProjectSaved() {
     const startingProjectId = draftReviewLiveRef.current.projectId;
     await flushPendingAutosaveRef.current?.();
@@ -2211,14 +2300,16 @@ export default function StudioApp() {
   function receiveGeneratedAsset(asset: GeneratedStudioAsset, expectedRevision?: number) {
     if (asset.reviewStatus === "approved" || generatedAssets.some(candidate => candidate.id === asset.id && candidate.reviewStatus === "approved")) invalidateArrangementOutput();
     setGeneratedReviewState(current => {
-      const delivered = mergeGeneratedAssetDelivery(current.assets.find(candidate => candidate.id === asset.id), asset);
+      const delivered = mergeGeneratedAssetDelivery(current.assets.find(candidate => candidate.id === asset.id), stripCurrentReferenceIdentity([asset])[0]);
       const assets = [delivered, ...current.assets.filter(candidate => candidate.id !== delivered.id)];
       const planSignature = baseStoryPreviewSegments[0]?.planSignature;
       // Legacy returns without a captured dispatch revision remain available in
       // the bank, but cannot silently override a newer draft after reload.
       if (!planSignature || expectedRevision === undefined) return { ...current, assets };
       const draft = current.draft?.planSignature === planSignature ? current.draft : createGeneratedDraftSelection(planSignature);
-      return { assets, draft: selectGeneratedDraftAsset({ draft, assets, asset: delivered, segments: baseStoryPreviewSegments, expectedRevision }) };
+      const evaluatedAssets = withCurrentReferenceIdentity(assets, draftReviewLiveRef.current.project.musicVideoProject?.currentIdentity);
+      return { assets, draft: selectGeneratedDraftAsset({ draft, assets: evaluatedAssets,
+        asset: evaluatedAssets.find(candidate => candidate.id === delivered.id)!, segments: baseStoryPreviewSegments, expectedRevision }) };
     });
   }
 
@@ -2259,7 +2350,7 @@ export default function StudioApp() {
     const accepted = currentAcceptance();
     const liveProject = draftReviewLiveRef.current.project;
     const saved = await saveVersionedProject({ projectId, name: draftReviewLiveRef.current.projectName,
-      draft: { ...liveProject, savedAt: new Date().toISOString(), generatedAssets: accepted.assets, generatedDraft: accepted.draft,
+      draft: { ...liveProject, savedAt: new Date().toISOString(), generatedAssets: stripCurrentReferenceIdentity(accepted.assets), generatedDraft: accepted.draft,
         workflowUiSettings: { ...liveProject.workflowUiSettings, finalExport: undefined } },
     });
     let commitError: string | null = null;
@@ -2272,9 +2363,10 @@ export default function StudioApp() {
           commitError = "Review the current assembled draft first.";
           return current;
         }
-        const result = approveGeneratedDraft({ draft: current.draft, assets: current.assets, segments: draftReviewLiveRef.current.segments, review, approvedAt, approvalEvidenceSha256ById });
+        const evaluatedAssets = withCurrentReferenceIdentity(current.assets, draftReviewLiveRef.current.project.musicVideoProject?.currentIdentity);
+        const result = approveGeneratedDraft({ draft: current.draft, assets: evaluatedAssets, segments: draftReviewLiveRef.current.segments, review, approvedAt, approvalEvidenceSha256ById });
         commitError = result.error;
-        return result.error ? current : { assets: result.assets, draft: result.draft };
+        return result.error ? current : { assets: stripCurrentReferenceIdentity(result.assets), draft: result.draft };
       }));
       if (commitError) throw new Error(commitError);
     }
@@ -2649,6 +2741,12 @@ export default function StudioApp() {
             ) : null}
 
             <main className={`studio-fade-in min-h-0 flex-1 space-y-3 overflow-y-auto ${monitorFocused || activeStageBlocked ? "hidden" : ""}`}>
+            {(tab === "story" || tab === "generate") && musicVideoProject
+              && (musicVideoProject.currentIdentity || (!isPlacementPlanCurrent(musicVideoProject) && generatedAssets.length > 0)) ?
+              <CurrentReferenceReviewPanel key={activeProjectId} migrated={Boolean(musicVideoProject.currentIdentity)}
+                assets={currentReferenceReviewAssets}
+                disabled={!activeProjectId || isFinalExporting || Boolean(previewState.activeRequestKey)}
+                onMigrate={adoptUpdatedReferences} onAssess={assessUpdatedReferences} /> : null}
             <ClipAudioSettings value={clipAudioSettings} sources={videoSources}
               disabled={isFinalExporting || isShaderCaptureExporting || Boolean(previewState.activeRequestKey)}
               onChange={value => { invalidateArrangementOutput(); setClipAudioSettings(value); }} />
