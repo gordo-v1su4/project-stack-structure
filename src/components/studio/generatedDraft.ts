@@ -14,6 +14,8 @@ export type GeneratedDraftSelection = {
   planSignature: string;
   revision: number;
   assetIds: string[];
+  sourceConfirmationSha256?: string;
+  sourceReviewRequired?: boolean;
 };
 
 /** Capture this when preparing the preview, and accept only that viewed preview. */
@@ -33,7 +35,10 @@ export function sanitizeGeneratedDraftSelection(value: unknown): GeneratedDraftS
   if (typeof draft.planSignature !== "string" || !draft.planSignature.trim()
     || !Number.isSafeInteger(draft.revision) || (draft.revision ?? -1) < 0
     || !Array.isArray(draft.assetIds) || !draft.assetIds.every(id => typeof id === "string" && id.trim())) return null;
-  return { planSignature: draft.planSignature, revision: draft.revision!, assetIds: [...new Set(draft.assetIds)] };
+  if (draft.sourceConfirmationSha256 !== undefined && !/^[a-f0-9]{64}$/.test(draft.sourceConfirmationSha256)) return null;
+  if (draft.sourceReviewRequired !== undefined && typeof draft.sourceReviewRequired !== "boolean") return null;
+  return { planSignature: draft.planSignature, revision: draft.revision!, assetIds: [...new Set(draft.assetIds)],
+    ...(draft.sourceConfirmationSha256 ? { sourceConfirmationSha256: draft.sourceConfirmationSha256, sourceReviewRequired: draft.sourceReviewRequired !== false } : {}) };
 }
 
 export function isGeneratedDraftCurrent(segments: EditPlanPreviewSegment[], draft: GeneratedDraftSelection | null | undefined): draft is GeneratedDraftSelection {
@@ -105,6 +110,8 @@ export function captureGeneratedDraftReview(
   const fingerprint = JSON.stringify({
     planSignature: draft.planSignature,
     revision: draft.revision,
+    sourceConfirmationSha256: draft.sourceConfirmationSha256,
+    sourceReviewRequired: draft.sourceReviewRequired,
     assetIds: draft.assetIds,
     candidates: selected.map(asset => ({
       id: asset.id, status: asset.status, reviewStatus: asset.reviewStatus, prompt: asset.prompt,
@@ -177,7 +184,7 @@ export function approveGeneratedDraft({ draft, assets, segments, review, approve
   // user chose an older generated take over a newer approved take.
   const approvals = new Map(draft.assetIds.map((id, index) => [id, new Date(approvalTime + index).toISOString()]));
   return {
-    draft: { ...draft, revision: draft.revision + 1, assetIds: [] },
+    draft: { ...draft, revision: draft.revision + 1, assetIds: [], ...(draft.sourceConfirmationSha256 ? { sourceReviewRequired: false } : {}) },
     assets: assets.map(asset => selected.has(asset.id) ? { ...asset, reviewStatus: "approved", approvedAt: approvals.get(asset.id),
       ...((asset.identityVerification?.issuedPolicy || asset.identityAssessmentId) ? { approvedIdentityEvidenceSha256: approvalEvidenceSha256ById![asset.id] } : {}) } : asset),
     error: null,

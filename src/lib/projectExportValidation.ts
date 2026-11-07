@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { validateSavedGenerationScope } from "./generationScopeServer";
 import { applyApprovedGeneratedAssets, buildGeneratedAssetPlaybackUrl, generatedAssetDraftIdentityBlockReason, type GeneratedStudioAsset } from "@/components/studio/generatedAssets";
 import { buildEditPlanPreviewSegments, isPlacementPlanCurrent } from "@/components/studio/musicVideoProject";
 import { hydrateStudioProjectDraft } from "@/components/studio/projectPersistence";
@@ -70,6 +71,13 @@ export async function reconcileProjectFinalExport(params: {
     throw new ProjectExportError("The accepted project snapshot changed. Save and review the current draft before exporting.");
   }
   const runtime = hydrateStudioProjectDraft({ draft });
+  let generationScope: string | undefined;
+  try { generationScope = await validateSavedGenerationScope(ownerId, saved); }
+  catch { throw new ProjectExportError("The canonical source confirmation changed. Review and confirm the current sources before exporting."); }
+  if (!generationScope || (project.generationScope && (draft.generatedDraft?.sourceReviewRequired !== false
+    || draft.generatedDraft.sourceConfirmationSha256 !== project.generationScope.sha256))) {
+    throw new ProjectExportError("Review and accept the assembled cut after confirming its appended sources.");
+  }
   const assets: GeneratedStudioAsset[] = [];
   const canonicalByKey = new Map<string, GeneratedStudioAsset>();
   const environmentOnlyNativeBounds = new Set<string>();
@@ -77,7 +85,7 @@ export async function reconcileProjectFinalExport(params: {
   for (const asset of runtime.generatedAssets) {
     if (asset.reviewStatus !== "approved") { assets.push(asset); continue; }
     // Approved history from another plan is retained in the project but cannot overlay this cut.
-    if (asset.target?.planSignature && asset.target.planSignature !== context.planSignature) continue;
+    if (asset.target?.planSignature && asset.target.planSignature !== generationScope) continue;
     const objectKey = asset.fullStorage?.objectKey ?? asset.fullStorage?.storagePath ?? "";
     const identity = h3ExportMediaIdentity(objectKey);
     const h3 = identity || asset.jobId?.startsWith("h3-") || /^h3-ref2va-/.test(asset.model);
@@ -89,7 +97,7 @@ export async function reconcileProjectFinalExport(params: {
     const job = await readH3Job(ownerId, context.projectId, jobId);
     let canonical = job?.result?.asset;
     if (!job || job.state !== "ready" || !canonical || canonical.id !== asset.id || canonical.reviewStatus === "rejected"
-      || job.target.planSignature !== context.planSignature || canonical.target?.planSignature !== context.planSignature) {
+      || job.target.planSignature !== generationScope || canonical.target?.planSignature !== generationScope) {
       throw new ProjectExportError("An approved generated take no longer matches its canonical ready job.");
     }
     if (asset.identityAssessmentId) {
@@ -220,5 +228,6 @@ export async function reconcileProjectFinalExport(params: {
   }
   if (!near(songCursor, project.duration)) throw new ProjectExportError("The accepted cut does not cover the full master song.");
   return { audio, videos, segments, projectSnapshot: { ownerId, projectId: context.projectId, planSignature: context.planSignature,
-    placementRevision: context.placementRevision, draftRevision: context.draftRevision, acceptedSnapshotSha256: finalExportSnapshotSha256(draft), h3: receipts } };
+    placementRevision: context.placementRevision, draftRevision: context.draftRevision, acceptedSnapshotSha256: finalExportSnapshotSha256(draft), h3: receipts,
+    ...(project.generationScope ? { generationScope: { signature: generationScope, receiptSha256: project.generationScope.sha256 } } : {}) } };
 }

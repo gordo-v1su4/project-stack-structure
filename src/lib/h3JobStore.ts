@@ -81,10 +81,10 @@ async function verifyFullReferenceBody(body: NonNullable<GetObjectCommandOutput[
 }
 
 /** Pin the actual stored bytes, rather than assuming a filename can never be overwritten. */
-export async function pinH3JobReferences(job: H3GenerationJob): Promise<H3GenerationJob> {
+export async function pinH3ReferenceSnapshots(snapshots: H3ReferenceSnapshot[]): Promise<H3ReferenceSnapshot[]> {
   const { client, bucket } = storage();
   const references: H3ReferenceSnapshot[] = [];
-  for (const reference of job.references) {
+  for (const reference of snapshots) {
     if (reference.bucket !== bucket) throw new H3RequestError("Reference bucket changed.", 403);
     // Signed HEAD is rejected here, and gateway HEAD redirects to object storage.
     // A signed one-byte GET pins authoritative metadata without following redirects.
@@ -130,6 +130,11 @@ export async function pinH3JobReferences(job: H3GenerationJob): Promise<H3Genera
     references.push({ ...reference, etag,
       version: createHash("sha256").update(JSON.stringify([reference.version, etag])).digest("hex") });
   }
+  return references;
+}
+
+export async function pinH3JobReferences(job: H3GenerationJob): Promise<H3GenerationJob> {
+  const references = await pinH3ReferenceSnapshots(job.references);
   return { ...job, references, id: h3GenerationJobId(job.ownerId, job.request, references, {
     profile: job.profile, conditioningPreparationVersion: job.conditioningPreparationVersion, ...(job.firstFrame ? { firstFrame: job.firstFrame } : {}),
   }) };

@@ -12,6 +12,7 @@ import { downloadMediaGatewayFile, getMediaGatewayConfig, uploadFileToMediaGatew
 import { normalizeStudioOwnerSegment } from "./studioStoragePaths";
 import { readStudioProject } from "./studioProjectStore";
 import { materializeH3Job } from "./h3GenerationServer";
+import { validateSavedGenerationScope } from "./generationScopeServer";
 import { downloadH3ReferenceImage, pinH3JobReferences, readH3Job, updateH3Job } from "./h3JobStore";
 import { buildH3Workflow } from "./h3Workflow";
 import { assessH3Identity, type H3IdentityDiagnostic } from "./h3IdentityVerification";
@@ -169,6 +170,7 @@ export async function runH3Generation(reference: H3JobReference, runId: string,
     const config = getMediaGatewayConfig();
     if (!saved || !config) throw new Error("The saved project is unavailable.");
     if (!job.promptId && job.state !== "submitting" && job.state !== "submission_unknown" && !cancellationRequested(job)) {
+      await validateSavedGenerationScope(ownerId, saved);
       const current = await pinH3JobReferences(materializeH3Job(ownerId, saved, job.request, config.bucket, {
         profile: job.profile, conditioningPreparationVersion: job.conditioningPreparationVersion, ...(job.firstFrame?{firstFrame:job.firstFrame}:{}),
       }));
