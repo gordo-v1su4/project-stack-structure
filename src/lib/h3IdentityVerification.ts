@@ -17,6 +17,20 @@ const execute = promisify(execFile);
 const sha256 = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 const MAX_REPORT_BYTES = 2 * 1024 * 1024;
 
+export type H3IdentityDiagnosticStage = "media-read" | "input-binding" | "policy-read" | "policy-binding"
+  | "reference-download" | "reference-hash" | "reference-write" | "policy-selection" | "input-write"
+  | "verifier-process" | "report-read" | "report-parse" | "report-validation" | "proof-binding";
+export type H3IdentityDiagnostic = {
+  version: 1;
+  stage: H3IdentityDiagnosticStage;
+  outcome: "started" | "failed" | "completed";
+  code: "stage-started" | "evidence-bound" | `${H3IdentityDiagnosticStage}-failed`;
+  referenceIndex?: number;
+  storageHttpStatus?: number;
+  processFailure?: "timeout" | "nonzero-exit" | "spawn-failed" | "unclassified";
+};
+
+
 export type H3IdentityInput = {
   version: 1;
   assetId: string;
@@ -63,22 +77,34 @@ export async function assessH3Identity(params: {
   tempFolder: string;
   runVerifier?: (inputPath: string, outputPath: string) => Promise<void>;
   pinnedDraftPolicy?: { id: string; sha256: string };
+  diagnostic?: (event: H3IdentityDiagnostic) => void;
 }): Promise<GeneratedStudioAsset> {
   const { job, outputPath, tempFolder } = params;
-  const asset: GeneratedStudioAsset = { ...params.asset, mediaSha256: sha256(await readFile(outputPath)),
+  const asset: GeneratedStudioAsset = { ...params.asset, mediaSha256: undefined,
     mediaFrameCount: job.frames, mediaFrameRate: H3_FPS, generationReferenceHashes: [...(job.referenceHashes ?? [])],
     identityReferenceHashes: job.references.flatMap((ref, index) => ref.role === "identity" && job.referenceHashes?.[index] ? [job.referenceHashes[index]] : []),
     identityVerification: undefined };
   if(job.firstFrame&&job.firstFrameAssessment)asset.firstFrame={artifact:job.firstFrame,assessment:job.firstFrameAssessment};
+  let stage: H3IdentityDiagnosticStage = "media-read", referenceIndex: number | undefined;
+  const emit = (event: H3IdentityDiagnostic) => { try { params.diagnostic?.(event); } catch { /* Observability cannot change identity eligibility. */ } };
+  const advance = (next: H3IdentityDiagnosticStage, index?: number) => {
+    stage = next; referenceIndex = index;
+    emit({ version: 1, stage, outcome: "started", code: "stage-started", ...(referenceIndex !== undefined ? { referenceIndex } : {}) });
+  };
   try {
+    advance("media-read");
+    asset.mediaSha256 = sha256(await readFile(outputPath));
+    advance("input-binding");
     if (!job.frames || !asset.durationSeconds || job.referenceHashes?.length !== job.references.length) {
       throw new Error("Reference hashes or the media probe are incomplete.");
     }
     let issuedPolicy: H3PublicIssuedDraftPolicy | undefined;
     if (job.request.identityPolicyFamily) {
+      advance("policy-read");
       if (!job.identityPolicy) throw new Error("This job has no canonical issued identity policy.");
       const policy = await readIssuedH3DraftPolicy(job.ownerId, job.projectId, job.identityPolicy);
       if (!policy) throw new Error("The issued identity policy is unavailable.");
+      advance("policy-binding");
       assertIssuedH3DraftPolicyMatchesJob(policy, job, job.referenceHashes);
       const { issuedAt: _issuedAt, ...publicPolicy } = policy;
       void _issuedAt;
@@ -87,11 +113,14 @@ export async function assessH3Identity(params: {
     const references: H3IdentityInput["references"] = [];
     for (let index = 0; index < job.references.length; index++) {
       const ref = job.references[index];
+      advance("reference-download", index);
       const media = await downloadH3ReferenceImage(ref);
       const bytes = new Uint8Array(media.bytes);
+      advance("reference-hash", index);
       const hash = sha256(bytes);
       if (hash !== job.referenceHashes[index]) throw new Error("The rendered reference bytes changed.");
       const localPath = path.join(tempFolder, `identity-reference-${index}`);
+      advance("reference-write", index);
       await writeFile(localPath, bytes);
       const gallery = issuedPolicy
         ? issuedPolicy.body.galleries.find(gallery => gallery.referenceAssetId === ref.assetId)
@@ -99,6 +128,7 @@ export async function assessH3Identity(params: {
       references.push({ path: localPath, hash, canonicalName: ref.canonicalName, role: ref.role,
         ...(gallery ? { faceRegions: gallery.faceRegions } : {}) });
     }
+    advance("policy-selection");
     const trimStart = asset.trimStart ?? 0;
     const trimDuration = job.request.songEnd - job.request.songStart;
     const draftFilter = issuedPolicy ?? (params.pinnedDraftPolicy ? resolveH3DraftSimilarityPolicy(params.pinnedDraftPolicy.id,params.pinnedDraftPolicy.sha256) : undefined) ?? resolveH3DraftSimilarityPolicyForInputs({ projectId: job.projectId, generationModel: job.profile,
@@ -115,12 +145,19 @@ export async function assessH3Identity(params: {
       generationReferenceHashes: asset.generationReferenceHashes!, identityReferenceHashes: asset.identityReferenceHashes!, references };
     const inputPath = path.join(tempFolder, "identity-input.json");
     const outputReport = path.join(tempFolder, "identity-report.json");
+    advance("input-write");
     await writeFile(inputPath, JSON.stringify(input));
+    advance("verifier-process");
     await (params.runVerifier ?? executeVerifier)(inputPath, outputReport);
+    advance("report-read");
     if ((await stat(outputReport)).size > MAX_REPORT_BYTES) throw new Error("Identity report exceeded its bound.");
-    const rawReport = JSON.parse(await readFile(outputReport, "utf8"));
+    const reportBytes = await readFile(outputReport, "utf8");
+    advance("report-parse");
+    const rawReport = JSON.parse(reportBytes);
+    advance("report-validation");
     const proof = normalizeGeneratedAssetIdentityVerification({ ...rawReport, ...(issuedPolicy ? { issuedPolicy } : {}) });
     if (!proof) throw new Error("Identity report was malformed.");
+    advance("proof-binding");
     if (proof.assetId !== asset.id || proof.jobId !== job.id || proof.generationModel !== job.profile
       || proof.mediaSha256 !== asset.mediaSha256 || proof.frameCount !== job.frames || proof.durationSeconds !== asset.durationSeconds
       || proof.frameRate !== input.fps || proof.verifiedStartFrame !== input.verifiedStartFrame
@@ -137,11 +174,21 @@ export async function assessH3Identity(params: {
     // A model's claimed pass must also satisfy the shared binding/coverage contract.
     if ((proof.status === "passed" || proof.status === "not_required") && block) throw new Error("Identity report did not match this take.");
     const draftBlock = generatedAssetDraftIdentityBlockReason(assessed);
+    emit({ version: 1, stage, outcome: "completed", code: "evidence-bound" });
     return { ...assessed, reviewStatus: proof.status === "rejected" ? "rejected" : asset.reviewStatus,
       reviewNotes: draftBlock ? `${draftBlock}. ${proof.reason ?? "The take is outside the draft until similarity can be checked."}`
         : proof.draftSimilarityFilter?.status === "eligible"
           ? ["Similarity filter passed · review required", ...proof.draftSimilarityFilter.warnings].join(". ") : asset.reviewNotes };
-  } catch {
+  } catch (error) {
+    const httpStatus = (error as { $metadata?: { httpStatusCode?: unknown } })?.$metadata?.httpStatusCode;
+    const processError = error as { killed?: boolean; code?: unknown; signal?: unknown };
+    emit({ version: 1, stage, outcome: "failed", code: `${stage}-failed`,
+      ...(referenceIndex !== undefined ? { referenceIndex } : {}),
+      ...(typeof httpStatus === "number" && Number.isInteger(httpStatus) && httpStatus >= 100 && httpStatus <= 599 ? { storageHttpStatus: httpStatus } : {}),
+      ...((stage as H3IdentityDiagnosticStage) === "verifier-process" ? { processFailure: processError?.killed || processError?.code === "ETIMEDOUT" ? "timeout" as const
+        : typeof processError?.code === "number" ? "nonzero-exit" as const
+          : typeof processError?.code === "string" && ["ENOENT", "EACCES", "ENOEXEC"].includes(processError.code) ? "spawn-failed" as const : "unclassified" as const } : {}),
+    });
     // Do not retry inference because an optional post-render verifier failed.
     return { ...asset, identityVerification: undefined,
       reviewNotes: "Identity verifier unavailable or its evidence did not match. This take is outside the draft." };

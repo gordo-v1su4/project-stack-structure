@@ -61,6 +61,15 @@ export const localGenerationTask = task({
       const result = await runH3Generation(payload.h3Job, ctx.run.id, {
         wait: seconds => wait.for({ seconds }),
         stage: label => markWorkRunning("generating", label, { progressMode: "provider" }),
+        identityDiagnostic: event => {
+          // Fixed codes and numeric indices only. No raw errors, private URLs, paths or embeddings.
+          const values = { identityVerifierStage: event.stage, identityVerifierOutcome: event.outcome, identityVerifierCode: event.code,
+            ...(event.referenceIndex !== undefined ? { identityReferenceIndex: event.referenceIndex } : {}),
+            ...(event.storageHttpStatus !== undefined ? { identityStorageHttpStatus: event.storageHttpStatus } : {}),
+            ...(event.processFailure ? { identityProcessFailure: event.processFailure } : {}) };
+          logger.info("H3 identity verifier boundary", { triggerRunId: ctx.run.id, version: event.version, ...values });
+          markWorkRunning("identity-verification", event.outcome === "failed" ? "Similarity verifier could not establish bound evidence" : "Checking the shot with the deterministic face verifier", values);
+        },
         timeoutSeconds: Math.max(30, Math.min(payload.timeoutSeconds ?? 1500, 1700)),
       });
       markWorkCompleted(payload.h3Job.mode === "identity-recheck" ? "Shot similarity measurements updated" : "H3 shot persisted for draft review", { completedItems: 1, totalItems: 1 });

@@ -1,6 +1,6 @@
 # Project Stack Structure
 
-Web studio for music videos: upload a song and your clips, get a beat-aligned rough cut, optionally fill gaps with AI shots, then preview and export.
+Web studio for music videos: provide a master song, creative direction and named references, build a beat-aligned story, generate missing shots, then review and export. Uploaded footage, stems and timed lyrics are optional.
 
 ![Project Stack Structure footage and music timeline](docs/images/project-stack-workspace.png)
 
@@ -18,13 +18,12 @@ Web studio for music videos: upload a song and your clips, get a beat-aligned ro
 
 ## What it does
 
-1. **Analyze** the master track (beats, sections, waveform).
-2. **Ingest** clips (scene detection and vision captions).
-3. **Match** uploaded moments to story sections and lyrics, with motion continuity.
-4. **Generate** filler shots only where coverage is missing (optional).
-5. **Join** approved clips into section previews and export.
+1. **Setup:** analyze the master track and add named character/location references; ingest footage when available.
+2. **Story:** review and confirm the narrative and timed shot requirements.
+3. **Draft:** reuse suitable footage, generate missing shots through local MiniMax H3 and managed SwarmUI, and review or revise the assembled cut.
+4. **Finish:** approve the exact reviewed selection, prepare whole-song playback, export and download.
 
-Upload-first: real footage drives the edit. AI generation is a gap-fill lane, not a replacement.
+Split, Match, Join and effects remain detailed tools inside this journey. A zero-footage entry is supported; final export requires complete approved coverage. The [completion workflow](workflows/finish-music-video.md) records the remaining live and creative acceptance gates. Generated singing lip-sync is deferred.
 
 ## Quick start
 

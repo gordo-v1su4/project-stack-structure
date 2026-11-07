@@ -7,11 +7,13 @@ import { h3IdentityAssessmentFixture } from "../helpers/h3IdentityAssessment";
 import { issuedProofFixture } from "../helpers/issuedIdentityPolicy";
 import { buildH3IdentityAssessmentScope, type H3IdentityAssessment } from "@/components/studio/h3IdentityAssessment";
 import type { H3IssuedDraftPolicy } from "@/components/studio/issuedIdentityPolicy";
+import type { H3IdentityDiagnostic } from "@/lib/h3IdentityVerification";
 
 const fixture = h3ProjectFixture();
 const bytes = new Uint8Array([1, 2, 3]);
 let job: H3GenerationJob, measured = 0, downloads = 0, changedBytes = false;
 let rangePolicy: H3IssuedDraftPolicy | undefined;
+let verifierUnavailable = false;
 const assessments = new Map<string,H3IdentityAssessment>();
 mock.module("@/lib/h3IdentityAssessmentStore", () => ({ readH3IdentityAssessment: async (_o: string,_p: string,_j: string,id: string) => assessments.get(id) ?? null,
   writeH3IdentityAssessment: async (record: H3IdentityAssessment) => { if (!assessments.has(record.scope.id)) assessments.set(record.scope.id,record); return assessments.get(record.scope.id)!; } }));
@@ -32,8 +34,12 @@ mock.module("@/lib/mediaGateway", () => ({
 }));
 mock.module("@/components/studio/mediaProbe", () => ({ probeMediaFile: async () => ({ duration: 124 / 24,
   primaryVideoStream: { codecName: "h264", width: 1344, height: 768, frameRate: 24 } }) }));
-mock.module("@/lib/h3IdentityVerification", () => ({ assessH3Identity: async ({ asset,pinnedDraftPolicy }: { asset: import("@/components/studio/generatedAssets").GeneratedStudioAsset; pinnedDraftPolicy?: {id:string;sha256:string} }) => {
+mock.module("@/lib/h3IdentityVerification", () => ({ assessH3Identity: async ({ asset,pinnedDraftPolicy,diagnostic }: { asset: import("@/components/studio/generatedAssets").GeneratedStudioAsset; pinnedDraftPolicy?: {id:string;sha256:string}; diagnostic?: (event: H3IdentityDiagnostic) => void }) => {
   measured++;
+  if (verifierUnavailable) {
+    diagnostic?.({ version: 1, stage: "reference-download", outcome: "failed", code: "reference-download-failed", referenceIndex: 1, storageHttpStatus: 403 });
+    return { ...asset, identityVerification: undefined };
+  }
   if (rangePolicy) {
     expect(pinnedDraftPolicy).toEqual({ id: rangePolicy.id,sha256: rangePolicy.sha256 });
     return { ...asset, identityVerification: issuedProofFixture(job,asset,rangePolicy) };
@@ -53,11 +59,19 @@ function setup() {
       publicUrl: "https://media.example/shot.mp4", mime: "video/mp4" }, resultUrl: "https://media.example/shot.mp4" } };
   fixture.saved.draft.generatedAssets = [];
   measured = 0; downloads = 0; changedBytes = false;
-  rangePolicy = undefined; assessments.clear();
+  rangePolicy = undefined; verifierUnavailable = false; assessments.clear();
   globalThis.fetch = (async () => { throw new Error("A CPU recheck must never call a generation provider."); }) as typeof fetch;
 }
 const options = { wait: async () => { throw new Error("No generation wait is permitted."); }, stage: () => {} };
 describe("CPU-only identity reassessment", () => {
+  test("a private fixed diagnostic survives a failed range check while original proof stays immutable", async () => {
+    setup(); const f = h3IdentityAssessmentFixture(createHash("sha256").update(bytes).digest("hex")); job = f.job; rangePolicy = f.policy; verifierUnavailable = true;
+    const before = JSON.stringify(job), diagnostics: H3IdentityDiagnostic[] = [];
+    await expect(runH3Generation({ ownerId: job.ownerId, projectId: job.projectId, jobId: job.id, mode: "identity-recheck", assessment: f.scope }, "cpu-diagnostic-run",
+      { ...options, identityDiagnostic: event => diagnostics.push(event) })).rejects.toThrow("could not establish bound evidence");
+    expect(diagnostics).toEqual([{ version: 1, stage: "reference-download", outcome: "failed", code: "reference-download-failed", referenceIndex: 1, storageHttpStatus: 403 }]);
+    expect(JSON.stringify(job)).toBe(before); expect(assessments.get(f.scope.id)!.status).toBe("failed"); expect(measured).toBe(1);
+  });
   test("an exact range appends evidence, preserves the original failed proof and replays without another decode", async () => {
     setup(); const f = h3IdentityAssessmentFixture(createHash("sha256").update(bytes).digest("hex")); job = f.job; rangePolicy = f.policy;
     const before = JSON.stringify(job), reference = { ownerId:job.ownerId,projectId:job.projectId,jobId:job.id,mode:"identity-recheck" as const,assessment:f.scope };

@@ -37,7 +37,8 @@ function key(ownerId: string, projectId: string, jobId: string) {
 }
 
 function status(error: unknown) {
-  return (error as { $metadata?: { httpStatusCode?: number } })?.$metadata?.httpStatusCode;
+  const code = (error as { $metadata?: { httpStatusCode?: unknown } })?.$metadata?.httpStatusCode;
+  return typeof code === "number" && Number.isInteger(code) && code >= 100 && code <= 599 ? code : undefined;
 }
 
 const MAX_REFERENCE_BYTES = 32 * 1024 * 1024;
@@ -48,8 +49,8 @@ function referenceLookupError(error: unknown, fullComparison = false) {
   const providerCode = ["AccessDenied", "SignatureDoesNotMatch", "InvalidAccessKeyId", "RequestTimeTooSkewed", "NoSuchKey",
     "ExpiredToken", "InvalidToken", "PermanentRedirect", "AuthorizationHeaderMalformed"].includes(name) ? `, ${name}` : "";
   const boundary = fullComparison ? "Reference metadata full GET after ranged signature rejection" : "Reference metadata lookup";
-  return new H3RequestError(httpStatus ? `${boundary} failed (storage HTTP ${httpStatus}${providerCode}).`
-    : `${boundary} could not reach durable storage.`, 503);
+  return Object.assign(new H3RequestError(httpStatus ? `${boundary} failed (storage HTTP ${httpStatus}${providerCode}).`
+    : `${boundary} could not reach durable storage.`, 503), httpStatus ? { $metadata: { httpStatusCode: httpStatus } } : {});
 }
 
 function closeReferenceBody(body: GetObjectCommandOutput["Body"]) {
@@ -137,10 +138,27 @@ export async function pinH3JobReferences(job: H3GenerationJob): Promise<H3Genera
 export async function downloadH3ReferenceImage(reference: H3ReferenceSnapshot) {
   const { client, bucket } = storage();
   if (reference.bucket !== bucket || !reference.etag) throw new Error("The immutable reference version is unavailable.");
-  const response = await client.send(new GetObjectCommand({ Bucket: bucket, Key: reference.objectKey, IfMatch: reference.etag }), { abortSignal: AbortSignal.timeout(120_000) });
+  let response: GetObjectCommandOutput | undefined;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      response = await client.send(new GetObjectCommand({ Bucket: bucket, Key: reference.objectKey, IfMatch: reference.etag }), { abortSignal: AbortSignal.timeout(120_000) });
+      break;
+    } catch (error) {
+      // Retry only this transport rejection; every attempt keeps the same signed conditional read.
+      // A 412, unrelated 403, or changed bytes must never become an unconditional GET.
+      if (attempt !== 0 || status(error) !== 403 || !(error instanceof Error) || error.name !== "SignatureDoesNotMatch") throw referenceLookupError(error);
+      console.info("[H3 references] Retrying the same conditional GET after storage HTTP 403 SignatureDoesNotMatch.");
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+  }
+  if (!response || response.ETag !== reference.etag) {
+    closeReferenceBody(response?.Body);
+    throw new Error("The immutable reference response version changed.");
+  }
   if (!response.ContentLength || response.ContentLength > 32 * 1024 * 1024) throw new Error("The reference exceeds the supported image size.");
   const bytes = await response.Body!.transformToByteArray();
-  return { bytes: new Uint8Array(bytes).buffer, mime: response.ContentType?.split(";")[0]?.trim() ?? "" };
+  if (bytes.byteLength !== response.ContentLength || bytes.byteLength > MAX_REFERENCE_BYTES) throw new Error("The immutable reference response was incomplete or exceeded its bound.");
+  return { bytes: new Uint8Array(bytes).buffer, mime: response.ContentType?.split(";")[0]?.trim() ?? "", etag: response.ETag };
 }
 
 async function readVersion(ownerId: string, projectId: string, jobId: string) {

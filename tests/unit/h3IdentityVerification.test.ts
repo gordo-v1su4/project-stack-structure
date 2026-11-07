@@ -10,10 +10,15 @@ import type { GeneratedAssetIdentityVerification } from "@/components/studio/gen
 import type { H3GenerationJob } from "@/components/studio/h3Generation";
 import { materializeH3Job } from "@/lib/h3GenerationServer";
 import { h3ProjectFixture } from "../helpers/h3Project";
+import type { H3IdentityDiagnostic } from "@/lib/h3IdentityVerification";
 
 const referenceBytes = new Uint8Array([1, 2, 3]);
 const referenceHash = createHash("sha256").update(referenceBytes).digest("hex");
-mock.module("@/lib/h3JobStore", () => ({ downloadH3ReferenceImage: async () => ({ bytes: referenceBytes.buffer, mime: "image/png" }) }));
+let referenceError: Error | undefined;
+mock.module("@/lib/h3JobStore", () => ({ downloadH3ReferenceImage: async () => {
+  if (referenceError) throw referenceError;
+  return { bytes: referenceBytes.buffer, mime: "image/png" };
+} }));
 let canonicalPolicy: H3IssuedDraftPolicy | undefined;
 const { assertIssuedH3DraftPolicyMatchesJob } = await import("@/lib/h3DraftPolicyStore");
 mock.module("@/lib/h3DraftPolicyStore", () => ({ assertIssuedH3DraftPolicyMatchesJob,
@@ -28,6 +33,7 @@ afterEach(async () => { for (const folder of folders.splice(0)) await rm(folder,
 
 async function setup() {
   canonicalPolicy = undefined;
+  referenceError = undefined;
   const fixture = h3ProjectFixture();
   const job: H3GenerationJob = materializeH3Job("github-test", fixture.saved, fixture.request, "studio");
   // One authority avoids duplicate byte hashes in this intentionally tiny fixture.
@@ -74,6 +80,45 @@ describe("H3 deterministic identity boundary", () => {
     job.identityPolicy = binding;
     return input;
   }
+  for (const failure of ["media-read", "policy-read", "reference-download", "reference-hash", "verifier-process", "report-read", "report-parse", "report-validation", "proof-binding"] as const) {
+    test(`classifies ${failure} failure without leaking private exception, process or report content`, async () => {
+      const input = failure === "policy-read" ? await issuedSetup() : await setup();
+      const secret = "PRIVATE_TEST_MARKER https://private.test/image?token=hidden /private/model embedding=[1,2,3]";
+      const events: H3IdentityDiagnostic[] = [];
+      let verifierCalls = 0;
+      if (failure === "media-read") await rm(input.outputPath);
+      if (failure === "policy-read") canonicalPolicy = undefined;
+      if (failure === "reference-download") referenceError = Object.assign(new Error(secret), { $metadata: { httpStatusCode: 403 } });
+      if (failure === "reference-hash") input.job.referenceHashes = ["b".repeat(64)];
+      const result = await assessH3Identity({ ...input, diagnostic: event => events.push(event), runVerifier: async (a, b) => {
+        verifierCalls++;
+        if (failure === "verifier-process") throw Object.assign(new Error(secret), { code: "ENOENT", stdout: secret, stderr: secret });
+        if (failure === "report-read") return;
+        if (failure === "report-parse") { await writeFile(b, secret); return; }
+        if (failure === "report-validation") { await writeFile(b, JSON.stringify({ secret })); return; }
+        await report(a, b, proof => { if (failure === "proof-binding") proof.mediaSha256 = "c".repeat(64); });
+      } });
+      expect(result.identityVerification).toBe(undefined);
+      expect(result.reviewStatus).toBe("pending");
+      const failed = events.filter(event => event.outcome === "failed");
+      expect(failed.length).toBe(1); expect(failed[0].stage).toBe(failure); expect(failed[0].code).toBe(`${failure}-failed`);
+      if (failure.startsWith("reference-")) expect(failed[0].referenceIndex).toBe(0);
+      if (failure === "verifier-process") expect(failed[0].processFailure).toBe("spawn-failed");
+      if (["media-read", "policy-read", "reference-download", "reference-hash"].includes(failure)) expect(verifierCalls).toBe(0);
+      const visible = JSON.stringify({ events, notes: result.reviewNotes });
+      expect(visible.includes("PRIVATE_TEST_MARKER")).toBe(false);
+      expect(visible.includes("private.test")).toBe(false);
+      expect(visible.includes("embedding")).toBe(false);
+      expect(visible.includes(input.tempFolder)).toBe(false);
+    });
+  }
+
+  test("diagnostic callback failures cannot alter numerical eligibility", async () => {
+    const input = await setup();
+    const result = await assessH3Identity({ ...input, runVerifier: report, diagnostic: () => { throw new Error("logging unavailable"); } });
+    expect(result.identityVerification?.status).toBe("passed");
+    expect(generatedAssetIdentityBlockReason(result)).toBeNull();
+  });
   test("passes canonical issued gallery and owner context to CPU without declaring verified identity", async () => {
     const input = await issuedSetup();
     const result = await assessH3Identity({ ...input, runVerifier: async (inputPath, outputPath) => {

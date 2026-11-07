@@ -10,6 +10,8 @@ let metadataError: Error | undefined;
 let fullMetadataOverride: Record<string, unknown> = {};
 let fullMetadataError: Error | undefined;
 let imageReads: Record<string, unknown>[] = [];
+let conditionalImageErrors: Error[] = [];
+let responseEtagOverride: string | undefined;
 const originalFetch = globalThis.fetch;
 const names = ["RUSTFS_S3_ENDPOINT", "RUSTFS_ACCESS_KEY", "RUSTFS_SECRET_KEY"] as const;
 const previous = Object.fromEntries(names.map(name => [name, process.env[name]]));
@@ -35,8 +37,9 @@ class S3Client {
           return { ETag: sourceEtag, ContentType: "image/png", ContentLength: 3, $metadata: { httpStatusCode: 200 },
             Body: { async *[Symbol.asyncIterator]() { yield new Uint8Array([1, 2]); yield new Uint8Array([3]); } }, ...fullMetadataOverride };
         }
+        if (conditionalImageErrors.length) throw conditionalImageErrors.shift()!;
         if (input.IfMatch !== sourceEtag) throw failure(412);
-        return { ContentType: "image/png", ContentLength: 3, Body: { transformToByteArray: async () => new Uint8Array([1, 2, 3]) } };
+        return { ETag: responseEtagOverride ?? sourceEtag, ContentType: "image/png", ContentLength: 3, Body: { transformToByteArray: async () => new Uint8Array([1, 2, 3]) } };
       }
       const current = objects.get(key);
       if (!current) throw failure(404);
@@ -60,7 +63,7 @@ const { createH3Job, readH3Job, updateH3Job, listH3Jobs, pinH3JobReferences, dow
 function setup() {
   objects.clear(); serial = 0; conditionalFailures = 0; sourceEtag = "image-version-1";
   metadataOverride = {}; metadataError = undefined;
-  fullMetadataOverride = {}; fullMetadataError = undefined; imageReads = [];
+  fullMetadataOverride = {}; fullMetadataError = undefined; imageReads = []; conditionalImageErrors = []; responseEtagOverride = undefined;
   process.env.RUSTFS_S3_ENDPOINT = "https://storage.example";
   process.env.RUSTFS_ACCESS_KEY = "test-only-access";
   process.env.RUSTFS_SECRET_KEY = "test-only-secret";
@@ -71,6 +74,34 @@ function setup() {
 afterEach(() => { globalThis.fetch = originalFetch; for (const name of names) { if (previous[name] === undefined) delete process.env[name]; else process.env[name] = previous[name]; } });
 
 describe("conditional durable H3 job records", () => {
+  test("retries one signature rejection with the same pinned signed conditional GET", async () => {
+    const job = setup(), pinned = await pinH3JobReferences(job); imageReads = [];
+    conditionalImageErrors = [Object.assign(failure(403), { name: "SignatureDoesNotMatch" })];
+    expect((await downloadH3ReferenceImage(pinned.references[0])).bytes.byteLength).toBe(3);
+    expect(imageReads.length).toBe(2);
+    expect(imageReads.every(input => input.IfMatch === pinned.references[0].etag && input.Key === pinned.references[0].objectKey && !input.Range)).toBe(true);
+  });
+
+  test("signature rejection retries are bounded and never become an unconditional GET", async () => {
+    const job = setup(), pinned = await pinH3JobReferences(job); imageReads = [];
+    conditionalImageErrors = Array.from({ length: 3 }, () => Object.assign(failure(403), { name: "SignatureDoesNotMatch" }));
+    await expect(downloadH3ReferenceImage(pinned.references[0])).rejects.toThrow("storage HTTP 403");
+    expect(imageReads.length).toBe(2); expect(conditionalImageErrors.length).toBe(1);
+    expect(imageReads.every(input => input.IfMatch === pinned.references[0].etag)).toBe(true);
+  });
+
+  for (const code of [403, 404, 412, 500]) test(`does not retry unrelated storage HTTP ${code}`, async () => {
+    const job = setup(), pinned = await pinH3JobReferences(job); imageReads = [];
+    conditionalImageErrors = [Object.assign(failure(code), { name: code === 403 ? "AccessDenied" : "Other" })];
+    await expect(downloadH3ReferenceImage(pinned.references[0])).rejects.toThrow(`storage HTTP ${code}`);
+    expect(imageReads.length).toBe(1);
+  });
+
+  test("a response ETag mismatch fails closed without a retry", async () => {
+    const job = setup(), pinned = await pinH3JobReferences(job); imageReads = []; responseEtagOverride = "changed-version";
+    await expect(downloadH3ReferenceImage(pinned.references[0])).rejects.toThrow("response version changed");
+    expect(imageReads.length).toBe(1);
+  });
   test("identical transport replay cannot reset a rendering job to queued", async () => {
     const job = setup();
     await createH3Job(job);

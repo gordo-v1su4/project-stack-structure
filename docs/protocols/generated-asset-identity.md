@@ -35,3 +35,26 @@ select an existing rejected asset ID. Draft review fingerprints include identity
 evidence and media bindings for selected candidates and approved replacements;
 changing them requires another prepared review. No existing rejected pilot is
 reclassified by this contract.
+
+## Private verifier diagnostics and conditional reference reads
+
+Verifier failures retain fixed boundary codes in the private Trigger log and stage
+metadata: media read, input binding, policy read/binding, reference download/hash/write,
+policy selection, input write, verifier process, report read/parse/validation and
+proof binding. Diagnostics contain enum values, a numeric reference index, an optional
+bounded HTTP status and a fixed process-failure class. Never include raw exceptions,
+subprocess stdout/stderr, credentials, private URLs/paths, report bodies or embeddings.
+A diagnostic failure cannot change numerical eligibility or trigger another render.
+
+Reference reads retain the exact pinned `IfMatch` on every S3 GET and require the
+returned ETag to match. Only storage HTTP 403 `SignatureDoesNotMatch` permits one
+bounded retry of that same conditional GET. A 412, unrelated authorization failure,
+response ETag mismatch or reference-byte hash mismatch remains a failure, with no
+unconditional GET fallback and no automatic assessment/generation retry.
+
+The P20 prerequisite incident was intermittent: the initial environment-reference
+read failed with a missing-signed-header message; later actual SDK reads sent and
+signed the exact header and returned both canonical reference hashes. This evidence
+does not establish a persistent missing-header bug or a numerical 19/19 rejection.
+Historical failed assessment records remain immutable. A new worker release and an
+explicitly authorized new exact-range assessment remain separate acceptance steps.

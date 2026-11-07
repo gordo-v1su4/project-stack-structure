@@ -14,7 +14,7 @@ import { readStudioProject } from "./studioProjectStore";
 import { materializeH3Job } from "./h3GenerationServer";
 import { downloadH3ReferenceImage, pinH3JobReferences, readH3Job, updateH3Job } from "./h3JobStore";
 import { buildH3Workflow } from "./h3Workflow";
-import { assessH3Identity } from "./h3IdentityVerification";
+import { assessH3Identity, type H3IdentityDiagnostic } from "./h3IdentityVerification";
 import { planH3ReferenceConditioning } from "./h3ReferenceConditioning";
 import { prepareH3IdentityPolicy, type PreparedH3PolicyReference } from "./h3DraftPolicyPreparation";
 import { canonicalIdentityPolicyJson, identityPolicySha256 } from "@/components/studio/issuedIdentityPolicy";
@@ -133,7 +133,8 @@ function completedOutput(job: H3GenerationJob): LocalGenerationOutput {
 }
 
 export async function runH3Generation(reference: H3JobReference, runId: string,
-  options: { wait: (seconds: number) => Promise<unknown>; stage: (label: string) => void; timeoutSeconds?: number }) {
+  options: { wait: (seconds: number) => Promise<unknown>; stage: (label: string) => void; timeoutSeconds?: number;
+    identityDiagnostic?: (event: H3IdentityDiagnostic) => void }) {
   if (reference.mode === "identity-recheck") return recheckH3Identity(reference, options);
   const { ownerId, projectId, jobId } = reference;
   const storedJob = await readH3Job(ownerId, projectId, jobId);
@@ -303,7 +304,7 @@ export async function runH3Generation(reference: H3JobReference, runId: string,
       resultUrl: storage.mediaUrl || storage.publicUrl, fullStorage: storage, trimStart: 0,
       reviewStatus: "pending" as const, target: job.target, triggerRunId: runId };
     options.stage("Checking likeness with the deterministic face verifier");
-    const asset = await assessH3Identity({ job, asset: pendingAsset, outputPath, tempFolder: temp });
+    const asset = await assessH3Identity({ job, asset: pendingAsset, outputPath, tempFolder: temp, diagnostic: options.identityDiagnostic });
     job = await updateH3Job(ownerId, projectId, jobId, current => {
       if (cancellationRequested(current) || current.state === "cancelled") return { ...current, state: "cancelled" };
       return { ...current, state: "ready", result: { asset }, error: undefined };
@@ -327,7 +328,8 @@ export async function runH3Generation(reference: H3JobReference, runId: string,
 }
 
 /** Reassess immutable stored pixels on CPU; never contact Swarm or submit another render. */
-export async function recheckH3Identity(reference: H3JobReference, options: { stage: (label: string) => void }) {
+export async function recheckH3Identity(reference: H3JobReference, options: { stage: (label: string) => void;
+  identityDiagnostic?: (event: H3IdentityDiagnostic) => void }) {
   const { ownerId, projectId, jobId } = reference;
   const job = await readH3Job(ownerId, projectId, jobId);
   const saved = await readStudioProject(ownerId, projectId, { fresh: true });
@@ -361,6 +363,7 @@ export async function recheckH3Identity(reference: H3JobReference, options: { st
     await writeFile(outputPath, new Uint8Array(media.bytes));
     validateH3VideoProbe(await probeMediaFile(outputPath), job.frames!, job.request.songEnd - job.request.songStart);
     const assessed = await assessH3Identity({ job, asset: assessment ? { ...asset, trimStart: assessment.trimStart } : asset, outputPath, tempFolder: folder,
+      diagnostic: options.identityDiagnostic,
       ...(assessment ? { pinnedDraftPolicy: { id: assessment.policyId, sha256: assessment.policySha256 } } : {}) });
     const latest = await readStudioProject(ownerId, projectId, { fresh: true });
     if (!latest || (latest.draft.generatedAssets ?? []).some(candidate => (candidate.id === asset.id || candidate.jobId === job.id)
