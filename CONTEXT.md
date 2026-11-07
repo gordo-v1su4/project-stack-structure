@@ -72,6 +72,11 @@ The master mix supplies duration, beats, onsets, and sections. Optional vocal-st
 
 Canonical in-memory project shape: **`MusicVideoProject`** (`src/components/studio/musicVideoProject.ts`).
 
+### Shot and style refs
+
+Original aesthetic examples stored in the project's separate `aestheticReferences` library. Shot examples guide camera framing, blocking and screen direction; style examples guide lighting, lens response, color and atmosphere. Neither supplies identity, wardrobe or location authority. Project/section/shot scope controls availability; each new shot explicitly selects its own examples. Unused examples do not change the source signature, canonical character galleries, current-reference migration or existing generation history. See the [shot/style reference plan](docs/plans/2026-11-07-shot-style-references.md).
+
+
 ### BeatJoinAnalysis
 
 Normalized audio analysis in the UI: beats, onsets, sections, waveform, duration. Name is legacy (“beat join”) but this is the standard type for “audio analysis” in components. Populated via `audioAnalysis.ts` and `/api/essentia/full`.
