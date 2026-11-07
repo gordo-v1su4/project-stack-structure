@@ -1,6 +1,7 @@
 import { h3FrameCount, H3_FPS, H3_WIDTH, H3_HEIGHT, type H3GenerationJob } from "@/components/studio/h3Generation";
 import type { ComfyWorkflow } from "@/components/studio/localGeneration";
 import { assertReferenceLanguage } from "@/components/studio/referenceLanguage";
+import { assertSafeAestheticGuidance } from "@/components/studio/aestheticReferences";
 import { h3StableSeed } from "./h3GenerationServer";
 import { assertH3ConditioningProfile } from "./h3ReferenceConditioning";
 import { H3_FIRST_FRAME_PROFILE } from "@/components/studio/h3FirstFrame";
@@ -35,6 +36,7 @@ export function assertH3ShotProfile(body: string, seconds: number) {
 
 /** Native single-shot grammar; reference numbering is generated from actual input order. */
 export function compileH3Prompt(job: H3GenerationJob) {
+  for (const ref of job.references) if (ref.aesthetic) assertSafeAestheticGuidance(ref.aesthetic.guidance);
   const direction = job.request.prompt.trim();
   assertReferenceLanguage(direction, job.references.filter(r => r.role === "identity").map(r => r.canonicalName));
   if (/\bthe (?:woman|man|girl|boy|guy|dancer|singer|figure|person)\b/i.test(direction)) {
