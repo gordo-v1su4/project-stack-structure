@@ -11,6 +11,7 @@ import { SourceVideoLibrary } from "../SourceVideoLibrary";
 import { IngestVocalStemLane } from "../IngestVocalStemLane";
 import { UploadControl } from "../UploadControl";
 import { ReferenceFileDropTarget } from "../ReferenceFileDropTarget";
+import { ReferenceSheetPreview } from "../ReferenceSheetPreview";
 import { Button, Kicker, StatusDot, TONE_TEXT, type StatusTone } from "../ui";
 import type { DeepgramTranscriptSummary } from "../deepgramUtils";
 import { REFERENCE_ASSET_SLOT_DETAILS, REFERENCE_ASSET_SLOT_LABELS, type ReferenceAsset, type ReferenceAssetKind, type ReferenceAssetLibraryRole, type ReferenceAssetRole } from "../referenceAssets";
@@ -594,10 +595,9 @@ function CrowdReferenceTray({
                     <article key={asset.id} className={`w-[220px] shrink-0 rounded-[2px] border bg-[#050505] p-2 ${failed ? "border-[#743029]" : ready ? "border-[#245c2c]" : "border-[#6e5522]"}`}>
                       <div className="relative aspect-video overflow-hidden rounded-[2px] border border-[#181818] bg-black">
                         {asset.previewUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={asset.previewUrl} alt={asset.displayName} className="h-full w-full object-contain" loading="lazy" decoding="async" />
+                          <ReferenceSheetPreview src={asset.previewUrl} name={asset.displayName || asset.fileName} />
                         ) : <div className="flex h-full items-center justify-center text-[8px] uppercase tracking-[0.12em] text-[#444]">No preview</div>}
-                        <span className="absolute right-1 top-1 rounded-[1px] bg-[#000000c7] px-1.5 py-0.5 font-mono text-[7px] uppercase text-[#aaa]">{asset.storageStatus}</span>
+                        <span className="pointer-events-none absolute right-1 top-1 rounded-sm bg-ink-0/90 px-1.5 py-0.5 font-mono text-[7px] uppercase text-fg-2">{asset.storageStatus}</span>
                       </div>
                       <input
                         value={asset.displayName}
@@ -658,11 +658,10 @@ function ReferenceSlotCard({
             <div className="flex flex-col">
               <div className="relative h-[120px] overflow-hidden rounded-sm border border-line bg-ink-1">
                 {asset.previewUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={asset.previewUrl} alt={asset.displayName} className="h-full w-full object-contain" loading="lazy" decoding="async" />
+                  <ReferenceSheetPreview src={asset.previewUrl} name={asset.displayName || REFERENCE_ASSET_SLOT_LABELS[role]} />
                 ) : <div className="flex h-full items-center justify-center text-[8px] uppercase tracking-[0.12em] text-fg-4">No preview</div>}
-                <span className="absolute left-1 top-1 rounded-sm bg-ink-0/90 px-1.5 py-0.5 font-mono text-[7px] uppercase tracking-[0.1em] text-fg-2">{asset.kind}</span>
-                <span className="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-ink-0/95 to-transparent px-2 pb-1 pt-4 font-mono text-[10px] font-medium text-fg-0">{asset.displayName || REFERENCE_ASSET_SLOT_LABELS[role]}</span>
+                <span className="pointer-events-none absolute left-1 top-1 rounded-sm bg-ink-0/90 px-1.5 py-0.5 font-mono text-[7px] uppercase tracking-[0.1em] text-fg-2">{asset.kind}</span>
+                <span className="pointer-events-none absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-ink-0/95 to-transparent px-2 pb-1 pt-4 font-mono text-[10px] font-medium text-fg-0">{asset.displayName || REFERENCE_ASSET_SLOT_LABELS[role]}</span>
               </div>
               <div className="mt-2 grid gap-1.5">
                 <input
