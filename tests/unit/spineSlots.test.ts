@@ -2,6 +2,11 @@ import { describe, expect, test } from "bun:test";
 import type { GeneratedStudioAsset } from "../../src/components/studio/generatedAssets";
 import type { EditPlanPreviewSegment, MusicVideoProject } from "../../src/components/studio/musicVideoProject";
 import { buildSpineSlots, describeSlot, neighborSlot, slotAtTime } from "../../src/components/studio/shell/spineSlots";
+import { applyDraftGeneratedAssets } from "../../src/components/studio/generatedDraft";
+import { createImportedVideoAsset } from "../../src/components/studio/externalClipImport";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { SlotInspector } from "../../src/components/studio/shell/SlotInspector";
 
 const segments: EditPlanPreviewSegment[] = [
   { videoUrl: "blob:a", startTime: 0, endTime: 2, label: "Verse · wide", sectionId: "s1", musicStart: 0, musicEnd: 2, momentId: "m1", thumbnailUrl: "t1" },
@@ -38,6 +43,36 @@ const generated: GeneratedStudioAsset[] = [
 ];
 
 describe("buildSpineSlots", () => {
+  test("Draft spine shows selected pending takes while other steps retain approved coverage", () => {
+    const gap: EditPlanPreviewSegment = { kind: "gap", videoUrl: "", startTime: 0, endTime: 2, musicStart: 0, musicEnd: 2,
+      label: "Missing footage · Ending", sectionId: "ending", timelineItemId: "slot", planSignature: "current" };
+    const take = createImportedVideoAsset({ kind: "original-footage", fileName: "ending.mp4", durationSeconds: 2,
+      storage: { bucket: "stack-structure", objectKey: "media-uploads/owner/ending.mp4", storagePath: "media-uploads/owner/ending.mp4", publicUrl: "https://media.example/ending.mp4", mime: "video/mp4" },
+      target: { planSignature: "current", timelineItemId: "slot", sectionId: "ending", sectionLabel: "Ending", songStart: 0, songEnd: 2 } });
+    const draftSegments = applyDraftGeneratedAssets([gap], [take], { planSignature: "current", revision: 1, assetIds: [take.id] });
+    const params = { segments: [gap], draftSegments, project: null, generatedAssets: [take] };
+    const [draftSlot] = buildSpineSlots({ ...params, activeTab: "generate" });
+    expect(draftSlot?.kind).toBe("generated");
+    expect(draftSlot?.generatedAssetId).toBe(take.id);
+    expect(draftSlot?.videoUrl).not.toBe("");
+    expect(draftSlot?.label).not.toContain("Missing footage");
+    const inspector = renderToStaticMarkup(createElement(SlotInspector, {
+      evidence: describeSlot(draftSlot!, { project: null, generatedAssets: [take] }),
+      onClose() {}, onPlayFrom() {}, onSelectTake() {}, onReopenGenerated() {}, onOpenGenerate() {},
+    }));
+    expect(inspector).toContain("Pending draft review");
+    expect(inspector).not.toContain(">Revert<");
+    expect(inspector).not.toContain("No matched footage");
+    const approvedInspector = renderToStaticMarkup(createElement(SlotInspector, {
+      evidence: describeSlot(draftSlot!, { project: null, generatedAssets: [{ ...take, reviewStatus: "approved" }] }),
+      onClose() {}, onPlayFrom() {}, onSelectTake() {}, onReopenGenerated() {}, onOpenGenerate() {},
+    }));
+    expect(approvedInspector).toContain(">Revert<");
+    for (const activeTab of ["story", "join", "compose", "ramp"] as const) {
+      expect(buildSpineSlots({ ...params, activeTab })[0]?.videoUrl).toBe("");
+    }
+    expect(take.reviewStatus).toBe("pending");
+  });
   test("labels approved generated shots and keeps footage slots", () => {
     const slots = buildSpineSlots({ segments, project, generatedAssets: [] });
     expect(slots.map((slot) => slot.kind)).toEqual(["footage", "footage", "footage"]);
