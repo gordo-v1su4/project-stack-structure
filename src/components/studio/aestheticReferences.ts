@@ -33,8 +33,8 @@ export function normalizeAestheticReferences(value: unknown): AestheticReference
       || !["shot", "style"].includes(asset.purpose) || typeof asset.displayName !== "string"
       || typeof asset.fileName !== "string" || typeof asset.createdAt !== "string") continue;
     if (!asset.scope || !["project", "section", "shot"].includes(asset.scope.kind)
-      || (asset.scope.kind === "section" && !asset.scope.sectionId)
-      || (asset.scope.kind === "shot" && !asset.scope.timelineItemId)) continue;
+      || (asset.scope.kind === "section" && (typeof asset.scope.sectionId !== "string" || !asset.scope.sectionId))
+      || (asset.scope.kind === "shot" && (typeof asset.scope.timelineItemId !== "string" || !asset.scope.timelineItemId))) continue;
     const scope = asset.scope?.kind === "section" && typeof asset.scope.sectionId === "string"
       ? { kind: "section" as const, sectionId: asset.scope.sectionId }
       : asset.scope?.kind === "shot" && typeof asset.scope.timelineItemId === "string"
@@ -68,12 +68,21 @@ export function selectedAestheticReferences(library: AestheticReferenceLibrary |
     if (!asset || !aestheticReferenceApplies(asset, target) || asset.storageStatus !== "uploaded" || !asset.storageBucket || !asset.storagePath) {
       throw new Error("A selected shot or style ref is unavailable for this shot. Restore it or remove its selection.");
     }
+    assertSafeAestheticGuidance(asset.guidance);
     return asset;
   });
 }
 
 export function aestheticReferenceRole(asset: AestheticReferenceAsset): H3ReferenceSnapshot["role"] {
   return asset.purpose === "style" ? "style" : "composition";
+}
+
+/** User visual notes cannot redefine the server-owned native reference wrapper. */
+export function assertSafeAestheticGuidance(value: unknown): asserts value is string {
+  if (typeof value !== "string" || value.length > 500
+    || /<(?:Subject|Picture|Video|Audio)\b|\[Shot\b|(?:^|\n)\s*(?:subject_definitions|detailed_description|summary|retention_analysis|overall_soundscape|non_diegetic_music|integrated_multimodal_description)\s*:/i.test(value)) {
+    throw new Error("Use plain visual guidance for shot/style refs; the server supplies the H3 reference wrapper.");
+  }
 }
 
 export async function originalImageSha256(file: File) {

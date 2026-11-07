@@ -1,6 +1,7 @@
 // Shared fixed numerical policy families and issued evidence. Not an identity certificate.
 
 import type { H3ReferenceSnapshot } from "./h3Generation";
+import { assertSafeAestheticGuidance } from "./aestheticReferences";
 import type { H3IdentityFaceRegion } from "../../lib/h3IdentityGallery";
 import { sha256 } from "@noble/hashes/sha2.js";
 import foregroundFamily from "../../../scripts/identity/families/sface-yunet-foreground-frontal-v1.json";
@@ -155,9 +156,18 @@ function normalizeRawReference(value: unknown): H3PolicyRawReference | undefined
     || value.objectKey.split("/").some(part => part === "." || part === "..") || !text(value.version)
     || !["identity", "environment", "composition", "style", "crowd", "prop", "vehicle", "wardrobe"].includes(String(value.role))
     || !isIdentityPolicySha256(value.rawSha256) || (value.etag !== undefined && !text(value.etag))) return undefined;
+  let aesthetic: H3ReferenceSnapshot["aesthetic"];
+  if (value.aesthetic !== undefined) {
+    const candidate = value.aesthetic;
+    if (!object(candidate) || !["shot", "style"].includes(String(candidate.purpose))
+      || value.role !== (candidate.purpose === "shot" ? "composition" : "style")
+      || !isIdentityPolicySha256(candidate.originalSha256) || candidate.originalSha256 !== value.rawSha256) return undefined;
+    try { assertSafeAestheticGuidance(candidate.guidance); } catch { return undefined; }
+    aesthetic = { purpose: candidate.purpose as "shot" | "style", guidance: candidate.guidance, originalSha256: candidate.originalSha256 };
+  }
   return { assetId: value.assetId, canonicalName: value.canonicalName, role: value.role as H3ReferenceSnapshot["role"],
     bucket: value.bucket, objectKey: value.objectKey, version: value.version, rawSha256: value.rawSha256,
-    ...(value.etag === undefined ? {} : { etag: value.etag as string }) };
+    ...(value.etag === undefined ? {} : { etag: value.etag as string }), ...(aesthetic ? { aesthetic } : {}) };
 }
 export function normalizeGallery(value: unknown, reference: H3PolicyRawReference, family: H3PolicyFamily): H3PolicyGallery | undefined {
   if (!object(value) || value.referenceAssetId !== reference.assetId || value.canonicalName !== reference.canonicalName
