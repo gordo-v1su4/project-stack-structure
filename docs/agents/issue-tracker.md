@@ -1,45 +1,38 @@
-# Issue tracker: GitHub
+# Issue tracker: Linear
 
-Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all operations.
+Robert explicitly selected Linear for the current completion effort on November 6, 2026. This supersedes the older GitHub tracker configuration. Historical GitHub issues remain reference material; do not create parallel implementation tickets there.
 
-## Conventions
+- Project: [SBS Studio — Project Stack Structure](https://linear.app/v1su4/project/sbs-studio-project-stack-structure-bb6dcb48537a), `P-V1S-11`.
+- Team: V1su4, key `V1S`.
+- Current spec: [Finish Love Me Tonight and verify the complete music-video workflow](https://linear.app/v1su4/issue/V1S-436).
+- First execution ticket: [Resume Love Me Tonight with current references and closing takes](https://linear.app/v1su4/issue/V1S-437).
 
-- **Create an issue**: `gh issue create --title "..." --body "..."`. Use a heredoc for multi-line bodies.
-- **Read an issue**: `gh issue view <number> --comments`, filtering comments by `jq` and also fetching labels.
-- **List issues**: `gh issue list --state open --json number,title,body,labels,comments --jq '[.[] | {number, title, body, labels: [.labels[].name], comments: [.comments[].body]}]'` with appropriate `--label` and `--state` filters.
-- **Comment on an issue**: `gh issue comment <number> --body "..."`
-- **Apply / remove labels**: `gh issue edit <number> --add-label "..."` / `--remove-label "..."`
-- **Close**: `gh issue close <number> --comment "..."`
+## Operations
 
-Infer the repo from `git remote -v`; `gh` does this automatically when run inside a clone.
+Prefer the connected Linear tools. Use `get_issue` for the full body and relations, `list_issues` scoped to this project for discovery, and `save_issue` to create or update. Read back writes before reporting success.
 
-## Pull requests as a triage surface
+- Spec: one parent issue containing the outcome, accepted scope, decisions and observable acceptance.
+- Ticket: one independently verifiable end-to-end slice. Set `parentId` to the spec.
+- Blocking: use native `blockedBy` / `blocks`, never a parallel text-only dependency graph. Create all tickets before wiring references when needed, then verify relations.
+- Ready work: label `ready-for-agent`, status `Todo`. Claim with the current driving developer and move to `In Progress` before execution. Existing current-film work already has one owner.
+- Completion: set `Done` only when the ticket's actual acceptance evidence exists. Successful checks/builds do not stand in for browser, generated-media, creative, download or playback evidence.
+- Superseded work: set `Canceled` and link its replacement; retain history. Remove it from the active project when requested. Never label obsolete work Done merely to clean a backlog.
+- Comments and attachments: use them for authorized ticket evidence and decision records; do not message unrelated people.
 
-**PRs as a request surface: no.** _(Set to `yes` if this repo treats external PRs as feature requests; `/triage` reads this flag.)_
+Use the canonical triage vocabulary in `triage-labels.md` for raw incoming issues. Verify a label exists before applying it. Tickets produced by `to-tickets` are already agent-ready and do not need triage again.
 
-When set to `yes`, PRs run through the same labels and states as issues, using the `gh pr` equivalents:
+## Frontier and execution gates
 
-- **Read a PR**: `gh pr view <number> --comments` and `gh pr diff <number>` for the diff.
-- **List external PRs for triage**: `gh pr list --state open --json number,title,body,labels,author,authorAssociation,comments` then keep only `authorAssociation` of `CONTRIBUTOR`, `FIRST_TIME_CONTRIBUTOR`, or `NONE` (drop `OWNER`/`MEMBER`/`COLLABORATOR`).
-- **Comment / label / close**: `gh pr comment`, `gh pr edit --add-label`/`--remove-label`, `gh pr close`.
+The implementation frontier is the current spec's open `Todo` children whose native blockers are complete and which have no active owner. An `In Progress` assignee is a claim; skip it when another session owns it.
 
-GitHub shares one number space across issues and PRs, so a bare `#42` may be either: resolve with `gh pr view 42` and fall back to `gh issue view 42`.
+A deliberately deferred `Backlog` ticket is not ready to dispatch. The zero-footage acceptance fixture has an explicit scheduling gate: prepare if useful, but finish the existing film before starting its separate live generation. Do not invent a technical dependency to represent that priority.
 
-## When a skill says "publish to the issue tracker"
+Parallelize independent ready work on isolated branches/worktrees. Maintain one current-film project writer and GPU submission controller. Re-read current project/reference versions before writes or generation; reconcile ambiguous submissions rather than duplicating them.
 
-Create a GitHub issue.
+## No PRs
 
-## When a skill says "fetch the relevant ticket"
-
-Run `gh issue view <number> --comments`.
+Robert explicitly instructed: commits are allowed, no PRs until requested. Linear closes through issue state and evidence, not PR merge. This overrides any conditional draft-PR advice in an implementation skill. Preserve unrelated edits and existing worktrees.
 
 ## Wayfinding operations
 
-Used by `/wayfinder`. The **map** is a single issue with **child** issues as tickets.
-
-- **Map**: a single issue labelled `wayfinder:map`, holding the Notes / Decisions-so-far / Fog body. `gh issue create --label wayfinder:map`.
-- **Child ticket**: an issue linked to the map as a GitHub sub-issue (`gh api` on the sub-issues endpoint). Where sub-issues aren't enabled, add the child to a task list in the map body and put `Part of #<map>` at the top of the child body. Labels: `wayfinder:<type>` (`research`/`prototype`/`grilling`/`task`). Once claimed, the ticket is assigned to the driving dev.
-- **Blocking**: GitHub's **native issue dependencies**, the canonical, UI-visible representation. Add an edge with `gh api --method POST repos/<owner>/<repo>/issues/<child>/dependencies/blocked_by -F issue_id=<blocker-db-id>`, where `<blocker-db-id>` is the blocker's numeric **database id** (`gh api repos/<owner>/<repo>/issues/<n> --jq .id`, _not_ the `#number` or `node_id`). GitHub reports `issue_dependencies_summary.blocked_by` (open blockers only, the live gate). Where dependencies aren't available, fall back to a `Blocked by: #<n>, #<n>` line at the top of the child body. A ticket is unblocked when every blocker is closed.
-- **Frontier query**: list the map's open children (`gh issue list --state open`, scoped to the map's sub-issues / task list), drop any with an open blocker (`issue_dependencies_summary.blocked_by > 0`, or an open issue in the `Blocked by` line) or an assignee; first in map order wins.
-- **Claim**: `gh issue edit <n> --add-assignee @me`, the session's first write.
-- **Resolve**: `gh issue comment <n> --body "<answer>"`, then `gh issue close <n>`, then append a context pointer (gist + link) to the map's Decisions-so-far.
+If genuinely unresolved multi-session decisions later require Wayfinder, its map is a separate parent with `wayfinder:map`; decision children use `wayfinder:research`, `wayfinder:prototype`, `wayfinder:grilling` or `wayfinder:task` only. Use native parent and blocking relationships. Do not turn the implementation spec into a decision map or add triage labels to Wayfinder decisions. The current effort already has an agreed destination and uses the implementation task graph above.

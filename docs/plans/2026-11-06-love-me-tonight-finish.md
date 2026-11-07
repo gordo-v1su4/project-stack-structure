@@ -1,5 +1,7 @@
 # Finish the existing Love Me Tonight film
 
+> **Current execution map:** [Linear completion spec](https://linear.app/v1su4/issue/V1S-436), beginning with [current references and closing takes](https://linear.app/v1su4/issue/V1S-437). See [the November 6 reconciliation](2026-11-06-current-completion-map.md). Checkpoint figures and release claims below retain historical evidence; they are not a substitute for a fresh project read or the current task graph.
+
 Status: **UNFINISHED**. The November 6 evening continuation reached saved draft revision **31** / placement revision **8**, with **28 selected pending candidates** and **19.579333333 seconds uncovered across 8 windows**. The selected **2.849954649-second closing overlay also needs replacement**: it repeats/holds prior landscape frames and includes a short black ending. All prior assets, creative context and thirteen original source placements remain preserved, and the original project is unchanged. Whole-film review, complete named-reference zero-footage acceptance, final consent and full-song export remain open.
 
 Follow [the completion workflow and master checklist](../../workflows/finish-music-video.md). This document contains shot-development briefs, not executable H3 prompts; compile and lint final bound prompts before rendering. The eleven-source measurements below are historical planning evidence, superseded by this verified checkpoint.

@@ -1,0 +1,127 @@
+{
+  "source": "https://github.com/mattpocock/skills",
+  "revision": "4ae2317ddb22b046e26455e4f9c9b3aaaf62212d",
+  "checkedDate": "2026-11-06",
+  "skills": [
+    {
+      "name": "ask-matt",
+      "upstreamPath": "skills/engineering/ask-matt",
+      "files": 3,
+      "exactFiles": 3,
+      "lineEndingOnlyFiles": 0,
+      "changedOrMissing": []
+    },
+    {
+      "name": "code-review",
+      "upstreamPath": "skills/engineering/code-review",
+      "files": 2,
+      "exactFiles": 2,
+      "lineEndingOnlyFiles": 0,
+      "changedOrMissing": []
+    },
+    {
+      "name": "codebase-design",
+      "upstreamPath": "skills/engineering/codebase-design",
+      "files": 4,
+      "exactFiles": 4,
+      "lineEndingOnlyFiles": 0,
+      "changedOrMissing": []
+    },
+    {
+      "name": "domain-modeling",
+      "upstreamPath": "skills/engineering/domain-modeling",
+      "files": 4,
+      "exactFiles": 4,
+      "lineEndingOnlyFiles": 0,
+      "changedOrMissing": []
+    },
+    {
+      "name": "grill-with-docs",
+      "upstreamPath": "skills/engineering/grill-with-docs",
+      "files": 2,
+      "exactFiles": 2,
+      "lineEndingOnlyFiles": 0,
+      "changedOrMissing": []
+    },
+    {
+      "name": "grilling",
+      "upstreamPath": "skills/productivity/grilling",
+      "files": 2,
+      "exactFiles": 2,
+      "lineEndingOnlyFiles": 0,
+      "changedOrMissing": []
+    },
+    {
+      "name": "implement-spec",
+      "upstreamPath": "skills/engineering/implement-spec",
+      "files": 2,
+      "exactFiles": 2,
+      "lineEndingOnlyFiles": 0,
+      "changedOrMissing": []
+    },
+    {
+      "name": "implement",
+      "upstreamPath": "skills/engineering/implement",
+      "files": 2,
+      "exactFiles": 2,
+      "lineEndingOnlyFiles": 0,
+      "changedOrMissing": []
+    },
+    {
+      "name": "tdd",
+      "upstreamPath": "skills/engineering/tdd",
+      "files": 4,
+      "exactFiles": 4,
+      "lineEndingOnlyFiles": 0,
+      "changedOrMissing": []
+    },
+    {
+      "name": "wayfinder",
+      "upstreamPath": "skills/engineering/wayfinder",
+      "files": 2,
+      "exactFiles": 2,
+      "lineEndingOnlyFiles": 0,
+      "changedOrMissing": []
+    },
+    {
+      "name": "loop-me",
+      "upstreamPath": "skills/in-progress/loop-me",
+      "files": 2,
+      "exactFiles": 2,
+      "lineEndingOnlyFiles": 0,
+      "changedOrMissing": []
+    },
+    {
+      "name": "setup-matt-pocock-skills",
+      "upstreamPath": "skills/engineering/setup-matt-pocock-skills",
+      "files": 7,
+      "exactFiles": 7,
+      "lineEndingOnlyFiles": 0,
+      "changedOrMissing": []
+    },
+    {
+      "name": "to-spec",
+      "upstreamPath": "skills/engineering/to-spec",
+      "files": 2,
+      "exactFiles": 2,
+      "lineEndingOnlyFiles": 0,
+      "changedOrMissing": []
+    },
+    {
+      "name": "to-tickets",
+      "upstreamPath": "skills/engineering/to-tickets",
+      "files": 2,
+      "exactFiles": 2,
+      "lineEndingOnlyFiles": 0,
+      "changedOrMissing": []
+    },
+    {
+      "name": "triage",
+      "upstreamPath": "skills/engineering/triage",
+      "files": 4,
+      "exactFiles": 4,
+      "lineEndingOnlyFiles": 0,
+      "changedOrMissing": []
+    }
+  ]
+}

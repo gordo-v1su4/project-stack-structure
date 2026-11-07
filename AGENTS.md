@@ -69,7 +69,7 @@ Scale local checks to the change: diff/links/commands for docs, affected tests a
 
 ### Issue tracker
 
-Issues and specs live as GitHub issues in this repo (`gh` CLI). See `docs/agents/issue-tracker.md`.
+Current completion issues and specs live in Linear project `P-V1S-11`, under `V1S-436`. See `docs/agents/issue-tracker.md` and `docs/agents/matt-pocock-workflow.md`. Historical GitHub issues are reference material. For this effort, commit changes but open no PR until Robert asks.
 
 ### Triage labels
 
