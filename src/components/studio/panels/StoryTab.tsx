@@ -1,6 +1,7 @@
 "use client";
 
-import { buildStudioSourceContextSignature } from "../studioSourceContext";
+import { buildStudioSourceContextSignature, studioSourceContextInput } from "../studioSourceContext";
+import { generationScopeSha256 } from "../generationScope";
 import { startTransition, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import type { DeepgramTranscriptSummary } from "../deepgramUtils";
 import { fmt } from "../math";
@@ -42,8 +43,9 @@ import { preserveReviewedStoryArrangement } from "../reconfirmStoryProject";
 export type StoryBeatDraft = StoryPlanDraft;
 
 /** Bind the approved evidence revision before placement preparation hashes its inputs. */
-export function prepareStoryTabPlacements(params: Parameters<typeof prepareApprovedPlacements>[0], sourceContextSignature?: string | null) {
-  return prepareApprovedPlacements({ ...params, project: { ...params.project, sourceContextSignature: sourceContextSignature ?? undefined } });
+export function prepareStoryTabPlacements(params: Parameters<typeof prepareApprovedPlacements>[0], sourceContextSignature?: string | null, sourceInventorySha256?: string, storySha256?: string) {
+  return prepareApprovedPlacements({ ...params, project: { ...params.project, generationScopeVersion: 2,
+    generationSourceContextSha256: sourceInventorySha256, generationStorySha256: storySha256, sourceContextSignature: sourceContextSignature ?? undefined } });
 }
 
 export type StoryTabState = StoryTreatmentState & {
@@ -66,6 +68,8 @@ type StoryTabProps = {
   existingProject?: MusicVideoProject | null;
   onStateChange: Dispatch<SetStateAction<StoryTabState>>;
   onProjectChange?: (project: MusicVideoProject) => void;
+  onConfirmAppendedSources?: () => Promise<void>;
+  sourceReviewRequired?: boolean;
 };
 
 const DEFAULT_STORY_BEATS: StoryBeatDraft[] = getDefaultStorySectionDrafts().map((draft, index) => ({
@@ -99,9 +103,13 @@ export function createDefaultStoryTabState(): StoryTabState {
   };
 }
 
-export function StoryTab({ referenceRevision, referenceAssets, analysis, audioStatus, videoSources, segmentPreviews, state, existingProject, onStateChange, onProjectChange }: StoryTabProps) {
+export function StoryTab({ referenceRevision, referenceAssets, analysis, audioStatus, videoSources, segmentPreviews, state, existingProject, onStateChange, onProjectChange, onConfirmAppendedSources, sourceReviewRequired }: StoryTabProps) {
   const { transcriptSummary, storyBeats, activeBeatId, storyGenerated } = state;
   const [confirmationError, setConfirmationError] = useState<string | null>(null);
+  const [confirmationNotice, setConfirmationNotice] = useState<string | null>(null);
+  const [confirmingSources, setConfirmingSources] = useState(false);
+  const liveSourceContext = buildStudioSourceContextSignature({ analysis, videoSources, referenceAssets, referenceRevision });
+  const appendedSourcesNeedReview = state.storyGenerated && existingProject && state.confirmedSourceContextSignature !== liveSourceContext;
   const editSettings = useMemo(() => normalizeStoryEditSettings(state.editSettings), [state.editSettings]);
 
   function updateState(patch: Partial<StoryTabState>) {
@@ -231,18 +239,22 @@ export function StoryTab({ referenceRevision, referenceAssets, analysis, audioSt
 
   function confirmStoryPlan(treatment: StoryTreatment) {
     setConfirmationError(null);
+    setConfirmationNotice(null);
     const storyBeatsWithAnchors = applyTreatmentAnchorsToStoryBeats(plannedStoryBeats, treatment);
     const confirmedContext = buildStudioSourceContextSignature({ analysis, videoSources, referenceRevision });
     const prepared = prepareStoryTabPlacements({ videoSources, editSettings, project: applyTreatmentCoverageToProject(
       createMusicVideoProject({ analysis, duration: totalDuration || 0, lyricChunks: transcriptSummary?.chunks ?? [],
         storyDrafts: storyBeatsWithAnchors, videoSources, segmentPreviews }), treatment,
-    ) }, confirmedContext);
+    ) }, confirmedContext, generationScopeSha256(studioSourceContextInput({ analysis, videoSources, referenceAssets, referenceRevision })),
+    generationScopeSha256({ storyBeats: storyBeatsWithAnchors, confirmedTreatmentSnapshot: treatment,
+      storyContentSignature: buildStoryContentSignature(treatment, storyBeatsWithAnchors), editSettings }));
     let confirmedProject: MusicVideoProject;
     try { confirmedProject = preserveReviewedStoryArrangement(existingProject, prepared); }
     catch (error) { setConfirmationError(error instanceof Error ? error.message : "Existing accepted cuts could not be preserved."); return; }
     // Only an explicit confirmation may publish an arrangement. Opening Story or
     // deriving a preview after an append must never replace accepted placements.
     onProjectChange?.(confirmedProject);
+    if (existingProject) setConfirmationNotice("This confirmed Story uses a new generation scope. Existing generated footage remains in the bank; historical targets are not automatically selected or approved.");
     updateState({
       storyBeats: storyBeatsWithAnchors,
       storyGenerated: true,
@@ -256,6 +268,19 @@ export function StoryTab({ referenceRevision, referenceAssets, analysis, audioSt
   return (
     <div className="space-y-3">
       {confirmationError ? <p role="alert" className="text-sm text-danger">{confirmationError}</p> : null}
+      {confirmationNotice ? <p role="status" className="text-sm text-fg-3">{confirmationNotice}</p> : null}
+      {appendedSourcesNeedReview && onConfirmAppendedSources ? <section className="rounded border border-accent/40 p-3 text-sm">
+        <p>The source library changed. Confirm supplemental sheets to keep unchanged completed footage and story cuts. The assembled cut will need a fresh review.</p>
+        <button type="button" disabled={confirmingSources} className="mt-2 rounded border border-accent px-3 py-2" onClick={async () => {
+          setConfirmationError(null); setConfirmingSources(true);
+          try { await onConfirmAppendedSources(); }
+          catch (error) { setConfirmationError(error instanceof Error ? error.message : "The source inventory could not be confirmed."); }
+          finally { setConfirmingSources(false); }
+        }}>{confirmingSources ? "Checking saved sources…" : "Confirm appended sheets · preserve current cut"}</button>
+      </section> : null}
+      {existingProject?.generationScope?.body.reprise ? <p className="rounded border border-accent/40 p-3 text-sm" role="status">
+        Opening landscape footage repeats for 2.026 seconds at 4:01.824–4:03.850. {sourceReviewRequired ? "Pending review: watch and accept the assembled cut before final export." : "Included in the current assembled-cut review."}
+      </p> : null}
       <StoryTreatmentPlanner
         referenceRevision={referenceRevision}
         referenceAssets={referenceAssets}

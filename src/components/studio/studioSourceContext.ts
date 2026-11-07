@@ -4,17 +4,17 @@ import type { BeatJoinAnalysis, UploadedVideoSource } from "./types";
 const durableUrl = (value?: string) => value && !/^(blob:|data:)/.test(value) ? value : undefined;
 
 /** Captures live evidence inputs independently of the saved project's old video moments. */
-export function buildStudioSourceContextSignature({ analysis, videoSources, referenceAssets, referenceRevision }: {
+export function studioSourceContextInput({ analysis, videoSources, referenceAssets, referenceRevision }: {
   analysis: BeatJoinAnalysis | null;
   videoSources: UploadedVideoSource[];
   referenceAssets?: ReferenceAsset[];
   referenceRevision?: string;
-}): string {
+}) {
   let references = referenceAssets;
   if (!references && referenceRevision) {
     try { const parsed: unknown = JSON.parse(referenceRevision); if (Array.isArray(parsed)) references = parsed as ReferenceAsset[]; } catch { /* Opaque revision remains part of the signature. */ }
   }
-  const input = JSON.stringify({
+  return {
     song: analysis && { label: analysis.sourceLabel, duration: analysis.duration, bucket: analysis.storageBucket,
       path: analysis.storagePath, url: durableUrl(analysis.storageUrl) ?? durableUrl(analysis.audioUrl),
       sections: analysis.sections, beats: analysis.beats, onsets: analysis.onsets, energy: analysis.energy, waveform: analysis.waveform },
@@ -31,7 +31,11 @@ export function buildStudioSourceContextSignature({ analysis, videoSources, refe
       hint: reference.promptHint, bucket: reference.storageBucket, path: reference.storagePath,
       url: durableUrl(reference.storageUrl) ?? durableUrl(reference.previewUrl), status: reference.storageStatus,
     })) : referenceRevision ?? [],
-  });
+  };
+}
+
+export function buildStudioSourceContextSignature(params: Parameters<typeof studioSourceContextInput>[0]): string {
+  const input = JSON.stringify(studioSourceContextInput(params));
   let hash = 2166136261;
   for (let index = 0; index < input.length; index++) hash = Math.imul(hash ^ input.charCodeAt(index), 16777619);
   return `studio-source-v1-${(hash >>> 0).toString(16)}`;

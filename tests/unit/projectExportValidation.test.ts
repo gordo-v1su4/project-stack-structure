@@ -1,8 +1,9 @@
 import { describe, expect, mock, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { createMusicVideoProject, prepareApprovedPlacements } from "@/components/studio/musicVideoProject";
+import { createMusicVideoProject, placementInputSignature, prepareApprovedPlacements } from "@/components/studio/musicVideoProject";
 import { createPersistableStudioProjectDraft } from "@/components/studio/projectPersistence";
-import { buildStudioSourceContextSignature } from "@/components/studio/studioSourceContext";
+import { buildStudioSourceContextSignature, studioSourceContextInput } from "@/components/studio/studioSourceContext";
+import { generationScopeSha256, generationSemanticSha256, sourceReferenceManifest, type GenerationScopeReceipt } from "@/components/studio/generationScope";
 import { buildStoryContentSignature, type StoryTreatment } from "@/components/studio/storyTreatments";
 import type { GeneratedAssetIdentityVerification, GeneratedStudioAsset } from "@/components/studio/generatedAssets";
 import type { H3GenerationJob } from "@/components/studio/h3Generation";
@@ -22,6 +23,14 @@ let saved: SavedStudioProject, job: H3GenerationJob, projectId = "project-1";
 let issuedPolicy: H3IssuedDraftPolicy | undefined;
 let rangeRecord:H3IdentityAssessment|undefined;
 let firstFrameBytesIntact=true,firstFrameAvailable=true,firstFrameScreenAvailable=true,firstFrameReads=0;
+const sourceReceipts = new Map<string, GenerationScopeReceipt>();
+mock.module("@/lib/generationScopeMedia", () => ({ verifyGenerationScopeMedia: async (_owner: string, _draft: unknown, expected: unknown) => expected,
+  pinGenerationScopeMedia: async () => { throw new Error("Unexpected media pin in export"); }, bootstrapR31SourceMedia: async () => { throw new Error("Unexpected bootstrap in export"); } }));
+mock.module("@/lib/generationScopeRawReferences", () => ({ verifyGenerationScopeRawReferences: async (_owner: string, _references: unknown, expected: unknown) => expected,
+  pinGenerationScopeRawReferences: async () => { throw new Error("Unexpected reference pin in export"); } }));
+mock.module("@/lib/generationScopeStore", () => ({ readGenerationScopeReceipt: async (_owner: string, _project: string, id: string) => sourceReceipts.get(id) ?? null,
+  readGenerationScopeBaseline: async () => null, storeGenerationScopeBaseline: async () => { throw new Error("Unexpected baseline issuance in export"); },
+  storeGenerationScopeReceipt: async () => { throw new Error("Unexpected source confirmation in export"); } }));
 const {assertH3FirstFrameMatchesJob}=await import("@/lib/h3FirstFrameStore");
 mock.module("@/lib/h3FirstFrameStore",()=>({assertH3FirstFrameMatchesJob,
   readH3FirstFrame:async()=>firstFrameAvailable?job.firstFrame:null,
@@ -55,6 +64,7 @@ const hash = (byte: string) => byte.repeat(64);
 const mediaHash = createHash("sha256").update(new Uint8Array([1, 2, 3])).digest("hex");
 
 function reset(idForProject = "project-1", duration = 3) {
+  sourceReceipts.clear();
   signedIn = true; dispatches = []; reads = 0; issuedPolicy = undefined;rangeRecord=undefined;
   firstFrameBytesIntact=firstFrameAvailable=firstFrameScreenAvailable=true;firstFrameReads=0;
   projectId = idForProject; key = `media-uploads/projects/github-test/generated/${projectId}/${id}/shot.mp4`;
@@ -107,6 +117,55 @@ function form(projectContext = true) {
   return data;
 }
 function post(data: FormData) { return POST(new Request("http://app.test/api/export/final", { method: "POST", body: data })); }
+
+function confirmFixtureSourceAppend() {
+  const draft = saved.draft, project = draft.musicVideoProject!, story = draft.storyState;
+  const oldInput = project.placementPlan!.inputSignature, oldContext = project.sourceContextSignature!;
+  draft.referenceAssets!.push({ id: "supplemental", role: "crowd", kind: "crowd", displayName: "Supplemental extras", fileName: "extras.png", previewUrl: "", promptHint: "",
+    storageStatus: "uploaded", storageBucket: "studio", storagePath: "media-uploads/github-test/references/supplemental/extras.png", createdAt: "2026-11-07T00:00:00Z" });
+  const input = { analysis: draft.analysis ? { ...draft.analysis, audioUrl: draft.analysis.storageUrl ?? "" } : null,
+    videoSources: draft.videoSources.map(source => ({ ...source, videoUrl: source.storageUrl ?? "" })), referenceAssets: draft.referenceAssets };
+  project.sourceContextSignature = buildStudioSourceContextSignature(input);
+  project.placementPlan!.inputSignature = placementInputSignature(project);
+  story.confirmedSourceContextSignature = project.sourceContextSignature;
+  const body: GenerationScopeReceipt["body"] = { version: 1, kind: "additive-reference", ownerId: "github-test", projectId,
+    baselineRevision: '"fixture-revision"', fromSourceContext: oldContext, toSourceContext: project.sourceContextSignature,
+    fromInputSignature: oldInput, toInputSignature: project.placementPlan!.inputSignature, scopeSignature: oldInput,
+    semanticSha256: generationSemanticSha256(project), references: sourceReferenceManifest(draft.referenceAssets!), appendedReferenceIds: ["supplemental"],
+    rawReferences: draft.referenceAssets!.map(reference => ({ assetId: reference.id, bucket: reference.storageBucket!, objectKey: reference.storagePath!, etag: '"fixed"', sha256: "a".repeat(64), byteLength: 10 })),
+    sourceMediaVersions: [],
+    sourceInventorySha256: generationScopeSha256(studioSourceContextInput(input)), storySha256: generationScopeSha256({ storyBeats: story.storyBeats,
+      confirmedTreatmentSnapshot: story.confirmedTreatmentSnapshot, storyContentSignature: story.storyContentSignature, editSettings: story.editSettings }) };
+  const sha256 = generationScopeSha256(body), receipt: GenerationScopeReceipt = { version: 1, id: `generation-scope-${sha256}`, sha256, body };
+  project.generationScope = receipt;
+  draft.generatedDraft = { ...draft.generatedDraft!, sourceConfirmationSha256: sha256, sourceReviewRequired: false };
+  sourceReceipts.set(receipt.id, structuredClone(receipt));
+  return receipt;
+}
+
+describe("final export after strong source equivalence", () => {
+  test("retains exact canonical job targets while binding the fresh input and canonical equivalence receipt into export", async () => {
+    reset(); const target = JSON.stringify(job.target), receipt = confirmFixtureSourceAppend();
+    const response = await post(form());
+    expect(response.status).toBe(202); expect(dispatches.length).toBe(1);
+    const snapshot = dispatches[0].projectSnapshot as { planSignature: string; generationScope: { signature: string; receiptSha256: string } };
+    expect(snapshot.planSignature).toBe(saved.draft.musicVideoProject!.placementPlan!.inputSignature);
+    expect(snapshot.generationScope).toEqual({ signature: job.target.planSignature!, receiptSha256: receipt.sha256 });
+    expect(JSON.stringify(job.target)).toBe(target);
+  });
+  for (const failure of ["pending fresh review", "missing review binding", "missing canonical receipt", "forged receipt", "changed source library", "changed source range"]) {
+    test(`rejects ${failure} before export dispatch`, async () => {
+      reset(); const receipt = confirmFixtureSourceAppend();
+      if (failure === "pending fresh review") saved.draft.generatedDraft!.sourceReviewRequired = true;
+      if (failure === "missing review binding") delete saved.draft.generatedDraft!.sourceConfirmationSha256;
+      if (failure === "missing canonical receipt") sourceReceipts.clear();
+      if (failure === "forged receipt") receipt.body.scopeSignature = "placements-v1-forged";
+      if (failure === "changed source library") saved.draft.referenceAssets!.at(-1)!.displayName = "Changed";
+      if (failure === "changed source range") saved.draft.musicVideoProject!.placementPlan!.placements[0].songEnd -= .1;
+      expect((await post(form())).status).toBe(409); expect(dispatches.length).toBe(0);
+    });
+  }
+});
 
 function provisionalProof(): GeneratedAssetIdentityVerification {
   const policy = resolveH3DraftSimilarityPolicy(H3_DRAFT_SIMILARITY_POLICY_ID, H3_DRAFT_SIMILARITY_POLICY_SHA256)!;

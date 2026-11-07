@@ -1,11 +1,12 @@
 import { getSessionUser, unauthorizedResponse } from "@/lib/session";
+import { validateSavedGenerationScope, recordGenerationScopeBaseline, SourceConfirmationError } from "@/lib/generationScopeServer";
 import { readStudioProject } from "@/lib/studioProjectStore";
 import { getMediaGatewayConfig } from "@/lib/mediaGateway";
 import { H3RequestError, materializeH3Job, parseH3Request } from "@/lib/h3GenerationServer";
 import { pinH3JobReferences } from "@/lib/h3JobStore";
 import { readH3FirstFrame, registerH3FirstFrame } from "@/lib/h3FirstFrameStore";
 export const runtime="nodejs";
-function failure(error:unknown){return Response.json({error:error instanceof H3RequestError?error.message:"First-frame storage is unavailable. No generation was submitted."},{status:error instanceof H3RequestError?error.status:503});}
+function failure(error:unknown){return Response.json({error:error instanceof H3RequestError||error instanceof SourceConfirmationError?error.message:"First-frame storage is unavailable. No generation was submitted."},{status:error instanceof H3RequestError||error instanceof SourceConfirmationError?error.status:503});}
 export async function POST(request:Request){
   const user=await getSessionUser();if(!user)return unauthorizedResponse();
   try{
@@ -15,7 +16,9 @@ export async function POST(request:Request){
     const saved=await readStudioProject(user.id,shot.projectId,{fresh:true}),config=getMediaGatewayConfig();
     if(!saved)throw new H3RequestError("Project not found.",404);if(!config)throw new H3RequestError("Generation storage is unavailable.",503);
     if(typeof input.upload?.bucket!=="string"||typeof input.upload?.objectKey!=="string"||typeof input.expectedSha256!=="string")throw new H3RequestError("An owned upload and expected SHA256 are required.");
+    await validateSavedGenerationScope(user.id,saved,{allowUnissuedBaseline:true});
     const job=await pinH3JobReferences(materializeH3Job(user.id,saved,shot,config.bucket));
+    await recordGenerationScopeBaseline(user.id,saved);
     const artifact=await registerH3FirstFrame(job,input.upload,input.expectedSha256);
     return Response.json({success:true,artifact,screenStatus:"pending-worker-preflight"},{headers:{"Cache-Control":"no-store"}});
   }catch(error){return failure(error);}

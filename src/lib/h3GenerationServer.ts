@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { assertMaterializationGenerationScope } from "./generationScopeServer";
 import { H3_MAX_SHOT_SECONDS, H3_PROFILE, H3_LEGACY_PROFILE, H3_CONDITIONING_PREPARATION_VERSION, type H3GenerationProfileOptions, type H3GenerationJob, type H3GenerationRequest, type H3ReferenceSnapshot } from "@/components/studio/h3Generation";
 import { isPlacementPlanCurrent } from "@/components/studio/musicVideoProject";
 import { assertReferenceLanguage } from "@/components/studio/referenceLanguage";
@@ -113,7 +114,7 @@ export function materializeH3Job(ownerId: string, saved: SavedStudioProject, req
     });
     if (liveContext !== story.confirmedSourceContextSignature) throw new H3RequestError("The master, footage or references changed after story approval.", 409);
   }
-  if (!project || !isPlacementPlanCurrent(project) || project.placementPlan?.inputSignature !== request.planSignature) {
+  if (!project?.placementPlan || !isPlacementPlanCurrent(project) || assertMaterializationGenerationScope(saved) !== request.planSignature) {
     throw new H3RequestError("The story or edit plan changed. Save the current plan before generation.", 409);
   }
   const item = project.editPlan.timelineItems.find(item => item.sectionId === request.sectionId

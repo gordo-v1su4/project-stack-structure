@@ -1,4 +1,5 @@
 import { assessStoryMatch, isUsableStoryMatch, type MatchAssessment } from "./storyMatchAssessment";
+import { effectiveGenerationScope } from "./generationScope";
 import type { GeneratedStudioAsset } from "./generatedAssets";
 import { generatedAssetWindow, listApprovedGeneratedVideoAssets } from "./generatedAssets";
 import { isPlacementPlanCurrent, type MusicVideoProject, type TimelineItem, type VideoMoment } from "./musicVideoProject";
@@ -110,6 +111,7 @@ export function buildCoverageSlots(
   if (!project) return [];
 
   const approvedVideos = listApprovedGeneratedVideoAssets(approvedReplacements);
+  const generationScope = effectiveGenerationScope(project);
 
   const momentsById = new Map(project.videoMoments.map((moment) => [moment.id, moment]));
   const originalItemIds = new Map<string, string>();
@@ -163,7 +165,7 @@ export function buildCoverageSlots(
       consumed.set(moment.id, (consumed.get(moment.id) ?? 0) + assignedDuration);
       intervals.push([item.start, item.start + assignedDuration]);
     }
-    const planSignature = project.placementPlan && !stalePlacements ? project.placementPlan.inputSignature : undefined;
+    const planSignature = !stalePlacements ? generationScope : undefined;
     for (const asset of approvedVideos) {
       const window = generatedAssetWindow(asset, { planSignature, requirementId: item.requirementId,
         timelineItemId: originalItemIds.get(item.id) ?? item.id, sectionId: item.sectionId,
