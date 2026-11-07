@@ -195,6 +195,7 @@ export default function StudioApp() {
   const [saveState, setSaveState] = useState<SaveState>(() => createSaveState("local"));
   const [draftRestored, setDraftRestored] = useState(false);
   const skipNextDirtyMarkRef = useRef(true);
+  const skipRestoredAutosaveRef = useRef(true);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [activeProjectName, setActiveProjectName] = useState("Untitled project");
   const pendingAutosaveRef = useRef<PendingStudioAutosave | null>(null);
@@ -329,6 +330,13 @@ export default function StudioApp() {
   useEffect(() => {
     if (!draftRestored) return;
 
+    // Restoring a saved snapshot is not an edit and must not enqueue a write.
+    if (skipRestoredAutosaveRef.current) {
+      skipRestoredAutosaveRef.current = false;
+      skipNextDirtyMarkRef.current = false;
+      return;
+    }
+
     pendingAutosaveRef.current = {
       projectId: activeProjectId,
       projectName: activeProjectName,
@@ -365,7 +373,6 @@ export default function StudioApp() {
         },
       },
     };
-    // The first run after a restore only mirrors what was just loaded; it is not a user edit.
     if (skipNextDirtyMarkRef.current) {
       skipNextDirtyMarkRef.current = false;
       return;
@@ -548,6 +555,7 @@ export default function StudioApp() {
   }, []);
 
   function applyRestoredProjectDraft(draft: RuntimeStudioProjectDraft) {
+    skipRestoredAutosaveRef.current = true;
     finalExportFlightRef.current = null;
     setIsFinalExporting(false);
     setFinalExportIntent(draft.workflowUiSettings?.finalExportIntent);
