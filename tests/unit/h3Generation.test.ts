@@ -5,6 +5,25 @@ import { assertH3ShotProfile, buildH3Workflow, compileH3Prompt } from "@/lib/h3W
 import { h3ProjectFixture } from "../helpers/h3Project";
 
 describe("owned plan-bound H3 generation", () => {
+  test("crowd sockets retain selection order and constrain supporting authority", () => {
+    const { saved, request } = h3ProjectFixture();
+    const references = saved.draft.referenceAssets!;
+    for (const id of ["ExtrasB", "ExtrasA"]) references.push({ ...references[1], id, role: "crowd", kind: "crowd", displayName: id,
+      storagePath: `media-uploads/github-test/references/${id}/sheet.png` });
+    const job = materializeH3Job("github-test", saved, { ...request, referenceAssetIds: ["diego", "club", "ExtrasA", "ExtrasB"] }, "studio");
+    const built = buildH3Workflow(job, ["diego.png", "club.png", "extras-a.png", "extras-b.png"]);
+    const graph = built.workflow as Record<string, { inputs: Record<string, unknown> }>;
+    expect(job.references.map(ref => ref.role)).toEqual(["identity", "environment", "crowd", "crowd"]);
+    expect(graph.cond.inputs["ref_images.ref_image_2"]).toEqual(["reference_2", 0]);
+    expect(graph.reference_2.inputs.image).toBe("extras-a.png");
+    expect(graph.reference_3.inputs.image).toBe("extras-b.png");
+    expect(built.prompt).toContain("<Subject 3> is ExtrasA from <Picture 3>, guiding background extras variety and wardrobe range only.");
+    expect(built.prompt).toContain("Named character identity and wardrobe authorities and the environment authority remain unchanged.");
+    expect(built.prompt).not.toContain("the crowd authority");
+    expect(built.prompt).not.toContain("ExtrasA's crowd reference");
+    expect(built.prompt).toContain("the identity and wardrobe authority");
+    expect(built.prompt).toContain("the environment authority");
+  });
   test("reviewed Story directions still require exact-name language at H3 submission and compilation", () => {
     const { saved, request } = h3ProjectFixture();
     const prompt = "Diego enters. He scans the crowd and raises his eyes.";

@@ -48,8 +48,12 @@ export function compileH3Prompt(job: H3GenerationJob) {
     const prompt = `For the target video, at 0.00 seconds into the target video, <Picture 1> (from [Shot 1]) is fully referenced.\n\nintegrated_multimodal_description: [Shot 1] ${body}\n\noverall_soundscape: Environmental room tone and movement sounds.\n\nnon_diegetic_music: N/A`;
     return {prompt,frameSchedule:{"0":body},frames:h3FrameCount(job.request.songEnd-job.request.songStart)};
   }
-  const definitions = job.references.map((ref, i) => `<Subject ${i + 1}> is ${ref.canonicalName} from <Picture ${i + 1}>, the ${ref.role === "identity" ? "identity and wardrobe" : ref.role} authority.`);
-  const retention = job.references.map((ref, i) => `<Subject ${i + 1}> (appears in [Shot 1]): fully_preserved - preserve ${ref.canonicalName}'s ${ref.role === "identity" ? "identity and wardrobe" : ref.role} reference.`);
+  const definitions = job.references.map((ref, i) => ref.role === "crowd"
+    ? `<Subject ${i + 1}> is ${ref.canonicalName} from <Picture ${i + 1}>, guiding background extras variety and wardrobe range only.`
+    : `<Subject ${i + 1}> is ${ref.canonicalName} from <Picture ${i + 1}>, the ${ref.role === "identity" ? "identity and wardrobe" : ref.role} authority.`);
+  const retention = job.references.map((ref, i) => ref.role === "crowd"
+    ? `<Subject ${i + 1}> (appears in [Shot 1]): partially_preserved - transfer background extras variety and wardrobe range. Named character identity and wardrobe authorities and the environment authority remain unchanged.`
+    : `<Subject ${i + 1}> (appears in [Shot 1]): fully_preserved - preserve ${ref.canonicalName}'s ${ref.role === "identity" ? "identity and wardrobe" : ref.role} reference.`);
   const environment = job.references.find(ref => ref.role === "environment")!.canonicalName;
   const shot = `${body.replace(/[\s.]+$/, "")}. ${environment}.`;
   assertH3ShotProfile(shot, h3FrameCount(job.request.songEnd - job.request.songStart) / H3_FPS);
