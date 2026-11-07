@@ -17,11 +17,15 @@ import { buildH3IdentityAssessmentScope, identityAssessmentAsset, type H3Identit
 import { identityPolicySha256 } from "@/components/studio/issuedIdentityPolicy";
 import { H3_FIRST_FRAME_PROFILE, H3_FIRST_FRAME_PREPARATION, h3FirstFrameBinding } from "@/components/studio/h3FirstFrame";
 import { firstFrameArtifactFixture, firstFrameAssessmentFixture } from "../helpers/h3FirstFrame";
+import {CURRENT_IDENTITY_PURPOSE,buildCurrentIdentityScope,currentIdentityOrigin,currentIdentityProofOrigin,currentIdentityReviewSha256,currentReferenceIdentityApprovalSha256,withCurrentReferenceIdentity,type CurrentIdentityAssessment,type CurrentIdentityPolicy,type CurrentIdentityProof} from "@/components/studio/currentReferenceIdentity";
+import {issuedGalleryProfileSha256} from "@/components/studio/issuedIdentityPolicy";
 
 let signedIn = true, dispatches: Array<Record<string, unknown>> = [], reads = 0;
 let saved: SavedStudioProject, job: H3GenerationJob, projectId = "project-1";
 let issuedPolicy: H3IssuedDraftPolicy | undefined;
 let rangeRecord:H3IdentityAssessment|undefined;
+let currentRecord:CurrentIdentityAssessment|undefined,currentPolicy:CurrentIdentityPolicy|undefined,currentRecordMissing=false;
+mock.module("@/lib/currentIdentityStore",()=>({readCurrentIdentityAssessment:async()=>currentRecordMissing?null:currentRecord??null,readCurrentIdentityPolicy:async()=>currentPolicy??null}));
 let firstFrameBytesIntact=true,firstFrameAvailable=true,firstFrameScreenAvailable=true,firstFrameReads=0;
 const sourceReceipts = new Map<string, GenerationScopeReceipt>();
 mock.module("@/lib/generationScopeMedia", () => ({ verifyGenerationScopeMedia: async (_owner: string, _draft: unknown, expected: unknown) => expected,
@@ -66,6 +70,7 @@ const mediaHash = createHash("sha256").update(new Uint8Array([1, 2, 3])).digest(
 function reset(idForProject = "project-1", duration = 3) {
   sourceReceipts.clear();
   signedIn = true; dispatches = []; reads = 0; issuedPolicy = undefined;rangeRecord=undefined;
+  currentRecord=undefined;currentPolicy=undefined;currentRecordMissing=false;
   firstFrameBytesIntact=firstFrameAvailable=firstFrameScreenAvailable=true;firstFrameReads=0;
   projectId = idForProject; key = `media-uploads/projects/github-test/generated/${projectId}/${id}/shot.mp4`;
   const analysis: BeatJoinAnalysis = { sourceLabel: "master.wav", audioUrl: "", duration, waveform: [], energy: [], beats: [], onsets: [], sections: [],
@@ -236,6 +241,52 @@ describe("final export canonical identity and ownership boundary", () => {
     asset.identityVerification = issuedProofFixture(job, asset, issuedPolicy);
     saved.draft.generatedAssets![0] = { ...structuredClone(asset), reviewStatus: "approved", approvedIdentityEvidenceSha256: currentIdentityEvidenceSha256(asset) };
   }
+  function currentReferenceSetup(){
+    issuedSetup(2);const receipt=confirmFixtureSourceAppend(),project=saved.draft.musicVideoProject!,original=job.result!.asset,oldHash=job.referenceHashes![0],newHash=hash("e");
+    const galleries=issuedPolicy!.body.galleries.map(gallery=>({...gallery,rawSha256:gallery.rawSha256===oldHash?newHash:gallery.rawSha256}));
+    const galleryProfileSha256=issuedGalleryProfileSha256(galleries);
+    const body:CurrentIdentityPolicy["body"]={...issuedPolicy!.body,purpose:CURRENT_IDENTITY_PURPOSE,
+      originalPolicy:{kind:"issued",id:issuedPolicy!.id,sha256:issuedPolicy!.sha256},
+      references:issuedPolicy!.body.references.map(reference=>({...reference,rawSha256:reference.rawSha256===oldHash?newHash:reference.rawSha256})),identityReferenceHashes:[newHash],galleries,galleryProfileSha256,
+      preprocessVersion:`opencv412-aligncrop112-rgb-f32-nchw-unit-centroid-v1-gallery-v2-${galleryProfileSha256}`};
+    const sha=identityPolicySha256(body);currentPolicy={version:1,id:`h3-current-policy-${sha}`,sha256:sha,body};
+    receipt.body.kind="reference-version-migration";receipt.body.referenceMigration={version:1,authority:"r31-approved-diego-e71-v1",contextSha256:hash("f"),baselineSha256:hash("b"),adoptionSha256:hash("a"),
+      replacements:[{assetId:job.references[0].assetId,fromSha256:oldHash,toSha256:newHash}],historicalReferences:[],origins:[{jobId:job.id,...currentIdentityOrigin(job)}]};
+    receipt.sha256=generationScopeSha256(receipt.body);receipt.id=`generation-scope-${receipt.sha256}`;sourceReceipts.set(receipt.id,structuredClone(receipt));
+    const context={migrationSha256:receipt.sha256,contextSha256:hash("f"),replacements:receipt.body.referenceMigration.replacements,assessments:{} as Record<string,CurrentIdentityAssessment>,activeAssessments:{} as Record<string,string>};
+    const scope=buildCurrentIdentityScope(job,original,context,currentPolicy,"00000000-0000-4000-8000-000000000008");
+    const {referenceHashes:_refs,issuedPolicy:_issued,...source}=structuredClone(original.identityVerification!);void _refs;void _issued;
+    const proof:CurrentIdentityProof={...source,purpose:CURRENT_IDENTITY_PURPOSE,evaluationReferenceHashes:body.references.map(reference=>reference.rawSha256),identityReferenceHashes:[newHash],evaluationPolicy:currentPolicy,origin:currentIdentityProofOrigin(scope)};
+    proof.verifier.preprocessVersion=body.preprocessVersion;proof.draftSimilarityFilter!.policyId=currentPolicy.id;proof.draftSimilarityFilter!.policySha256=currentPolicy.sha256;
+    for(const sample of [...proof.samples,...proof.draftSimilarityFilter!.samples])for(const score of [...sample.scores,...(sample.candidateScores??[])])if(score.referenceHash===oldHash)score.referenceHash=newHash;
+    currentRecord={version:1,scope,status:"ready",assessedAt:"2026-11-07",proof,proofSha256:identityPolicySha256(proof)};context.assessments[scope.id]=currentRecord;context.activeAssessments[original.id]=scope.id;
+    project.currentIdentity=context;saved.draft.generatedDraft!.sourceConfirmationSha256=receipt.sha256;saved.draft.generatedDraft!.currentIdentityApprovalSha256=currentIdentityReviewSha256(context);
+    saved.draft.generatedAssets![0].approvedCurrentReferenceEvidenceSha256=currentReferenceIdentityApprovalSha256(withCurrentReferenceIdentity([saved.draft.generatedAssets![0]],context)[0]);
+  }
+  test("exports distinct canonical current-reference receipts while preserving original generation hashes",async()=>{
+    currentReferenceSetup();const before=JSON.stringify(job);const response=await post(form());if(response.status!==202)throw new Error(String((await response.json()).error));expect(response.status).toBe(202);expect(dispatches).toHaveLength(1);expect(JSON.stringify(job)).toBe(before);
+    const snapshot=(dispatches[0] as {projectSnapshot:{currentIdentityContextSha256:string;h3:Array<{currentIdentityAssessmentId:string}>}}).projectSnapshot;
+    expect(snapshot.currentIdentityContextSha256).toBe(hash("f"));expect(snapshot.h3[0].currentIdentityAssessmentId).toBe(currentRecord!.scope.id);
+  });
+  for(const failure of ["missing current record","current filter failed","stale current consent"])test(`refuses ${failure} before export dispatch`,async()=>{
+    currentReferenceSetup();if(failure==="missing current record")currentRecordMissing=true;
+    if(failure==="stale current consent")saved.draft.generatedDraft!.currentIdentityApprovalSha256=hash("0");
+    if(failure==="current filter failed"&&currentRecord!.status==="ready"){
+      currentRecord!.proof.draftSimilarityFilter!.status="ineligible";currentRecord!.proofSha256=identityPolicySha256(currentRecord!.proof);
+      saved.draft.generatedDraft!.currentIdentityApprovalSha256=currentIdentityReviewSha256(saved.draft.musicVideoProject!.currentIdentity!);
+      saved.draft.generatedAssets![0].approvedCurrentReferenceEvidenceSha256=currentReferenceIdentityApprovalSha256(withCurrentReferenceIdentity([saved.draft.generatedAssets![0]],saved.draft.musicVideoProject!.currentIdentity)[0]);
+    }
+    expect((await post(form())).status).toBe(409);expect(dispatches).toHaveLength(0);
+  });
+  test("superseded approved history stays intact without blocking the actual migrated cut",async()=>{
+    currentReferenceSetup();const winner=saved.draft.generatedAssets![0];winner.approvedAt="2026-11-07T00:00:00Z";
+    const old=structuredClone(winner);old.id=old.jobId=`h3-${"9".repeat(64)}`;old.approvedAt="2026-11-06T00:00:00Z";
+    old.identityVerification!.assetId=old.id;old.identityVerification!.jobId=old.jobId;
+    old.fullStorage={...old.fullStorage!,objectKey:`media-uploads/projects/github-test/generated/${projectId}/${old.id}/shot.mp4`};
+    old.approvedIdentityEvidenceSha256=currentIdentityEvidenceSha256(old);delete old.approvedCurrentReferenceEvidenceSha256;
+    saved.draft.generatedAssets!.unshift(old);const before=JSON.stringify(old);
+    const response=await post(form());if(response.status!==202)throw new Error(String((await response.json()).error));expect(response.status).toBe(202);expect(dispatches).toHaveLength(1);expect(JSON.stringify(old)).toBe(before);
+  });
   function firstFrameSetup(){
     issuedSetup(2);const artifact=firstFrameArtifactFixture(job);job.firstFrame=artifact;job.profile=H3_FIRST_FRAME_PROFILE;job.conditioningPreparationVersion=H3_FIRST_FRAME_PREPARATION;
     job.conditioningReferenceHashes=[artifact.body.pngSha256];

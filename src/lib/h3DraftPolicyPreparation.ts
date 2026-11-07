@@ -15,7 +15,7 @@ const execute = promisify(execFile);
 const EXTENSIONS: Record<string, string> = { "image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp" };
 export type PreparedH3PolicyReference = { raw: H3PolicyRawReference; imagePath: string; mime: string; bytes: Uint8Array };
 
-async function runPreflight(inputPath: string, outputPath: string) {
+export async function runPreflight(inputPath: string, outputPath: string) {
   const env: NodeJS.ProcessEnv = { NODE_ENV: process.env.NODE_ENV ?? "production" };
   for (const name of ["PATH", "HOME", "USERPROFILE", "TMP", "TEMP", "TMPDIR", "SYSTEMROOT", "LANG", "UV_CACHE_DIR", "UV_PYTHON_INSTALL_DIR", "UV_OFFLINE", "UV_PYTHON_DOWNLOADS"]) {
     if (process.env[name]) env[name] = process.env[name];

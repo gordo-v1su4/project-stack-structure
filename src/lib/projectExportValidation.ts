@@ -18,6 +18,7 @@ import { readH3IdentityAssessment } from "./h3IdentityAssessmentStore";
 import { identityAssessmentAsset } from "@/components/studio/h3IdentityAssessment";
 import { H3_FIRST_FRAME_PROFILE, h3FirstFrameDigest, normalizeH3FirstFrameReceipt } from "@/components/studio/h3FirstFrame";
 import { assertH3FirstFrameMatchesJob, downloadH3FirstFrame, readH3FirstFrame, readH3FirstFrameAssessment } from "./h3FirstFrameStore";
+import {currentIdentityReviewSha256,currentReferenceIdentityApprovalSha256} from "@/components/studio/currentReferenceIdentity";
 
 export class ProjectExportError extends Error { constructor(message: string, readonly status: 400 | 403 | 409 = 409) { super(message); } }
 export type ProjectExportContext = { projectId: string; planSignature: string; placementRevision: number; draftRevision: number };
@@ -78,12 +79,16 @@ export async function reconcileProjectFinalExport(params: {
     || draft.generatedDraft.sourceConfirmationSha256 !== project.generationScope.sha256))) {
     throw new ProjectExportError("Review and accept the assembled cut after confirming its appended sources.");
   }
+  if(project.currentIdentity&&draft.generatedDraft?.currentIdentityApprovalSha256!==currentIdentityReviewSha256(project.currentIdentity))throw new ProjectExportError("Review and accept the current-reference assessment context before exporting.");
   const assets: GeneratedStudioAsset[] = [];
+  const currentUsedUrls=project.currentIdentity?new Set(applyApprovedGeneratedAssets(buildEditPlanPreviewSegments({project:runtime.musicVideoProject,videoSources:runtime.videoSources,editSettings:draft.storyState.editSettings}),runtime.generatedAssets).map(segment=>segment.videoUrl)):undefined;
   const canonicalByKey = new Map<string, GeneratedStudioAsset>();
   const environmentOnlyNativeBounds = new Set<string>();
   const receipts: NonNullable<FinalExportPayload["projectSnapshot"]>["h3"] = [];
   for (const asset of runtime.generatedAssets) {
     if (asset.reviewStatus !== "approved") { assets.push(asset); continue; }
+    // Retained superseded approvals are history. Only actual current overlays need new-context consent/evidence.
+    if(currentUsedUrls&&!currentUsedUrls.has(buildGeneratedAssetPlaybackUrl(asset)??""))continue;
     // Approved history from another plan is retained in the project but cannot overlay this cut.
     if (asset.target?.planSignature && asset.target.planSignature !== generationScope) continue;
     const objectKey = asset.fullStorage?.objectKey ?? asset.fullStorage?.storagePath ?? "";
@@ -113,9 +118,11 @@ export async function reconcileProjectFinalExport(params: {
       || JSON.stringify(canonical.identityReferenceHashes) !== JSON.stringify(identityHashes)) {
       throw new ProjectExportError("The canonical take does not match its actual generation references.");
     }
-    const authoritative: GeneratedStudioAsset = { ...canonical, id: canonical.id, jobId: job.id, provider: "swarmui", model: job.profile,
+    let authoritative: GeneratedStudioAsset = { ...canonical, id: canonical.id, jobId: job.id, provider: "swarmui", model: job.profile,
       target: job.target, trimStart: asset.trimStart ?? 0, reviewStatus: "approved", approvedAt: asset.approvedAt,
-      approvedIdentityEvidenceSha256: asset.approvedIdentityEvidenceSha256 };
+      approvedIdentityEvidenceSha256: asset.approvedIdentityEvidenceSha256,approvedCurrentReferenceEvidenceSha256:asset.approvedCurrentReferenceEvidenceSha256 };
+    try{if(project.currentIdentity)authoritative=await(await import("./currentIdentityValidation")).canonicalCurrentIdentityAsset(ownerId,context.projectId,job,authoritative,project.currentIdentity);}
+    catch{throw new ProjectExportError("Current-reference canonical evidence changed. Review this exact take again.");}
     if(job.profile===H3_FIRST_FRAME_PROFILE){
       try{
         const receipt=normalizeH3FirstFrameReceipt(canonical.firstFrame);
@@ -145,6 +152,7 @@ export async function reconcileProjectFinalExport(params: {
         throw new ProjectExportError("The issued identity evidence changed after approval. View and approve this exact draft again.");
       }
     }
+    if(project.currentIdentity&&asset.approvedCurrentReferenceEvidenceSha256!==currentReferenceIdentityApprovalSha256(authoritative))throw new ProjectExportError("Current-reference evidence changed after approval. Review this exact draft again.");
     // Owner approval is consent to this snapshot; eligibility comes only from worker evidence.
     const reason = generatedAssetDraftIdentityBlockReason(authoritative);
     if (reason) throw new ProjectExportError(`${reason}. This take cannot enter final export.`);
@@ -160,6 +168,7 @@ export async function reconcileProjectFinalExport(params: {
     assets.push(authoritative);
     receipts.push({ jobId: job.id, assetId: authoritative.id, mediaSha256: authoritative.mediaSha256!,
       ...(authoritative.identityAssessmentId ? { identityAssessmentId: authoritative.identityAssessmentId } : {}),
+      ...(authoritative.currentReferenceIdentity?.assessment?.status==="ready"?{currentIdentityAssessmentId:authoritative.currentReferenceIdentity.assessment.scope.id,currentIdentityProofSha256:authoritative.currentReferenceIdentity.assessment.proofSha256}:{}),
       proofSha256: digest(authoritative.identityVerification), trimStart: authoritative.trimStart ?? 0,
       trimEnd: (authoritative.trimStart ?? 0) + job.target.songEnd - job.target.songStart });
   }
@@ -229,5 +238,6 @@ export async function reconcileProjectFinalExport(params: {
   if (!near(songCursor, project.duration)) throw new ProjectExportError("The accepted cut does not cover the full master song.");
   return { audio, videos, segments, projectSnapshot: { ownerId, projectId: context.projectId, planSignature: context.planSignature,
     placementRevision: context.placementRevision, draftRevision: context.draftRevision, acceptedSnapshotSha256: finalExportSnapshotSha256(draft), h3: receipts,
-    ...(project.generationScope ? { generationScope: { signature: generationScope, receiptSha256: project.generationScope.sha256 } } : {}) } };
+    ...(project.generationScope ? { generationScope: { signature: generationScope, receiptSha256: project.generationScope.sha256 } } : {}),
+    ...(project.currentIdentity?{currentIdentityContextSha256:project.currentIdentity.contextSha256,currentIdentityMigrationSha256:project.currentIdentity.migrationSha256}: {}) } };
 }

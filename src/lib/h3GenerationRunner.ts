@@ -26,7 +26,7 @@ import { H3_FIRST_FRAME_PROFILE } from "@/components/studio/h3FirstFrame";
 import { prepareH3FirstFrame } from "./h3FirstFramePreflight";
 import { assertH3FirstFrameMatchesJob } from "./h3FirstFrameStore";
 
-export type H3JobReference = { ownerId: string; projectId: string; jobId: string; mode?: "identity-recheck"; assessment?: H3IdentityAssessmentScope };
+export type H3JobReference = { ownerId: string; projectId: string; jobId: string; mode?: "identity-recheck"|"current-reference-assessment"; assessment?: H3IdentityAssessmentScope; currentRequestId?:string };
 
 const MAX_IMAGE_BYTES = 32 * 1024 * 1024;
 const executeImagePreparation = promisify(execFile);
@@ -137,6 +137,12 @@ export async function runH3Generation(reference: H3JobReference, runId: string,
   options: { wait: (seconds: number) => Promise<unknown>; stage: (label: string) => void; timeoutSeconds?: number;
     identityDiagnostic?: (event: H3IdentityDiagnostic) => void }) {
   if (reference.mode === "identity-recheck") return recheckH3Identity(reference, options);
+  if(reference.mode==="current-reference-assessment"){
+    if(!reference.currentRequestId)throw new Error("Explicit current-reference request is required.");
+    const{runCurrentIdentityRequest}=await import("./currentIdentityRunner");
+    const outcome=await runCurrentIdentityRequest(reference.ownerId,reference.projectId,reference.currentRequestId,runId,options);
+    return {provider:"swarmui" as const,status:"completed" as const,message:"Current-reference CPU assessment completed; project selection is unchanged.",assets:[],currentIdentityRequest:outcome};
+  }
   const { ownerId, projectId, jobId } = reference;
   const storedJob = await readH3Job(ownerId, projectId, jobId);
   if (!storedJob) throw new Error("Generation job not found.");
@@ -365,6 +371,7 @@ export async function recheckH3Identity(reference: H3JobReference, options: { st
     await writeFile(outputPath, new Uint8Array(media.bytes));
     validateH3VideoProbe(await probeMediaFile(outputPath), job.frames!, job.request.songEnd - job.request.songStart);
     const assessed = await assessH3Identity({ job, asset: assessment ? { ...asset, trimStart: assessment.trimStart } : asset, outputPath, tempFolder: folder,
+      referenceResolver:saved.draft.musicVideoProject?.currentIdentity?await (await import("./historicalIdentityReference")).historicalIdentityReferenceResolver(job,saved):undefined,
       diagnostic: options.identityDiagnostic,
       ...(assessment ? { pinnedDraftPolicy: { id: assessment.policyId, sha256: assessment.policySha256 } } : {}) });
     const latest = await readStudioProject(ownerId, projectId, { fresh: true });

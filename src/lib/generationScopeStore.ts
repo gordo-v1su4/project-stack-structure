@@ -17,6 +17,7 @@ function storage() {
   }
   return { client: cached.client, bucket: gateway.bucket };
 }
+export const sourceConfirmationStorage = storage;
 function key(ownerId: string, projectId: string, id: string) {
   if (!/^generation-scope-[a-f0-9]{64}$/.test(id) || projectId !== normalizeStudioProjectId(projectId)) throw new Error("Invalid source confirmation receipt.");
   return `media-uploads/projects/${normalizeStudioOwnerSegment(ownerId)}/generation-scopes/${projectId}/${id}.json`;

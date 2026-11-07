@@ -177,6 +177,7 @@ export interface ReviewFinding {
 }
 
 export interface MusicVideoProject {
+  currentIdentity?: import("./currentReferenceIdentity").CurrentIdentityContext;
   id: string;
   generationScope?: import("./generationScope").GenerationScopeReceipt;
   generationScopeVersion?: 2;

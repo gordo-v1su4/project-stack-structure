@@ -54,7 +54,7 @@ export type H3IdentityInput = {
   references: { path: string; hash: string; canonicalName: string; role: string; faceRegions?: H3IdentityFaceRegion[] }[];
 };
 
-async function executeVerifier(inputPath: string, outputPath: string) {
+export async function executeVerifier(inputPath: string, outputPath: string) {
   // Python receives no application/storage credentials and performs no network I/O.
   const env: NodeJS.ProcessEnv = { NODE_ENV: process.env.NODE_ENV ?? "production" };
   for (const name of ["PATH", "HOME", "USERPROFILE", "TMP", "TEMP", "TMPDIR", "SYSTEMROOT", "LANG", "UV_CACHE_DIR", "UV_PYTHON_INSTALL_DIR", "UV_OFFLINE", "UV_PYTHON_DOWNLOADS"]) {
@@ -76,6 +76,7 @@ export async function assessH3Identity(params: {
   outputPath: string;
   tempFolder: string;
   runVerifier?: (inputPath: string, outputPath: string) => Promise<void>;
+  referenceResolver?:(reference:H3GenerationJob["references"][number],index:number)=>ReturnType<typeof downloadH3ReferenceImage>;
   pinnedDraftPolicy?: { id: string; sha256: string };
   diagnostic?: (event: H3IdentityDiagnostic) => void;
 }): Promise<GeneratedStudioAsset> {
@@ -114,7 +115,7 @@ export async function assessH3Identity(params: {
     for (let index = 0; index < job.references.length; index++) {
       const ref = job.references[index];
       advance("reference-download", index);
-      const media = await downloadH3ReferenceImage(ref);
+      const media = await (params.referenceResolver?params.referenceResolver(ref,index):downloadH3ReferenceImage(ref));
       const bytes = new Uint8Array(media.bytes);
       advance("reference-hash", index);
       const hash = sha256(bytes);

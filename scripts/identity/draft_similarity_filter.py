@@ -162,7 +162,7 @@ class DraftSimilarityFilter:
 
 
 def requested_draft_filter(value, verifier_metadata, manifest, gallery_profile):
-    if value.get("issuedPolicy") is not None:
+    if value.get("issuedPolicy") is not None or value.get("purpose") == "current-reference-assessment-v1":
         from issued_policy import issued_draft_filter
         return issued_draft_filter(value, verifier_metadata, manifest, gallery_profile)
     if value.get("draftSimilarityPolicyId") == FOREGROUND_POLICY_ID:

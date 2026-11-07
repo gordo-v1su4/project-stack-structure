@@ -38,20 +38,23 @@ def load_family(family_id):
 
 def validate_issued_policy(value, metadata, manifest, gallery):
     """Recheck trusted worker input against actual rehashed files and gallery geometry."""
-    issued = value.get("issuedPolicy")
+    current = value.get("purpose") == "current-reference-assessment-v1"
+    issued = value.get("evaluationPolicy") if current else value.get("issuedPolicy")
     if not isinstance(issued, dict): raise ValueError("Missing issued policy")
     body = issued.get("body", {})
     digest = policy_sha256(body)
     if (issued.get("version") != 1 or body.get("version") != 1 or issued.get("sha256") != digest
-        or issued.get("id") != "h3-policy-" + digest): raise ValueError("Issued policy digest differs")
+        or issued.get("id") != ("h3-current-policy-" if current else "h3-policy-") + digest): raise ValueError("Issued policy digest differs")
     family = load_family(body.get("familyId"))
-    if (issued.get("familyId") != family["id"] or issued.get("familySha256") != family["sha256"]
+    if ((not current and (issued.get("familyId") != family["id"] or issued.get("familySha256") != family["sha256"]))
         or body.get("familySha256") != family["sha256"]): raise ValueError("Issued policy family differs")
     if (body.get("ownerId") != value.get("ownerId") or not body.get("ownerId")
         or body.get("projectId") != value.get("projectId") or not body.get("projectId")
-        or body.get("generationModel") != value.get("generationModel") or body.get("generationModel") not in ("h3-ref2va-int8-v3", "h3-i2va-fl2va-int8-v1")):
+        or body.get("generationModel") != value.get("generationModel") or body.get("generationModel") not in (("h3-ref2va-int8-v2", "h3-ref2va-int8-v3", "h3-i2va-fl2va-int8-v1") if current else ("h3-ref2va-int8-v3", "h3-i2va-fl2va-int8-v1"))):
         raise ValueError("Issued policy owner, project or model differs")
-    if body["generationModel"] == "h3-i2va-fl2va-int8-v1":
+    if current:
+        if body.get("purpose") != "current-reference-assessment-v1" or "firstFrame" in body or "issuedPolicy" in value: raise ValueError("Current assessment cannot alter generation conditioning")
+    elif body["generationModel"] == "h3-i2va-fl2va-int8-v1":
         binding = body.get("firstFrame")
         if (family["id"] not in ("sface-yunet-joint-frontal-v2", "sface-yunet-foreground-frontal-v2") or not isinstance(binding, dict)
             or binding != value.get("firstFrame") or binding.get("preparationVersion") != "first-frame-native-v1"
@@ -63,7 +66,7 @@ def validate_issued_policy(value, metadata, manifest, gallery):
     references = body.get("references", [])
     identities = [ref for ref in references if ref.get("role") == "identity"]
     if (len(identities) != family["scope"]["requiredIdentityCount"]
-        or [ref.get("rawSha256") for ref in references] != value["generationReferenceHashes"]
+        or [ref.get("rawSha256") for ref in references] != (value["evaluationReferenceHashes"] if current else value["generationReferenceHashes"])
         or [ref.get("rawSha256") for ref in identities] != value["identityReferenceHashes"]
         or body.get("identityReferenceHashes") != value["identityReferenceHashes"]): raise ValueError("Issued raw references differ")
     actual = value["references"]
@@ -105,6 +108,26 @@ def issued_draft_filter(value, metadata, manifest, gallery):
     from foreground_similarity_filter import ForegroundDraftSimilarityFilter
     from joint_similarity_filter import JointDraftSimilarityFilter
     issued, family, identities = validate_issued_policy(value, metadata, manifest, gallery)
+    if value.get("purpose") == "current-reference-assessment-v1":
+        original = issued["body"].get("originalPolicy", {})
+        if original.get("kind") == "legacy":
+            from draft_similarity_filter import DraftSimilarityFilter, load_policy, POLICIES
+            policy_id = original.get("id")
+            if policy_id not in POLICIES or POLICIES[policy_id][0] != original.get("sha256") or POLICIES[policy_id][1] != value["generationModel"]:
+                raise ValueError("Unknown historical single-face numerical screen")
+            old = load_policy(policy_id)
+            if family["frontalGeometry"]["minimumDetectionScore"] != old["scope"]["minimumDetectionScore"] or len(identities) != 1:
+                raise ValueError("Historical numerical geometry cannot be weakened")
+            instance = DraftSimilarityFilter.__new__(DraftSimilarityFilter)
+            instance.value, instance.policy = value, {**old, "identity": {**old["identity"], **identities[0]}}
+            instance.evidence = {"version": 1, "policyId": issued["id"], "policySha256": issued["sha256"], "status": "unverifiable",
+                "threshold": old["threshold"], "examinedFrameCount": 0, "eligibleFrameCount": 0, "outOfScopeFrameCount": 0,
+                "ambiguousFrameCount": 0, "samples": [], "warnings": ["Current-reference numerical screen; historical generation references remain unchanged."]}
+            instance.bound, instance.unresolved = True, False
+            instance.previous_box, instance.previous_index, instance.track_id = None, None, None
+            instance.warning_counts = {"native_blur": 0, "native_luminance_low": 0, "native_luminance_high": 0}
+            return instance
+        if original.get("kind") != "issued": raise ValueError("Missing historical numerical screen kind")
     joint = family["scope"]["kind"] == "joint-frontal"
     # Reuse the exact existing numerical evaluators; only the immutable bindings differ.
     instance = (JointDraftSimilarityFilter if joint else ForegroundDraftSimilarityFilter).__new__(

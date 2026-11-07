@@ -28,8 +28,9 @@ export type StoredExportInput = {
 
 export type FinalExportPayload = {
   projectSnapshot?: { ownerId: string; projectId: string; planSignature: string; placementRevision: number; draftRevision: number;
+    currentIdentityContextSha256?:string;currentIdentityMigrationSha256?:string;
     generationScope?: { signature: string; receiptSha256: string };
-    acceptedSnapshotSha256: string; h3: Array<{ jobId: string; assetId: string; mediaSha256: string; proofSha256: string; trimStart: number; trimEnd: number; identityAssessmentId?: string }> };
+    acceptedSnapshotSha256: string; h3: Array<{ jobId: string; assetId: string; mediaSha256: string; proofSha256: string; trimStart: number; trimEnd: number; identityAssessmentId?: string;currentIdentityAssessmentId?:string;currentIdentityProofSha256?:string }> };
   requestKey: string;
   audio: StoredExportInput;
   videos: StoredExportInput[];

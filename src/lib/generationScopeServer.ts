@@ -19,8 +19,8 @@ function contextInput(draft: PersistedStudioProjectDraft, references = draft.ref
   return { analysis: draft.analysis ? { ...draft.analysis, audioUrl: draft.analysis.storageUrl ?? "" } : null,
     videoSources: draft.videoSources.map(source => ({ ...source, videoUrl: source.storageUrl ?? "" })), referenceAssets: references };
 }
-const sourceSha = (draft: PersistedStudioProjectDraft) => generationScopeSha256(studioSourceContextInput(contextInput(draft)));
-const storySha = (draft: PersistedStudioProjectDraft) => generationScopeSha256({ storyBeats: draft.storyState.storyBeats,
+export const sourceSha = (draft: PersistedStudioProjectDraft) => generationScopeSha256(studioSourceContextInput(contextInput(draft)));
+export const storySha = (draft: PersistedStudioProjectDraft) => generationScopeSha256({ storyBeats: draft.storyState.storyBeats,
   confirmedTreatmentSnapshot: draft.storyState.confirmedTreatmentSnapshot, storyContentSignature: draft.storyState.storyContentSignature,
   editSettings: draft.storyState.editSettings });
 const authorized = new WeakMap<SavedStudioProject, string>();
@@ -29,6 +29,7 @@ const authorized = new WeakMap<SavedStudioProject, string>();
 export async function validateSavedGenerationScope(ownerId: string, saved: SavedStudioProject, options: { allowUnissuedBaseline?: boolean } = {}): Promise<string | undefined> {
   const project = saved.draft.musicVideoProject;
   if (!project) return undefined;
+  if(project.currentIdentity&&!project.generationScope)throw new SourceConfirmationError("The current-reference migration receipt is unavailable.");
   const scope = effectiveGenerationScope(project);
   if (!project.generationScope) {
     if (project.generationScopeVersion === 2 && (project.generationSourceContextSha256 !== sourceSha(saved.draft) || project.generationStorySha256 !== storySha(saved.draft))) throw new SourceConfirmationError("The strong source inventory or story changed after Story confirmation.");
@@ -52,6 +53,13 @@ export async function validateSavedGenerationScope(ownerId: string, saved: Saved
   }
   const canonical = await readGenerationScopeReceipt(ownerId, saved.project.id, receipt.id);
   if (!canonical || generationScopeSha256(canonical) !== generationScopeSha256(receipt)) throw new SourceConfirmationError("The canonical source confirmation is unavailable or changed.");
+  if(receipt.body.referenceMigration||receipt.body.currentIdentityMigrationSha256||project.currentIdentity){
+    const context=project.currentIdentity;
+    if(!context||context.migrationSha256!==(receipt.body.referenceMigration?receipt.sha256:receipt.body.currentIdentityMigrationSha256))throw new SourceConfirmationError("The current-reference context or migration chain differs.");
+    const migration=receipt.body.referenceMigration?canonical:await readGenerationScopeReceipt(ownerId,saved.project.id,`generation-scope-${context.migrationSha256}`);
+    if(!migration?.body.referenceMigration||migration.body.referenceMigration.contextSha256!==context.contextSha256
+      ||generationScopeSha256(migration.body.referenceMigration.replacements)!==generationScopeSha256(context.replacements))throw new SourceConfirmationError("The canonical current-reference context differs.");
+  }
   try { await verifyGenerationScopeRawReferences(ownerId, receipt.body.references, receipt.body.rawReferences); await verifyGenerationScopeMedia(ownerId, saved.draft, receipt.body.sourceMediaVersions); }
   catch { throw new SourceConfirmationError("The current reference pixels or source media versions differ from their canonical source confirmation."); }
   authorized.set(saved, receipt.sha256);
@@ -66,7 +74,8 @@ export function assertMaterializationGenerationScope(saved: SavedStudioProject):
 }
 
 /** A short legacy hash cannot prove historical ranges. Only a strong issued baseline or the exact reviewed migration certificate can. */
-async function originalReferences(ownerId: string, projectId: string, draft: PersistedStudioProjectDraft, jobs: H3GenerationJob[], scope: string): Promise<{ references: ReferenceAsset[]; rawReferences: ScopeRawReference[]; sourceMediaVersions: ScopeSourceMediaVersion[] }> {
+export async function originalReferences(ownerId: string, projectId: string, draft: PersistedStudioProjectDraft, jobs: H3GenerationJob[], scope: string,
+  approvedReplacement?: { assetId: string; fromSha256: string; toSha256: string }): Promise<{ references: ReferenceAsset[]; rawReferences: ScopeRawReference[]; sourceMediaVersions: ScopeSourceMediaVersion[]; historicalReferences: ExpectedScopeRawReference[] }> {
   const project = draft.musicVideoProject!, references = draft.referenceAssets ?? [];
   const baseline = await readGenerationScopeBaseline(ownerId, projectId, scope, generationSemanticSha256(project));
   let subset: ReferenceAsset[];
@@ -106,8 +115,23 @@ async function originalReferences(ownerId: string, projectId: string, draft: Per
     if (!records.length || records.some(record => record.etag !== records[0].etag || record.sha256 !== records[0].sha256)) throw new SourceConfirmationError("Canonical original reference byte proofs disagree or are unavailable.");
     return records[0];
   });
-  try { return { references: subset, rawReferences: await verifyGenerationScopeRawReferences(ownerId, sourceReferenceManifest(subset), expected),
-    sourceMediaVersions: baseline ? await verifyGenerationScopeMedia(ownerId, draft, baseline.body.sourceMediaVersions) : await bootstrapR31SourceMedia(ownerId, projectId, draft) }; }
+  // Explicit migration only. The ordinary additive path never replaces an expected raw version.
+  if(approvedReplacement&&(ownerId!=="github-179914528"||projectId!=="75101b25-fea6-42b1-b2c6-85a9d1deb8eb"
+    ||approvedReplacement.assetId!=="character-1-1788717231561-sy1hpa"
+    ||approvedReplacement.fromSha256!=="47d772694e0c14397707f31b7802fe91d434da1e4b54be7bac3eb00037364381"
+    ||approvedReplacement.toSha256!=="e71f4d4325a61641d98de57604ff09e425aeefd07f994606f189c06f88c47c4a"))throw new SourceConfirmationError("Unsupported reference migration authority.");
+  try {
+    let rawReferences: ScopeRawReference[];
+    if(approvedReplacement){
+      const old=expected.find(reference=>reference.assetId===approvedReplacement.assetId);
+      if(old?.sha256!==approvedReplacement.fromSha256)throw new Error("Historical reference authority differs.");
+      const unchanged=subset.filter(reference=>reference.id!==approvedReplacement.assetId);
+      const pinned=await pinGenerationScopeRawReferences(ownerId,sourceReferenceManifest(subset.filter(reference=>reference.id===approvedReplacement.assetId)));
+      if(pinned.length!==1||pinned[0].sha256!==approvedReplacement.toSha256)throw new Error("Approved replacement bytes differ.");
+      rawReferences=[...await verifyGenerationScopeRawReferences(ownerId,sourceReferenceManifest(unchanged),expected.filter(reference=>reference.assetId!==approvedReplacement.assetId)),...pinned];
+    }else rawReferences=await verifyGenerationScopeRawReferences(ownerId,sourceReferenceManifest(subset),expected);
+    return { references: subset, rawReferences, historicalReferences: expected,
+      sourceMediaVersions: baseline ? await verifyGenerationScopeMedia(ownerId, draft, baseline.body.sourceMediaVersions) : await bootstrapR31SourceMedia(ownerId, projectId, draft) }; }
   catch { throw new SourceConfirmationError("An original reference's exact conditional bytes changed. Its footage bank was preserved."); }
 }
 
@@ -176,6 +200,7 @@ export async function prepareAdditiveSourceConfirmation(params: { ownerId: strin
     appendedReferenceIds: added.map(reference => reference.id).sort(),
     storySha256: storySha(draft), sourceInventorySha256: sourceSha(draft),
     ...(previous.generationScope ? { previousReceiptSha256: previous.generationScope.sha256 } : {}), ...(reprise ? { reprise } : {}) };
+  if(previous.currentIdentity)body.currentIdentityMigrationSha256=previous.currentIdentity.migrationSha256;
   const sha256 = generationScopeSha256(body), receipt: GenerationScopeReceipt = { version: 1, id: `generation-scope-${sha256}`, sha256, body };
   const oldDraft = draft.generatedDraft ?? createGeneratedDraftSelection(oldScope);
   if (oldDraft.planSignature !== oldScope) throw new SourceConfirmationError("The selected draft belongs to another arrangement. Review it before confirming sources.");

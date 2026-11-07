@@ -3,6 +3,12 @@
 set -euo pipefail
 
 readonly isolated_tests=(
+  "tests/unit/currentIdentityStore.test.ts"
+  "tests/unit/currentIdentityRoute.test.ts"
+  "tests/unit/referenceMigrationServer.test.ts"
+  "tests/unit/currentIdentityRunner.test.ts"
+  "tests/unit/historicalIdentityReference.test.ts"
+  "tests/unit/currentIdentityPolicyPreparation.test.ts"
   "tests/unit/generationScopeServer.test.ts"
   "tests/unit/generationScopeStore.test.ts"
   "tests/unit/generationScopeRawReferences.test.ts"

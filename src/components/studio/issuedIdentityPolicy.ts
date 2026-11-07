@@ -159,7 +159,7 @@ function normalizeRawReference(value: unknown): H3PolicyRawReference | undefined
     bucket: value.bucket, objectKey: value.objectKey, version: value.version, rawSha256: value.rawSha256,
     ...(value.etag === undefined ? {} : { etag: value.etag as string }) };
 }
-function normalizeGallery(value: unknown, reference: H3PolicyRawReference, family: H3PolicyFamily): H3PolicyGallery | undefined {
+export function normalizeGallery(value: unknown, reference: H3PolicyRawReference, family: H3PolicyFamily): H3PolicyGallery | undefined {
   if (!object(value) || value.referenceAssetId !== reference.assetId || value.canonicalName !== reference.canonicalName
     || value.rawSha256 !== reference.rawSha256 || !Array.isArray(value.faceRegions) || !count(value.faceRegions.length, 9)) return undefined;
   const regions: H3IdentityFaceRegion[] = [];
@@ -218,7 +218,7 @@ export function normalizeH3IssuedDraftPolicy(value: unknown): H3IssuedDraftPolic
   return { ...policy, issuedAt: value.issuedAt };
 }
 
-export function identityApprovalPayload(asset: Pick<GeneratedStudioAsset, "id" | "jobId" | "model" | "mediaSha256" | "target" | "trimStart" | "identityVerification" | "identityAssessmentId" | "identityAssessmentTrimStart" | "firstFrame">) {
+export function identityApprovalPayload(asset: Pick<GeneratedStudioAsset, "id" | "jobId" | "model" | "mediaSha256" | "target" | "trimStart" | "identityVerification" | "identityAssessmentId" | "identityAssessmentTrimStart" | "firstFrame" | "currentReferenceIdentity">) {
   return { id: asset.id, jobId: asset.jobId, model: asset.model, mediaSha256: asset.mediaSha256,
     target: asset.target, trimStart: asset.trimStart ?? 0, identityVerification: asset.identityVerification,
     ...(asset.firstFrame?{firstFrame:asset.firstFrame}:{}),
