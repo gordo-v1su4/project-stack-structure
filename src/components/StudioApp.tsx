@@ -32,6 +32,7 @@ import {
   type RuntimeStudioProjectDraft,
 } from "./studio/projectPersistence";
 import { loadStudioProjectSelection, readStudioProjectSelection, rememberStudioProjectSelection } from "./studio/projectSelection";
+import { ProjectSaveSession } from "./studio/projectSaveSession";
 import type { StudioProjectSummary } from "@/lib/studioProjectStore";
 import { applyApprovedGeneratedAssets, buildGeneratedAssetContextPreview, buildGeneratedAssetPlaybackUrl, mergeGeneratedAssetDelivery, type GeneratedStudioAsset } from "./studio/generatedAssets";
 import { applyDraftGeneratedAssets, approveGeneratedDraft, captureGeneratedDraftReview, createGeneratedDraftSelection, prepareGeneratedDraftApprovalEvidence, rejectGeneratedDraftAsset, selectGeneratedDraftAsset, type GeneratedDraftReview, type GeneratedDraftSelection } from "./studio/generatedDraft";
@@ -103,10 +104,20 @@ import type {
 type PendingStudioAutosave = {
   readonly projectId: string | null;
   readonly projectName: string;
+  readonly contextEpoch: number;
   readonly params: Parameters<typeof createPersistableStudioProjectDraft>[0];
 };
 
 export default function StudioApp() {
+  const projectSaveSessionRef = useRef<ProjectSaveSession | null>(null);
+  if (!projectSaveSessionRef.current) projectSaveSessionRef.current = new ProjectSaveSession();
+  const saveVersionedProject = useCallback((params: Parameters<typeof saveNamedStudioProject>[0], options: Parameters<typeof saveNamedStudioProject>[1] = {}, contextEpoch?: number, isCurrent?: () => boolean) => {
+    return projectSaveSessionRef.current!.save(params.projectId?.trim() || null,
+      expectedRevision => {
+        if (params.expectedRevision && params.expectedRevision !== expectedRevision) throw new Error("The confirmed source revision is no longer this editor's saved revision. Reopen the project before saving it.");
+        return saveNamedStudioProject({ ...params, expectedRevision }, { ...options, cache: false });
+      }, contextEpoch, isCurrent);
+  }, []);
   const videoSourcesRef = useRef<UploadedVideoSource[]>([]);
   const referenceAssetsRef = useRef<ReferenceAsset[]>([]);
   const captionSettingsRef = useRef<ReturnType<typeof buildSceneCaptionSettings> | null>(null);
@@ -263,12 +274,12 @@ export default function StudioApp() {
     let cancelled = false;
 
     const selection = readStudioProjectSelection();
-    type RestoredSelection = { project: StudioProjectSummary | null; draft: RuntimeStudioProjectDraft };
+    type RestoredSelection = { project: StudioProjectSummary | null; draft: RuntimeStudioProjectDraft; revision?: string };
     const restore = loadStudioProjectSelection<RestoredSelection>(selection, {
       named: async (id) => {
         // A late/cancelled restore cannot change this tab's current selection.
         const saved = await loadSavedStudioProject(id, { cache: false });
-        return { project: saved.project, draft: hydrateStudioProjectDraft({ draft: saved.draft }) };
+        return { project: saved.project, draft: hydrateStudioProjectDraft({ draft: saved.draft }), revision: saved.revision };
       },
       local: async () => {
         const draft = await loadStudioProjectDraft();
@@ -284,7 +295,8 @@ export default function StudioApp() {
           return;
         }
 
-        const { project, draft } = restored;
+        const { project, draft, revision } = restored;
+        projectSaveSessionRef.current!.restore(project?.id ?? null, revision);
         if (project) {
           rememberStudioProjectSelection(project.id);
           setActiveProjectId(project.id);
@@ -321,6 +333,7 @@ export default function StudioApp() {
     pendingAutosaveRef.current = {
       projectId: activeProjectId,
       projectName: activeProjectName,
+      contextEpoch: projectSaveSessionRef.current!.contextEpoch,
       params: {
         analysis: beatJoinAnalysis,
         videoSources,
@@ -374,28 +387,30 @@ export default function StudioApp() {
       setSaveState((current) => ({ ...current, kind: "saving", scope: pending.projectId ? "project" : "local" }));
       try {
         const draft = pending.projectId
-          ? await saveNamedStudioProject({
+          ? await saveVersionedProject({
               projectId: pending.projectId,
               name: pending.projectName,
               draft: createPersistableStudioProjectDraft(pending.params),
-            }).then((saved) => saved.draft)
+            }, {}, pending.contextEpoch).then((saved) => saved.draft)
           : await saveStudioProjectDraft(pending.params, {
               audioFile: audioFileRef.current,
               videoFilesByMediaKey: videoFilesByMediaKeyRef.current,
             });
+        if (pending.contextEpoch !== projectSaveSessionRef.current!.contextEpoch) return;
         const savedAt = draft ? new Date(draft.savedAt).getTime() : Date.now();
         // Edits that landed while the save was in flight keep the state dirty.
         setSaveState((current) => (pendingAutosaveRef.current
           ? { ...current, kind: "dirty" }
           : { kind: "saved", at: savedAt, scope: pending.projectId ? "project" : "local", detail: null }));
       } catch (error) {
+        if (pending.contextEpoch !== projectSaveSessionRef.current!.contextEpoch) return;
         if (!pendingAutosaveRef.current) pendingAutosaveRef.current = pending;
         console.warn("[Studio] Could not autosave local project draft", error instanceof Error ? error : String(error));
         setSaveState({
           kind: "error",
           at: null,
           scope: pending.projectId ? "project" : "local",
-          detail: "Autosave failed; it retries automatically and on the next stage change.",
+          detail: error instanceof Error ? error.message : "Autosave failed. Your changes remain in this window.",
         });
       } finally {
         autosaveInFlightRef.current = false;
@@ -412,7 +427,7 @@ export default function StudioApp() {
         flushPendingAutosaveRef.current = null;
       }
     };
-  }, [draftRestored]);
+  }, [draftRestored, saveVersionedProject]);
 
   useEffect(() => {
     if (!draftRestored || !referenceAutosaveRequestedRef.current) return;
@@ -578,7 +593,9 @@ export default function StudioApp() {
     setDone(Boolean(restoredFinalExport));
   }
 
-  function handleProjectSelected(project: StudioProjectSummary, draft: RuntimeStudioProjectDraft) {
+  function handleProjectSelected(project: StudioProjectSummary, draft: RuntimeStudioProjectDraft, revision?: string) {
+    pendingAutosaveRef.current = null;
+    projectSaveSessionRef.current!.restore(project.id, revision);
     setRoughCutSelection(null);
     applyRestoredProjectDraft(draft);
     setActiveProjectId(project.id);
@@ -588,6 +605,7 @@ export default function StudioApp() {
   }
 
   function handleProjectSaved(project: StudioProjectSummary) {
+    rememberStudioProjectSelection(project.id);
     setActiveProjectId(project.id);
     setActiveProjectName(project.name);
     skipNextDirtyMarkRef.current = true;
@@ -1268,11 +1286,11 @@ export default function StudioApp() {
     autosaveInFlightRef.current = true;
     try {
       flushSync(() => setFinalExportIntent(intent));
-      await saveNamedStudioProject({ projectId: intent.projectId, name: live.projectName,
+      await saveVersionedProject({ projectId: intent.projectId, name: live.projectName,
         draft: { ...live.project, workflowUiSettings: { ...live.project.workflowUiSettings, finalExportIntent: intent } } }, { cache: false });
       if (!isFinalExportIntentCurrent(intent, draftReviewLiveRef.current.projectId, draftReviewLiveRef.current.project)) {
         const latest = draftReviewLiveRef.current;
-        if (latest.projectId === intent.projectId) await saveNamedStudioProject({ projectId: latest.projectId, name: latest.projectName, draft: latest.project }, { cache: false });
+        if (latest.projectId === intent.projectId) await saveVersionedProject({ projectId: latest.projectId, name: latest.projectName, draft: latest.project }, { cache: false });
         throw new Error("The project or arrangement changed while saving export recovery.");
       }
     } finally { autosaveInFlightRef.current = false; }
@@ -2132,7 +2150,7 @@ export default function StudioApp() {
     const live = draftReviewLiveRef.current;
     if (live.projectId !== startingProjectId) throw new Error("The open project changed while saving. Continue from its current draft.");
     if (!live.project.musicVideoProject || !isPlacementPlanCurrent(live.project.musicVideoProject)) throw new Error("Confirm the current story before creating footage.");
-    const saved = await saveNamedStudioProject({
+    const saved = await saveVersionedProject({
       projectId: live.projectId,
       name: live.projectName === "Untitled project" ? live.project.analysis?.sourceLabel ?? "Music video" : live.projectName,
       draft: live.project,
@@ -2198,7 +2216,7 @@ export default function StudioApp() {
     // every asynchronous boundary rather than overwriting a newer review.
     const accepted = currentAcceptance();
     const liveProject = draftReviewLiveRef.current.project;
-    const saved = await saveNamedStudioProject({ projectId, name: draftReviewLiveRef.current.projectName,
+    const saved = await saveVersionedProject({ projectId, name: draftReviewLiveRef.current.projectName,
       draft: { ...liveProject, savedAt: new Date().toISOString(), generatedAssets: accepted.assets, generatedDraft: accepted.draft,
         workflowUiSettings: { ...liveProject.workflowUiSettings, finalExport: undefined } },
     });
@@ -2220,7 +2238,7 @@ export default function StudioApp() {
     }
     catch (error) {
       if (draftReviewLiveRef.current.projectId === projectId) {
-        await saveNamedStudioProject({ projectId, name: draftReviewLiveRef.current.projectName, draft: draftReviewLiveRef.current.project });
+        await saveVersionedProject({ projectId, name: draftReviewLiveRef.current.projectName, draft: draftReviewLiveRef.current.project });
       }
       throw error;
     }
@@ -2815,6 +2833,7 @@ export default function StudioApp() {
             onNewProject={handleNewProject}
             onProjectSelected={handleProjectSelected}
             onProjectSaved={handleProjectSaved}
+            onSaveProject={saveVersionedProject}
           >
             {slotEvidence && tab !== "review" ? (
               <SlotInspector
