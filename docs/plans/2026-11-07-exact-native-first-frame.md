@@ -1,0 +1,36 @@
+# Exact earlier native frame selection
+
+The earlier-shot action selected the last included frame automatically. E33's eligible `[0,56)` trim therefore offered frame 55 even when the reviewed pose was frame 54. The new control chooses an integer frame inside the same eligible trim; it never changes that trim, selects a take or inherits an identity approval.
+
+## Web-only contract
+
+- Keep `H3FirstFrameBody`, conditioning, job identity algorithms, task slugs and worker runtime source unchanged. The existing worker still checks the frozen PNG against the new shot's current issued policy before GPU submission.
+- Add an explicit exact-frame index and two equivalent input methods: browser capture at the selected frame's center, or a lossless PNG import attached to that same source/frame. Both methods use the new authenticated native-source route. A separate generic PNG upload remains available and explicitly makes no earlier-source claim.
+- Canonically retrieve the owned source job, saved bank entry, historical range assessment if present, current assessment and policy. Both existing numerical eligibility gates must pass. Require unchanged source media, trim, old/current proof bindings, named character authority IDs, stable plan and chronological target relationship.
+- Decode the native opaque PNG to exact BGR bytes and compare the production shape-prefixed SHA256 against both original and current per-frame reports. Reject wrong dimensions, alpha, truncation, oversized/short/overrun streams, ICC profiles, orientation transforms and any pixel difference. No rounding, color adjustment, resizing or tolerance is applied.
+- Reuse existing first-frame artifact registration. Write a separate immutable source receipt binding owner/project, source job/asset/media, exact native index and range, historical/current proof digests, artifact/PNG digests, target request and predicted canonical job ID, fresh project revision and full baseline. It records verified source evidence at registration; it is not a generation identity proof. It never changes a job or project.
+- Check the saved baseline before artifact enrollment and again before the source receipt. The UI checks late project, target/input context, prepared file and source evidence changes before queueing the existing generation request. An immutable server index and local receipt cache use the target job ID, so provenance remains discoverable after local storage is lost. Receipt lookup by receipt ID or target job ID is authenticated and owner scoped.
+
+## Evidence and verification
+
+The earlier FFmpeg frame-54 PNG (`9cc3018299ab77dab991dd793a29cb9b180bb5e98720f054ae4d73b9cb7c0dba`) decodes to BGR frame hash `f10bd63fe6acc98aaca5dbe5349c2b1e2b2e6364a1cb11ee05ad92bc05f23255`; the canonical original report requires `d7ce83d2996968b99d1956b31bad7d98f14dad6b1bd583576797c1ad9a271f72`. That PNG remains preserved and is rejected for exact-source enrollment.
+
+Pinned OpenCV 4.12.0 sequential decoding of the hash-exact canonical E33 video reproduces the original frame hash exactly. A lossless PNG roundtrip also matches. The resulting PNG SHA is `bd1c358c9b77687c1a20e76fa5463b350be2d6d6e1cc8e3e1294f7e30da62335`. The private extraction proof is adjacent to `minimax-completion/.tmp/e34-e33-inrange-firstframe-diagnostic-20261107-v1/frames/e33-native-054-opencv412.png`; proof SHA `f36b596c90d3ecd2ac30cd87be19bc3baa8c1051fd83e01e4ce8b32d03938c20`. The new server decoder reproduces both the proper match and the earlier FFmpeg mismatch. No canonical current-reference result is claimed by this offline extraction; the actual current report must independently match before enrollment.
+
+Focused verification passed 64 tests / 214 assertions, including unchanged artifact/job contracts, source/route ownership and stale-baseline guards, exact old/current frame bindings, one-pixel rejection, image/stream bounds, immutable replay/conflicts, forged job-index rejection and existing bank-selection gates. Type checking and focused ESLint passed. Independent review closed the server and UI boundaries. Full combined checks/build and live browser acceptance remain release gates owned by the parent.
+
+An AST traversal of all 15 Trigger entry files compared the working tree to `b898428887f14a5bc245e4cc110a21969dcfd4b6`: the same 97 runtime source files and 15 external imports are unchanged, with no modified reachable module. Both normalized-source closure hashes are `02fc9ec03149727f2329b78cbae2bf3437891087a24841caf1965e8521c7cd0d`. Private evidence: `.tmp/exact-native-worker-dependency-proof.json`. This change needs a web release and does not require replacing worker `20261107.5`.
+
+No live API call, project save, canonical assessment, GPU submission or deployment occurred during this implementation. Legacy media-inventory reconciliation is separate from this feature, which changes no bootstrap certificate or source list.
+
+## Recovery after an unrelated project save
+
+A regression reproduced after registration: a revision-only save changed the new receipt's authority snapshot, and the immutable job index rejected the otherwise identical origin. Recovery now compares every source/target/artifact/request field while excluding only `projectRevision` and `baselineSha256`, which retain their original first-registration values in the immutable receipt. The server repeats canonical source and current-reference validation, exact PNG checks and fresh authority checks before recovery; it checks authority again after retrieving the indexed receipt. It never uses old receipt authority to authorize the current call.
+
+An equivalent retry returns the original canonical receipt without writing another source receipt or replacing the job index. A concurrent conditional index conflict returns the compatible immutable winner; a losing concurrent candidate may remain as unindexed immutable evidence. Changed native index (even identical pixels), range, historical/current proof, current-reference context, artifact, PNG or request cannot reuse that origin. Stale authority still fails before enrollment and after lookup. No generation or project write is performed by recovery.
+
+The recovery checkpoint passed 70 focused tests / 287 assertions across eight files, type checking, focused ESLint without warnings and `git diff --check`. The failing revision-only reproduction was observed before the fix; negative tests cover drift during reuse, different frames with identical pixels, altered origin evidence and equivalent/incompatible concurrent index winners. Full combined checks/build and live acceptance remain parent-owned release gates.
+
+## Reach older generation jobs
+
+Generation progress initially shows 40 already-loaded jobs. `Show earlier generation jobs` reveals the next 40 until the full owned history is visible, preserving its existing order and all source-handle actions. The visible count resets to 40 when switching projects and survives history polling within the same project. This adds no request, selection, policy or worker behavior. Seven existing panel tests / 35 assertions, type checking and focused ESLint passed; the parent owns actual browser verification of the older c24 source-handle control.

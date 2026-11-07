@@ -5,7 +5,7 @@ import { buildGeneratedAssetPlaybackUrl, generatedAssetDraftIdentityBlockReason,
 import { canDeliverH3IdentityAssessment, h3IdentityAssessmentTrimWindow } from "../h3IdentityAssessment";
 import { generatedAssetDraftSimilarityLabel, generatedAssetDraftSimilarityWarnings, normalizeGeneratedAssetIdentityVerification } from "../generatedAssetIdentity";
 import { recheckH3Similarity } from "../h3SimilarityRecheck";
-import { currentIdentityEvidenceSha256, identityPolicyChoiceForReferences } from "../issuedIdentityPolicy";
+import { currentIdentityEvidenceSha256, identityPolicyChoiceForReferences, identityPolicySha256 } from "../issuedIdentityPolicy";
 import { createNativeHandleAudition } from "../nativeHandleAudition";
 import type { GeneratedDraftReview, GeneratedDraftSelection } from "../generatedDraft";
 import { createH3PickupWindow, enqueueH3DraftRequest, findH3TargetSegment, h3DraftBatchStorageKey, h3RequestWindowKey, h3WindowKey, nextH3Attempt, parseH3DraftBatch, planH3DraftWindows, readH3DraftJobs, selectH3PickupWindow, selectH3ReferenceAssetIds, prepareH3PickupRequest, type H3DraftBatch } from "../h3DraftPlan";
@@ -18,6 +18,8 @@ import { normalizeH3FirstFrameArtifact } from "../h3FirstFrame";
 import { captureH3FirstFrame } from "../captureH3FirstFrame";
 import { earlierH3FirstFrameSource } from "../h3FirstFrameSource";
 import { currentReferenceBankCheckBlockReason } from "../currentReferenceReview";
+import { nativeFirstFrameSelection, assertNativeFirstFrameReceipt, type NativeFirstFrameSelection } from "../nativeFirstFrame";
+import { currentReferenceIdentityApprovalSha256 } from "../currentReferenceIdentity";
 
 type Props = {
   projectId: string | null;
@@ -42,6 +44,9 @@ const STATE_LABELS: Record<H3GenerationJob["state"], string> = {
 
 export function MiniMaxDraftPanel(props: Props) {
   const [jobs, setJobs] = useState<H3GenerationJob[]>([]);
+  const [jobHistory, setJobHistory] = useState({ projectId: props.projectId, limit: 40 });
+  const visibleJobLimit = jobHistory.projectId === props.projectId ? jobHistory.limit : 40;
+  if (jobHistory.projectId !== props.projectId) setJobHistory({ projectId: props.projectId, limit: 40 });
   const [busy, setBusy] = useState(false);
   const [accepting, setAccepting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -53,7 +58,12 @@ export function MiniMaxDraftPanel(props: Props) {
   const [pickupEdits, setPickupEdits] = useState<Record<string, { direction?: string; duration?: string; crowdIds?: string[] }>>({});
   const [handleFrames,setHandleFrames] = useState<Record<string,number>>({});
   const [pickupMode,setPickupMode] = useState<"references"|"first-frame">("references");
-  const [preparedFirstFrame,setPreparedFirstFrame] = useState<{file:File;context:string}|null>(null);
+  type PreparedFrame = {file:File;context:string;source?:NativeFirstFrameSelection};
+  const [preparedFirstFrame,setPreparedFirstFrame] = useState<PreparedFrame|null>(null);
+  const preparedFirstFrameRef = useRef<PreparedFrame|null>(null);
+  const firstFrameContextRef = useRef("");
+  const [nativeFrameChoice,setNativeFrameChoice] = useState<{sourceKey:string;frameIndex:number|null}|null>(null);
+  function prepareFrame(value:PreparedFrame|null){preparedFirstFrameRef.current=value;setPreparedFirstFrame(value);}
   const handleFramesRef = useRef<Record<string,number>>({});
   const latest = useRef(props);
   const mounted = useRef(true);
@@ -266,15 +276,24 @@ export function MiniMaxDraftPanel(props: Props) {
       const request = prepareH3PickupRequest(input, previous, existingJobs, pickupMode);
       if(pickupMode==="first-frame"){
         if(!firstFrameFile)throw new Error("Choose a prepared native-size first-frame PNG. It will receive a CPU similarity screen before rendering.");
+        const prepared=preparedFirstFrame;
+        if(!prepared||preparedFirstFrameRef.current!==prepared||prepared.context!==firstFrameContext)throw new Error("The prepared native frame changed. Choose it again before submitting.");
         if(firstFrameFile.type!=="image/png"||firstFrameFile.size>32*1024*1024)throw new Error("Choose a PNG smaller than 32 MiB.");
         if(!request.identityPolicyFamily)throw new Error("First-frame shots require one or two named character authorities.");
         setMessage("Uploading and freezing this shot's first frame…");
         const expectedSha256=Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",await firstFrameFile.arrayBuffer())),byte=>byte.toString(16).padStart(2,"0")).join("");
         const upload=await uploadFileDirectlyToRustFs(firstFrameFile,"media-uploads/h3-first-frames");
         const {conditioning:_,...shot}=request;void _;
-        const response=await fetch("/api/generate/h3/first-frame-artifacts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({shot,upload:{bucket:upload.bucket,objectKey:upload.objectKey},expectedSha256}),signal:AbortSignal.timeout(120_000)});
+        const response=await fetch(prepared.source?"/api/generate/h3/native-first-frame":"/api/generate/h3/first-frame-artifacts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({shot,upload:{bucket:upload.bucket,objectKey:upload.objectKey},expectedSha256,...(prepared.source?{source:prepared.source}:{})}),signal:AbortSignal.timeout(120_000)});
         const result=await response.json();if(!response.ok)throw new Error(result.error||"Could not freeze the first frame.");
         const artifact=normalizeH3FirstFrameArtifact(result.artifact);if(!artifact||artifact.body.projectId!==projectId||artifact.body.pngSha256!==expectedSha256)throw new Error("First-frame registration returned a different image.");
+        if(!mounted.current||preparedFirstFrameRef.current!==prepared||prepared.context!==firstFrameContextRef.current||latest.current.projectId!==projectId)throw new Error("The source frame or open project changed while freezing it. No generation was submitted.");
+        if(prepared.source){
+          const currentSource=latest.current.assets.find(asset=>asset.id===prepared.source!.assetId);
+          if(!currentSource||identityPolicySha256(nativeFirstFrameSelection(currentSource,prepared.source.frameIndex))!==identityPolicySha256(prepared.source))throw new Error("The canonical source evidence changed before dispatch.");
+          const receipt=assertNativeFirstFrameReceipt(result.sourceReceipt,prepared.source,artifact,shot);
+          localStorage.setItem(`studio-native-first-frame-source-v1:${projectId}:${receipt.body.targetJobId}`,JSON.stringify(receipt));
+        }
         request.conditioning={kind:"first-frame",artifactId:artifact.id,expectedSha256};
       }
       persistBatch({ version: 1, projectId, planSignature: request.planSignature, requests: [request], paused: false });
@@ -284,11 +303,14 @@ export function MiniMaxDraftPanel(props: Props) {
   }
 
   async function captureEarlierFirstFrame(){
-    if(!earlierFrame||!pickupWindow||busy)return;
+    if(!earlierFrame||!nativeSourceSelection||!pickupWindow||busy)return;
     const projectId=props.projectId,windowKey=h3WindowKey(pickupWindow);setBusy(true);setError(null);
-    try{const url=buildGeneratedAssetPlaybackUrl(earlierFrame.asset);if(!url)throw new Error("The earlier take has no playable media.");const file=await captureH3FirstFrame(url,earlierFrame.timeSeconds);
+    const source=nativeSourceSelection,context=firstFrameContext;
+    try{const url=buildGeneratedAssetPlaybackUrl(earlierFrame.asset);if(!url)throw new Error("The earlier take has no playable media.");const file=await captureH3FirstFrame(url,(source.frameIndex+0.5)/24);
       if(!mounted.current||latest.current.projectId!==projectId||!planH3DraftWindows(latest.current.segments).some(w=>h3WindowKey(w)===windowKey))return;
-      setPreparedFirstFrame({file,context:firstFrameContext});setPickupMode("first-frame");setMessage(`Prepared a native frame from ${earlierFrame.asset.title||"the earlier shot"}. It will be screened again for this new shot.`);
+      const currentSource=latest.current.assets.find(asset=>asset.id===source.assetId);
+      if(!currentSource||identityPolicySha256(nativeFirstFrameSelection(currentSource,source.frameIndex))!==identityPolicySha256(source))throw new Error("The source evidence changed during capture.");
+      prepareFrame({file,context,source});setPickupMode("first-frame");setMessage(`Prepared native frame ${source.frameIndex} from ${earlierFrame.asset.title||"the earlier shot"}. Exact pixels will be verified before this new shot can render.`);
     }catch(failure){if(mounted.current&&latest.current.projectId===projectId)setError(failure instanceof Error?failure.message:"Could not prepare an earlier frame.");}
     finally{if(mounted.current)setBusy(false);}
   }
@@ -351,8 +373,6 @@ export function MiniMaxDraftPanel(props: Props) {
   const pickupDirection = pickupEdits[pickupEditKey]?.direction ?? pickupWindow?.storyDirection?.trim() ?? pickupWindow?.label ?? "";
   const pickupMaximum = pickupWindow ? Math.min(12, pickupWindow.musicEnd - pickupWindow.musicStart) : 0;
   const pickupDuration = pickupEdits[pickupEditKey]?.duration ?? String(Math.min(3, pickupMaximum));
-  const firstFrameContext=`${pickupEditKey}:${pickupWindow?.planSignature??""}:duration:${Number(pickupDuration)}`;
-  const firstFrameFile=preparedFirstFrame?.context===firstFrameContext?preparedFirstFrame.file:null;
   const pickupDurationValid = pickupMaximum > 0 && pickupDuration.trim() !== "" && Number.isFinite(Number(pickupDuration))
     && Number(pickupDuration) >= Math.min(1, pickupMaximum) && Number(pickupDuration) <= pickupMaximum;
   const pickupPrevious = pickupWindow && pickupDurationValid ? jobs.filter(job => !job.request.conditioning
@@ -366,6 +386,14 @@ export function MiniMaxDraftPanel(props: Props) {
   catch (failure) { pickupReferenceError = failure instanceof Error ? failure.message : "Check this shot's references."; }
   const pickupIdentityIds=props.referenceAssets.filter(ref=>pickupReferenceIds.includes(ref.id)&&(ref.kind==="character"||ref.role.startsWith("character"))).map(ref=>ref.id);
   const earlierFrame=pickupWindow?earlierH3FirstFrameSource(props.assets,props.projectId,pickupWindow.planSignature,pickupWindow.musicStart,pickupIdentityIds):undefined;
+  const nativeSourceKey=earlierFrame?identityPolicySha256({assetId:earlierFrame.asset.id,evidence:currentReferenceIdentityApprovalSha256(earlierFrame.asset),trim:earlierFrame.asset.trimStart??0}):"";
+  const nativeFrameIndex=nativeFrameChoice?.sourceKey===nativeSourceKey?nativeFrameChoice.frameIndex??undefined:earlierFrame?.frameIndex;
+  let nativeSourceSelection:NativeFirstFrameSelection|undefined,nativeSourceError:string|undefined;
+  try{if(earlierFrame&&nativeFrameIndex!==undefined)nativeSourceSelection=nativeFirstFrameSelection(earlierFrame.asset,nativeFrameIndex);}catch(failure){nativeSourceError=failure instanceof Error?failure.message:"The exact native source is unavailable.";}
+  const firstFrameContext=identityPolicySha256({target:pickupEditKey,planSignature:pickupWindow?.planSignature??"",duration:Number(pickupDuration),direction:pickupDirection,
+    references:props.referenceAssets,source:nativeSourceSelection??null});
+  const firstFrameFile=preparedFirstFrame?.context===firstFrameContext?preparedFirstFrame.file:null;
+  useEffect(()=>{firstFrameContextRef.current=firstFrameContext;},[firstFrameContext]);
   async function checkBankReferences(assetId: string) {
     const check = latest.current.onCheckCurrentReferences;
     if (!check || checkingCurrentReferences.current) return;
@@ -417,11 +445,23 @@ export function MiniMaxDraftPanel(props: Props) {
               onChange={event=>setPickupMode(event.target.value as "references"|"first-frame")} className="mt-1 block w-full rounded-md border border-line bg-ink-1 p-2 text-sm text-fg-1">
               <option value="references">Named reference images</option><option value="first-frame">Continue from a first frame</option>
             </select></label>
-            {pickupMode==="first-frame"?<div className="space-y-2"><Button disabled={busy||accepting||!earlierFrame} onClick={()=>void captureEarlierFirstFrame()}>Use frame from earlier shot</Button>
+            {pickupMode==="first-frame"?<div className="space-y-2">
+              {earlierFrame?<label className="block text-xs text-fg-3">Native first-frame index
+                <input aria-label="Native first-frame index" type="number" step={1} min={Math.floor((earlierFrame.asset.trimStart??0)*24+1e-6)} max={earlierFrame.frameIndex} value={nativeFrameIndex??""} disabled={busy||accepting}
+                  onChange={event=>{const index=Number(event.target.value);prepareFrame(null);if(event.target.value==="")setNativeFrameChoice({sourceKey:nativeSourceKey,frameIndex:null});else if(Number.isSafeInteger(index))setNativeFrameChoice({sourceKey:nativeSourceKey,frameIndex:index});}}
+                  className="ml-2 w-24 rounded-md border border-line bg-ink-1 p-2 text-sm text-fg-1"/>
+              </label>:null}
+              <Button disabled={busy||accepting||!nativeSourceSelection} onClick={()=>void captureEarlierFirstFrame()}>Use frame from earlier shot</Button>
               <p className="text-xs text-fg-3">{earlierFrame?`Uses the selected native trim of ${earlierFrame.asset.title||"the closest earlier eligible take"}.`:"An earlier eligible native take in this project and plan can supply the first frame."}</p>
-              <label className="block text-xs text-fg-3">Or choose a native first frame · 1344×768 opaque PNG<input key={firstFrameContext} aria-label="Prepared first-frame PNG" type="file" accept="image/png" disabled={busy||accepting}
-              onChange={event=>{const file=event.target.files?.[0];setPreparedFirstFrame(file?{file,context:firstFrameContext}:null);}} className="mt-1 block w-full text-sm text-fg-1" />
-              <span className="mt-1 block">{firstFrameFile?`Prepared: ${firstFrameFile.name}. `:""}The actual image receives a provisional one-image numerical screen before GPU video generation. Every intended video frame must then pass separately. Switching input type starts a new take and keeps earlier results.</span></label></div>:null}
+              {nativeSourceError?<p role="alert" className="text-xs text-danger">{nativeSourceError}</p>:null}
+              {nativeSourceSelection?<label className="block text-xs text-fg-3">Or import this exact native frame PNG
+                <input key={`native:${firstFrameContext}`} aria-label="Exact native source PNG" type="file" accept="image/png" disabled={busy||accepting}
+                  onChange={event=>{const file=event.target.files?.[0];prepareFrame(file?{file,context:firstFrameContext,source:nativeSourceSelection}:null);}} className="mt-1 block w-full text-sm text-fg-1"/>
+                <span className="mt-1 block">Frame {nativeSourceSelection.frameIndex} only. The server requires exact historical and current decoded pixels. Browser color differences are rejected; use a lossless canonical-decoder PNG.</span>
+              </label>:null}
+              <label className="block text-xs text-fg-3">Or use a separately prepared first-frame PNG · 1344×768 opaque<input key={firstFrameContext} aria-label="Prepared first-frame PNG" type="file" accept="image/png" disabled={busy||accepting}
+              onChange={event=>{const file=event.target.files?.[0];prepareFrame(file?{file,context:firstFrameContext}:null);}} className="mt-1 block w-full text-sm text-fg-1" />
+              <span className="mt-1 block">{firstFrameFile?`Prepared: ${firstFrameFile.name}. `:""}Separate uploads do not claim a verified frame from the earlier take. The actual image receives a provisional one-image numerical screen before GPU video generation. Every intended video frame must then pass separately. Switching input type starts a new take and keeps earlier results.</span></label></div>:null}
             <fieldset className="space-y-2 rounded-md border border-line p-3" disabled={busy || accepting || pickupMode === "first-frame"}>
               <legend className="px-1 text-xs text-fg-2">Crowd / extras for this shot</legend>
               <p className="text-xs text-fg-3">Choose only the sheets this shot needs. Extras guide variety and wardrobe range; named characters and location keep their own authorities. New batch windows use no crowd sheets.</p>
@@ -482,7 +522,7 @@ export function MiniMaxDraftPanel(props: Props) {
     </Surface>
     {jobs.length ? <Surface aria-label="Generation progress">
       <h3 className="mb-2 text-sm font-semibold">Generation progress</h3>
-      <ul className="divide-y divide-line">{jobs.slice(0, 40).map(job => {
+      <ul className="divide-y divide-line">{jobs.slice(0, visibleJobLimit).map(job => {
         const asset = props.assets.find(candidate => candidate.id === job.result?.asset.id) ?? job.result?.asset;
         const identityBlock = asset ? generatedAssetDraftIdentityBlockReason(asset) : null;
         const rejected = asset?.reviewStatus === "rejected" || identityBlock === "Rejected";
@@ -509,6 +549,9 @@ export function MiniMaxDraftPanel(props: Props) {
           }}/> : null}
         {asset ? <SimilarityFilterNote asset={asset} /> : null}
       </li>; })}</ul>
+      {jobs.length > visibleJobLimit ? <Button onClick={() => setJobHistory({ projectId: props.projectId, limit: visibleJobLimit + 40 })}>
+        Show earlier generation jobs ({Math.min(40, jobs.length - visibleJobLimit)} more)
+      </Button> : null}
     </Surface> : null}
     {selected.length ? <Surface aria-label="Review generated shots">
       <h3 className="text-sm font-semibold">Revise individual shots</h3>
