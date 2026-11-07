@@ -118,6 +118,22 @@ Ranked assignment of a video moment to an edit slot (`SemanticClipMatch`), built
 
 Join-stage timeline item (`EditPlanPreviewSegment`): the saved sequence in song order shared by review and export. Join supports reviewed swaps and existing-footage replacements with undo. Song windows stay fixed; short replacements leave explicit holes. Playback never reranks sources.
 
+### Generation provenance
+
+The immutable record of the references and conditions that produced a take. A later reference replacement does not change that history.
+
+### Current reference authority
+
+The approved reference version used to evaluate a named character now. It may differ from the version used when an existing take was generated.
+
+### Current-reference assessment
+
+Evaluation of an exact existing take and frame range against the current reference authority. It adds evidence without rewriting generation provenance or granting creative approval.
+
+### Reference replacement
+
+An explicit adoption of a new reference version for the same named character and role while retaining the existing cut. It requires renewed evidence and review for affected takes.
+
 ### Generated studio asset
 
 Durable generated media bound to its owner/project, current plan signature, shot requirement, song interval, actual reference versions, and generation configuration. Local MiniMax H3 through SwarmUI is the primary video path. A ready candidate may be automatically selected into a draft while its review state remains `pending`; stale, rejected, failed, or undersized assets cannot clear unsupported coverage.
