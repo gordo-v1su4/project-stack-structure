@@ -200,7 +200,7 @@ export function applyRoughCutSwap(project: MusicVideoProject, proposal: RoughCut
   });
   const faithfulPlacementPlan = project.faithfulPlacementPlan?.inputSignature === plan.inputSignature
     ? project.faithfulPlacementPlan : plan.policy === "faithful" ? plan : undefined;
-  return { summary: proposal.summary, project: { ...project, faithfulPlacementPlan,
+  return { summary: proposal.summary, project: { ...project, generationScope: undefined, faithfulPlacementPlan,
     placementPlan: { ...plan, revision: plan.revision + 1, placements } } };
 }
 
@@ -217,6 +217,6 @@ export function clearRoughCutPlacement(project: MusicVideoProject, placementId: 
   const faithfulPlacementPlan = project.faithfulPlacementPlan?.inputSignature === plan.inputSignature
     ? project.faithfulPlacementPlan : plan.policy === "faithful" ? plan : undefined;
   return { summary: "Clip removed from the cut. The song window stays open and the source remains in your library.",
-    project: { ...project, faithfulPlacementPlan, placementPlan: { ...plan, revision: plan.revision + 1,
+    project: { ...project, generationScope: undefined, faithfulPlacementPlan, placementPlan: { ...plan, revision: plan.revision + 1,
       placements: plan.placements.map(placement => placement.id === placementId ? gap : placement) } } };
 }

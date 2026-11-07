@@ -14,6 +14,7 @@ import type { VideoSceneUpdate } from "./studio/mediaUpload";
 import { buildCaptionRevisionKey, createCaptionRevisionGuard } from "./studio/mediaEvidence";
 import { applySceneEvidenceReview, type SceneEvidenceReview } from "./studio/sceneEvidenceReview";
 import { buildStudioSourceContextSignature } from "./studio/studioSourceContext";
+import { prepareAppendedSourceConfirmation, sourceConfirmationBaselineSha256 } from "./studio/sourceConfirmationClient";
 import { buildSongSectionReview, selectReviewRange, type ReviewSelection } from "./studio/songSectionReview";
 import { isPlacementPlanCurrent, storyProjectInputSignature, prepareApprovedPlacements, buildEditPlanPreviewSegments, normalizeStoryEditSettings, type EditPlanPreviewSegment, type MusicVideoProject } from "./studio/musicVideoProject";
 import { clearRoughCutPlacement, applyRoughCutSwap, proposeRoughCutSwap, proposeRoughCutReplacement, type RoughCutSwapProposal } from "./studio/roughCutArrangement";
@@ -1284,6 +1285,10 @@ export default function StudioApp() {
       setFinalExportError("Upload and analyze the master song before final export.");
       return;
     }
+    if (generatedDraft?.sourceReviewRequired) {
+      setFinalExportError("Review and accept the assembled cut after confirming its appended sheets.");
+      return;
+    }
     if (!storyState.storyGenerated || storyPreviewSegments.length === 0 || !musicVideoProject) {
       setFinalExportError("Generate the Story layout and preview segments before final export.");
       return;
@@ -2124,6 +2129,31 @@ export default function StudioApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftRestored, activeProjectId, finalExportIntent?.requestKey, finalExportIntent?.runId]);
 
+  async function confirmAppendedSources() {
+    if (!activeProjectId || autosaveInFlightRef.current || finalExportFlightRef.current || previewState.activeRequestKey) {
+      throw new Error("Save this project and wait for the current operation before confirming its sources.");
+    }
+    const starting = draftReviewLiveRef.current;
+    const baselineSha = sourceConfirmationBaselineSha256(starting.project);
+    const isCurrent = () => draftReviewLiveRef.current.projectId === starting.projectId
+      && sourceConfirmationBaselineSha256(draftReviewLiveRef.current.project) === baselineSha;
+    // This lock serializes only this editor. The remote expected revision protects other tabs.
+    autosaveInFlightRef.current = true;
+    try {
+      const candidate = await prepareAppendedSourceConfirmation({ projectId: activeProjectId, baseline: starting.project, isCurrent });
+      if (!isCurrent()) throw new Error("The open project changed. The confirmation candidate was not saved.");
+      const update = { projectId: activeProjectId, name: starting.projectName, draft: candidate.draft, expectedRevision: candidate.expectedRevision };
+      const saved = await saveNamedStudioProject(update, { cache: false });
+      if (!isCurrent()) throw new Error("The open project changed while saving confirmation. Reload its saved draft before continuing.");
+      flushSync(() => {
+        skipNextDirtyMarkRef.current = true;
+        invalidateArrangementOutput();
+        applyRestoredProjectDraft(hydrateStudioProjectDraft({ draft: saved.draft }));
+        setSaveState({ kind: "saved", at: Date.now(), scope: "project", detail: "Appended sheets confirmed; review the assembled cut before export." });
+      });
+    } finally { autosaveInFlightRef.current = false; }
+  }
+
   async function ensureH3ProjectSaved() {
     const startingProjectId = draftReviewLiveRef.current.projectId;
     await flushPendingAutosaveRef.current?.();
@@ -2288,6 +2318,8 @@ export default function StudioApp() {
         : null;
   const finalExportDisabledReason = !beatJoinAnalysis
     ? "Upload master audio first."
+    : generatedDraft?.sourceReviewRequired
+      ? "Review and accept the cut after confirming appended sheets."
     : !storyState.storyGenerated || storyPreviewSegments.length === 0
       ? "Generate story preview first."
       : storyPreviewSegments.some(segment => segment.kind === "gap" || !segment.videoUrl)
@@ -2651,6 +2683,8 @@ export default function StudioApp() {
                 state={storyState}
                 onStateChange={setStoryState}
                 onProjectChange={handleStoryProjectChange}
+                onConfirmAppendedSources={confirmAppendedSources}
+                sourceReviewRequired={generatedDraft?.sourceReviewRequired}
               />
             )}
 

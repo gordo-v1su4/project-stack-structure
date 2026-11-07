@@ -1,4 +1,5 @@
 import { scoreMotionContinuity } from "./motionRanking";
+import { effectiveGenerationScope } from "./generationScope";
 import { assessStoryMatch, isUsableStoryMatch } from "./storyMatchAssessment";
 import { promoteReservedMoment, rankMomentsForSection, reserveSectionMoments, type SemanticEditAssignment, type SemanticSectionInput, type SemanticVideoMomentInput } from "./semanticEditPlanner";
 import type { SrtChunk } from "./srtUtils";
@@ -177,6 +178,10 @@ export interface ReviewFinding {
 
 export interface MusicVideoProject {
   id: string;
+  generationScope?: import("./generationScope").GenerationScopeReceipt;
+  generationScopeVersion?: 2;
+  generationSourceContextSha256?: string;
+  generationStorySha256?: string;
   sourceContextSignature?: string;
   song: BeatJoinAnalysis | null;
   duration: number;
@@ -604,6 +609,8 @@ export function createMusicVideoProject(params: {
 
 export function storyProjectInputSignature(project: MusicVideoProject): string {
   return JSON.stringify({
+    generationScopeVersion: project.generationScopeVersion, generationSourceContextSha256: project.generationSourceContextSha256,
+    generationStorySha256: project.generationStorySha256, generationScopeReceiptSha256: project.generationScope?.sha256,
     sourceContextSignature: project.sourceContextSignature,
     sections: project.storySections.map(({ id, label, prompt, start, end }) => ({ id, label, prompt, start, end })),
     requirements: project.editPlan.timelineItems.map(({ id, prompt, start, end, requirements }) => ({ id, prompt, start, end, requirements })),
@@ -647,7 +654,7 @@ export function prepareApprovedPlacements(params: {
   const faithfulPlacementPlan = project.placementPlan?.policy === "faithful" && project.placementPlan.inputSignature === inputSignature
     ? project.placementPlan
     : project.faithfulPlacementPlan?.inputSignature === inputSignature ? project.faithfulPlacementPlan : undefined;
-  if (policy === "faithful" && faithfulPlacementPlan) return { ...project, placementPlan: faithfulPlacementPlan, faithfulPlacementPlan };
+  if (policy === "faithful" && faithfulPlacementPlan) return { ...project, generationScope: undefined, placementPlan: faithfulPlacementPlan, faithfulPlacementPlan };
   const manualGaps = project.placementPlan?.inputSignature === inputSignature
     ? project.placementPlan.placements.filter(placement => placement.kind === "gap" && placement.origin === "manual-match") : [];
   // Enabling reuse is not permission to refill windows the user deliberately cleared.
@@ -685,7 +692,7 @@ export function prepareApprovedPlacements(params: {
     }
     addGap(item.end);
   }
-  return { ...project, faithfulPlacementPlan, placementPlan: { version: 1, revision: (project.placementPlan?.revision ?? 0) + 1, inputSignature, settings: editSettings, policy, placements } };
+  return { ...project, generationScope: undefined, faithfulPlacementPlan, placementPlan: { version: 1, revision: (project.placementPlan?.revision ?? 0) + 1, inputSignature, settings: editSettings, policy, placements } };
 }
 
 export function buildEditPlanPreviewSegments(params: {
@@ -696,6 +703,7 @@ export function buildEditPlanPreviewSegments(params: {
   const project = params.project;
   if (!project) return [];
   const current = project.placementPlan?.inputSignature === placementInputSignature(project, params.editSettings);
+  const planSignature = current ? effectiveGenerationScope(project) : undefined;
   // Legacy/stale plans stay readable but may not secretly make new edit decisions on playback.
   const placements = current ? project.placementPlan!.placements : project.editPlan.timelineItems.map((item): ApprovedPlacement => ({
     id: `${item.id}:stale`, timelineItemId: item.id, sectionId: item.sectionId, momentId: null,
@@ -714,7 +722,7 @@ export function buildEditPlanPreviewSegments(params: {
       startTime: isGap ? 0 : placement.sourceStart,
       endTime: isGap ? placement.songEnd - placement.songStart : placement.sourceEnd,
       musicStart: placement.songStart, musicEnd: placement.songEnd,
-      planSignature: current ? project.placementPlan!.inputSignature : undefined,
+      planSignature,
       timelineItemId: placement.timelineItemId,
       narrativeMomentId: project.editPlan.timelineItems.find((item) => item.id === placement.timelineItemId)?.narrativeMomentId,
       requirementId: project.editPlan.timelineItems.find((item) => item.id === placement.timelineItemId)?.requirementId,

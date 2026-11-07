@@ -1,4 +1,5 @@
 import { placementInputSignature, type MusicVideoProject } from "./musicVideoProject";
+import { generationScopeSha256, repriseCoversOverlap, type ExistingSourceReprise } from "./generationScope";
 
 const EPSILON = 0.001;
 const hashOf = (moment: MusicVideoProject["videoMoments"][number]) => moment.contentHash || moment.visualAnalysis?.contentHash;
@@ -13,7 +14,8 @@ const songIdentity = (project: MusicVideoProject) => project.song && ({
 });
 
 /** Explicit inventory review may rebind unchanged edits; it never silently reselects clips. */
-export function preserveReviewedStoryArrangement(previous: MusicVideoProject | null | undefined, next: MusicVideoProject): MusicVideoProject {
+export function preserveReviewedStoryArrangement(previous: MusicVideoProject | null | undefined, next: MusicVideoProject,
+  reprise?: ExistingSourceReprise): MusicVideoProject {
   const prior = previous?.placementPlan;
   if (!previous || !prior || !prior.placements.some(placement => placement.kind === "source" || placement.origin === "manual-match")) return next;
   if (!next.sourceContextSignature || !next.placementPlan) throw new Error("Review the current source inventory before confirming the story.");
@@ -46,10 +48,11 @@ export function preserveReviewedStoryArrangement(previous: MusicVideoProject | n
     if (prior.policy === "faithful" && sorted.slice(0, index).some(other => {
       const otherMoment = next.videoMoments.find(moment => moment.id === other.momentId);
       return other.kind === "source" && otherMoment?.sourceClipId === after.sourceClipId
-        && Math.min(other.sourceEnd, placement.sourceEnd) - Math.max(other.sourceStart, placement.sourceStart) > EPSILON;
+        && Math.min(other.sourceEnd, placement.sourceEnd) - Math.max(other.sourceStart, placement.sourceStart) > EPSILON
+        && !(reprise?.placementsSha256 === generationScopeSha256(prior.placements) && repriseCoversOverlap(reprise, other, placement));
     })) throw new Error("The existing faithful arrangement repeats source frames. Review that overlap before confirming it.");
   }
   const plan = { ...prior, settings: next.placementPlan.settings, revision: prior.revision + 1,
     inputSignature: placementInputSignature(next, next.placementPlan.settings), placements: [...prior.placements] };
-  return { ...next, id: previous.id, placementPlan: plan, faithfulPlacementPlan: plan.policy === "faithful" ? plan : undefined };
+  return { ...next, generationScope: undefined, id: previous.id, placementPlan: plan, faithfulPlacementPlan: plan.policy === "faithful" ? plan : undefined };
 }

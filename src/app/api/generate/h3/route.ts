@@ -11,6 +11,7 @@ import { claimH3IdentityAssessment, readH3IdentityAssessment } from "@/lib/h3Ide
 import { H3_FIRST_FRAME_PROFILE, H3_FIRST_FRAME_PREPARATION } from "@/components/studio/h3FirstFrame";
 import { readH3FirstFrame, assertH3FirstFrameMatchesJob } from "@/lib/h3FirstFrameStore";
 import { studioJsonResponse } from "@/lib/studioJsonTransportServer";
+import { validateSavedGenerationScope, recordGenerationScopeBaseline, SourceConfirmationError } from "@/lib/generationScopeServer";
 
 export const runtime = "nodejs";
 
@@ -32,7 +33,7 @@ async function reconcileWorker(job: Awaited<ReturnType<typeof createH3Job>>) {
 
 function failure(error: unknown) {
   return Response.json({ success: false, error: error instanceof Error ? error.message : "H3 generation failed." },
-    { status: error instanceof H3RequestError ? error.status : 503 });
+    { status: error instanceof H3RequestError || error instanceof SourceConfirmationError ? error.status : 503 });
 }
 
 export async function POST(request: Request) {
@@ -42,6 +43,7 @@ export async function POST(request: Request) {
     const input = parseH3Request(await request.json());
     const project = await readStudioProject(user.id, input.projectId, { fresh: true });
     if (!project) throw new H3RequestError("Project not found.", 404);
+    await validateSavedGenerationScope(user.id, project, { allowUnissuedBaseline: true });
     const config = getMediaGatewayConfig();
     if (!config) throw new H3RequestError("Generation storage is not configured.", 503);
     const firstFrame = input.conditioning ? await readH3FirstFrame(user.id,input.projectId,input.conditioning.artifactId) : undefined;
@@ -73,6 +75,7 @@ export async function POST(request: Request) {
     }
     // Compile before enqueue so invalid language or reference roles create no GPU work.
     try { compileH3Prompt(proposed); } catch (error) { throw new H3RequestError((error as Error).message, 422); }
+    await recordGenerationScopeBaseline(user.id, project);
     await claimH3GenerationIntent(proposed);
     const job = await createH3Job(proposed);
     if (job.runId || job.state === "ready" || job.workerRecoveries?.some(recovery => !recovery.runId)) {
