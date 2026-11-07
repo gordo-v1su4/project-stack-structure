@@ -352,7 +352,10 @@ export function MiniMaxDraftPanel(props: Props) {
   const firstFrameFile=preparedFirstFrame?.context===firstFrameContext?preparedFirstFrame.file:null;
   const pickupDurationValid = pickupMaximum > 0 && pickupDuration.trim() !== "" && Number.isFinite(Number(pickupDuration))
     && Number(pickupDuration) >= Math.min(1, pickupMaximum) && Number(pickupDuration) <= pickupMaximum;
-  const pickupCrowdIds = pickupEdits[pickupEditKey]?.crowdIds ?? [];
+  const pickupPrevious = pickupWindow && pickupDurationValid ? jobs.filter(job => !job.request.conditioning
+    && h3RequestWindowKey(job.request) === h3WindowKey(createH3PickupWindow(pickupWindow, Number(pickupDuration))))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] : undefined;
+  const pickupCrowdIds = pickupEdits[pickupEditKey]?.crowdIds ?? pickupPrevious?.references.filter(ref => ref.role === "crowd").map(ref => ref.assetId) ?? [];
   const crowdAssets = props.referenceAssets.filter(ref => ref.kind === "crowd" || ref.role === "crowd");
   let pickupReferenceIds: string[] = [];
   let pickupReferenceError: string | null = null;
