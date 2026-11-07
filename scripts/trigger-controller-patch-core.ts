@@ -2,11 +2,13 @@ import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-// Verified from this application's actual 4.5.16 production controller bundle.
+// Reviewed 4.5.16 bundle with the isolated build cache's module locations.
+// The controller body is byte-identical to the prior reviewed bundle after
+// its generated chunk specifiers and CLI path metadata are rebound.
 // Pin the whole input and output: an SDK or bundler change needs explicit review.
 export const TRIGGER_CONTROLLER_VERSION = "4.5.16";
-export const TRIGGER_CONTROLLER_SOURCE_SHA256 = "bd5ac0181b73957cc34937addc593b9f1f45625e5b9eaebe7936689f85dd6222";
-export const TRIGGER_CONTROLLER_PATCHED_SHA256 = "30e7c4f177113f727cabd3d51a27b5348ce0f9a465dc5ca0723ef55357d338f9";
+export const TRIGGER_CONTROLLER_SOURCE_SHA256 = "06f44ebdc32828b1e65259c749e5ecd8c4e4d38daacdbdeb3d9e9d1799d9065b";
+export const TRIGGER_CONTROLLER_PATCHED_SHA256 = "601eefa76f120098c948bb11adbd80dec88e7c5b10a6fc6923cd5e2e1fd1b152";
 export const UNSAFE_ATTEMPT_LOG = 'this.sendDebugLog("started attempt", { start: start.data });';
 export const SAFE_ATTEMPT_LOG = 'this.sendDebugLog("started attempt", { runId: this.runFriendlyId, attemptNumber });';
 const digest = (source: string) => createHash("sha256").update(source).digest("hex");

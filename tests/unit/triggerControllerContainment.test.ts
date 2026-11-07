@@ -80,8 +80,8 @@ describe("app-image Trigger controller log containment", () => {
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
-  (existsSync(".tmp/security-audit/managed-run-controller-4.5.16.mjs") ? test : test.skip)("offline actual 4.5.16 image bundle has the reviewed source/output hashes and patched JavaScript parses", async () => {
-    const file = ".tmp/security-audit/managed-run-controller-4.5.16.mjs";
+  (existsSync(".tmp/security-audit/managed-run-controller-4.5.16-isolated-cache.mjs") ? test : test.skip)("offline actual isolated-cache 4.5.16 bundle has the reviewed source/output hashes and patched JavaScript parses", async () => {
+    const file = ".tmp/security-audit/managed-run-controller-4.5.16-isolated-cache.mjs";
     const source = await readFile(file, "utf8"), hash = (value: string) => createHash("sha256").update(value).digest("hex");
     expect(hash(source)).toBe(TRIGGER_CONTROLLER_SOURCE_SHA256);
     const patched = patchTriggerControllerSource(source);
@@ -91,5 +91,12 @@ describe("app-image Trigger controller log containment", () => {
     const runtime = globalThis as unknown as { Bun: { Transpiler: new (options: { loader: "js"; target: "bun" }) => { transformSync(source: string): string } } };
     expect(() => new runtime.Bun.Transpiler({ loader: "js", target: "bun" }).transformSync(patched)).not.toThrow();
     expect(() => patchTriggerControllerSource(source + "\n")).toThrow("differs from the reviewed");
+  });
+
+  (existsSync(".tmp/security-audit/managed-run-controller-4.5.16.mjs") ? test : test.skip)("archived prior packaging stays unchanged and cannot silently replace the current reviewed bundle", async () => {
+    const source = await readFile(".tmp/security-audit/managed-run-controller-4.5.16.mjs", "utf8");
+    expect(createHash("sha256").update(source).digest("hex")).toBe("bd5ac0181b73957cc34937addc593b9f1f45625e5b9eaebe7936689f85dd6222");
+    expect(createHash("sha256").update(replaceAttemptLogStatement(source)).digest("hex")).toBe("30e7c4f177113f727cabd3d51a27b5348ce0f9a465dc5ca0723ef55357d338f9");
+    expect(() => patchTriggerControllerSource(source)).toThrow("differs from the reviewed");
   });
 });
