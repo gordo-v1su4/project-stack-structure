@@ -14,7 +14,9 @@ execution chat retains ownership of film saves and GPU submissions.
   Draft now builds spine slots from the full selected draft. Story, Join, Effects
   and Finish retain the approved arrangement. The regression exercises real
   pending-candidate overlay and spine generation, including the generated asset
-  binding and preservation of non-Draft gaps.
+  binding and preservation of non-Draft gaps. The selected-cut inspector labels
+  pending review and reserves Revert for approved shots; pending takes are not
+  described as missing footage.
 - A pending replacement over already approved coverage unlocked Finish because
   readiness checked missing coverage alone. A current nonempty draft selection
   now requires exact-draft review before Finish, even when approved footage

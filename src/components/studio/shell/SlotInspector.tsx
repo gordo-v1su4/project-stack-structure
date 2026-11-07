@@ -45,12 +45,16 @@ export function SlotInspector({ evidence, onClose, onPlayFrom, onSelectTake, onR
       <div className="flex flex-col gap-4 p-4">
         <div className="flex gap-2">
           <Button variant="primary" size="md" onClick={() => onPlayFrom(slot.start)} className="flex-1">Play from here</Button>
-          {generated ? (
+          {generated?.reviewStatus === "approved" ? (
             <Button variant="secondary" size="md" onClick={() => onReopenGenerated(generated.id)} title="Send this shot back to review; the slot returns to matched footage">Revert</Button>
-          ) : (
+          ) : !generated ? (
             <Button variant="secondary" size="md" onClick={onOpenGenerate} title="Generate a replacement for this cut">Generate</Button>
-          )}
+          ) : null}
         </div>
+
+        {generated && generated.reviewStatus !== "approved" ? (
+          <p className="text-[12px] leading-5 text-warn">Pending draft review · Review the assembled draft before accepting this take.</p>
+        ) : null}
 
         {lyrics.length ? (
           <blockquote className="border-l-2 border-accent/60 pl-3 font-display text-[17px] italic leading-[1.3] text-fg-0">
@@ -96,7 +100,7 @@ export function SlotInspector({ evidence, onClose, onPlayFrom, onSelectTake, onR
             </ul>
             {match.reasons.length ? <p className="mt-2 text-[11.5px] leading-5 text-fg-3">{match.reasons.slice(0, 2).join(" · ")}</p> : null}
           </div>
-        ) : moment ? null : (
+        ) : moment || generated ? null : (
           <p className="text-[12px] leading-5 text-fg-3">No matched footage for this cut yet. Run Match, or generate a shot.</p>
         )}
 

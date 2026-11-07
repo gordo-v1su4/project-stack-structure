@@ -4,6 +4,9 @@ import type { EditPlanPreviewSegment, MusicVideoProject } from "../../src/compon
 import { buildSpineSlots, describeSlot, neighborSlot, slotAtTime } from "../../src/components/studio/shell/spineSlots";
 import { applyDraftGeneratedAssets } from "../../src/components/studio/generatedDraft";
 import { createImportedVideoAsset } from "../../src/components/studio/externalClipImport";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { SlotInspector } from "../../src/components/studio/shell/SlotInspector";
 
 const segments: EditPlanPreviewSegment[] = [
   { videoUrl: "blob:a", startTime: 0, endTime: 2, label: "Verse · wide", sectionId: "s1", musicStart: 0, musicEnd: 2, momentId: "m1", thumbnailUrl: "t1" },
@@ -53,6 +56,18 @@ describe("buildSpineSlots", () => {
     expect(draftSlot?.generatedAssetId).toBe(take.id);
     expect(draftSlot?.videoUrl).not.toBe("");
     expect(draftSlot?.label).not.toContain("Missing footage");
+    const inspector = renderToStaticMarkup(createElement(SlotInspector, {
+      evidence: describeSlot(draftSlot!, { project: null, generatedAssets: [take] }),
+      onClose() {}, onPlayFrom() {}, onSelectTake() {}, onReopenGenerated() {}, onOpenGenerate() {},
+    }));
+    expect(inspector).toContain("Pending draft review");
+    expect(inspector).not.toContain(">Revert<");
+    expect(inspector).not.toContain("No matched footage");
+    const approvedInspector = renderToStaticMarkup(createElement(SlotInspector, {
+      evidence: describeSlot(draftSlot!, { project: null, generatedAssets: [{ ...take, reviewStatus: "approved" }] }),
+      onClose() {}, onPlayFrom() {}, onSelectTake() {}, onReopenGenerated() {}, onOpenGenerate() {},
+    }));
+    expect(approvedInspector).toContain(">Revert<");
     for (const activeTab of ["story", "join", "compose", "ramp"] as const) {
       expect(buildSpineSlots({ ...params, activeTab })[0]?.videoUrl).toBe("");
     }
