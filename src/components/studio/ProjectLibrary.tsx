@@ -16,11 +16,12 @@ type ProjectLibraryProps = {
   activeProjectId: string | null;
   activeProjectName: string;
   onNewProject: (name: string) => Promise<boolean>;
-  onProjectSelected: (project: StudioProjectSummary, draft: RuntimeStudioProjectDraft) => void;
+  onProjectSelected: (project: StudioProjectSummary, draft: RuntimeStudioProjectDraft, revision?: string) => void;
   onProjectSaved: (project: StudioProjectSummary) => void;
+  onSaveProject: typeof saveNamedStudioProject;
 };
 
-export function ProjectLibrary({ draft, activeProjectId, activeProjectName, onNewProject, onProjectSelected, onProjectSaved }: ProjectLibraryProps) {
+export function ProjectLibrary({ draft, activeProjectId, activeProjectName, onNewProject, onProjectSelected, onProjectSaved, onSaveProject }: ProjectLibraryProps) {
   const [open, setOpen] = useState(false);
   const [user, setUser] = useState<SessionUser | null>(null);
   const [sessionChecked, setSessionChecked] = useState(false);
@@ -84,7 +85,7 @@ export function ProjectLibrary({ draft, activeProjectId, activeProjectName, onNe
     setBusy(true);
     setStatus("Saving project to RustFS...");
     try {
-      const saved = await saveNamedStudioProject({
+      const saved = await onSaveProject({
         projectId: createNew ? null : activeProjectId,
         name,
         draft,
@@ -105,7 +106,7 @@ export function ProjectLibrary({ draft, activeProjectId, activeProjectName, onNe
     setStatus(`Loading ${project.name}...`);
     try {
       const saved = await loadSavedStudioProject(project.id);
-      onProjectSelected(saved.project, hydrateStudioProjectDraft({ draft: saved.draft }));
+      onProjectSelected(saved.project, hydrateStudioProjectDraft({ draft: saved.draft }), saved.revision);
       setName(saved.project.name);
       setStatus(`Loaded ${saved.project.name}.`);
       setOpen(false);

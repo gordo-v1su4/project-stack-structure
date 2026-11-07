@@ -18,7 +18,7 @@ mock.module("@/lib/studioProjectStore", () => ({
   readStudioProject: async (ownerId: string, projectId: string) => ownerId === "owner-1" && projectId === "project-1" ? stored : null,
   saveStudioProject: async (input: { ownerId: string; projectId: string; name: string; draft: PersistedStudioProjectDraft }) => {
     saves++;
-    stored = { version: 1, project: { id: input.projectId, name: input.name, ownerId: input.ownerId }, draft: input.draft } as SavedStudioProject;
+    stored = { version: 1, project: { id: input.projectId, name: input.name, ownerId: input.ownerId }, draft: input.draft, revision: '"test-base"' } as SavedStudioProject;
     return stored;
   },
 }));
@@ -33,8 +33,12 @@ const draftRoute = await import("@/app/api/studio/draft/route");
 const context = { params: Promise.resolve({ projectId: "project-1" }) };
 const url = "http://app.test/api/studio/projects/project-1";
 const smallDraft = { version: 3, storyState: { storyBeats: [] }, videoSources: [] } as unknown as PersistedStudioProjectDraft;
-function reset() { signedIn = true; saves = 0; draftUploads = 0; stored = null; }
-function request(body: BodyInit, headers: HeadersInit = {}, method = "PUT") { return new Request(url, { method, headers, body }); }
+function reset() { signedIn = true; saves = 0; draftUploads = 0; stored = { version: 1, project: { id: "project-1", ownerId: "owner-1", name: "Film" }, draft: smallDraft, revision: '"test-base"' } as SavedStudioProject; }
+function request(body: BodyInit, headers: HeadersInit = {}, method = "PUT") {
+  const versionedHeaders = new Headers(headers);
+  if (method === "PUT") versionedHeaders.set("if-match", '"test-base"');
+  return new Request(url, { method, headers: versionedHeaders, body });
+}
 async function decode(response: Response) {
   if (response.headers.get("content-encoding") !== "gzip") return response.json();
   return new Response(response.body!.pipeThrough(new DecompressionStream("gzip"))).json();
@@ -51,10 +55,10 @@ describe("bounded authenticated project JSON transport", () => {
     const entered = new Promise<void>(resolve => { markEntered = resolve; });
     globalThis.fetch = (() => { markEntered(); return new Promise<Response>(resolve => { acknowledge = resolve; }); }) as typeof fetch;
     try {
-      const pending = saveNamedStudioProject({ projectId: "project-old", name: "Old film", draft: smallDraft }, { cache: false });
+      const pending = saveNamedStudioProject({ projectId: "project-old", name: "Old film", draft: smallDraft, expectedRevision: '"test-base"' }, { cache: false });
       await entered;
       mirror.set(ACTIVE_STUDIO_PROJECT_KEY, "project-new"); mirror.set(STUDIO_PROJECT_STORAGE_KEY, "new draft");
-      acknowledge(Response.json({ success: true, saved: { version: 1, project: { id: "project-old" }, draft: smallDraft } }));
+      acknowledge(Response.json({ success: true, saved: { version: 1, project: { id: "project-old" }, draft: smallDraft, revision: '"test-next"' } }));
       expect((await pending).project.id).toBe("project-old");
       expect(mirror.get(ACTIVE_STUDIO_PROJECT_KEY)).toBe("project-new");
       expect(mirror.get(STUDIO_PROJECT_STORAGE_KEY)).toBe("new draft");
@@ -175,10 +179,10 @@ describe("bounded authenticated project JSON transport", () => {
         const received = await readStudioJsonBody(new Request(url, init)) as { draft: unknown };
         expect(received.draft).toEqual(draft); savesThroughClient++;
       } else loadsThroughClient++;
-      return Response.json({ success: true, saved: { version: 1, project: { id: "project-1" }, draft } });
+      return Response.json({ success: true, saved: { version: 1, project: { id: "project-1" }, draft, revision: '"test-next"' } });
     }) as typeof fetch;
     try {
-      expect((await saveNamedStudioProject({ projectId: "project-1", name: "Existing film", draft })).draft).toEqual(draft);
+      expect((await saveNamedStudioProject({ projectId: "project-1", name: "Existing film", draft, expectedRevision: '"test-base"' })).draft).toEqual(draft);
       expect((await loadSavedStudioProject("project-1")).draft).toEqual(draft);
       expect(savesThroughClient).toBe(1); expect(loadsThroughClient).toBe(1);
       expect(mirror.get(ACTIVE_STUDIO_PROJECT_KEY)).toBe("project-1");

@@ -377,20 +377,42 @@ export async function loadSavedStudioProject(projectId: string, options: { cache
   return payload.saved;
 }
 
+export class ProjectSaveUncertainError extends Error {
+  constructor(public readonly projectId: string) { super("The project save could not be confirmed. Your changes remain in this window; reopen the saved project before saving again."); this.name = "ProjectSaveUncertainError"; }
+}
+
 export async function saveNamedStudioProject(params: {
   projectId?: string | null;
   name: string;
   draft: PersistedStudioProjectDraft;
+  expectedRevision?: string;
 }, options: { cache?: boolean } = {}): Promise<SavedStudioProject> {
   const projectId = params.projectId?.trim() || null;
-  const response = await fetch(projectId ? `/api/studio/projects/${encodeURIComponent(projectId)}` : "/api/studio/projects", {
-    method: projectId ? "PUT" : "POST",
-    ...await encodeStudioJsonRequest({ name: params.name, draft: params.draft }),
-  });
-  const payload = await readProjectApiResponse<{ saved?: SavedStudioProject }>(response);
-  if (!response.ok || !payload.success || !payload.saved) throw new Error(payload.error || `Project save failed (${response.status})`);
-  if (options.cache !== false) cacheSavedStudioProject(payload.saved);
-  return payload.saved;
+  if (projectId && !params.expectedRevision) throw new Error("Reload this saved project before saving it; this window has no saved revision.");
+  const targetProjectId = projectId ?? crypto.randomUUID();
+  const encoded = await encodeStudioJsonRequest({ name: params.name, draft: params.draft, ...(!projectId ? { projectId: targetProjectId } : {}) });
+  let responseStatus: number | undefined;
+  let saved: SavedStudioProject;
+  try {
+    const response = await fetch(projectId ? `/api/studio/projects/${encodeURIComponent(projectId)}` : "/api/studio/projects", {
+      method: projectId ? "PUT" : "POST", ...encoded,
+      headers: { ...encoded.headers, ...(projectId ? { "If-Match": params.expectedRevision! } : {}) },
+    });
+    responseStatus = response.status;
+    const payload = await readProjectApiResponse<{ saved?: SavedStudioProject }>(response);
+    if (!response.ok || !payload.success || !payload.saved) throw new Error(payload.error || `Project save failed (${response.status})`);
+    if (payload.saved.project.id !== targetProjectId || !payload.saved.revision) throw new Error("The project save acknowledgment did not match its submitted record.");
+    saved = payload.saved;
+  } catch (error) {
+    // Known precondition/auth/validation failures never rebase an obsolete tab.
+    if (responseStatus && responseStatus >= 400 && responseStatus < 500) throw error;
+    const recovered = await loadSavedStudioProject(targetProjectId, { cache: false }).catch(() => null);
+    const { isExactProjectSave } = await import("./projectSaveComparison");
+    if (!recovered || !isExactProjectSave(recovered, targetProjectId, params.name, params.draft)) throw new ProjectSaveUncertainError(targetProjectId);
+    saved = recovered;
+  }
+  if (options.cache !== false) cacheSavedStudioProject(saved);
+  return saved;
 }
 
 /** The durable save/load succeeded even if a large optional browser mirror exceeds its quota. */

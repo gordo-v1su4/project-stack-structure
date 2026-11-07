@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import type { PersistedStudioProjectDraft, RuntimeStudioProjectDraft } from "../projectPersistence";
+import type { PersistedStudioProjectDraft, RuntimeStudioProjectDraft, saveNamedStudioProject } from "../projectPersistence";
 import type { StudioProjectSummary } from "@/lib/studioProjectStore";
 import { ProjectLibrary } from "../ProjectLibrary";
 import { describeSaveState, type SaveState } from "../saveState";
@@ -29,8 +29,9 @@ type InspectorProps = {
   activeProjectId: string | null;
   activeProjectName: string;
   onNewProject: (name: string) => Promise<boolean>;
-  onProjectSelected: (project: StudioProjectSummary, draft: RuntimeStudioProjectDraft) => void;
+  onProjectSelected: (project: StudioProjectSummary, draft: RuntimeStudioProjectDraft, revision?: string) => void;
   onProjectSaved: (project: StudioProjectSummary) => void;
+  onSaveProject: typeof saveNamedStudioProject;
   /** Hide the blocked callout and prerequisite button when the monitor already shows the gate. */
   hideGateChrome?: boolean;
   /** Act-specific evidence and controls (Phase C modules). */
@@ -56,6 +57,7 @@ export function Inspector({
   onNewProject,
   onProjectSelected,
   onProjectSaved,
+  onSaveProject,
   hideGateChrome = false,
   children,
 }: InspectorProps) {
@@ -80,6 +82,7 @@ export function Inspector({
           onNewProject={onNewProject}
           onProjectSelected={onProjectSelected}
           onProjectSaved={onProjectSaved}
+          onSaveProject={onSaveProject}
         />
         <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap font-mono text-[11px] text-fg-3" title={save.detail}>
           <StatusDot tone={save.tone} pulse />

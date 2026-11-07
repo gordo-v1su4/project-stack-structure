@@ -1,6 +1,7 @@
 import { auth } from "@/auth";
 import type { PersistedStudioProjectDraft } from "@/components/studio/projectPersistence";
 import { createStudioProjectId, listStudioProjects, saveStudioProject } from "@/lib/studioProjectStore";
+import { StudioProjectConflictError } from "@/lib/studioProjectObjectStore";
 import { readStudioJsonBody, studioJsonBodyErrorResponse, studioJsonResponse } from "@/lib/studioJsonTransportServer";
 
 export const runtime = "nodejs";
@@ -26,8 +27,13 @@ export async function POST(request: Request) {
     ? body.projectId
     : createStudioProjectId();
   const name = typeof body.name === "string" ? body.name : body.draft.analysis?.sourceLabel || "Untitled project";
-  const saved = await saveStudioProject({ ownerId: session.user.id, projectId, name, draft: body.draft });
-  return studioJsonResponse(request, { success: true, saved }, 201);
+  try {
+    const saved = await saveStudioProject({ ownerId: session.user.id, projectId, name, draft: body.draft, expectedRevision: null });
+    return studioJsonResponse(request, { success: true, saved }, 201);
+  } catch (error) {
+    if (error instanceof StudioProjectConflictError) return Response.json({ success: false, error: error.message, code: "PROJECT_SAVE_CONFLICT" }, { status: error.status });
+    throw error;
+  }
 }
 
 function isPersistedDraft(value: unknown): value is PersistedStudioProjectDraft {

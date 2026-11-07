@@ -29,11 +29,11 @@ describe("confirmed blank named project creation", () => {
       expect(payload.name).toBe("New film");
       expect(payload.draft).toMatchObject({ analysis: null, videoSources: [], musicVideoProject: null, referenceAssets: [], generatedAssets: [], generatedDraft: null,
         workflowUiSettings: { activeTab: "review" }, storyState: { storyGenerated: false, transcriptSummary: null } });
-      return Response.json({ success: true, saved: { version: 1, project: { id: "new-film", name: payload.name, ownerId: "authenticated-owner" }, draft: payload.draft } });
+      return Response.json({ success: true, saved: { version: 1, project: { id: payload.projectId, name: payload.name, ownerId: "authenticated-owner" }, draft: payload.draft, revision: '"new-v1"' } });
     }) as typeof fetch;
     try {
       const result = await createBlankNamedStudioProject("  New   film  ", emptyStory);
-      expect(result.project.id).toBe("new-film");
+      expect(result.project.id).toMatch(/^[a-f0-9-]{36}$/);
       expect(requests).toEqual(["POST /api/studio/projects"]);
       expect(JSON.stringify(existing)).toBe(before);
     } finally { globalThis.fetch = originalFetch; }
@@ -47,7 +47,7 @@ describe("confirmed blank named project creation", () => {
     } } });
     globalThis.fetch = (async () => Response.json({ error: "Storage unavailable" }, { status: 503 })) as typeof fetch;
     try {
-      await expect(createBlankNamedStudioProject("New film", emptyStory)).rejects.toThrow("Storage unavailable");
+      await expect(createBlankNamedStudioProject("New film", emptyStory)).rejects.toThrow("could not be confirmed");
       expect(entries.get(ACTIVE_STUDIO_PROJECT_KEY)).toBe("existing-film");
       expect(entries.get(STUDIO_PROJECT_STORAGE_KEY)).toBe("existing draft");
     } finally {

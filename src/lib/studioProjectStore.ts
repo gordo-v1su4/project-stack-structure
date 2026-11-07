@@ -4,17 +4,16 @@ import type { PersistedStudioProjectDraft } from "@/components/studio/projectPer
 import {
   buildMediaGatewayFileUrl,
   getMediaGatewayConfig,
-  uploadJsonToMediaGateway,
 } from "@/lib/mediaGateway";
 import {
   buildProjectStorageFolder,
   normalizeStudioOwnerSegment,
   normalizeStudioProjectId,
   ownerProjectsIndexPath,
-  ownerProjectsRoot,
   resolveLegacyProjectObjectPath,
   resolveProjectObjectPath,
 } from "@/lib/studioStoragePaths";
+import { mergeStudioProjectIndex, requireStudioProjectRevision, StudioProjectConflictError, studioProjectObjects } from "./studioProjectObjectStore";
 
 export type StudioProjectSummary = {
   id: string;
@@ -32,8 +31,12 @@ export type StudioProjectSummary = {
 
 export type SavedStudioProject = {
   version: 1;
+  /** Server-authored marker for metadata anchored at the full owner/ID key. */
+  objectKeyVersion?: 2;
   project: StudioProjectSummary;
   draft: PersistedStudioProjectDraft;
+  /** Actual durable ETag; attached to responses, never written inside the object. */
+  revision?: string;
 };
 
 type StudioProjectIndex = {
@@ -62,7 +65,7 @@ export async function readStudioProject(ownerId: string, projectId: string, opti
   for (const source of readSources) {
     const project = source === "local"
       ? await readLocalJson<SavedStudioProject>(localProjectPath(safeOwnerId, safeProjectId))
-      : await readRemoteProject(safeOwnerId, safeProjectId, options);
+      : await readRemoteProject(safeOwnerId, safeProjectId);
     if (!isSavedStudioProject(project, safeOwnerId, safeProjectId)) continue;
     if (source === "remote" && readSources[0] === "local") {
       await writeLocalJson(localProjectPath(safeOwnerId, safeProjectId), project);
@@ -77,10 +80,17 @@ export async function saveStudioProject(params: {
   projectId: string;
   name: string;
   draft: PersistedStudioProjectDraft;
+  expectedRevision?: string | null;
 }): Promise<SavedStudioProject> {
   const ownerId = normalizeIdentity(params.ownerId);
   const projectId = normalizeProjectId(params.projectId);
-  const existing = await readStudioProject(ownerId, projectId);
+  const version = await readRemoteProjectVersion(ownerId, projectId);
+  const existing = version?.saved;
+  if (existing) {
+    if (params.expectedRevision === null) throw new StudioProjectConflictError("A project with this ID already exists; it was not replaced.");
+    const expected = requireStudioProjectRevision(params.expectedRevision);
+    if (expected !== existing.revision) throw new StudioProjectConflictError();
+  } else if (params.expectedRevision) throw new StudioProjectConflictError("This saved project no longer exists. Your changes were not written.");
   const now = new Date().toISOString();
   const draft = { ...params.draft, savedAt: now };
   const scenes = draft.videoSources.flatMap((source) => source.scenes ?? []);
@@ -99,49 +109,58 @@ export async function saveStudioProject(params: {
     captionedSceneCount: scenes.filter((scene) => Boolean(scene.caption?.trim())).length,
     status: draft.musicVideoProject ? "assembled" : draft.analysis || scenes.length ? "analyzed" : "draft",
   };
-  const saved: SavedStudioProject = { version: 1, project, draft };
+  const objectKey = version?.objectKey ?? resolveLegacyProjectObjectPath(ownerId, projectId);
+  const saved: SavedStudioProject = { version: 1, project, draft,
+    ...(objectKey === resolveLegacyProjectObjectPath(ownerId, projectId) ? { objectKeyVersion: 2 as const } : {}) };
 
-  if (studioProjectLocalCacheEnabled()) {
-    await writeLocalJson(localProjectPath(ownerId, projectId), saved);
-  }
-  await uploadJsonToMediaGateway({
-    data: saved,
-    fileName: "project.json",
-    folder: storageFolder,
-    preserveFileName: true,
+  // New metadata has one owner/ID key independent of its display name. Two
+  // create requests cannot claim the same ID in different named folders.
+  // GET can reconcile its known ID even if the subsequent index ACK is lost.
+  const revision = await studioProjectObjects.write(objectKey, saved, existing ? existing.revision! : null);
+  const committed = { ...saved, revision };
+  await mergeStudioProjectIndex(studioProjectObjects, ownerProjectsIndexPath(ownerId), async () => {
+    const latest = await studioProjectObjects.read<SavedStudioProject>(objectKey);
+    if (!latest || !isSavedStudioProject(latest.value, ownerId, projectId)) throw new Error("Saved project metadata could not be reconciled.");
+    return latest.value.project;
   });
-
-  const index = await readProjectIndex(ownerId);
-  const projects = [project, ...index.projects.filter((entry) => entry.id !== projectId)]
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-  const nextIndex: StudioProjectIndex = { version: 1, projects };
   if (studioProjectLocalCacheEnabled()) {
-    await writeLocalJson(localIndexPath(ownerId), nextIndex);
+    await writeLocalJson(localProjectPath(ownerId, projectId), committed);
+    const index = await studioProjectObjects.read<StudioProjectIndex>(ownerProjectsIndexPath(ownerId));
+    if (index) await writeLocalJson(localIndexPath(ownerId), index.value);
   }
-  await uploadJsonToMediaGateway({
-    data: nextIndex,
-    fileName: "index.json",
-    folder: ownerProjectsRoot(ownerId),
-    preserveFileName: true,
-  });
-  return saved;
+  return committed;
 }
 
 export function createStudioProjectId() {
   return crypto.randomUUID();
 }
 
-async function readRemoteProject(ownerId: string, projectId: string, options: { fresh?: boolean } = {}): Promise<SavedStudioProject | null> {
-  const index = await readProjectIndex(ownerId, options);
+async function readRemoteProject(ownerId: string, projectId: string): Promise<SavedStudioProject | null> {
+  return (await readRemoteProjectVersion(ownerId, projectId))?.saved ?? null;
+}
+
+async function readRemoteProjectVersion(ownerId: string, projectId: string) {
+  const canonicalKey = resolveLegacyProjectObjectPath(ownerId, projectId);
+  const canonical = await studioProjectObjects.read<SavedStudioProject>(canonicalKey);
+  if (canonical?.value.objectKeyVersion === 2 && isSavedStudioProject(canonical.value, ownerId, projectId)) {
+    return { saved: { ...canonical.value, revision: canonical.revision }, objectKey: canonicalKey };
+  }
+  // Unmarked legacy records may have a newer named-folder successor. Preserve
+  // that existing lookup order; only server-marked canonical records skip it.
+  const index = await readProjectIndex(ownerId, { fresh: true });
   const entry = index.projects.find((project) => project.id === projectId);
   const objectPaths = [
     entry?.storageFolder ? resolveProjectObjectPath(entry.storageFolder) : null,
-    resolveLegacyProjectObjectPath(ownerId, projectId),
   ].filter((value): value is string => Boolean(value));
 
   for (const objectPath of objectPaths) {
-    const project = await readRemoteJson<SavedStudioProject>(objectPath);
-    if (isSavedStudioProject(project, ownerId, projectId)) return project;
+    const version = await studioProjectObjects.read<SavedStudioProject>(objectPath);
+    if (version && isSavedStudioProject(version.value, ownerId, projectId)) {
+      return { saved: { ...version.value, revision: version.revision }, objectKey: objectPath };
+    }
+  }
+  if (canonical && isSavedStudioProject(canonical.value, ownerId, projectId)) {
+    return { saved: { ...canonical.value, revision: canonical.revision }, objectKey: canonicalKey };
   }
   return null;
 }
