@@ -50,6 +50,7 @@ import { assetsForCurrentReferenceCheck, assetsForCurrentReferenceReview } from 
 import { createLocalReferenceAsset, uploadReferenceAssetToRustFs, type ReferenceAsset, type ReferenceAssetLibraryRole } from "./studio/referenceAssets";
 import { BrowserPreviewPlayer, type PreviewSegment } from "./studio/previewPlayer";
 import { usePreviewPlayerSummary } from "./studio/usePreviewPlayerState";
+import { describePreviewBlocks } from "./studio/previewBlockSummary";
 import { buildEffectsTimeline, selectStoryAssemblyPreview, usesStoryAssembly, type PreviewCutRange } from "./studio/resolvedPreviewSelection";
 import { ComposeTab } from "./studio/panels/ComposeTab";
 import { IngestTab } from "./studio/panels/IngestTab";
@@ -2550,7 +2551,7 @@ export default function StudioApp() {
         isPlaying: browserPreviewState.status === "playing" || browserPreviewState.status === "loading",
         currentTime: 0, // The transport leaf subscribes to the live preview clock.
         duration: browserPreviewState.totalDuration,
-        label: `Instant preview · ${displayedBrowserPreviewSegments.length} cuts`,
+        label: `Instant preview · ${describePreviewBlocks(displayedBrowserPreviewSegments)}`,
         bpm: displayBpm,
       }
     : masterAudioUrl && beatJoinAnalysis

@@ -4,6 +4,7 @@ import { useId, useState } from "react";
 import { PreviewPlayer } from "../PreviewPlayerComponent";
 import type { BrowserPreviewPlayer, PreviewSegment } from "../previewPlayer";
 import type { PreviewPlayerSummary } from "../previewPlayerStore";
+import { describePreviewBlocks } from "../previewBlockSummary";
 import type { ShaderEffectCue } from "../shaderEffectPlan";
 import { getPreviewAssetFileName } from "../studioUiState";
 import type { BeatJoinAnalysis } from "../types";
@@ -76,7 +77,7 @@ export function ProgramMonitor({
   const current = browserPreviewSegments[browserPreviewState.currentIndex] ?? null;
 
   const hud = showBrowserPreview
-    ? `${browserPreviewSegments.length} cuts · ${browserPreviewState.totalDuration.toFixed(1)}s${masterAudioUrl ? " · master audio" : ""}`
+    ? `${describePreviewBlocks(browserPreviewSegments)} · ${browserPreviewState.totalDuration.toFixed(1)}s${masterAudioUrl ? " · master audio" : ""}`
     : showFfmpegPreview
       ? assetFileName ?? "Rendered preview"
       : null;
