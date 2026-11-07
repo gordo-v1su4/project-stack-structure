@@ -106,7 +106,7 @@ export function findH3TargetSegment(segments: EditPlanPreviewSegment[], target: 
 }
 
 /** Identity references are attached only when that exact named person is in the shot. */
-export function selectH3ReferenceAssetIds(assets: ReferenceAsset[], direction: string): string[] {
+export function selectH3ReferenceAssetIds(assets: ReferenceAsset[], direction: string, crowdAssetIds: string[] = []): string[] {
   const uploaded = assets.filter(asset => asset.storageStatus === "uploaded" && asset.storageBucket && asset.storagePath && asset.displayName?.trim());
   const mentions = (name: string) => {
     const escaped = name.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -117,7 +117,16 @@ export function selectH3ReferenceAssetIds(assets: ReferenceAsset[], direction: s
   if (!environment) throw new Error("Upload a named environment reference before creating this shot.");
   const identities = uploaded.filter(asset => (asset.kind === "character" || asset.role.startsWith("character-")) && mentions(asset.displayName));
   if (identities.length > 8) throw new Error("This shot names more characters than the reference limit permits.");
-  return [...identities.map(asset => asset.id), environment.id];
+  if (new Set(crowdAssetIds).size !== crowdAssetIds.length) throw new Error("Choose distinct crowd references for this shot.");
+  for (const id of crowdAssetIds) {
+    const asset = uploaded.find(candidate => candidate.id === id);
+    if (!asset || (asset.kind !== "crowd" && asset.role !== "crowd")) {
+      throw new Error("A selected crowd reference is unavailable. Restore its upload or remove it from this shot.");
+    }
+  }
+  const ids = [...identities.map(asset => asset.id), environment.id, ...crowdAssetIds];
+  if (ids.length > 9 || new Set(ids).size !== ids.length) throw new Error("Choose at most 9 distinct references, including named characters and the environment.");
+  return ids;
 }
 
 /** Retrying transport reuses a request unchanged; a deliberate new render increments its bounded attempt. */

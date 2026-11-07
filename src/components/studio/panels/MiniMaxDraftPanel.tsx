@@ -48,7 +48,7 @@ export function MiniMaxDraftPanel(props: Props) {
   const [revisionText, setRevisionText] = useState<Record<string, string>>({});
   const [batch, setBatch] = useState<H3DraftBatch | null>(null);
   const [pickupKey, setPickupKey] = useState("");
-  const [pickupEdits, setPickupEdits] = useState<Record<string, { direction?: string; duration?: string }>>({});
+  const [pickupEdits, setPickupEdits] = useState<Record<string, { direction?: string; duration?: string; crowdIds?: string[] }>>({});
   const [handleFrames,setHandleFrames] = useState<Record<string,number>>({});
   const [pickupMode,setPickupMode] = useState<"references"|"first-frame">("references");
   const [preparedFirstFrame,setPreparedFirstFrame] = useState<{file:File;context:string}|null>(null);
@@ -197,7 +197,7 @@ export function MiniMaxDraftPanel(props: Props) {
           requestIntentId: crypto.randomUUID(), attempt: 0, referenceAssetIds: [],
         };
         // Each request gets the current review revision just before dispatch.
-        const referenceAssetIds = selectH3ReferenceAssetIds(latest.current.referenceAssets, direction);
+        const referenceAssetIds = selectH3ReferenceAssetIds(latest.current.referenceAssets, direction, previous?.references.filter(ref => ref.role === "crowd").map(ref => ref.assetId));
         return { ...input, ...(!previous ? identityPolicyChoiceForReferences(latest.current.referenceAssets, referenceAssetIds) : {}),
           draftRevision: undefined, referenceAssetIds };
       });
@@ -226,7 +226,7 @@ export function MiniMaxDraftPanel(props: Props) {
         sectionId: target.sectionId, songStart: target.songStart, songEnd: target.songEnd, prompt: direction,
         referenceAssetIds: [], requestIntentId: crypto.randomUUID(), attempt: 0, draftRevision: latest.current.draft?.revision ?? 0,
       };
-      const referenceAssetIds = selectH3ReferenceAssetIds(latest.current.referenceAssets, direction);
+      const referenceAssetIds = selectH3ReferenceAssetIds(latest.current.referenceAssets, direction, original?.references.filter(ref => ref.role === "crowd").map(ref => ref.assetId));
       persistBatch({ version: 1, projectId, planSignature: input.planSignature, requests: [{ ...input,
         ...(!original ? identityPolicyChoiceForReferences(latest.current.referenceAssets, referenceAssetIds) : {}), referenceAssetIds }], paused: false });
       setReview(null); await runBatch();
@@ -259,7 +259,7 @@ export function MiniMaxDraftPanel(props: Props) {
         sectionId: segment.sectionId, songStart: segment.musicStart, songEnd: segment.musicEnd, prompt: direction,
         requestIntentId: crypto.randomUUID(), attempt: 0, referenceAssetIds: [], draftRevision: latest.current.draft?.revision ?? 0,
       };
-      const referenceAssetIds = selectH3ReferenceAssetIds(latest.current.referenceAssets, direction);
+      const referenceAssetIds = selectH3ReferenceAssetIds(latest.current.referenceAssets, direction, pickupMode === "references" ? pickupCrowdIds : []);
       const request: H3GenerationRequest = { ...input, ...(!sameModePrevious ? identityPolicyChoiceForReferences(latest.current.referenceAssets, referenceAssetIds) : {}), referenceAssetIds };
       if(pickupMode==="first-frame"){
         if(!firstFrameFile)throw new Error("Choose a prepared native-size first-frame PNG. It will receive a CPU similarity screen before rendering.");
@@ -296,6 +296,7 @@ export function MiniMaxDraftPanel(props: Props) {
       if (action === "retry") {
         if (!findH3TargetSegment(latest.current.segments, job.target)) throw new Error("This shot belongs to an earlier story plan.");
         const input = nextH3Attempt(job, await readJobs(job.projectId), latest.current.draft?.revision ?? 0);
+        selectH3ReferenceAssetIds(latest.current.referenceAssets, input.prompt, job.references.filter(ref => ref.role === "crowd").map(ref => ref.assetId));
         persistBatch({ version: 1, projectId: job.projectId, planSignature: input.planSignature, requests: [input, ...(batchRef.current?.requests ?? []).filter(request => h3RequestWindowKey(request) !== h3RequestWindowKey(input))], paused: false });
         await runBatch(); return;
       }
@@ -351,7 +352,12 @@ export function MiniMaxDraftPanel(props: Props) {
   const firstFrameFile=preparedFirstFrame?.context===firstFrameContext?preparedFirstFrame.file:null;
   const pickupDurationValid = pickupMaximum > 0 && pickupDuration.trim() !== "" && Number.isFinite(Number(pickupDuration))
     && Number(pickupDuration) >= Math.min(1, pickupMaximum) && Number(pickupDuration) <= pickupMaximum;
-  const pickupReferenceIds=selectH3ReferenceAssetIds(props.referenceAssets,pickupDirection);
+  const pickupCrowdIds = pickupEdits[pickupEditKey]?.crowdIds ?? [];
+  const crowdAssets = props.referenceAssets.filter(ref => ref.kind === "crowd" || ref.role === "crowd");
+  let pickupReferenceIds: string[] = [];
+  let pickupReferenceError: string | null = null;
+  try { pickupReferenceIds = selectH3ReferenceAssetIds(props.referenceAssets, pickupDirection, pickupMode === "references" ? pickupCrowdIds : []); }
+  catch (failure) { pickupReferenceError = failure instanceof Error ? failure.message : "Check this shot's references."; }
   const pickupIdentityIds=props.referenceAssets.filter(ref=>pickupReferenceIds.includes(ref.id)&&(ref.kind==="character"||ref.role.startsWith("character"))).map(ref=>ref.id);
   const earlierFrame=pickupWindow?earlierH3FirstFrameSource(props.assets,props.projectId,pickupWindow.planSignature,pickupWindow.musicStart,pickupIdentityIds):undefined;
   const activeJobs = jobs.filter(job => !isH3JobTerminal(job));
@@ -394,6 +400,24 @@ export function MiniMaxDraftPanel(props: Props) {
               <label className="block text-xs text-fg-3">Or choose a native first frame · 1344×768 opaque PNG<input key={firstFrameContext} aria-label="Prepared first-frame PNG" type="file" accept="image/png" disabled={busy||accepting}
               onChange={event=>{const file=event.target.files?.[0];setPreparedFirstFrame(file?{file,context:firstFrameContext}:null);}} className="mt-1 block w-full text-sm text-fg-1" />
               <span className="mt-1 block">{firstFrameFile?`Prepared: ${firstFrameFile.name}. `:""}The actual image receives a provisional one-image numerical screen before GPU video generation. Every intended video frame must then pass separately. Switching input type starts a new take and keeps earlier results.</span></label></div>:null}
+            <fieldset className="space-y-2 rounded-md border border-line p-3" disabled={busy || accepting || pickupMode === "first-frame"}>
+              <legend className="px-1 text-xs text-fg-2">Crowd / extras for this shot</legend>
+              <p className="text-xs text-fg-3">Choose only the sheets this shot needs. Extras guide variety and wardrobe range; named characters and location keep their own authorities. New batch windows use no crowd sheets.</p>
+              {crowdAssets.map(ref => <label key={ref.id} className="flex items-center gap-2 text-sm text-fg-2">
+                <input type="checkbox" checked={pickupCrowdIds.includes(ref.id)} onChange={event => {
+                  const crowdIds = event.target.checked ? [...pickupCrowdIds, ref.id] : pickupCrowdIds.filter(id => id !== ref.id);
+                  setPickupEdits(current => ({ ...current, [pickupEditKey]: { ...current[pickupEditKey], crowdIds } }));
+                }} />
+                {ref.displayName || ref.fileName}{ref.storageStatus !== "uploaded" || !ref.storageBucket || !ref.storagePath ? " · upload required" : ""}
+              </label>)}
+              {pickupCrowdIds.filter(id => !crowdAssets.some(ref => ref.id === id)).map(id => <label key={id} className="flex items-center gap-2 text-sm text-danger">
+                <input type="checkbox" checked onChange={() => setPickupEdits(current => ({ ...current, [pickupEditKey]: { ...current[pickupEditKey], crowdIds: pickupCrowdIds.filter(value => value !== id) } }))} />
+                Selected crowd sheet unavailable · remove selection
+              </label>)}
+              {!crowdAssets.length && !pickupCrowdIds.length ? <p className="text-xs text-fg-3">Add optional crowd sheets in Setup.</p> : null}
+              {pickupMode === "first-frame" ? <p className="text-xs text-fg-3">First-frame video uses only the frozen PNG for visual conditioning. Crowd sheets selected here are reference-mode inputs.</p> : <p className="text-xs text-fg-3">{pickupReferenceIds.length}/9 total references for this shot.</p>}
+            </fieldset>
+            {pickupReferenceError ? <p role="alert" className="text-xs text-danger">{pickupReferenceError}</p> : null}
             <label className="block text-xs text-fg-3">Edit duration (seconds)<input aria-label="One shot edit duration" type="number" step="any"
               min={Math.min(1, pickupMaximum)} max={pickupMaximum} value={pickupDuration} disabled={busy || accepting}
               onChange={event => setPickupEdits(current => ({ ...current, [pickupEditKey]: { ...current[pickupEditKey], duration: event.target.value } }))}
@@ -405,7 +429,7 @@ export function MiniMaxDraftPanel(props: Props) {
               className="mt-1 block w-full rounded-md border border-line bg-ink-1 p-2 text-sm text-fg-1" /></label>
           </> : <p className="text-xs text-fg-3">Select a short boundary sliver explicitly, or prepare a missing story window.</p>}
           {batch?.requests.length ? <p className="text-xs text-fg-3">Continue or clear the saved requests before creating one shot.</p> : null}
-          <Button disabled={busy || accepting || Boolean(unavailable) || !pickupWindow || !pickupDurationValid || !pickupDirection.trim() || activeJobs.length > 0 || Boolean(batch?.requests.length)}
+          <Button disabled={busy || accepting || Boolean(unavailable) || !pickupWindow || !pickupDurationValid || !pickupDirection.trim() || Boolean(pickupReferenceError) || activeJobs.length > 0 || Boolean(batch?.requests.length)}
             reason={unavailable} onClick={() => void generateOneShot()}>Create this shot</Button>
         </div>
       </details>

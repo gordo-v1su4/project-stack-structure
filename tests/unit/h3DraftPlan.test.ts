@@ -101,6 +101,42 @@ describe("H3 draft coverage planning", () => {
     expect(selectH3ReferenceAssetIds(references, "Diego and Ann enter CLUB_MAIN.")).toEqual(["diego", "other", "club"]);
     expect(() => selectH3ReferenceAssetIds(references.filter(reference => reference.id !== "club"), "Diego enters.")).toThrow("environment");
   });
+
+  test("explicit crowd subset reaches dispatch and survives revision/reload without other available sheets", async () => {
+    const { saved, request } = h3ProjectFixture();
+    const references = saved.draft.referenceAssets!;
+    for (const id of ["crowd-a", "crowd-b"]) references.push({ ...references[1], id, role: "crowd", kind: "crowd", displayName: id,
+      storagePath: `media-uploads/github-test/references/${id}/sheet.png` });
+    const input = { ...request, referenceAssetIds: selectH3ReferenceAssetIds(references, request.prompt, ["crowd-b"]) };
+    expect(input.referenceAssetIds).toEqual(["diego", "club", "crowd-b"]);
+    const job = materializeH3Job("github-test", saved, parseH3Request(input), "studio");
+    expect(job.references.map(ref => ref.role)).toEqual(["identity", "environment", "crowd"]);
+    const posted: typeof input[] = [];
+    const transport = (async (_url, init) => {
+      posted.push(JSON.parse(String(init?.body)));
+      return Response.json({ jobId: job.id, job });
+    }) as typeof fetch;
+    await enqueueH3DraftRequest(input, [], transport);
+    const revision = nextH3Attempt({ ...job, state: "failed" }, [], 1, "Diego crosses the room.");
+    const batch: H3DraftBatch = { version: 1, projectId: input.projectId, planSignature: input.planSignature, requests: [revision], paused: true };
+    await enqueueH3DraftRequest(parseH3DraftBatch(JSON.stringify(batch), input.projectId)!.requests[0], [], transport);
+    expect(posted.map(value => value.referenceAssetIds)).toEqual([["diego", "club", "crowd-b"], ["diego", "club", "crowd-b"]]);
+    expect(selectH3ReferenceAssetIds(references, request.prompt)).toEqual(["diego", "club"]);
+  });
+
+  test("selected crowd cannot disappear, bypass upload readiness, masquerade as a lead, or exceed nine sockets", () => {
+    const { saved, request } = h3ProjectFixture();
+    const references = saved.draft.referenceAssets!;
+    const crowd = { ...references[1], id: "crowd", role: "crowd" as const, kind: "crowd" as const, displayName: "Extras" };
+    for (const assets of [references, [...references, { ...crowd, storageStatus: "uploading" as const }], [...references, { ...crowd, storagePath: undefined }]]) {
+      expect(() => selectH3ReferenceAssetIds(assets, request.prompt, ["crowd"])).toThrow(/crowd.*unavailable|upload/i);
+    }
+    expect(() => selectH3ReferenceAssetIds(references, request.prompt, ["diego"])).toThrow(/crowd/i);
+    const crowds = Array.from({ length: 8 }, (_, index) => ({ ...crowd, id: `crowd-${index}` }));
+    expect(selectH3ReferenceAssetIds([...references, ...crowds], request.prompt, crowds.slice(0, 7).map(ref => ref.id))).toHaveLength(9);
+    expect(() => selectH3ReferenceAssetIds([...references, ...crowds], request.prompt, crowds.map(ref => ref.id))).toThrow(/9|nine/);
+    expect(() => selectH3ReferenceAssetIds([...references, crowd], request.prompt, ["crowd", "crowd"])).toThrow(/distinct/i);
+  });
 });
 
 function recoveryFixture() {
