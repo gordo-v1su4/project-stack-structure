@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { normalizeAestheticReferences, originalImageSha256, selectedAestheticReferences, type AestheticReferenceAsset } from "@/components/studio/aestheticReferences";
 import { createPersistableStudioProjectDraft, hydrateStudioProjectDraft, isEmptyStudioProjectDraft } from "@/components/studio/projectPersistence";
-import { appendH3AestheticReferenceIds } from "@/components/studio/h3DraftPlan";
+import { appendH3AestheticReferenceIds, parseH3DraftBatch } from "@/components/studio/h3DraftPlan";
+import { completeH3ReviewRequest, queueH3ReviewRevision } from "@/components/studio/liveDraftReview";
 import { sourceSha } from "@/lib/generationScopeServer";
 import { materializeH3Job } from "@/lib/h3GenerationServer";
 import { buildH3Workflow } from "@/lib/h3Workflow";
@@ -18,6 +19,25 @@ function image(patch: Partial<AestheticReferenceAsset> = {}): AestheticReference
 }
 
 describe("separate shot and style reference library", () => {
+  test("a scoped style revision survives reload while preserving queued packets and its one-take pause", () => {
+    const { saved, request } = h3ProjectFixture();
+    const library = { assets: [image({ scope: { kind: "section" as const, sectionId: request.sectionId } })],
+      shots: { [request.timelineItemId!]: ["aesthetic-opening"] } };
+    saved.draft.aestheticReferences = library;
+    const pending = { ...request, requestIntentId: "preserved-pending" };
+    const before = JSON.stringify(pending);
+    const revision = { ...request, requestIntentId: "explicit-style-revision",
+      referenceAssetIds: appendH3AestheticReferenceIds(request.referenceAssetIds, library, request) };
+    const queued = queueH3ReviewRevision({ version: 1, projectId: request.projectId,
+      planSignature: request.planSignature, paused: true, requests: [pending] }, revision);
+    const restored = parseH3DraftBatch(JSON.stringify(queued), request.projectId)!;
+    const materialized = materializeH3Job("github-test", saved, restored.requests[0], "studio");
+    expect(materialized.references.at(-1)?.role).toBe("composition");
+    expect(materialized.references.at(-1)?.aesthetic?.originalSha256).toBe("a".repeat(64));
+    expect(completeH3ReviewRequest(restored)).toMatchObject({ paused: true, requests: [pending] });
+    expect(JSON.stringify(pending)).toBe(before);
+    expect(pending.referenceAssetIds).not.toContain("aesthetic-opening");
+  });
   test("malformed scoped identifiers fail closed rather than widening to project availability", () => {
     for (const scope of [{ kind: "section", sectionId: 123 }, { kind: "shot", timelineItemId: true }, { kind: "unknown" }]) {
       const library = normalizeAestheticReferences({ assets: [{ ...image(), scope }], shots: {} });
