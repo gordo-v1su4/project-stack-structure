@@ -1635,6 +1635,7 @@ function GeneratedShotCard({
           <div className="overflow-hidden rounded-[1px] border border-[#1b1b1b] bg-black">
             {videoUrl && previewActive ? (
               <video
+                key={videoUrl}
                 ref={videoRef}
                 src={videoUrl}
                 controls
