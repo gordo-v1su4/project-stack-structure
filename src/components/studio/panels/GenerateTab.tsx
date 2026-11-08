@@ -1467,6 +1467,7 @@ function GeneratedShotBank({
   onUpdate: (asset: GeneratedStudioAsset) => void;
   onAudition: (asset: GeneratedStudioAsset, contextRadius: number) => void;
 }) {
+  const [activePreviewId, setActivePreviewId] = useState<string | null>(null);
   const videos = assets
     .filter((asset) => asset.mediaKind === "video")
     .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
@@ -1478,6 +1479,8 @@ function GeneratedShotBank({
       {videos.map((asset, index) => (
         <GeneratedShotCard
           key={asset.id}
+          previewActive={activePreviewId === asset.id}
+          onOpenPreview={() => setActivePreviewId(asset.id)}
           asset={asset}
           index={index}
           previewSegments={previewSegments}
@@ -1491,12 +1494,16 @@ function GeneratedShotBank({
 
 function GeneratedShotCard({
   asset,
+  previewActive,
+  onOpenPreview,
   index,
   previewSegments,
   onUpdate,
   onAudition,
 }: {
   asset: GeneratedStudioAsset;
+  previewActive: boolean;
+  onOpenPreview: () => void;
   index: number;
   previewSegments: EditPlanPreviewSegment[];
   onUpdate: (asset: GeneratedStudioAsset) => void;
@@ -1509,6 +1516,14 @@ function GeneratedShotCard({
   const previewTrimFrameRef = useRef<number | null>(null);
   const dragPointerIdRef = useRef<number | null>(null);
   const videoUrl = asset.fullStorage?.mediaUrl ?? asset.fullStorage?.publicUrl ?? asset.resultUrl;
+  useEffect(() => {
+    const video = videoRef.current;
+    return () => {
+      video?.pause();
+      video?.removeAttribute("src");
+      video?.load();
+    };
+  }, [previewActive, videoUrl]);
   const reviewStatus = asset.reviewStatus ?? "pending";
   const committedTrimWindow = resolveGeneratedAssetTrimWindow({
     trimStart: asset.trimStart,
@@ -1604,7 +1619,11 @@ function GeneratedShotCard({
     if (!video) return;
     video.currentTime = trimStart;
     setPlayingSelection(true);
-    await video.play();
+    try {
+      await video.play();
+    } catch {
+      setPlayingSelection(false);
+    }
   };
 
   return (
@@ -1614,7 +1633,7 @@ function GeneratedShotCard({
             <span className={`rounded-[2px] border px-1.5 py-0.5 text-[7px] uppercase tracking-[0.1em] ${reviewStatus === "approved" ? "border-[#245c2c] text-[#78c878]" : reviewStatus === "rejected" ? "border-[#743029] text-[#dc6257]" : "border-[#695019] text-[#d3a236]"}`}>{reviewStatus}</span>
           </div>
           <div className="overflow-hidden rounded-[1px] border border-[#1b1b1b] bg-black">
-            {videoUrl ? (
+            {videoUrl && previewActive ? (
               <video
                 ref={videoRef}
                 src={videoUrl}
@@ -1629,6 +1648,10 @@ function GeneratedShotCard({
                 onPause={() => setPlayingSelection(false)}
                 className="aspect-video w-full object-contain"
               />
+            ) : videoUrl ? (
+              <button type="button" onClick={onOpenPreview} className="flex aspect-video w-full items-center justify-center text-[10px] uppercase tracking-[0.12em] text-[#aaa] hover:text-white">
+                Open clip preview
+              </button>
             ) : <div className="flex aspect-video items-center justify-center text-[8px] uppercase tracking-[0.12em] text-[#555]">Missing video</div>}
           </div>
           <div className="mt-2 font-mono text-[8px] text-[#777]">
@@ -1690,8 +1713,8 @@ function GeneratedShotCard({
                 <div className="rounded-[1px] border border-[#1d343a] bg-[#071014] px-2 py-1"><span className="text-[#52737c]">OUT / END FRAME</span><div className="mt-0.5 text-[#b6e6ef]">{trimEnd.toFixed(2)}s · f{Math.round(trimEnd * trimFramesPerSecond)}</div></div>
               </div>
               <div className="mt-2 flex flex-wrap gap-1.5">
-                <button type="button" disabled={!videoUrl} onClick={() => void playSelectedWindow()} className="rounded-[2px] border border-[#1d5362] px-2 py-1 uppercase tracking-[0.1em] text-[#6bc8dc] disabled:opacity-35">Play selected</button>
-                <button type="button" disabled={!videoUrl} onClick={() => commitTrimStart(videoRef.current?.currentTime ?? trimStart)} className="rounded-[2px] border border-[#303030] px-2 py-1 uppercase tracking-[0.1em] text-[#888] disabled:opacity-35">Set in at playhead</button>
+                <button type="button" disabled={!videoUrl || !previewActive} onClick={() => void playSelectedWindow()} className="rounded-[2px] border border-[#1d5362] px-2 py-1 uppercase tracking-[0.1em] text-[#6bc8dc] disabled:opacity-35">Play selected</button>
+                <button type="button" disabled={!videoUrl || !previewActive} onClick={() => commitTrimStart(videoRef.current?.currentTime ?? trimStart)} className="rounded-[2px] border border-[#303030] px-2 py-1 uppercase tracking-[0.1em] text-[#888] disabled:opacity-35">Set in at playhead</button>
                 <button type="button" disabled={!context || !videoUrl} onClick={() => onAudition(asset, 2)} className="rounded-[2px] border border-[#e05c00] bg-[#120b06] px-2 py-1 uppercase tracking-[0.1em] text-[#e05c00] disabled:border-[#303030] disabled:bg-transparent disabled:text-[#555]">Audition ±2 cuts</button>
               </div>
             </div>

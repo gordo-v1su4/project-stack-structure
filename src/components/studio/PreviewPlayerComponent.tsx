@@ -6,6 +6,7 @@ import {
   type PreviewPlayerState,
   type PreviewSegment,
 } from "./previewPlayer";
+import { registerMediaPlaybackGroup } from "./mediaPlaybackOwnership";
 import type { ShaderEffectCue } from "./shaderEffectPlan";
 import {
   selectActiveStutterRuntimePlan,
@@ -66,7 +67,11 @@ export function PreviewPlayer({
       player.attach(videoRef.current, standbyVideoRef.current);
     }
     player.attachAudioElement(masterAudioUrl ? masterAudioRef.current : null);
+    const releaseOwnership = registerMediaPlaybackGroup(player,
+      [videoRef.current, standbyVideoRef.current, masterAudioRef.current].filter((element): element is HTMLMediaElement => element !== null),
+      () => player.pause());
     return () => {
+      releaseOwnership();
       player.detach();
     };
   }, [player, masterAudioUrl]);
