@@ -72,7 +72,9 @@ export class BrowserPreviewPlayer {
   private currentSegmentEndTime: number | null = null;
   private progressRafId: number | null = null;
   private progressFrameCallbackId: number | null = null;
+  private progressFrameVideo: VideoWithFrameCallback | null = null;
   private playbackToken = 0;
+  private playbackAbort = new AbortController();
   private gapOffset = 0;
   private gapStartedAt: number | null = null;
   private elementOwnerTokens = new WeakMap<HTMLVideoElement, number>();
@@ -151,10 +153,14 @@ export class BrowserPreviewPlayer {
     const audio = this.audioElement;
     if (!audio) return;
     try {
-      audio.currentTime = this.getMasterAudioTargetTime();
+      const target = this.getMasterAudioTargetTime();
+      if (audio.paused || Math.abs(audio.currentTime - target) > MASTER_AUDIO_DRIFT_TOLERANCE_SECONDS) {
+        audio.currentTime = target;
+      }
     } catch {
       // Metadata may not be loaded yet; the drift loop corrects once playable.
     }
+    if (!audio.paused) return;
     void audio.play().catch(() => {
       // Autoplay policy or missing source: video playback continues silently.
     });
@@ -206,7 +212,7 @@ export class BrowserPreviewPlayer {
     if (!this.videoElement || this.segments.length === 0) return;
     this.status = "loading";
     this.emit();
-    const token = ++this.playbackToken;
+    const token = this.invalidatePlayback();
 
     try {
       await this.playSegment(this.currentIndex, token);
@@ -225,7 +231,7 @@ export class BrowserPreviewPlayer {
     if (this.segments[this.currentIndex]?.kind === "gap") { this.gapOffset = this.currentGapOffset(); this.gapStartedAt = null; }
     this.videoElement.pause();
     this.pauseMasterAudio();
-    this.playbackToken++;
+    this.invalidatePlayback();
     this.status = "paused";
     this.stopProgressLoop();
     this.emit();
@@ -234,13 +240,13 @@ export class BrowserPreviewPlayer {
   resume() {
     if (!this.videoElement) return;
     if (this.segments[this.currentIndex]?.kind === "gap") {
-      const token = ++this.playbackToken;
+      const token = this.invalidatePlayback();
       void this.playGap(this.segments[this.currentIndex]!, token).then(() => this.advanceToNext(token));
       return;
     }
 
     if (this.currentSegmentEndTime !== null && this.status === "paused") {
-      const token = ++this.playbackToken;
+      const token = this.invalidatePlayback();
       const endTime = this.currentSegmentEndTime;
       void this.videoElement.play()
         .then(() => {
@@ -256,6 +262,13 @@ export class BrowserPreviewPlayer {
           if (token !== this.playbackToken) return;
           this.failPlayback("Could not resume preview playback.");
         });
+      return;
+    }
+
+    if (this.status === "paused") {
+      // Pausing a pending metadata/seek operation invalidates its chain before
+      // an end waiter exists. Restart preparation so the resumed cut is bounded.
+      void this.play();
       return;
     }
 
@@ -286,7 +299,7 @@ export class BrowserPreviewPlayer {
   stop() {
     this.gapOffset = 0;
     this.gapStartedAt = null;
-    this.playbackToken++;
+    this.invalidatePlayback();
     this.stopProgressLoop();
     this.pauseMasterAudio();
     this.currentSegmentEndTime = null;
@@ -370,6 +383,7 @@ export class BrowserPreviewPlayer {
     }
 
     this.currentIndex = index;
+    this.currentSegmentEndTime = null;
     this.warmSourcesAround(index);
     this.applyElementVisibility();
     if (segment.kind === "gap") {
@@ -451,6 +465,13 @@ export class BrowserPreviewPlayer {
     return this.gapOffset + (this.gapStartedAt === null ? 0 : (performance.now() - this.gapStartedAt) / 1000);
   }
 
+  private invalidatePlayback() {
+    this.playbackToken++;
+    this.playbackAbort.abort();
+    this.playbackAbort = new AbortController();
+    return this.playbackToken;
+  }
+
   private async playGap(segment: PreviewSegment, token: number) {
     for (const element of this.elements) element?.pause();
     this.stopProgressLoop();
@@ -460,18 +481,26 @@ export class BrowserPreviewPlayer {
     this.currentSegmentEndTime = segment.endTime;
     this.startMasterAudio();
     await new Promise<void>((resolve) => {
+      const signal = this.playbackAbort.signal;
+      let frameId: number | null = null;
+      const finish = () => {
+        if (frameId !== null) cancelAnimationFrame(frameId);
+        signal.removeEventListener("abort", finish);
+        resolve();
+      };
       const tick = () => {
-        if (token !== this.playbackToken || this.status !== "playing") { resolve(); return; }
+        if (token !== this.playbackToken || this.status !== "playing") { finish(); return; }
         this.correctMasterAudioDrift();
         this.emit();
         if (this.currentGapOffset() >= segment.endTime - segment.startTime) {
           this.gapOffset = segment.endTime - segment.startTime;
           this.gapStartedAt = null;
-          resolve();
+          finish();
           return;
         }
-        requestAnimationFrame(tick);
+        frameId = requestAnimationFrame(tick);
       };
+      signal.addEventListener("abort", finish, { once: true });
       tick();
     });
   }
@@ -489,9 +518,9 @@ export class BrowserPreviewPlayer {
       video.load();
     }
 
-    await waitForMetadata(video, token, () => this.playbackToken);
+    await waitForMetadata(video, token, () => this.playbackToken, this.playbackAbort.signal);
     if (token !== this.playbackToken) return;
-    await seekVideo(video, segment.startTime, token, () => this.playbackToken);
+    await seekVideo(video, segment.startTime, token, () => this.playbackToken, this.playbackAbort.signal);
   }
 
   private waitForSegmentEnd(endTime: number, token: number): Promise<void> {
@@ -502,6 +531,7 @@ export class BrowserPreviewPlayer {
       }
 
       const video = this.videoElement as VideoWithFrameCallback;
+      const signal = this.playbackAbort.signal;
       let frameCallbackId: number | null = null;
       let settled = false;
 
@@ -531,6 +561,7 @@ export class BrowserPreviewPlayer {
       const onError = () => finish();
 
       const cleanup = () => {
+        signal.removeEventListener("abort", finish);
         video.removeEventListener("timeupdate", onTimeUpdate);
         video.removeEventListener("ended", onEnded);
         video.removeEventListener("error", onError);
@@ -541,6 +572,7 @@ export class BrowserPreviewPlayer {
       };
 
       video.addEventListener("ended", onEnded);
+      signal.addEventListener("abort", finish, { once: true });
       video.addEventListener("error", onError);
 
       if (video.requestVideoFrameCallback) {
@@ -583,6 +615,7 @@ export class BrowserPreviewPlayer {
     this.stopProgressLoop();
     const video = this.videoElement as VideoWithFrameCallback | null;
     if (video?.requestVideoFrameCallback) {
+      this.progressFrameVideo = video;
       const tick: FrameCallback = () => {
         if (this.status === "playing") {
           this.correctMasterAudioDrift();
@@ -605,11 +638,11 @@ export class BrowserPreviewPlayer {
   }
 
   private stopProgressLoop() {
-    const video = this.videoElement as VideoWithFrameCallback | null;
     if (this.progressFrameCallbackId !== null) {
-      video?.cancelVideoFrameCallback?.(this.progressFrameCallbackId);
+      this.progressFrameVideo?.cancelVideoFrameCallback?.(this.progressFrameCallbackId);
       this.progressFrameCallbackId = null;
     }
+    this.progressFrameVideo = null;
     if (this.progressRafId !== null) {
       cancelAnimationFrame(this.progressRafId);
       this.progressRafId = null;
@@ -781,12 +814,13 @@ function releaseVideoElement(video: HTMLVideoElement) {
   video.remove();
 }
 
-function waitForMetadata(video: HTMLVideoElement, token: number, getToken: () => number): Promise<void> {
+function waitForMetadata(video: HTMLVideoElement, token: number, getToken: () => number, signal: AbortSignal): Promise<void> {
   if (video.readyState >= HTMLMediaElement.HAVE_METADATA) return Promise.resolve();
   return new Promise((resolve, reject) => {
     const cleanup = () => {
       video.removeEventListener("loadedmetadata", onLoaded);
       video.removeEventListener("error", onError);
+      signal.removeEventListener("abort", onLoaded);
     };
     const onLoaded = () => {
       cleanup();
@@ -801,11 +835,12 @@ function waitForMetadata(video: HTMLVideoElement, token: number, getToken: () =>
       return;
     }
     video.addEventListener("loadedmetadata", onLoaded, { once: true });
+    signal.addEventListener("abort", onLoaded, { once: true });
     video.addEventListener("error", onError, { once: true });
   });
 }
 
-function seekVideo(video: HTMLVideoElement, time: number, token: number, getToken: () => number): Promise<void> {
+function seekVideo(video: HTMLVideoElement, time: number, token: number, getToken: () => number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     if (token !== getToken()) {
       resolve();
@@ -819,6 +854,7 @@ function seekVideo(video: HTMLVideoElement, time: number, token: number, getToke
     const cleanup = () => {
       video.removeEventListener("seeked", onSeeked);
       video.removeEventListener("error", onError);
+      signal.removeEventListener("abort", onSeeked);
     };
     const onSeeked = () => {
       cleanup();
@@ -835,6 +871,7 @@ function seekVideo(video: HTMLVideoElement, time: number, token: number, getToke
     }
 
     video.addEventListener("seeked", onSeeked, { once: true });
+    signal.addEventListener("abort", onSeeked, { once: true });
     video.addEventListener("error", onError, { once: true });
     try {
       video.currentTime = targetTime;
