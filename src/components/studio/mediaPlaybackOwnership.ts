@@ -33,8 +33,7 @@ let users = 0;
 let dispose: (() => void) | null = null;
 
 /** Capture native controls too, including players outside the main monitor. */
-export function registerMediaPlaybackGroup(owner: object, elements: HTMLMediaElement[], pause: () => void) {
-  const unregister = ownership.register(owner, elements, pause);
+export function acquireMediaPlaybackOwnership() {
   if (++users === 1) {
     const media = () => document.querySelectorAll<HTMLMediaElement>("video, audio");
     const channel = typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel("stack-media-playback");
@@ -54,7 +53,12 @@ export function registerMediaPlaybackGroup(owner: object, elements: HTMLMediaEle
     };
   }
   return () => {
-    unregister();
     if (--users === 0) { dispose?.(); dispose = null; }
   };
+}
+
+export function registerMediaPlaybackGroup(owner: object, elements: HTMLMediaElement[], pause: () => void) {
+  const unregister = ownership.register(owner, elements, pause);
+  const release = acquireMediaPlaybackOwnership();
+  return () => { unregister(); release(); };
 }
