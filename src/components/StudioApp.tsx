@@ -2884,6 +2884,9 @@ export default function StudioApp() {
                 lyricCueBlend={matchLyricCueBlend}
                 lyricMergeWindow={matchLyricMergeWindow}
                 previewSegments={storyPreviewSegments}
+                savedProjectId={activeProjectId}
+                resolvedDraftSegments={draftPreviewSegments}
+                selectedDraftAssetIds={generatedDraft?.assetIds}
                 referenceAssets={referenceAssets}
                 persistedGeneratedAssets={generatedAssets}
                 masterAudioRef={beatJoinAnalysis?.storageBucket && beatJoinAnalysis.storagePath
