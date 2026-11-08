@@ -16,6 +16,8 @@ type SolidWaveformProps = {
   label?: string;
   showRuler?: boolean;
   zoom?: 1 | 2;
+  /** Optional fixed viewport, in master-song seconds. Seeks remain song-normalized. */
+  visibleRange?: { start: number; end: number };
   onSeek?: (nextPlayhead: number) => void;
 };
 
@@ -32,6 +34,7 @@ export function SolidWaveform({
   label = "SOURCE",
   showRuler = true,
   zoom = 1,
+  visibleRange,
   onSeek,
 }: SolidWaveformProps) {
   const wrapperRef = useRef<HTMLDivElement | null>(null);
@@ -51,9 +54,12 @@ export function SolidWaveform({
   const resolvedBarCount = derivedBeatTimes.length
     ? Math.max(1, Math.ceil(derivedBeatTimes.length / beatsPerBar))
     : totalBars;
-  const visibleDuration = resolvedDuration / resolvedZoom;
+  const rangeStart = visibleRange ? clamp(visibleRange.start, 0, resolvedDuration) : 0;
+  const rangeEnd = visibleRange ? clamp(visibleRange.end, rangeStart, resolvedDuration) : 0;
+  const hasVisibleRange = rangeEnd > rangeStart;
+  const visibleDuration = hasVisibleRange ? rangeEnd - rangeStart : resolvedDuration / resolvedZoom;
   const playheadTime = playhead * resolvedDuration;
-  const windowStart = resolvedZoom === 1
+  const windowStart = hasVisibleRange ? rangeStart : resolvedZoom === 1
     ? 0
     : clamp(
         playheadTime - visibleDuration / 2,
@@ -62,7 +68,8 @@ export function SolidWaveform({
       );
   const windowEnd = Math.min(resolvedDuration, windowStart + visibleDuration);
   const ph = projectTimeToX(playheadTime, windowStart, windowEnd, canvasWidth);
-  const labelStep = resolvedBarCount > 96 ? 8 : resolvedBarCount > 48 ? 4 : resolvedBarCount > 24 ? 2 : 1;
+  const visibleBarCount = resolvedBarCount * visibleDuration / resolvedDuration;
+  const labelStep = visibleBarCount > 96 ? 8 : visibleBarCount > 48 ? 4 : visibleBarCount > 24 ? 2 : 1;
   useEffect(() => {
     const node = wrapperRef.current;
     if (!node) return;
@@ -237,7 +244,7 @@ export function SolidWaveform({
                     strokeWidth={isBarStart ? 1.2 : 0.6}
                   />
                 ) : null}
-                {isBarStart && bar % labelStep === 1 && (
+                {isBarStart && (bar - 1) % labelStep === 0 && (
                   <text
                     x={x + 4}
                     y={rulerH * 1.4}
@@ -249,7 +256,7 @@ export function SolidWaveform({
                     {bar}
                   </text>
                 )}
-                {!isBarStart && resolvedZoom === 2 && showRuler ? (
+                {!isBarStart && (resolvedZoom === 2 || hasVisibleRange && visibleDuration < resolvedDuration / 2) && showRuler ? (
                   <text x={x + 3} y={rulerH * 1.5} fontSize={8} fill="#282828" fontFamily="monospace">
                     {bar}-{beat}
                   </text>

@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { buildSongSectionReview } from "../songSectionReview";
 
 import { fmt } from "../math";
@@ -7,6 +8,7 @@ import type { MatchCandidateRailItem } from "../panels/matchCandidateRailModel";
 import { SolidWaveform } from "../SolidWaveform";
 import type { BeatJoinAnalysis } from "../types";
 import type { SpineSlot } from "./spineSlots";
+import { clipSpineRange, getSpineViewport, type SpineZoomMode } from "./spineViewport";
 
 type BeatSpineProps = {
   analysis: BeatJoinAnalysis;
@@ -35,15 +37,46 @@ type BeatSpineProps = {
  * playhead the transport bar drives.
  */
 export function BeatSpine({ analysis, bpm, playhead, onSeek, onSelectSection, selectedRange, caption, slots, selectedSlotId, onSelectSlot, takes, onSelectTake }: BeatSpineProps) {
+  const [zoomMode, setZoomMode] = useState<SpineZoomMode>("fit");
+  const [focusedSection, setFocusedSection] = useState<{ start: number; selectionAnchor: number | undefined } | null>(null);
   const duration = Math.max(analysis.duration, 0.001);
   const playheadSeconds = playhead * duration;
   const selected = slots.find((slot) => slot.id === selectedSlotId) ?? null;
-  const pct = (seconds: number) => `${(Math.max(0, Math.min(duration, seconds)) / duration) * 100}%`;
+  const sections = buildSongSectionReview(analysis.sections.map((section, index) => ({ ...section, id: `analysis-${index}` })));
+  const selectionAnchor = selectedRange?.start ?? selected?.start;
+  const anchor = focusedSection && focusedSection.selectionAnchor === selectionAnchor
+    ? focusedSection.start : selectionAnchor ?? playheadSeconds;
+  const sectionIndex = sections.findIndex(section => anchor >= section.start && anchor < section.end);
+  const section = sections[sectionIndex] ?? null;
+  const view = getSpineViewport(duration, zoomMode, section, selected);
+  const viewDuration = view.end - view.start;
+  const pct = (seconds: number) => `${((seconds - view.start) / viewDuration) * 100}%`;
+  const playheadVisible = playheadSeconds >= view.start && playheadSeconds <= view.end;
+  function selectSection(index: number, extend = false) {
+    const next = sections[index];
+    if (!next) return;
+    onSelectSection?.(next.start, next.end, extend);
+    onSeek(Math.max(0, next.start) / duration);
+    setFocusedSection({ start: next.start, selectionAnchor });
+    setZoomMode("section");
+  }
 
   return (
     <section aria-label="Beat spine" className="vt-spine shrink-0 overflow-hidden rounded-[10px] border border-line bg-ink-1">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-2 py-1.5">
+        <div role="group" aria-label="Timeline zoom" className="flex gap-1">
+          {([["fit", "Full song"], ["section", "Selected section"], ["selected", "Selected cut"]] as const).map(([mode, label]) => (
+            <button key={mode} type="button" aria-pressed={zoomMode === mode} disabled={mode === "section" ? !section : mode === "selected" ? !selected : false} onClick={() => { if (mode === "section" && section) setFocusedSection({ start: section.start, selectionAnchor }); setZoomMode(mode); }} className={`rounded-sm px-2 py-1 text-xs focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40 ${zoomMode === mode ? "bg-accent-tint text-accent" : "text-fg-2 hover:bg-ink-2"}`}>{label}</button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2 text-xs text-fg-2">
+          <button type="button" aria-label="Previous song section" disabled={sectionIndex <= 0} onClick={() => selectSection(sectionIndex - 1)} className="rounded-sm px-2 py-1 hover:bg-ink-2 focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40">←</button>
+          <span>{zoomMode === "fit" ? "Full song" : zoomMode === "section" ? section?.label ?? "Full song" : selected?.label ?? "Full song"} <span className="font-mono text-fg-3">{fmt(view.start)}–{fmt(view.end)}</span></span>
+          <button type="button" aria-label="Next song section" disabled={!sections.length || sectionIndex >= sections.length - 1} onClick={() => selectSection(sectionIndex + 1)} className="rounded-sm px-2 py-1 hover:bg-ink-2 focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40">→</button>
+        </div>
+      </div>
       <nav aria-label="Song sections" className="relative h-7 border-b border-line">
-        {buildSongSectionReview(analysis.sections.map((section, index) => ({ ...section, id: `analysis-${index}` }))).map((section, index) => {
+        {sections.map((section, index) => {
           const left = (Math.max(0, section.start) / duration) * 100;
           const width = Math.max(0.5, ((Math.min(duration, section.end) - Math.max(0, section.start)) / duration) * 100);
           const isSelected = Boolean(selectedRange && selectedRange.end > section.start && selectedRange.start < section.end);
@@ -53,8 +86,7 @@ export function BeatSpine({ analysis, bpm, playhead, onSeek, onSelectSection, se
               type="button"
               aria-pressed={onSelectSection ? isSelected : undefined}
               onClick={(event) => {
-                onSelectSection?.(section.start, section.end, event.shiftKey);
-                onSeek(Math.max(0, section.start) / duration);
+                selectSection(index, event.shiftKey);
               }}
               title={`${section.label} · ${fmt(section.start)}–${fmt(section.end)}`}
               style={{ left: `${left}%`, width: `${width}%` }}
@@ -72,11 +104,13 @@ export function BeatSpine({ analysis, bpm, playhead, onSeek, onSelectSection, se
             <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-fg-3">Edit plan · song time</span>
             <span className="font-mono text-[9px] text-fg-3">Match places footage here · Space plays song</span>
           </div>
-          <div role="listbox" aria-label="Cuts" aria-multiselectable={Boolean(onSelectSection)} className="relative h-[68px] border-b border-line bg-ink-0" onClick={(event) => { if (event.target === event.currentTarget) onSelectSlot(null); }}>
+          <div role="listbox" aria-label="Cuts" aria-multiselectable={Boolean(onSelectSection)} className="relative h-[68px] overflow-hidden border-b border-line bg-ink-0" onClick={(event) => { if (event.target === event.currentTarget) onSelectSlot(null); }}>
           {slots.map((slot) => {
+            const geometry = clipSpineRange(slot, view);
+            if (!geometry) return null;
             const isSelected = selectedRange ? slot.end > selectedRange.start && slot.start < selectedRange.end : slot.id === selectedSlotId;
             const isLive = playheadSeconds >= slot.start && playheadSeconds < slot.end;
-            const wide = (slot.duration / duration) * 100 > 4;
+            const wide = geometry.width > 4;
             return (
               <button
                 key={slot.id}
@@ -86,7 +120,7 @@ export function BeatSpine({ analysis, bpm, playhead, onSeek, onSelectSection, se
                 onClick={(event) => onSelectSlot(onSelectSection ? slot : isSelected ? null : slot, event.shiftKey)}
                 onDoubleClick={() => onSeek(slot.start / duration)}
                 title={`${slot.sectionLabel} · ${fmt(slot.start)}–${fmt(slot.end)}\n${slot.label}${slot.kind === "generated" ? "\nGenerated shot" : ""}`}
-                style={{ left: pct(slot.start), width: `calc(${(slot.duration / duration) * 100}% - 2px)` }}
+                style={{ left: `${geometry.left}%`, width: `max(2px, calc(${geometry.width}% - 2px))` }}
                 className={`group absolute top-[5px] h-[58px] overflow-hidden rounded-[5px] bg-ink-3 text-left outline-offset-[-1px] transition-[transform,box-shadow] duration-[var(--duration-fast)] ease-[var(--ease-out-soft)] ${
                   isSelected
                     ? "z-10 scale-y-[1.04] shadow-[0_0_0_1.5px_var(--color-accent)]"
@@ -112,7 +146,7 @@ export function BeatSpine({ analysis, bpm, playhead, onSeek, onSelectSection, se
               </button>
             );
           })}
-          <span aria-hidden className="pointer-events-none absolute top-0 h-full w-px bg-fg-0/80" style={{ left: pct(playheadSeconds) }} />
+          {playheadVisible ? <span aria-hidden className="pointer-events-none absolute top-0 h-full w-px bg-fg-0/80" style={{ left: pct(playheadSeconds) }} /> : null}
         </div>
         </>
       ) : null}
@@ -158,6 +192,7 @@ export function BeatSpine({ analysis, bpm, playhead, onSeek, onSelectSection, se
           label={caption ?? ""}
           showRuler
           zoom={1}
+          visibleRange={view}
           onSeek={onSeek}
         />
       </div>
