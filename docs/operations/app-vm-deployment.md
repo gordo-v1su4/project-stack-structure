@@ -37,6 +37,8 @@ server; they are not copied to GitHub Actions or image build arguments.
 the Next standalone output. The supported webpack build avoids the observed
 VM100 Turbopack SIGSEGV. FFmpeg is present only in the hosted build/test stage so
 synthetic media tests can run; the app runtime is unprivileged Node 24.
+The pinned Debian Trixie base supplies modern FFmpeg for tests; Bookworm's
+FFmpeg 5 cannot mux the existing lossless PCM-in-MP4 test fixtures.
 `public` and `.next/static` are copied alongside standalone server output.
 `.dockerignore` excludes private environments, local media and tool caches.
 

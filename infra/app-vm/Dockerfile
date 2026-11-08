@@ -1,5 +1,5 @@
 FROM oven/bun:1.3.14 AS bun
-FROM node:24-bookworm-slim@sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20 AS dependencies
+FROM node:24-trixie-slim@sha256:0820eaa85e07d0490446dd01d14707e17e6108a36988cf374899cd057eb3812d AS dependencies
 COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
 RUN ln -s /usr/local/bin/bun /usr/local/bin/bunx
 WORKDIR /app
@@ -13,7 +13,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # VM100's Turbopack native build crashed; use Next's supported webpack build.
 RUN bun run build --webpack
 
-FROM node:24-bookworm-slim@sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20 AS runtime
+FROM node:24-trixie-slim@sha256:0820eaa85e07d0490446dd01d14707e17e6108a36988cf374899cd057eb3812d AS runtime
 ARG APP_REVISION=development
 LABEL org.opencontainers.image.source="https://github.com/gordo-v1su4/project-stack-structure" org.opencontainers.image.revision=$APP_REVISION
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 HOSTNAME=0.0.0.0 PORT=3000 APP_REVISION=$APP_REVISION

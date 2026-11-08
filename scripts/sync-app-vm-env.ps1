@@ -4,8 +4,10 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 $manifest = Get-Content (Join-Path $root 'config/secrets.manifest.json') -Raw | ConvertFrom-Json
-$records = @(bws secret list $manifest.bwsProjectId --output json | ConvertFrom-Json)
+$parsedRecords = bws secret list $manifest.bwsProjectId --output json | ConvertFrom-Json
 if ($LASTEXITCODE -ne 0) { throw 'Live BWS lookup failed.' }
+$records = @()
+foreach ($record in $parsedRecords) { $records += $record }
 $mapping = @{}
 foreach ($item in $manifest.required) { $mapping[$item.env] = $item.bws }
 foreach ($item in $manifest.triggerProduction) { $mapping[$item.env] = $item.bws }
