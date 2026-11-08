@@ -1456,7 +1456,7 @@ function fillDefaultReferenceSelection(selection: GenerationReferenceSelection, 
   };
 }
 
-function GeneratedShotBank({
+export function GeneratedShotBank({
   assets,
   previewSegments,
   onUpdate,
@@ -1518,6 +1518,8 @@ function GeneratedShotCard({
   const videoUrl = asset.fullStorage?.mediaUrl ?? asset.fullStorage?.publicUrl ?? asset.resultUrl;
   useEffect(() => {
     const video = videoRef.current;
+    // React development StrictMode replays setup after cleanup on the same node.
+    if (video && videoUrl && !video.getAttribute("src")) video.setAttribute("src", videoUrl);
     return () => {
       video?.pause();
       video?.removeAttribute("src");
