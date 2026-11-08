@@ -33,7 +33,7 @@ describe("preview block summaries", () => {
       previewAssetKey: null, previewAssetUrl: null, empty: { headline: "Preview", meta: null, next: null },
       focused: false, onToggleFocused: () => {},
     }));
-    const timeline = renderToStaticMarkup(createElement(PreviewPlayer, { player, segments, state, isExpanded: true }));
+    const timeline = renderToStaticMarkup(createElement(PreviewPlayer, { player, segments, isExpanded: true }));
     expect(monitor).toContain("2 timeline blocks · 1 gap");
     expect(timeline).toContain("2 timeline blocks · 1 gap");
     expect(monitor).not.toContain("2 cuts");

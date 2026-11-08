@@ -39,3 +39,23 @@ After isolated review and integration, the controller can upload the eight uniqu
 The isolated local browser fixture exercised the actual library and MiniMax panel with mocked local storage endpoints: three selected original PNGs (including one byte-identical duplicate) produced two assets with exact matching hashes. Rename, visual guidance, Style purpose, Opening-section availability and two explicit shot selections survived reload. Click-enlarge and click-image-close worked; the reference count showed four of nine including the two canonical authorities. This proves component interaction and serialization, not RustFS acceptance, production authentication or generated media.
 
 The default production build cannot traverse this worktree's shared dependency junction under Turbopack. The webpack fallback compiled successfully, then Next's route type validation rejected the existing `handleStoryTreatmentsPost` export in the unchanged Story treatments API route. That same export exists at this branch's base commit. It is an integration/build limitation, not a passed production build; this feature does not repair an unrelated route. Standalone TypeScript and the repository check remain separate evidence.
+
+### November 8 source integration
+
+The historical build limitation above is superseded for `codex/reference-integration`,
+which uses self-contained dependencies and the repaired route exports from main.
+The combined playback ownership, leaf subscriptions, timeline zoom, live review,
+shot/style library and timeline-block labels pass `bun run check` and the default
+`bun run build`. Proof logs are retained locally under `.tmp/integration-proof/`.
+
+Integration preserves the live-review queue when a revised take includes explicitly
+selected aesthetic references. A regression follows the revision through saved-batch
+reload and server job materialization, then verifies its one-take pause and unchanged
+pending packets. The MiniMax panel mounts once, keeps stale-Story read-only access,
+and disables shot/style selection while creative actions are blocked.
+
+An actual ReactDOM/HappyDOM StrictMode fixture checks the combined panel: one
+opt-in viewer, notes reload and project isolation, source/ownership cleanup and
+stale creative/style controls. It performs five mocked GETs, zero mutations,
+zero action callbacks and zero playback calls. This remains source-fixture evidence;
+no production upload, worker release, generation or final-film acceptance is claimed.
