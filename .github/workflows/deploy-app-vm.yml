@@ -21,14 +21,12 @@ jobs:
           docker run --rm --cpus=2 --memory=6g -v "$PWD:/app" -w /app stack-dependencies sh -c 'bun install --frozen-lockfile && bun run check'
           docker build --build-arg APP_REVISION="$GITHUB_SHA" -f infra/app-vm/Dockerfile -t "project-stack-structure-web:$GITHUB_SHA" .
       - name: Package image for the private App VM runner
-        if: github.ref == 'refs/heads/main'
         run: |
           mkdir -p image
           docker save "project-stack-structure-web:$GITHUB_SHA" | gzip > image/app.tar.gz
           cd image
           sha256sum app.tar.gz > app.tar.gz.sha256
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        if: github.ref == 'refs/heads/main'
         with:
           name: app-vm-image-${{ github.sha }}
           path: image/
@@ -53,9 +51,14 @@ jobs:
         run: node scripts/deploy-app-vm.mjs "$GITHUB_SHA" "$RUNNER_TEMP/stack-image"
       - name: Remove the transferred image artifact
         if: always()
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" --jq '.artifacts[].id' | while read -r id; do
-            gh api --method DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$id"
-          done
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const result = await github.rest.actions.listWorkflowRunArtifacts({
+              ...context.repo, run_id: context.runId,
+            });
+            for (const artifact of result.data.artifacts) {
+              if (artifact.name === `app-vm-image-${context.sha}`) {
+                await github.rest.actions.deleteArtifact({ ...context.repo, artifact_id: artifact.id });
+              }
+            }

@@ -1,7 +1,7 @@
 # App VM deployment
 
 Project Stack Structure runs at **https://stack.v1su4.dev** on VM100 App VM.
-GitHub Actions builds exact main commits and activates their pinned images through
+GitHub-hosted Actions builds exact main commits and activates their pinned images through
 the existing Hostinger Dockhand control plane. Next.js remains the framework;
 Vercel is not needed for application hosting, authentication callbacks or media
 transfers. The migration starts from the previously deployed `05da59e` tree.
@@ -35,17 +35,24 @@ server; they are not copied to GitHub Actions or image build arguments.
 
 `infra/app-vm/Dockerfile` uses Bun for frozen dependency installation and builds
 the Next standalone output. The supported webpack build avoids the observed
-VM100 Turbopack SIGSEGV. FFmpeg is present only in the build/test stage so
+VM100 Turbopack SIGSEGV. FFmpeg is present only in the hosted build/test stage so
 synthetic media tests can run; the app runtime is unprivileged Node 24.
 `public` and `.next/static` are copied alongside standalone server output.
 `.dockerignore` excludes private environments, local media and tool caches.
 
-`scripts/deploy-app-vm.mjs` exports the committed SHA, checks runtime prerequisites,
-runs `bun run check` in the dependency container, builds the SHA-tagged image,
-saves the previous Compose in the release directory and redeploys via Dockhand.
+The hosted build runs `bun run check` in the dependency container and builds the
+SHA-tagged image. It transfers a compressed image plus SHA-256 through a short-lived
+Actions artifact. The deploy job deletes that artifact after use; retention is
+one day if a job never reaches cleanup. Images contain no runtime secrets.
+`scripts/deploy-app-vm.mjs` checks runtime prerequisites and the transfer checksum,
+loads and checks the image revision label, saves the previous Compose in the
+release directory and redeploys via Dockhand.
 It verifies exact-image health, public/origin revision equality, anonymous API
 denial and managed Compose readback. Activation failure restores the previous
 Compose and verifies its image health. No automatic release/image pruning runs.
+
+Builds run away from App VM after native Turbopack and package-install crashes
+there. No hypervisor, RAM, Docker engine, or GPU setting was changed for this move.
 
 The literal deployment settings are:
 
