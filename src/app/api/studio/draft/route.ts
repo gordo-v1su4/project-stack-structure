@@ -10,10 +10,10 @@ import {
 import { getSessionUser, unauthorizedResponse } from "@/lib/session";
 import type { PersistedStudioProjectDraft } from "@/components/studio/projectPersistence";
 import { readStudioJsonBody, studioJsonBodyErrorResponse, studioJsonResponse } from "@/lib/studioJsonTransportServer";
+import { isOwnedDraftStoragePath, studioDraftLocalCacheEnabled, STUDIO_DRAFT_FOLDER as DRAFT_FOLDER } from "@/lib/studioDraftPolicy";
 
 export const runtime = "nodejs";
 
-const DRAFT_FOLDER = "media-uploads/studio-drafts";
 const DRAFT_FILE_NAME = "default.json";
 const DRAFT_POINTER_COOKIE = "stack_structure_studio_draft";
 const LOCAL_DRAFT_PATH = path.join(process.cwd(), ".tmp", "studio-drafts", DRAFT_FILE_NAME);
@@ -22,7 +22,7 @@ function draftStoragePath(userId: string) {
   return normalizeMediaPath(`${DRAFT_FOLDER}/${encodeURIComponent(userId)}.json`);
 }
 
-export async function GET(request?: Request) {
+export async function GET(request: Request) {
   const user = await getSessionUser();
   if (!user) return unauthorizedResponse("Sign in with GitHub to load the studio draft.");
   try {
@@ -120,21 +120,6 @@ async function saveDraft(request: Request) {
     const status = /Missing RustFS media gateway env/i.test(message) ? 503 : 500;
     return Response.json({ success: false, error: message }, { status });
   }
-}
-
-export function isOwnedDraftStoragePath(storagePath: string, userId: string) {
-  const normalized = normalizeMediaPath(storagePath);
-  const prefix = `${DRAFT_FOLDER}/`;
-  if (!normalized.startsWith(prefix)) return false;
-
-  const fileName = normalized.slice(prefix.length);
-  if (!fileName || fileName.includes("/")) return false;
-  const expectedName = `${encodeURIComponent(userId)}.json`;
-  return fileName === expectedName || /^\d+-/.test(fileName) && fileName.endsWith(`-${expectedName}`);
-}
-
-export function studioDraftLocalCacheEnabled(env: Record<string, string | undefined> = process.env) {
-  return env.NODE_ENV !== "production";
 }
 
 function parseDraft(text: string): PersistedStudioProjectDraft | null {

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { isOwnedDraftStoragePath, studioDraftLocalCacheEnabled } from "@/app/api/studio/draft/route";
+import { isOwnedDraftStoragePath, studioDraftLocalCacheEnabled } from "@/lib/studioDraftPolicy";
 import { studioProjectLocalCacheEnabled, studioProjectReadSources } from "@/lib/studioProjectStore";
 
 describe("studio project store source ordering", () => {
