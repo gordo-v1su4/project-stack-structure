@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { MediaPlaybackOwnership, registerMediaPlaybackGroup } from "@/components/studio/mediaPlaybackOwnership";
+import { acquireMediaPlaybackOwnership, MediaPlaybackOwnership, registerMediaPlaybackGroup } from "@/components/studio/mediaPlaybackOwnership";
 
 function media() {
   return Object.assign(new EventTarget(), { pauses: 0, pause() { this.pauses++; } });
@@ -87,6 +87,15 @@ describe("media playback ownership", () => {
       release(); release = undefined;
       expect(listener).toBeNull();
       expect(FakeChannel.current.closed).toBe(true);
+      // Source/export-only screens must coordinate without a browser edit player.
+      release = acquireMediaPlaybackOwnership();
+      play(main);
+      play(clip);
+      expect(main.paused).toBe(true);
+      expect(clip.paused).toBe(false);
+      expect(FakeChannel.current.messages).toEqual(["claim", "claim"]);
+      release(); release = undefined;
+      expect(listener).toBeNull();
     } finally {
       release?.();
       globals.forEach((name, index) => {

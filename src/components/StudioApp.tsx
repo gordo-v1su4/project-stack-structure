@@ -1,6 +1,7 @@
 "use client";
 
 import { ClipAudioSettings } from "./studio/ClipAudioSettings";
+import { acquireMediaPlaybackOwnership } from "./studio/mediaPlaybackOwnership";
 import { createBlankNamedStudioProject } from "./studio/newStudioProject";
 import { clipAudioKey, normalizeClipAudioSettings, usesClipAudio } from "./studio/clipAudio";
 import { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type SetStateAction } from "react";
@@ -226,6 +227,9 @@ export default function StudioApp() {
   const [generatedAuditionSegments, setGeneratedAuditionSegments] = useState<EditPlanPreviewSegment[] | null>(null);
   const [previewAuditionRequest, setPreviewAuditionRequest] = useState(0);
   const handledPreviewAuditionRequestRef = useRef(0);
+
+  // Native source/export players also need ownership when no edit is loaded.
+  useEffect(() => acquireMediaPlaybackOwnership(), []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
