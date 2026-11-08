@@ -23,7 +23,9 @@ jobs:
       - name: Package image for the private App VM runner
         run: |
           mkdir -p image
-          docker save "project-stack-structure-web:$GITHUB_SHA" | gzip > image/app.tar.gz
+          docker save "project-stack-structure-web:$GITHUB_SHA" > image/source.tar
+          node scripts/package-app-vm-image.mjs image/source.tar image/app.tar.gz "$GITHUB_SHA"
+          rm image/source.tar
           cd image
           sha256sum app.tar.gz > app.tar.gz.sha256
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

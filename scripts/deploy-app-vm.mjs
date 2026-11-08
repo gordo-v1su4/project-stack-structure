@@ -39,6 +39,8 @@ assert(expected && createHash("sha256").update(readFileSync(imageFile)).digest("
 run("docker", ["load", "-i", imageFile]);
 const inspected = spawnSync("docker", ["image", "inspect", image, "--format", '{{index .Config.Labels "org.opencontainers.image.revision"}}'], { encoding: "utf8" });
 assert(inspected.status === 0 && inspected.stdout.trim() === revision, "Transferred image revision mismatch");
+// docker load can report success even when containerd failed to unpack layers.
+run("docker", ["run", "--rm", "--network", "none", "--entrypoint", "node", image, "--version"]);
 
 const base = config.DOCKHAND_URL;
 async function api(path, method = "GET", body) {

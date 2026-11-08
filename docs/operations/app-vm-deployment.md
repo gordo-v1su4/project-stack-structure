@@ -44,10 +44,18 @@ FFmpeg 5 cannot mux the existing lossless PCM-in-MP4 test fixtures.
 
 The hosted build runs `bun run check` in the dependency container and builds the
 SHA-tagged image. It transfers a compressed image plus SHA-256 through a short-lived
-Actions artifact. The deploy job deletes that artifact after use; retention is
+Actions artifact. `scripts/package-app-vm-image.mjs` preserves the exact image
+config and verifies every compressed blob and uncompressed layer digest before
+packing a legacy Docker archive with uncompressed layers. VM100's held runtime
+failed to unpack the original compressed OCI archive even when its outer
+checksum was correct; the normalized archive loads and starts successfully.
+This is an import compatibility workaround, not proof that earlier intermittent
+transfer corruption or unrelated guest crashes have been repaired.
+The deploy job deletes that artifact after use; retention is
 one day if a job never reaches cleanup. Images contain no runtime secrets.
 `scripts/deploy-app-vm.mjs` checks runtime prerequisites and the transfer checksum,
-loads and checks the image revision label, saves the previous Compose in the
+loads and checks the image revision label, runs its Node binary in an isolated
+container to reject falsely successful imports, saves the previous Compose in the
 release directory and redeploys via Dockhand.
 It verifies exact-image health, public/origin revision equality, anonymous API
 denial and managed Compose readback. Activation failure restores the previous
