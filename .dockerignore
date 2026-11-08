@@ -1,0 +1,16 @@
+.git
+.env*
+node_modules
+.next
+.tmp
+.trigger
+.local-fixtures
+.research
+_repo-research
+output
+test-results
+media-to-test-with
+graft
+.claude
+.cursor
+.agents

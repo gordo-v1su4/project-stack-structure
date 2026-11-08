@@ -1,0 +1,29 @@
+name: project-stack-structure
+services:
+  app:
+    image: project-stack-structure-web:bootstrap
+    pull_policy: never
+    container_name: project-stack-structure-web
+    restart: unless-stopped
+    ports:
+      - 127.0.0.1:18102:3000
+    cpus: 2
+    mem_limit: 2g
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    env_file:
+      - path: /opt/project-stack-structure/private.env
+        format: raw
+    environment:
+      NODE_ENV: production
+      HOSTNAME: 0.0.0.0
+      PORT: "3000"
+    labels:
+      dockhand.update: "false"
+      dockhand.url: https://stack.v1su4.dev
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
