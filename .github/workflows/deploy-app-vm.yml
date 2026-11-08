@@ -1,7 +1,7 @@
 name: Deploy to App VM
 on:
   push:
-    branches: [main]
+    branches: [main, codex/self-host-app-vm]
   workflow_dispatch:
 permissions:
   contents: read
@@ -9,12 +9,53 @@ concurrency:
   group: project-stack-structure-production-app-vm
   cancel-in-progress: false
 jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Check committed source and build the standalone image
+        run: |
+          set -euo pipefail
+          docker build --target dependencies -f infra/app-vm/Dockerfile -t stack-dependencies .
+          docker run --rm --cpus=2 --memory=6g -v "$PWD:/app" -w /app stack-dependencies sh -c 'bun install --frozen-lockfile && bun run check'
+          docker build --build-arg APP_REVISION="$GITHUB_SHA" -f infra/app-vm/Dockerfile -t "project-stack-structure-web:$GITHUB_SHA" .
+      - name: Package image for the private App VM runner
+        if: github.ref == 'refs/heads/main'
+        run: |
+          mkdir -p image
+          docker save "project-stack-structure-web:$GITHUB_SHA" | gzip > image/app.tar.gz
+          cd image
+          sha256sum app.tar.gz > app.tar.gz.sha256
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: github.ref == 'refs/heads/main'
+        with:
+          name: app-vm-image-${{ github.sha }}
+          path: image/
+          retention-days: 1
+          compression-level: 0
   deploy:
+    needs: build
     if: github.ref == 'refs/heads/main'
     runs-on: [self-hosted, Linux, X64, stack-structure-production]
     environment: production-app-vm
     timeout-minutes: 40
+    permissions:
+      contents: read
+      actions: write
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - name: Build, verify, and activate exact main through Dockhand
-        run: node scripts/deploy-app-vm.mjs "$GITHUB_SHA"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: app-vm-image-${{ github.sha }}
+          path: ${{ runner.temp }}/stack-image
+      - name: Verify image transfer and activate exact main through Dockhand
+        run: node scripts/deploy-app-vm.mjs "$GITHUB_SHA" "$RUNNER_TEMP/stack-image"
+      - name: Remove the transferred image artifact
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" --jq '.artifacts[].id' | while read -r id; do
+            gh api --method DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$id"
+          done

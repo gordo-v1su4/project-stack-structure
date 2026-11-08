@@ -48,11 +48,11 @@ Scale local checks to the change: diff/links/commands for docs, affected tests a
 
 ## Auth model (security invariants — do not regress)
 
-- **Every API route under `src/app/api/` requires an authenticated session** (`src/lib/session.ts` → `getSessionUser()`; 401 otherwise). No exceptions for "internal" routes — this app is public on Vercel.
+- **Every API route under `src/app/api/` requires an authenticated session** (`src/lib/session.ts` → `getSessionUser()`; 401 otherwise). No exceptions for "internal" routes — this app is public on App VM.
 - **Trigger dispatch rejects anonymous callers.** `currentApplicationUserId()` in `src/lib/triggerOrchestration.ts` throws without a session; never reintroduce a shared fallback identity (`user:anonymous` let any caller read any other caller's runs).
 - **Never expose server credentials to the browser.** `nextConfig.env` inlines values into the client bundle — this leaked `FFMPEG_GATEWAY_API_KEY` once (rotated 2026-08-23). Server routes read `process.env` directly.
 - Filesystem and SSRF rules: routes accept only durable media-gateway references (`bucket` pinned to the configured bucket) or https URLs on allowlisted hosts (`MEDIA_GATEWAY_PUBLIC_URL`, `FFGLITCH_ALLOWED_INPUT_HOSTS`, `HIGGSFIELD_ALLOWED_IMAGE_HOSTS`). No client-supplied server paths.
-- **After any `AUTH_*` env change, verify interactive sign-in with a real browser click-through on production.** The e2e harness mints session JWTs directly and bypasses the entire OAuth dance — harness-green proves nothing about the browser flow (2026-08-23 incident: a deployment served "Server error" on every real sign-in while all scripted checks passed). `vercel redeploy <url>` re-bakes env without a code change.
+- **After any `AUTH_*` env change, verify interactive sign-in with a real browser click-through on production.** The e2e harness mints session JWTs directly and bypasses the entire OAuth dance — harness-green proves nothing about the browser flow (2026-08-23 incident: a deployment served "Server error" on every real sign-in while all scripted checks passed). Redeploy through Dockhand to load changed runtime environment values.
 - Full history + rationale: `docs/security/api-hardening.md`.
 
 ## Task-specific references
@@ -62,7 +62,7 @@ Scale local checks to the change: diff/links/commands for docs, affected tests a
 - Before adding or changing model calls, background jobs, progress, or result handling, read [the Trigger execution contract](docs/protocols/trigger-execution-contract.md). Production processing and acceptance runs must enter through authenticated app dispatch, run in Trigger, and return validated task results. Direct gateway probes are diagnostics, not pipeline acceptance.
 - Caption and prompt prose describes visible subjects, action, and setting only. Keep absence, uncertainty, reference bookkeeping, and coverage notes in structured metadata. Read [visible writing and output rules](docs/protocols/higgsfield-nano-banana-reference-continuity.md#visible-writing-and-output-rules); do not emit notes such as “no named leads required” as shot prose.
 - UI work: [DESIGN.md](DESIGN.md). Preserve musical alignment first, motion continuity second, prepared previews, and user approval of what enters the timeline.
-- Pipeline or service work: [product infrastructure](docs/architecture/product-infrastructure.md), [Trigger production](docs/operations/trigger-production.md), and [local generation](docs/local-generation.md), as relevant. Pushes to `main` auto-deploy the web app to Vercel.
+- Pipeline or service work: [product infrastructure](docs/architecture/product-infrastructure.md), [Trigger production](docs/operations/trigger-production.md), and [local generation](docs/local-generation.md), as relevant. Pushes to `main` deploy the web app through the App VM runner and Dockhand; see [App VM deployment](docs/operations/app-vm-deployment.md).
 - Homelab runbooks, endpoints, shared skills, adapters, and scripts live in a private sibling ops repository (not shipped in this repo). Consult that guidance for infrastructure work; its Git policy applies to changes there.
 
 ## Agent skills

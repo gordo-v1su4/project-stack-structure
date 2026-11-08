@@ -4,11 +4,11 @@ Web studio for music videos: provide a master song, creative direction and named
 
 ![Project Stack Structure footage and music timeline](docs/images/project-stack-workspace.png)
 
-**Live app:** https://project-stack-structure.vercel.app (GitHub sign-in) · **Status:** [docs/roadmap.md](docs/roadmap.md)
+**Live app:** https://stack.v1su4.dev (GitHub sign-in) · **Status:** [docs/roadmap.md](docs/roadmap.md)
 
 ## Stack
 
-- **UI:** Next.js 16, React 19, Bun (deployed on Vercel)
+- **UI:** Next.js 16, React 19, Bun (self-hosted on App VM)
 - **Jobs:** [Trigger.dev](https://trigger.dev) orchestration to GPU workers
 - **Audio:** Essentia API (beats, sections, waveform)
 - **Video:** media gateway (storage, scene detect), FFmpeg gateway (previews, export)
@@ -59,7 +59,7 @@ Tests use synthetic fixtures in `.local-fixtures/media/` (gitignored). The e2e r
 
 | Layer | Role |
 | --- | --- |
-| Studio UI | Browser (Next.js on Vercel) |
+| Studio UI | Browser (Next.js on App VM) |
 | Song analysis | Essentia API (beats, sections, waveform) |
 | Clip storage / scene detect | Media gateway (RustFS, PySceneDetect jobs) |
 | Scene captions | Caption gateway (LFM fast path, Qwen3-VL smart path) |
@@ -70,7 +70,7 @@ Every heavy step dispatches through Trigger.dev to GPU workers. Next.js routes a
 
 ## Deployment
 
-- **Web app:** push to `main` → auto-deploys to Vercel. Env vars sync from BWS (`scripts/sync-vercel-production-env.ps1` from the ops machine).
+- **Web app:** push to `main` → GitHub Actions deploys through Dockhand to App VM. See [deployment and rollback](docs/operations/app-vm-deployment.md); runtime values sync from BWS with `scripts/sync-app-vm-env.ps1`.
 - **Workers:** Trigger.dev tasks on the production GPU host — see `docs/operations/trigger-production.md`.
 - **Security posture + hardening history:** [docs/security/api-hardening.md](docs/security/api-hardening.md).
 

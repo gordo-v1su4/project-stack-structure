@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, realpathSync, statfsSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 
 const revision = process.argv[2];
@@ -20,7 +21,7 @@ const root = "/home/gordo/project-stack-structure-releases";
 mkdirSync(root, { recursive: true });
 assert(realpathSync(root) === root, "Release root must not be a symlink");
 const disk = statfsSync(root);
-assert(disk.bavail * disk.bsize > 8 * 1024 ** 3, "Insufficient free build space");
+assert(disk.bavail * disk.bsize > 4 * 1024 ** 3, "Insufficient free deployment space");
 const release = resolve(root, revision);
 mkdirSync(release, { recursive: true });
 assert(realpathSync(release) === release, "Release directory must not be a symlink");
@@ -29,15 +30,15 @@ const run = (cmd, args, options = {}) => {
   assert(result.status === 0, `${cmd} failed`);
   return result.stdout;
 };
-const archive = spawnSync("git", ["archive", revision], { maxBuffer: 128 * 1024 ** 2 });
-assert(archive.status === 0, "Committed source export failed");
-run("tar", ["-x", "-C", release], { input: archive.stdout, stdio: ["pipe", "inherit", "inherit"] });
 const image = `project-stack-structure-web:${revision}`;
-const dependencyImage = `project-stack-structure-dependencies:${revision}`;
-run("docker", ["build", "--target", "dependencies", "-f", `${release}/infra/app-vm/Dockerfile`, "-t", dependencyImage, release]);
-run("docker", ["run", "--rm", "--cpus=2", "--memory=6g", "-v", `${release}:/app`, "-w", "/app", dependencyImage,
-  "sh", "-c", "bun install --frozen-lockfile && bun run check"]);
-run("docker", ["build", "--build-arg", `APP_REVISION=${revision}`, "-f", `${release}/infra/app-vm/Dockerfile`, "-t", image, release]);
+const artifactRoot = resolve(process.argv[3] ?? "");
+assert(process.argv[3] && realpathSync(artifactRoot) === artifactRoot, "Expected a real image artifact directory");
+const imageFile = resolve(artifactRoot, "app.tar.gz");
+const expected = readFileSync(resolve(artifactRoot, "app.tar.gz.sha256"), "utf8").match(/^([a-f0-9]{64})\s+app\.tar\.gz\s*$/)?.[1];
+assert(expected && createHash("sha256").update(readFileSync(imageFile)).digest("hex") === expected, "Image transfer checksum mismatch");
+run("docker", ["load", "-i", imageFile]);
+const inspected = spawnSync("docker", ["image", "inspect", image, "--format", '{{index .Config.Labels "org.opencontainers.image.revision"}}'], { encoding: "utf8" });
+assert(inspected.status === 0 && inspected.stdout.trim() === revision, "Transferred image revision mismatch");
 
 const base = config.DOCKHAND_URL;
 async function api(path, method = "GET", body) {

@@ -15,6 +15,7 @@ RUN bun run build --webpack
 
 FROM node:24-bookworm-slim@sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20 AS runtime
 ARG APP_REVISION=development
+LABEL org.opencontainers.image.source="https://github.com/gordo-v1su4/project-stack-structure" org.opencontainers.image.revision=$APP_REVISION
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 HOSTNAME=0.0.0.0 PORT=3000 APP_REVISION=$APP_REVISION
 WORKDIR /app
 COPY --from=build --chown=node:node /app/.next/standalone ./
