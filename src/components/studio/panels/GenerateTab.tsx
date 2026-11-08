@@ -2,7 +2,7 @@
 
 import { referenceAwareCaption } from "../referenceLanguage";
 
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { fmt } from "../math";
 import {
   buildGenerationReferenceInputs,
@@ -22,7 +22,8 @@ import {
   type GeneratedStudioAsset,
 } from "../generatedAssets";
 import { uploadGeneratedClipToRustFs } from "../generatedClipUpload";
-import { buildImportedVideoUploadFolder, createImportedVideoAsset, type ExternalClipImportKind } from "../externalClipImport";
+import { buildImportedVideoUploadFolder, type ExternalClipImportKind } from "../externalClipImport";
+import { externalImportTarget, externalImportWindows, importExternalClipCandidate } from "../externalClipImportTarget";
 import { buildSeedanceContinuationPacket, serializeSeedanceContinuationPacket, type SeedanceVideoModel } from "../seedanceContinuation";
 import { buildSeedanceAudioPlacementKey } from "../seedanceAudioReference";
 import { buildAdaptiveCueMap } from "../adaptiveCueMap";
@@ -56,6 +57,9 @@ type GenerateTabProps = {
   lyricCueBlend: number;
   lyricMergeWindow: number;
   previewSegments: EditPlanPreviewSegment[];
+  savedProjectId?: string | null;
+  resolvedDraftSegments?: EditPlanPreviewSegment[];
+  selectedDraftAssetIds?: string[];
   referenceAssets: ReferenceAsset[];
   persistedGeneratedAssets: GeneratedStudioAsset[];
   masterAudioRef: SeedanceMasterAudioRef | null;
@@ -172,7 +176,7 @@ const NEED_LABELS: Record<GenerationNeed, string> = {
   "reroll-match": "Reroll Match",
 };
 
-export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, onSelectJoin, onsetDensity, lyricCueBlend, lyricMergeWindow, previewSegments, referenceAssets, persistedGeneratedAssets, masterAudioRef, onEnsureOwnedMasterAudio, onGeneratedAsset, selectedPreviewRange, onSelectedPreviewRange, onAuditionPreviewRange, onAuditionGeneratedAsset }: GenerateTabProps) {
+export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, onSelectJoin, onsetDensity, lyricCueBlend, lyricMergeWindow, previewSegments, savedProjectId, resolvedDraftSegments, selectedDraftAssetIds, referenceAssets, persistedGeneratedAssets, masterAudioRef, onEnsureOwnedMasterAudio, onGeneratedAsset, selectedPreviewRange, onSelectedPreviewRange, onAuditionPreviewRange, onAuditionGeneratedAsset }: GenerateTabProps) {
   const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
   const [timelineZoomMode, setTimelineZoomMode] = useState<TimelineZoomMode>("fit");
   const [referenceSelection, setReferenceSelection] = useState<GenerationReferenceSelection>({});
@@ -183,6 +187,10 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
   const [generatedImportStatus, setGeneratedImportStatus] = useState("Select exactly one resolved cut below, then import its completed Seedance candidates.");
   const [isImportingGenerated, setIsImportingGenerated] = useState(false);
   const [externalImportKind, setExternalImportKind] = useState<ExternalClipImportKind>("seedance");
+  const [importRangeEdit, setImportRangeEdit] = useState<{ key: string; start: string; end: string } | null>(null);
+  const currentImportContext = useRef({ key: "", epoch: 0 });
+  const importMounted = useRef(true);
+  useEffect(() => { importMounted.current = true; return () => { importMounted.current = false; }; }, []);
   const cueMap = useMemo(() => buildAdaptiveCueMap({
     analysis,
     project,
@@ -204,6 +212,27 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
     ? previewSegments[selectedPreviewRange.startIndex]
     : undefined;
   const selectedReturnSlot = selectedReturnSegment ? findCoverageSlotForSegment(slots, selectedReturnSegment) : undefined;
+  let importWindows: ReturnType<typeof externalImportWindows> | undefined, importTargetError: string | undefined;
+  try { if (selectedReturnSegment) {
+    if (selectedDraftAssetIds?.some(id => !persistedGeneratedAssets.some(asset => asset.id === id))) throw new Error("A selected take is missing from the bank. Restore the current draft before importing.");
+    importWindows = externalImportWindows(selectedReturnSegment, resolvedDraftSegments ?? previewSegments,
+      persistedGeneratedAssets.filter(asset => selectedDraftAssetIds?.includes(asset.id)));
+  } }
+  catch (error) { importTargetError = error instanceof Error ? error.message : "Select a current resolved cut."; }
+  const importCutKey = JSON.stringify({ savedProjectId, projectId: project?.id, selectedPreviewRange, segment: selectedReturnSegment, windows: importWindows,
+    selectedDraftAssetIds, resolvedDraftSegments, sourceContext: project?.sourceContextSignature, plan: project?.placementPlan?.inputSignature,
+    currentIdentity: project?.currentIdentity ? { migration: project.currentIdentity.migrationSha256, context: project.currentIdentity.contextSha256,
+      active: project.currentIdentity.activeAssessments } : undefined });
+  const importRange = importRangeEdit?.key === importCutKey ? { songStart: importRangeEdit.start.trim() ? Number(importRangeEdit.start) : NaN,
+    songEnd: importRangeEdit.end.trim() ? Number(importRangeEdit.end) : NaN } : importWindows?.defaultRange;
+  let importTarget: ReturnType<typeof externalImportTarget> | undefined;
+  try { if (selectedReturnSegment && importRange && importWindows) importTarget = externalImportTarget(selectedReturnSegment, importRange, importWindows.reserved,
+    selectedReturnSlot?.item.id ?? `resolved-cut-${selectedPreviewRange!.startIndex + 1}`); }
+  catch (error) { importTargetError = error instanceof Error ? error.message : "Choose a valid import interval."; }
+  const importKey = JSON.stringify({ importCutKey, importTarget, externalImportKind });
+  useLayoutEffect(() => {
+    if (currentImportContext.current.key !== importKey) currentImportContext.current = { key: importKey, epoch: currentImportContext.current.epoch + 1 };
+  }, [importKey]);
   const selectedPreset = LOCAL_SWARM_PRESETS.find((preset) => preset.title === selectedPresetTitle) ?? LOCAL_SWARM_PRESETS[0];
   const frameMoment = resolveGenerationFrameMoment({
     videoMoments: project?.videoMoments ?? [],
@@ -225,8 +254,9 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
   };
 
   const importGeneratedClips = async (files: File[]) => {
-    if (!selectedReturnSegment || !files.length) {
-      setGeneratedImportStatus("Select exactly one resolved cut below before importing its video replacement.");
+    const importEpoch = currentImportContext.current.epoch;
+    if (!selectedReturnSegment || !importTarget || !files.length) {
+      setGeneratedImportStatus(importTargetError ?? "Select exactly one resolved cut below before importing its video replacement.");
       return;
     }
     const videos = files.filter((file) => file.type.startsWith("video/") || /\.(mp4|mov|webm)$/i.test(file.name));
@@ -238,34 +268,18 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
     setGeneratedImportStatus(`Uploading ${videos.length} ${externalImportKind === "original-footage" ? "edited footage" : "generated"} clip${videos.length === 1 ? "" : "s"} to RustFS...`);
     try {
       for (const file of videos) {
-        const durationSeconds = await readVideoDuration(file);
-        const payload = await uploadGeneratedClipToRustFs({
+        await importExternalClipCandidate({ file, kind: externalImportKind, target: importTarget,
+          isCurrent: () => importMounted.current && currentImportContext.current.key === importKey && currentImportContext.current.epoch === importEpoch, readDuration: readVideoDuration,
+          upload: file => uploadGeneratedClipToRustFs({
           file,
-          folder: buildImportedVideoUploadFolder({ kind: externalImportKind, projectId: project?.id,
+          folder: buildImportedVideoUploadFolder({ kind: externalImportKind, projectId: savedProjectId ?? project?.id,
             cutId: selectedReturnSlot?.item.id ?? `cut-${selectedPreviewRange!.startIndex + 1}` }),
           onPartUploaded: (uploaded, total) => {
             setGeneratedImportStatus(`Uploading ${file.name}: part ${uploaded}/${total} to RustFS...`);
           },
-        });
-        onGeneratedAsset(createImportedVideoAsset({
-          kind: externalImportKind,
-          fileName: file.name,
-          storage: payload,
-          durationSeconds,
-          target: {
-            timelineItemId: selectedReturnSegment.timelineItemId ?? selectedReturnSlot?.item.id ?? `resolved-cut-${selectedPreviewRange!.startIndex + 1}`,
-            planSignature: selectedReturnSegment.planSignature,
-            requirementId: selectedReturnSegment.requirementId,
-            narrativeMomentId: selectedReturnSegment.narrativeMomentId,
-            sectionId: selectedReturnSegment.sectionId,
-            sectionLabel: selectedReturnSlot?.item.label ?? selectedReturnSegment.label,
-            parentMomentId: selectedReturnSegment.momentId,
-            songStart: selectedReturnSegment.musicStart,
-            songEnd: selectedReturnSegment.musicEnd,
-          },
-        }));
+          }), deliver: onGeneratedAsset });
       }
-      setGeneratedImportStatus(`Returned ${videos.length} ${externalImportKind === "original-footage" ? "edited footage" : "generated"} clip${videos.length === 1 ? "" : "s"} to cut ${selectedPreviewRange!.startIndex + 1} at ${fmtCutTime(selectedReturnSegment.musicStart)}–${fmtCutTime(selectedReturnSegment.musicEnd)}. Review before Join.`);
+      setGeneratedImportStatus(`Returned ${videos.length} ${externalImportKind === "original-footage" ? "edited footage" : "generated"} clip${videos.length === 1 ? "" : "s"} to cut ${selectedPreviewRange!.startIndex + 1} at ${fmtCutTime(importTarget.songStart)}–${fmtCutTime(importTarget.songEnd)}. Review before Join.`);
     } catch (error) {
       setGeneratedImportStatus(error instanceof Error ? error.message : "Video clip import failed.");
     } finally {
@@ -511,13 +525,13 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
               <option value="original-footage">Edited original footage</option>
             </select>
           </label>
-          <label className={`rounded-[2px] border border-[#6e3425] bg-[#160905] px-3 py-2 text-[8px] uppercase tracking-[0.12em] text-[#d26c42] ${isImportingGenerated || !selectedReturnSegment ? "cursor-not-allowed opacity-45" : "cursor-pointer hover:border-[#e05c00]"}`}>
+          <label className={`rounded-md border border-line bg-ink-2 px-3 py-2 text-xs text-fg-1 ${isImportingGenerated || !importTarget ? "cursor-not-allowed opacity-45" : "cursor-pointer hover:border-accent"}`}>
             {isImportingGenerated ? "Importing..." : externalImportKind === "original-footage" ? "Import edited footage" : "Import generated clips"}
             <input
               type="file"
               accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm"
               multiple
-              disabled={isImportingGenerated || !selectedReturnSegment}
+              disabled={isImportingGenerated || !importTarget}
               className="sr-only"
               onChange={(event) => {
                 const files = Array.from(event.target.files ?? []);
@@ -527,6 +541,30 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
             />
           </label>
         </div>
+        {selectedReturnSegment && importWindows ? <div className="mb-3 rounded-md border border-line bg-ink-1 p-3 text-xs text-fg-2">
+          <p>Import target · song seconds inside cut {selectedPreviewRange!.startIndex + 1}: {selectedReturnSegment.musicStart}–{selectedReturnSegment.musicEnd}.</p>
+          <p className="mt-1 text-fg-3">When available, the first uncovered interval is selected by default. Existing selected takes stay reserved. Import adds a pending bank take; use it in Draft after review.</p>
+          {importWindows.uncovered.length ? <label className="mt-2 block">Uncovered interval
+            <select aria-label="Uncovered import interval" className="ml-2 rounded-md border border-line bg-ink-2 px-2 py-1" disabled={isImportingGenerated}
+              value={importWindows.uncovered.findIndex(range => range.songStart === importRange?.songStart && range.songEnd === importRange?.songEnd)}
+              onChange={event => { const range = importWindows.uncovered[Number(event.target.value)];
+                if (range) setImportRangeEdit({ key: importCutKey, start: String(range.songStart), end: String(range.songEnd) }); }}>
+              <option value={-1} disabled>Custom interval</option>
+              {importWindows.uncovered.map((range, index) => <option key={`${range.songStart}:${range.songEnd}`} value={index}>{range.songStart}–{range.songEnd} · {(range.songEnd - range.songStart).toFixed(3)}s</option>)}
+            </select></label> : null}
+          <div className="mt-2 flex flex-wrap gap-3">
+            <label>Song start (seconds)<input aria-label="Import song start" type="number" step="any" min={selectedReturnSegment.musicStart} max={selectedReturnSegment.musicEnd}
+              disabled={isImportingGenerated} value={importRangeEdit?.key === importCutKey ? importRangeEdit.start : importWindows.defaultRange.songStart}
+              className="ml-2 w-36 rounded-md border border-line bg-ink-2 px-2 py-1" onChange={event => setImportRangeEdit({ key: importCutKey,
+                start: event.target.value, end: importRangeEdit?.key === importCutKey ? importRangeEdit.end : String(importWindows.defaultRange.songEnd) })} /></label>
+            <label>Song end (seconds)<input aria-label="Import song end" type="number" step="any" min={selectedReturnSegment.musicStart} max={selectedReturnSegment.musicEnd}
+              disabled={isImportingGenerated} value={importRangeEdit?.key === importCutKey ? importRangeEdit.end : importWindows.defaultRange.songEnd}
+              className="ml-2 w-36 rounded-md border border-line bg-ink-2 px-2 py-1" onChange={event => setImportRangeEdit({ key: importCutKey,
+                start: importRangeEdit?.key === importCutKey ? importRangeEdit.start : String(importWindows.defaultRange.songStart), end: event.target.value })} /></label>
+          </div>
+          {importTarget ? <p role="status" className="mt-2">Pending take targets {importTarget.songStart}–{importTarget.songEnd} · {(importTarget.songEnd - importTarget.songStart).toFixed(3)}s.</p> : null}
+        </div> : null}
+        {importTargetError ? <p role="alert" className="mb-3 text-xs text-danger">{importTargetError}</p> : null}
         <div className="mb-3 rounded-[2px] border border-[#171717] bg-[#050505] px-2 py-1.5 font-mono text-[8px] leading-4 text-[#777]">{generatedImportStatus}</div>
         <GeneratedShotBank
           assets={persistedGeneratedAssets}
