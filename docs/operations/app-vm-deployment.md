@@ -72,8 +72,10 @@ DOCKHAND_ENV_ID=3
 ```
 
 `infra/app-vm/compose.yaml` is the value-free bootstrap/recovery snapshot.
-Dockhand owns the live Compose. Its raw env-file reference resolves on App VM,
-where `/opt/project-stack-structure/private.env` is readable by the deploy user.
+Dockhand owns the live Compose and all 30 masked runtime settings. Compose
+references each setting explicitly; a remote absolute env-file path is resolved
+on the management host and does not work for this Hawser deployment. The runner
+synchronizes the private App VM values to Dockhand before activation.
 Updates to credentials use BWS first; run
 `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sync-app-vm-env.ps1`
 from the authorized workstation, then redeploy through Dockhand. The script saves

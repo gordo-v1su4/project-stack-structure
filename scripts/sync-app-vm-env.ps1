@@ -36,6 +36,12 @@ try {
   if ($LASTEXITCODE -ne 0) { throw 'Private environment transfer failed.' }
   ssh $HostName 'set -eu; chmod 600 /home/gordo/.stack-structure-env-sync; cp -p /opt/project-stack-structure/private.env /opt/project-stack-structure/private.env.previous; install -m 600 /home/gordo/.stack-structure-env-sync /opt/project-stack-structure/private.env; rm /home/gordo/.stack-structure-env-sync'
   if ($LASTEXITCODE -ne 0) { throw 'Private environment activation failed.' }
+  $variables = @($values.Keys | ForEach-Object { @{ key = $_; value = $values[$_]; isSecret = $true } })
+  $payload = @{ variables = $variables } | ConvertTo-Json -Compress -Depth 10
+  try {
+    $response = Invoke-RestMethod -Uri 'http://100.105.199.93:13000/api/stacks/project-stack-structure/env?env=3' -Method Put -ContentType 'application/json' -Headers @{ Origin = 'http://100.105.199.93:13000' } -Body $payload
+    if (!$response.success) { throw 'Managed environment save failed.' }
+  } catch { throw 'Dockhand runtime synchronization failed; private server copy was retained.' }
   Write-Host 'App VM environment synchronized from live BWS; values were not displayed. Redeploy the app through Dockhand to load it.'
 } finally {
   if (Test-Path -LiteralPath $scratch) { Remove-Item -LiteralPath $scratch }

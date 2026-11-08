@@ -53,6 +53,9 @@ async function api(path, method = "GET", body) {
 }
 const stack = "/api/stacks/project-stack-structure";
 const composePath = stack + "/compose?env=3";
+assert((await api(stack + "/env?env=3", "PUT", {
+  variables: Object.entries(runtime).map(([key, value]) => ({ key, value, isSecret: true })),
+})).success, "Managed runtime synchronization failed");
 const previous = (await api(composePath)).content;
 assert(previous.includes("container_name: project-stack-structure-web") && previous.includes("pull_policy: never"), "Unexpected managed stack");
 const previousImage = previous.match(/image: (project-stack-structure-web:[a-z0-9-]+)/)?.[1];
