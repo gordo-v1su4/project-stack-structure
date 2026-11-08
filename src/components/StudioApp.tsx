@@ -2742,6 +2742,14 @@ export default function StudioApp() {
               onOpenMatch={() => handleSelectTab("shuffle")} matchReady={storyState.storyGenerated}
               editSettings={storyState.editSettings}
             /> : null}
+            {tab === "generate" ? <MiniMaxDraftPanel projectId={activeProjectId} segments={draftPreviewSegments}
+              storyApproved={storyState.storyGenerated && Boolean(storyState.confirmedTreatmentId)
+                && Boolean(storyState.storyContentSignature) && Boolean(musicVideoProject && isPlacementPlanCurrent(musicVideoProject))}
+              assets={generatedAssets} draft={generatedDraft} referenceAssets={referenceAssets}
+              onEnsureSavedProject={ensureH3ProjectSaved} onGeneratedAsset={receiveGeneratedAsset}
+              onReviewDraft={reviewGeneratedDraft} onAcceptDraft={acceptGeneratedDraft}
+              onCheckCurrentReferences={assessUpdatedReferences}
+              onRejectAsset={rejectGeneratedShot} onSelectAsset={asset => receiveGeneratedAsset(asset, generatedDraft?.revision ?? 0)} /> : null}
             {activeStageBlocked ? null : <>
             {(tab === "story" || tab === "generate") && musicVideoProject
               && (musicVideoProject.currentIdentity || (!isPlacementPlanCurrent(musicVideoProject) && generatedAssets.length > 0)) ?
@@ -2868,12 +2876,6 @@ export default function StudioApp() {
 
             {tab === "generate" && (
               <>
-              <MiniMaxDraftPanel projectId={activeProjectId} segments={draftPreviewSegments}
-                assets={generatedAssets} draft={generatedDraft} referenceAssets={referenceAssets}
-                onEnsureSavedProject={ensureH3ProjectSaved} onGeneratedAsset={receiveGeneratedAsset}
-                onReviewDraft={reviewGeneratedDraft} onAcceptDraft={acceptGeneratedDraft}
-                onCheckCurrentReferences={assessUpdatedReferences}
-                onRejectAsset={rejectGeneratedShot} onSelectAsset={asset => receiveGeneratedAsset(asset, generatedDraft?.revision ?? 0)} />
               <details className="rounded-md border border-line bg-ink-2 p-3">
               <summary className="cursor-pointer text-sm text-fg-3">Advanced generation and external imports</summary>
               <GenerateTab

@@ -20,8 +20,11 @@ import { earlierH3FirstFrameSource } from "../h3FirstFrameSource";
 import { currentReferenceBankCheckBlockReason } from "../currentReferenceReview";
 import { nativeFirstFrameSelection, assertNativeFirstFrameReceipt, type NativeFirstFrameSelection } from "../nativeFirstFrame";
 import { currentReferenceIdentityApprovalSha256 } from "../currentReferenceIdentity";
+import { buildLiveDraftTakes, completeH3ReviewRequest, readH3ReviewNotes, writeH3ReviewNotes, queueH3ReviewRevision } from "../liveDraftReview";
+import { LiveDraftTakeViewer } from "./LiveDraftTakeViewer";
 
 type Props = {
+  storyApproved?: boolean;
   projectId: string | null;
   segments: EditPlanPreviewSegment[];
   assets: GeneratedStudioAsset[];
@@ -43,7 +46,8 @@ const STATE_LABELS: Record<H3GenerationJob["state"], string> = {
 };
 
 export function MiniMaxDraftPanel(props: Props) {
-  const [jobs, setJobs] = useState<H3GenerationJob[]>([]);
+  const [allJobs, setJobs] = useState<H3GenerationJob[]>([]);
+  const jobs = allJobs.filter(job => job.projectId === props.projectId);
   const [jobHistory, setJobHistory] = useState({ projectId: props.projectId, limit: 40 });
   const visibleJobLimit = jobHistory.projectId === props.projectId ? jobHistory.limit : 40;
   if (jobHistory.projectId !== props.projectId) setJobHistory({ projectId: props.projectId, limit: 40 });
@@ -52,8 +56,11 @@ export function MiniMaxDraftPanel(props: Props) {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [review, setReview] = useState<GeneratedDraftReview | null>(null);
-  const [revisionText, setRevisionText] = useState<Record<string, string>>({});
-  const [batch, setBatch] = useState<H3DraftBatch | null>(null);
+  const [notes, setNotes] = useState<{ projectId: string | null; values: Record<string, string> }>({ projectId: null, values: {} });
+  const revisionText = notes.projectId === props.projectId ? notes.values : {};
+  const [openedTake, setOpenedTake] = useState<{ projectId: string | null; id: string } | null>(null);
+  const [storedBatch, setBatch] = useState<H3DraftBatch | null>(null);
+  const batch = storedBatch?.projectId === props.projectId ? storedBatch : null;
   const [pickupKey, setPickupKey] = useState("");
   const [pickupEdits, setPickupEdits] = useState<Record<string, { direction?: string; duration?: string; crowdIds?: string[] }>>({});
   const [handleFrames,setHandleFrames] = useState<Record<string,number>>({});
@@ -74,6 +81,20 @@ export function MiniMaxDraftPanel(props: Props) {
   const checkingCurrentReferences = useRef(false);
   const continueBatch = useRef<(() => Promise<void>) | null>(null);
   const recoveryIntents = useRef(new Map<string, string>());
+  const mayEdit = () => latest.current.storyApproved !== false && !running.current && !preparingPickup.current
+    && !checkingCurrentReferences.current && !jobs.some(job => !isH3JobTerminal(job));
+  useEffect(() => {
+    const projectId = props.projectId;
+    let values: Record<string, string> = {};
+    try { if (projectId) values = readH3ReviewNotes(localStorage, projectId); } catch { /* Notes remain editable without browser storage. */ }
+    setNotes({ projectId, values });
+  }, [props.projectId]);
+  function updateNote(assetId: string, value: string) {
+    const values = { ...revisionText, [assetId]: value.slice(0, 6000) };
+    setNotes({ projectId: props.projectId, values });
+    try { if (props.projectId) writeH3ReviewNotes(localStorage, props.projectId, values); }
+    catch { setError("Revision notes could not be saved in this browser."); }
+  }
   useEffect(() => { latest.current = props; }, [props]);
   useEffect(() => { continueBatch.current = runBatch; });
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
@@ -89,7 +110,7 @@ export function MiniMaxDraftPanel(props: Props) {
       if (job.state !== "ready" || !asset || delivered.current.has(job.id)) continue;
       delivered.current.add(job.id);
       if (latest.current.assets.some(candidate => candidate.id === asset.id)) continue;
-      latest.current.onGeneratedAsset(asset, job.request.draftRevision);
+      latest.current.onGeneratedAsset(asset, latest.current.storyApproved === false ? undefined : job.request.draftRevision);
     }
     return restored;
   }, []);
@@ -127,6 +148,12 @@ export function MiniMaxDraftPanel(props: Props) {
     if (mounted.current) setBatch(value);
   }
 
+  useEffect(() => {
+    if (props.storyApproved === false && batchRef.current && !batchRef.current.paused) {
+      persistBatch({ ...batchRef.current, paused: true });
+    }
+  }, [props.storyApproved]);
+
   async function renderRequest(input: H3GenerationRequest) {
     const projectId = input.projectId;
     const restored = await readJobs(projectId);
@@ -157,7 +184,7 @@ export function MiniMaxDraftPanel(props: Props) {
       while (mounted.current && batchRef.current && !batchRef.current.paused && batchRef.current.requests.length) {
         const saved = batchRef.current;
         if (latest.current.projectId !== saved.projectId) break;
-        if (!latest.current.segments.length || latest.current.segments.some(segment => segment.planSignature !== saved.planSignature)) {
+        if (latest.current.storyApproved === false || !latest.current.segments.length || latest.current.segments.some(segment => segment.planSignature !== saved.planSignature)) {
           persistBatch({ ...saved, paused: true });
           setError("The story plan changed. Saved generation requests are paused."); break;
         }
@@ -171,18 +198,19 @@ export function MiniMaxDraftPanel(props: Props) {
         if (!job || !mounted.current || latest.current.projectId !== saved.projectId) break;
         if (job.state !== "ready") {
           setError(job.error || "A shot needs attention. Completed footage is preserved.");
-          persistBatch({ ...batchRef.current!, paused: true, requests: batchRef.current!.requests.slice(1) });
+          const remaining = completeH3ReviewRequest(batchRef.current!);
+          persistBatch(remaining ? { ...remaining, paused: true } : null);
           break;
         }
         const effectiveAsset = latest.current.assets.find(asset => asset.id === job.result?.asset.id) ?? job.result?.asset;
         const identityBlock = effectiveAsset ? generatedAssetDraftIdentityBlockReason(effectiveAsset) : "Needs identity check";
         if (identityBlock) {
-          const remaining = batchRef.current!.requests.slice(1);
-          persistBatch(remaining.length ? { ...batchRef.current!, requests: remaining, paused: true } : null);
+          const remaining = completeH3ReviewRequest(batchRef.current!);
+          persistBatch(remaining ? { ...remaining, paused: true } : null);
           setMessage("The take was saved outside the draft.");
           throw new Error(`${identityBlock}. Review the take before continuing the remaining shots.`);
         }
-        persistBatch({ ...batchRef.current!, requests: batchRef.current!.requests.slice(1) });
+        persistBatch(completeH3ReviewRequest(batchRef.current!));
       }
       if (mounted.current && batchRef.current?.projectId === batchProjectId && batchRef.current.requests.length === 0) { persistBatch(null); setMessage("Shot generation completed. Review the assembled draft and any remaining gaps."); }
     } catch (failure) {
@@ -192,6 +220,7 @@ export function MiniMaxDraftPanel(props: Props) {
   }
 
   async function generateMissing() {
+    if (!mayEdit() || busy || accepting || batchRef.current?.requests.length) return;
     setBusy(true); setError(null); setMessage("Saving the current story and references…");
     try {
       const projectId = await props.onEnsureSavedProject();
@@ -222,6 +251,8 @@ export function MiniMaxDraftPanel(props: Props) {
   }
 
   async function revise(asset: GeneratedStudioAsset) {
+    if (!mayEdit() || busy || accepting) return;
+    if (batchRef.current && !batchRef.current.paused) { setError("Pause upcoming submissions before revising a take."); return; }
     const target = asset.target;
     if (!target) return;
     const segment = findH3TargetSegment(props.segments, target);
@@ -231,6 +262,7 @@ export function MiniMaxDraftPanel(props: Props) {
       const projectId = await props.onEnsureSavedProject();
       latest.current = { ...latest.current, projectId };
       const existingJobs = await readJobs(projectId);
+      if (latest.current.projectId !== projectId || latest.current.storyApproved === false) throw new Error("The project or story changed while preparing this revision.");
       const original = existingJobs.find(job => job.id === asset.jobId || job.id === asset.id)
         ?? existingJobs.filter(job => h3RequestWindowKey(job.request) === h3WindowKey(segment)).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
       const direction = revisionText[asset.id]?.trim() || original?.request.prompt || segment.storyDirection || segment.label;
@@ -240,15 +272,15 @@ export function MiniMaxDraftPanel(props: Props) {
         referenceAssetIds: [], requestIntentId: crypto.randomUUID(), attempt: 0, draftRevision: latest.current.draft?.revision ?? 0,
       };
       const referenceAssetIds = selectH3ReferenceAssetIds(latest.current.referenceAssets, direction, original?.references.filter(ref => ref.role === "crowd").map(ref => ref.assetId));
-      persistBatch({ version: 1, projectId, planSignature: input.planSignature, requests: [{ ...input,
-        ...(!original ? identityPolicyChoiceForReferences(latest.current.referenceAssets, referenceAssetIds) : {}), referenceAssetIds }], paused: false });
+      persistBatch(queueH3ReviewRevision(batchRef.current, { ...input,
+        ...(!original ? identityPolicyChoiceForReferences(latest.current.referenceAssets, referenceAssetIds) : {}), referenceAssetIds }));
       setReview(null); await runBatch();
     } catch (failure) { setError(failure instanceof Error ? failure.message : "Revision failed."); }
     finally { if (mounted.current && !running.current) setBusy(false); }
   }
 
   async function generateOneShot() {
-    if (!pickupWindow || preparingPickup.current || running.current || batchRef.current?.requests.length) return;
+    if (!mayEdit() || !pickupWindow || preparingPickup.current || running.current || batchRef.current?.requests.length) return;
     preparingPickup.current = true;
     const chosenKey = h3WindowKey(pickupWindow);
     const direction = pickupDirection.trim();
@@ -316,6 +348,7 @@ export function MiniMaxDraftPanel(props: Props) {
   }
 
   async function recoverJob(job: H3GenerationJob, action: "resume" | "cancel" | "retry") {
+    if (latest.current.storyApproved === false || (action === "retry" && !mayEdit())) return;
     setBusy(true); setError(null);
     try {
       if (action === "retry") {
@@ -334,7 +367,8 @@ export function MiniMaxDraftPanel(props: Props) {
       if (!response.ok) throw new Error(payload.error || "Could not update this shot's job.");
       recoveryIntents.current.delete(job.id);
       await readJobs(job.projectId);
-      if (action === "resume" && batchRef.current) { persistBatch({ ...batchRef.current, paused: false }); await runBatch(); }
+      // Checking an existing render must not revoke the user's saved pause.
+      if (action === "resume" && batchRef.current && !batchRef.current.paused) await runBatch();
       setMessage(action === "cancel" ? "This shot is stopping safely. Other GPU work is not interrupted." : job.promptId || job.compiledPrompt
         ? "Checking the existing render. No replacement render was submitted." : "Resuming this shot's worker with the same saved inputs.");
     } catch (failure) { setError(failure instanceof Error ? failure.message : "Job recovery failed."); }
@@ -342,7 +376,7 @@ export function MiniMaxDraftPanel(props: Props) {
   }
 
   async function checkSimilarity(job: H3GenerationJob) {
-    if (busy || accepting) return;
+    if (!mayEdit() || busy || accepting) return;
     const projectId = props.projectId, expectedRevision = props.draft?.revision;
     const currentAsset = props.assets.find(asset => asset.id === job.result?.asset.id) ?? job.result?.asset;
     if (!currentAsset || currentAsset.reviewStatus === "rejected") return;
@@ -396,7 +430,7 @@ export function MiniMaxDraftPanel(props: Props) {
   useEffect(()=>{firstFrameContextRef.current=firstFrameContext;},[firstFrameContext]);
   async function checkBankReferences(assetId: string) {
     const check = latest.current.onCheckCurrentReferences;
-    if (!check || checkingCurrentReferences.current) return;
+    if (!check || !mayEdit() || checkingCurrentReferences.current) return;
     const projectId = latest.current.projectId;
     checkingCurrentReferences.current = true; setBusy(true); setError(null); setMessage(null); setReview(null);
     try {
@@ -413,12 +447,30 @@ export function MiniMaxDraftPanel(props: Props) {
   const activeJobs = jobs.filter(job => !isH3JobTerminal(job));
   const attemptsLeft = (job: H3GenerationJob) => 2 - Math.max(job.request.attempt ?? 0, ...jobs.filter(candidate => candidate.request.requestIntentId === job.request.requestIntentId).map(candidate => candidate.request.attempt ?? 0));
   const selectedIds = new Set(props.draft?.assetIds ?? []);
+  const liveTakes = buildLiveDraftTakes(props.assets, jobs, [...selectedIds]);
+  const readOnly = props.storyApproved === false;
+  const editingBlocked = readOnly || busy || accepting || activeJobs.length > 0;
   const selected = props.assets.filter(asset => selectedIds.has(asset.id));
   const referencesReady = props.referenceAssets.some(asset => asset.role === "character-1" && asset.storageStatus === "uploaded" && asset.storageBucket && asset.storagePath && asset.displayName?.trim())
     && props.referenceAssets.some(asset => asset.role === "environment" && asset.storageStatus === "uploaded" && asset.storageBucket && asset.storagePath && asset.displayName?.trim());
   const unavailable = !props.segments.length ? "Confirm a story first." : !referencesReady ? "Upload named character and location references in Setup." : null;
 
   return <div className="space-y-3">
+    {readOnly ? <p role="status" className="text-sm text-fg-3">Confirm the current Story to change the draft. Saved progress and take playback remain available; upcoming submissions are paused.</p> : null}
+    {liveTakes.length ? <Surface aria-label="Arriving and saved takes">
+      <h3 className="text-sm font-semibold">Arriving and saved takes</h3>
+      <p className="text-xs text-fg-3">Open a completed take while the queue continues. Viewing does not select or approve footage.</p>
+      {liveTakes.slice(0, visibleJobLimit).map(({ asset, playbackUrl, selected }) => <div key={asset.id} className="border-b border-line py-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span>{asset.title ?? "Saved take"} · {selected ? "Selected" : "Banked"}{generatedAssetDraftIdentityBlockReason(asset) ? ` · ${generatedAssetDraftIdentityBlockReason(asset)}` : ""}</span>
+          <Button onClick={() => setOpenedTake(openedTake?.projectId === props.projectId && openedTake.id === asset.id ? null : { projectId: props.projectId, id: asset.id })}>
+            {openedTake?.projectId === props.projectId && openedTake.id === asset.id ? "Close take" : "Open saved take"}</Button></div>
+        {openedTake?.projectId === props.projectId && openedTake.id === asset.id ? <LiveDraftTakeViewer key={`${props.projectId}:${asset.id}`} asset={asset} playbackUrl={playbackUrl} /> : null}
+        <label className="block text-xs text-fg-3">Revision notes<textarea maxLength={6000} aria-label={`Notes for ${asset.title ?? asset.id}`} value={revisionText[asset.id] ?? ""}
+          onChange={event => updateNote(asset.id, event.target.value)} className="mt-1 w-full rounded-md border border-line bg-ink-1 p-2" /></label>
+        <Button disabled={editingBlocked || Boolean(batch && !batch.paused) || !asset.target || !findH3TargetSegment(props.segments, asset.target)} onClick={() => void revise(asset)}>Render revised take, then pause</Button>
+      </div>)}
+      {liveTakes.length > visibleJobLimit ? <Button onClick={() => setJobHistory({ projectId: props.projectId, limit: visibleJobLimit + 40 })}>Show more saved takes</Button> : null}
+    </Surface> : null}
     <Surface aria-label="Create the draft">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="max-w-2xl space-y-1">
@@ -427,7 +479,7 @@ export function MiniMaxDraftPanel(props: Props) {
           <p className="text-xs text-fg-3">New character shots receive a provisional similarity screen. Identity remains unverified; review the assembled cut.</p>
           <p className="text-xs text-fg-3">{missing.length ? `${missing.length} unfilled window${missing.length === 1 ? "" : "s"}` : "Every song window has footage"}{activeJobs.length ? ` · ${activeJobs.length} renders in progress` : ""}. Review the cut before accepting it for Finish.</p>
         </div>
-        <Button variant="primary" disabled={busy || accepting || Boolean(unavailable) || !missing.length || activeJobs.length > 0} reason={unavailable}
+        <Button variant="primary" disabled={editingBlocked || Boolean(unavailable) || Boolean(batch?.requests.length) || !missing.length || activeJobs.length > 0} reason={unavailable}
           onClick={() => void generateMissing()}>{busy ? "Creating draft…" : activeJobs.length ? "Generation in progress" : "Create missing shots"}</Button>
       </div>
       {unavailable ? <p className="mt-3 text-sm text-fg-3">{unavailable}</p> : null}
@@ -435,34 +487,34 @@ export function MiniMaxDraftPanel(props: Props) {
         <summary className="cursor-pointer text-sm text-fg-2">Create one shot · advanced</summary>
         <div className="mt-3 space-y-3">
           <label className="block text-xs text-fg-3">Missing story window<select aria-label="One shot story window"
-            value={pickupWindow ? h3WindowKey(pickupWindow) : ""} disabled={busy || accepting}
+            value={pickupWindow ? h3WindowKey(pickupWindow) : ""} disabled={editingBlocked}
             onChange={event => setPickupKey(event.target.value)} className="mt-1 block w-full rounded-md border border-line bg-ink-1 p-2 text-sm text-fg-1">
             {!pickupWindow ? <option value="">Select a missing window</option> : null}
             {missing.map(window => <option key={h3WindowKey(window)} value={h3WindowKey(window)}>{window.label} · {preciseClock(window.musicStart)}–{preciseClock(window.musicEnd)}{window.musicEnd - window.musicStart < 1 ? " · short boundary sliver" : ""}</option>)}
           </select></label>
           {pickupWindow ? <>
-            <label className="block text-xs text-fg-3">Shot input<select aria-label="One shot input mode" value={pickupMode} disabled={busy||accepting}
+            <label className="block text-xs text-fg-3">Shot input<select aria-label="One shot input mode" value={pickupMode} disabled={editingBlocked}
               onChange={event=>setPickupMode(event.target.value as "references"|"first-frame")} className="mt-1 block w-full rounded-md border border-line bg-ink-1 p-2 text-sm text-fg-1">
               <option value="references">Named reference images</option><option value="first-frame">Continue from a first frame</option>
             </select></label>
             {pickupMode==="first-frame"?<div className="space-y-2">
               {earlierFrame?<label className="block text-xs text-fg-3">Native first-frame index
-                <input aria-label="Native first-frame index" type="number" step={1} min={Math.floor((earlierFrame.asset.trimStart??0)*24+1e-6)} max={earlierFrame.frameIndex} value={nativeFrameIndex??""} disabled={busy||accepting}
+                <input aria-label="Native first-frame index" type="number" step={1} min={Math.floor((earlierFrame.asset.trimStart??0)*24+1e-6)} max={earlierFrame.frameIndex} value={nativeFrameIndex??""} disabled={editingBlocked}
                   onChange={event=>{const index=Number(event.target.value);prepareFrame(null);if(event.target.value==="")setNativeFrameChoice({sourceKey:nativeSourceKey,frameIndex:null});else if(Number.isSafeInteger(index))setNativeFrameChoice({sourceKey:nativeSourceKey,frameIndex:index});}}
                   className="ml-2 w-24 rounded-md border border-line bg-ink-1 p-2 text-sm text-fg-1"/>
               </label>:null}
-              <Button disabled={busy||accepting||!nativeSourceSelection} onClick={()=>void captureEarlierFirstFrame()}>Use frame from earlier shot</Button>
+              <Button disabled={editingBlocked||!nativeSourceSelection} onClick={()=>void captureEarlierFirstFrame()}>Use frame from earlier shot</Button>
               <p className="text-xs text-fg-3">{earlierFrame?`Uses the selected native trim of ${earlierFrame.asset.title||"the closest earlier eligible take"}.`:"An earlier eligible native take in this project and plan can supply the first frame."}</p>
               {nativeSourceError?<p role="alert" className="text-xs text-danger">{nativeSourceError}</p>:null}
               {nativeSourceSelection?<label className="block text-xs text-fg-3">Or import this exact native frame PNG
-                <input key={`native:${firstFrameContext}`} aria-label="Exact native source PNG" type="file" accept="image/png" disabled={busy||accepting}
+                <input key={`native:${firstFrameContext}`} aria-label="Exact native source PNG" type="file" accept="image/png" disabled={editingBlocked}
                   onChange={event=>{const file=event.target.files?.[0];prepareFrame(file?{file,context:firstFrameContext,source:nativeSourceSelection}:null);}} className="mt-1 block w-full text-sm text-fg-1"/>
                 <span className="mt-1 block">Frame {nativeSourceSelection.frameIndex} only. The server requires exact historical and current decoded pixels. Browser color differences are rejected; use a lossless canonical-decoder PNG.</span>
               </label>:null}
-              <label className="block text-xs text-fg-3">Or use a separately prepared first-frame PNG · 1344×768 opaque<input key={firstFrameContext} aria-label="Prepared first-frame PNG" type="file" accept="image/png" disabled={busy||accepting}
+              <label className="block text-xs text-fg-3">Or use a separately prepared first-frame PNG · 1344×768 opaque<input key={firstFrameContext} aria-label="Prepared first-frame PNG" type="file" accept="image/png" disabled={editingBlocked}
               onChange={event=>{const file=event.target.files?.[0];prepareFrame(file?{file,context:firstFrameContext}:null);}} className="mt-1 block w-full text-sm text-fg-1" />
               <span className="mt-1 block">{firstFrameFile?`Prepared: ${firstFrameFile.name}. `:""}Separate uploads do not claim a verified frame from the earlier take. The actual image receives a provisional one-image numerical screen before GPU video generation. Every intended video frame must then pass separately. Switching input type starts a new take and keeps earlier results.</span></label></div>:null}
-            <fieldset className="space-y-2 rounded-md border border-line p-3" disabled={busy || accepting || pickupMode === "first-frame"}>
+            <fieldset className="space-y-2 rounded-md border border-line p-3" disabled={editingBlocked || pickupMode === "first-frame"}>
               <legend className="px-1 text-xs text-fg-2">Crowd / extras for this shot</legend>
               <p className="text-xs text-fg-3">Choose only the sheets this shot needs. Extras guide variety and wardrobe range; named characters and location keep their own authorities. New batch windows use no crowd sheets.</p>
               {crowdAssets.map(ref => <label key={ref.id} className="flex items-center gap-2 text-sm text-fg-2">
@@ -481,17 +533,17 @@ export function MiniMaxDraftPanel(props: Props) {
             </fieldset>
             {pickupReferenceError ? <p role="alert" className="text-xs text-danger">{pickupReferenceError}</p> : null}
             <label className="block text-xs text-fg-3">Edit duration (seconds)<input aria-label="One shot edit duration" type="number" step="any"
-              min={Math.min(1, pickupMaximum)} max={pickupMaximum} value={pickupDuration} disabled={busy || accepting}
+              min={Math.min(1, pickupMaximum)} max={pickupMaximum} value={pickupDuration} disabled={editingBlocked}
               onChange={event => setPickupEdits(current => ({ ...current, [pickupEditKey]: { ...current[pickupEditKey], duration: event.target.value } }))}
               className="mt-1 block w-32 rounded-md border border-line bg-ink-1 p-2 text-sm text-fg-1" /></label>
             <p className="text-xs text-fg-3">{pickupDurationValid ? `This shot fills ${preciseClock(pickupWindow.musicStart)}–${preciseClock(pickupWindow.musicStart + Number(pickupDuration))}.` : `Choose ${Math.min(1, pickupMaximum)}–${pickupMaximum.toFixed(3)} seconds.`} The rest of the draft stays in place.{pickupMaximum < 1 ? " This explicitly selected boundary sliver uses its full duration." : ""}</p>
             <label className="block text-xs text-fg-3">Shot direction<textarea aria-label="One shot direction" rows={4} maxLength={6000}
-              value={pickupDirection} disabled={busy || accepting}
+              value={pickupDirection} disabled={editingBlocked}
               onChange={event => setPickupEdits(current => ({ ...current, [pickupEditKey]: { ...current[pickupEditKey], direction: event.target.value } }))}
               className="mt-1 block w-full rounded-md border border-line bg-ink-1 p-2 text-sm text-fg-1" /></label>
           </> : <p className="text-xs text-fg-3">Select a short boundary sliver explicitly, or prepare a missing story window.</p>}
           {batch?.requests.length ? <p className="text-xs text-fg-3">Continue or clear the saved requests before creating one shot.</p> : null}
-          <Button disabled={busy || accepting || Boolean(unavailable) || !pickupWindow || !pickupDurationValid || !pickupDirection.trim() || Boolean(pickupReferenceError) || activeJobs.length > 0 || Boolean(batch?.requests.length)}
+          <Button disabled={editingBlocked || Boolean(unavailable) || !pickupWindow || !pickupDurationValid || !pickupDirection.trim() || Boolean(pickupReferenceError) || activeJobs.length > 0 || Boolean(batch?.requests.length)}
             reason={unavailable} onClick={() => void generateOneShot()}>Create this shot</Button>
         </div>
       </details>
@@ -499,18 +551,25 @@ export function MiniMaxDraftPanel(props: Props) {
       {error ? <p role="alert" className="mt-3 text-sm text-danger">{error}</p> : null}
       {batch?.requests.length ? <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-fg-3">
         <span>{batch.requests.length} saved shot request{batch.requests.length === 1 ? "" : "s"}{batch.paused ? " · paused" : " · continues when this project is open"}</span>
-        {batch.paused ? <Button disabled={busy || accepting || batch.planSignature !== props.segments[0]?.planSignature} onClick={() => {
+        {batch.paused ? <Button disabled={editingBlocked || batch.planSignature !== props.segments[0]?.planSignature} onClick={() => {
+          if (!mayEdit()) return;
           persistBatch({ ...batch, paused: false }); void runBatch();
-        }}>Continue saved batch</Button> : <Button disabled={!busy} onClick={() => persistBatch({ ...batch, paused: true })}>Pause remaining shots</Button>}
-        {batch.paused && !busy ? <Button disabled={accepting} onClick={() => persistBatch(null)}>Clear pending requests</Button> : null}
+        }}>Continue saved batch</Button> : <Button onClick={() => persistBatch({ ...batch, paused: true })}>Pause remaining shots</Button>}
+        {batch.paused && !busy ? <Button disabled={accepting || readOnly} onClick={() => persistBatch(null)}>Clear pending requests</Button> : null}
       </div> : null}
+      {batch?.requests.length ? <details className="mt-2 text-xs text-fg-3"><summary className="cursor-pointer">Inspect saved submission queue</summary>
+        <ol className="mt-2 space-y-2">{batch.requests.map((request, index) => <li key={`${request.requestIntentId}:${request.attempt ?? 0}:${index}`}>
+          {index + 1}. {request.sectionId} · {preciseClock(request.songStart)}–{preciseClock(request.songEnd)} · saved request
+          <p>{request.prompt}</p>
+        </li>)}</ol>
+      </details> : null}
       <div className="mt-4 flex flex-wrap gap-2">
-        <Button disabled={!props.segments.length || busy || accepting} onClick={() => {
+        <Button disabled={!props.segments.length || editingBlocked} onClick={() => {
           setError(null); void props.onReviewDraft().then(setReview).catch(failure => setError(failure instanceof Error ? failure.message : "Preview failed."));
         }}>Review assembled draft</Button>
-        <Button variant="success" disabled={!review || busy || accepting || activeJobs.length > 0 || missing.length > 0} reason="Review the complete draft first."
+        <Button variant="success" disabled={!review || editingBlocked || missing.length > 0} reason="Review the complete draft first."
           onClick={() => {
-            if (!review) return;
+            if (!review || !mayEdit()) return;
             setAccepting(true); setError(null);
             void props.onAcceptDraft(review).then(() => {
               if (mounted.current) { setReview(null); setMessage("Draft accepted and saved. Continue to Finish."); }
@@ -534,17 +593,17 @@ export function MiniMaxDraftPanel(props: Props) {
         <span className="flex flex-wrap gap-2">
           {job.state === "ready" && asset?.identityVerification?.status === "unverifiable" && !rejected ? <>
             <span className="text-fg-3">Source {preciseClock(range?.trimStart ?? asset.trimStart ?? 0)}–{preciseClock(range?.trimEnd ?? (asset.trimStart ?? 0) + job.target.songEnd-job.target.songStart)}</span>
-            <Button disabled={busy || accepting || !range} onClick={() => void checkSimilarity(job)}>Check similarity</Button>
+            <Button disabled={editingBlocked || !range} onClick={() => void checkSimilarity(job)}>Check similarity</Button>
           </> : null}
           {(["submission_unknown", "rendering", "persisting"] as string[]).includes(job.state) && !job.workerRecoveries?.some(recovery => !recovery.runId)
-            ? <Button disabled={busy || accepting} onClick={() => void recoverJob(job, "resume")}>Check existing render</Button> : null}
+            ? <Button disabled={readOnly || busy || accepting} onClick={() => void recoverJob(job, "resume")}>Check existing render</Button> : null}
           {(job.state !== "cancelled" && job.workerRecoveries?.some(recovery => !recovery.runId))
             || (job.state === "failed" && job.runId && !job.promptId && !job.compiledPrompt && !job.result && !job.cancelRequestedAt)
-            ? <Button disabled={busy || accepting} onClick={() => void recoverJob(job, "resume")}>Resume worker</Button>
-            : job.state === "failed" || job.state === "cancelled" ? <Button disabled={busy || accepting || attemptsLeft(job) <= 0 || !findH3TargetSegment(props.segments, job.target)} onClick={() => void recoverJob(job, "retry")}>Retry shot ({attemptsLeft(job)} left)</Button> : null}
-          {!isH3JobTerminal(job) && job.state !== "cancel_requested" ? <Button variant="danger" disabled={accepting} onClick={() => void recoverJob(job, "cancel")}>Cancel this shot</Button> : null}
+            ? <Button disabled={readOnly || busy || accepting} onClick={() => void recoverJob(job, "resume")}>Resume worker</Button>
+            : job.state === "failed" || job.state === "cancelled" ? <Button disabled={editingBlocked || attemptsLeft(job) <= 0 || !findH3TargetSegment(props.segments, job.target)} onClick={() => void recoverJob(job, "retry")}>Retry shot ({attemptsLeft(job)} left)</Button> : null}
+          {!isH3JobTerminal(job) && job.state !== "cancel_requested" ? <Button variant="danger" disabled={accepting || readOnly} onClick={() => void recoverJob(job, "cancel")}>Cancel this shot</Button> : null}
         </span>
-        {job.state === "ready" && asset?.identityVerification?.status === "unverifiable" && !rejected && range ? <NativeHandleDetails asset={asset} range={range} disabled={busy || accepting} onStartFrame={frame=>{
+        {job.state === "ready" && asset?.identityVerification?.status === "unverifiable" && !rejected && range ? <NativeHandleDetails asset={asset} range={range} disabled={editingBlocked} onStartFrame={frame=>{
             handleFramesRef.current={...handleFramesRef.current,[job.id]:frame};setHandleFrames(handleFramesRef.current);setReview(null);
           }}/> : null}
         {asset ? <SimilarityFilterNote asset={asset} /> : null}
@@ -564,10 +623,10 @@ export function MiniMaxDraftPanel(props: Props) {
         <SimilarityFilterNote asset={asset} />
         <label className="block text-xs text-fg-3">Shot direction<textarea aria-label={`Revision for ${asset.title}`} rows={2}
           value={revisionText[asset.id] ?? jobs.find(job => job.id === asset.jobId || job.id === asset.id)?.request.prompt ?? ""} placeholder={asset.target?.sectionLabel ?? "Describe the complete revised action"}
-          onChange={event => setRevisionText(previous => ({ ...previous, [asset.id]: event.target.value }))}
+          maxLength={6000} onChange={event => updateNote(asset.id, event.target.value)}
           className="mt-1 block w-full rounded-md border border-line bg-ink-1 p-2 text-sm text-fg-1" /></label>
-        <div className="mt-2 flex gap-2"><Button disabled={busy || accepting} onClick={() => void revise(asset)}>Revise shot</Button>
-          <Button variant="danger" disabled={busy || accepting} onClick={() => { props.onRejectAsset(asset.id); setReview(null); }}>Reject shot</Button></div>
+        <div className="mt-2 flex gap-2"><Button disabled={editingBlocked} onClick={() => void revise(asset)}>Revise shot</Button>
+          <Button variant="danger" disabled={editingBlocked} onClick={() => { if (mayEdit()) { props.onRejectAsset(asset.id); setReview(null); } }}>Reject shot</Button></div>
       </div>)}</div>
     </Surface> : null}
     {props.assets.some(asset => !selectedIds.has(asset.id) && asset.mediaKind === "video" && asset.status === "completed" && asset.reviewStatus === "pending") ? <Surface>
@@ -576,9 +635,9 @@ export function MiniMaxDraftPanel(props: Props) {
         const block = generatedAssetDraftIdentityBlockReason(asset);
         const checkBlock = asset.currentReferenceIdentity?.required ? currentReferenceBankCheckBlockReason(asset, props.segments) : null;
         return <div key={asset.id} className="py-2 text-sm"><div className="flex flex-wrap items-center justify-between gap-2"><span>{asset.title}{block ? ` · ${block}` : ""}</span><div className="flex flex-wrap gap-2">
-          {asset.currentReferenceIdentity?.required && props.onCheckCurrentReferences ? <Button disabled={busy || accepting || Boolean(checkBlock)} reason={checkBlock}
+          {asset.currentReferenceIdentity?.required && props.onCheckCurrentReferences ? <Button disabled={editingBlocked || Boolean(checkBlock)} reason={checkBlock}
             onClick={() => void checkBankReferences(asset.id)}>Check against updated references</Button> : null}
-          <Button disabled={busy || accepting || Boolean(block) || !asset.target || !findH3TargetSegment(props.segments, asset.target)} reason={block} onClick={() => { props.onSelectAsset(asset); setReview(null); }}>Use in draft</Button></div></div><SimilarityFilterNote asset={asset} /></div>;
+          <Button disabled={editingBlocked || Boolean(block) || !asset.target || !findH3TargetSegment(props.segments, asset.target)} reason={block} onClick={() => { if (mayEdit()) { props.onSelectAsset(asset); setReview(null); } }}>Use in draft</Button></div></div><SimilarityFilterNote asset={asset} /></div>;
       })}
     </Surface> : null}
   </div>;
