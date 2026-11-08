@@ -1,9 +1,4 @@
-import { parseStoryTreatmentRequest } from "@/components/studio/storyTreatments";
-import { getSessionUser, unauthorizedResponse } from "@/lib/session";
-import { isStoryTreatmentConfigured } from "@/lib/storyTreatmentGateway";
-import { queueStoryTreatmentGeneration } from "@/lib/storyTreatmentServer";
-import type { SessionUser } from "@/lib/session";
-import type { StoryTreatmentGenerationResult, StoryTreatmentRequest } from "@/components/studio/storyTreatments";
+import { handleStoryTreatmentsPost } from "@/lib/storyTreatmentsRoute";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,54 +6,4 @@ export const maxDuration = 60;
 
 export async function POST(request: Request) {
   return handleStoryTreatmentsPost(request);
-}
-
-export async function handleStoryTreatmentsPost(request: Request, dependencies: {
-  getUser?: () => Promise<SessionUser | null>;
-  generate?: (input: StoryTreatmentRequest) => Promise<StoryTreatmentGenerationResult>;
-  queue?: (input: StoryTreatmentRequest, options: { requestIntentId: string }) => Promise<{ runId: string; model: string }>;
-  isConfigured?: boolean;
-} = {}) {
-  const user = await (dependencies.getUser ?? getSessionUser)();
-  if (!user) return unauthorizedResponse("Sign in with GitHub to generate story treatments.");
-  const configured = dependencies.isConfigured ?? isStoryTreatmentConfigured();
-  if (!configured) {
-    return Response.json({
-      success: false,
-      error: "Story generation is not configured. Set SCENE_CAPTION_SMART_GATEWAY_URL and Trigger.dev credentials.",
-    }, { status: 503 });
-  }
-
-  let input: StoryTreatmentRequest;
-  let requestIntentId: string;
-  try {
-    const suppliedId = request.headers.get("x-story-request-id");
-    if (suppliedId !== null && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(suppliedId)) {
-      throw new Error("Story request id must be a UUID.");
-    }
-    requestIntentId = suppliedId?.toLowerCase() ?? crypto.randomUUID();
-    input = parseStoryTreatmentRequest(await request.json());
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Story treatment request is invalid.";
-    return Response.json({ success: false, error: message }, { status: 400 });
-  }
-
-  try {
-    if (dependencies.generate) {
-      const result = await dependencies.generate(input);
-      return Response.json({ success: true, ...result });
-    }
-
-    const queued = await (dependencies.queue ?? queueStoryTreatmentGeneration)(input, { requestIntentId });
-    return Response.json({
-      success: true,
-      queued: true,
-      orchestration: "trigger.dev",
-      runId: queued.runId,
-      model: queued.model,
-    }, { status: 202 });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Story treatment generation failed.";
-    return Response.json({ success: false, error: message }, { status: 502 });
-  }
 }

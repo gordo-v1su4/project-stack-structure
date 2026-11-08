@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { handleStoryTreatmentsPost } from "@/app/api/story/treatments/route";
+import { handleStoryTreatmentsPost } from "@/lib/storyTreatmentsRoute";
 import { queueStoryTreatmentGeneration } from "@/lib/storyTreatmentServer";
 import { buildStoryTreatmentDispatchKey } from "@/lib/triggerOrchestration";
 

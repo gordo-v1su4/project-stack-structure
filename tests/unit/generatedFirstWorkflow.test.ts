@@ -6,7 +6,7 @@ import { buildWorkflowNavigation } from "@/components/studio/workflowNavigation"
 import { ActRail } from "@/components/studio/shell/ActRail";
 import { buildStudioCommands } from "@/components/studio/shell/commands";
 import { StoryTab, createDefaultStoryTabState } from "@/components/studio/panels/StoryTab";
-import { handleStoryTreatmentsPost } from "@/app/api/story/treatments/route";
+import { handleStoryTreatmentsPost } from "@/lib/storyTreatmentsRoute";
 
 const input: PipelineStageInput = {
   activeTab: "review", hasAudioAnalysis: true, hasLyricTranscript: false, hasRequiredReferences: true,
