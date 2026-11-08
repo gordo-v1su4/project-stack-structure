@@ -3,9 +3,9 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import {
   BrowserPreviewPlayer,
-  type PreviewPlayerState,
   type PreviewSegment,
 } from "./previewPlayer";
+import { usePreviewPlayerState } from "./usePreviewPlayerState";
 import { registerMediaPlaybackGroup } from "./mediaPlaybackOwnership";
 import type { ShaderEffectCue } from "./shaderEffectPlan";
 import {
@@ -24,7 +24,6 @@ type PreviewAudioTimeline = {
 type PreviewPlayerProps = {
   player: BrowserPreviewPlayer;
   segments: PreviewSegment[];
-  state: PreviewPlayerState;
   segmentLabels?: string[];
   effectCues?: ShaderEffectCue[];
   audioTimeline?: PreviewAudioTimeline | null;
@@ -41,7 +40,6 @@ type PreviewPlayerProps = {
 export function PreviewPlayer({
   player,
   segments,
-  state,
   segmentLabels,
   effectCues = [],
   audioTimeline = null,
@@ -49,6 +47,7 @@ export function PreviewPlayer({
   masterAudioUrl = null,
   variant = "console",
 }: PreviewPlayerProps) {
+  const state = usePreviewPlayerState(player);
   const videoRef = useRef<HTMLVideoElement>(null);
   const standbyVideoRef = useRef<HTMLVideoElement>(null);
   const masterAudioRef = useRef<HTMLAudioElement>(null);

@@ -45,7 +45,8 @@ import { checkCurrentReferenceRange, prepareReferenceMigration } from "./studio/
 import { CurrentReferenceReviewPanel } from "./studio/panels/CurrentReferenceReviewPanel";
 import { assetsForCurrentReferenceCheck, assetsForCurrentReferenceReview } from "./studio/currentReferenceReview";
 import { createLocalReferenceAsset, uploadReferenceAssetToRustFs, type ReferenceAsset, type ReferenceAssetLibraryRole } from "./studio/referenceAssets";
-import { BrowserPreviewPlayer, createPreviewPlayerState, type PreviewPlayerState, type PreviewSegment } from "./studio/previewPlayer";
+import { BrowserPreviewPlayer, type PreviewSegment } from "./studio/previewPlayer";
+import { usePreviewPlayerSummary } from "./studio/usePreviewPlayerState";
 import { buildEffectsTimeline, selectStoryAssemblyPreview, usesStoryAssembly, type PreviewCutRange } from "./studio/resolvedPreviewSelection";
 import { ComposeTab } from "./studio/panels/ComposeTab";
 import { IngestTab } from "./studio/panels/IngestTab";
@@ -57,7 +58,7 @@ import { MusicCutExplorer } from "./studio/panels/MusicCutExplorer";
 import { SplitTab } from "./studio/panels/SplitTab";
 import { createDefaultStoryTabState, StoryTab } from "./studio/panels/StoryTab";
 import { ActRail } from "./studio/shell/ActRail";
-import { BeatSpine } from "./studio/shell/BeatSpine";
+import { PreviewBeatSpine, PreviewTransportBar } from "./studio/shell/PreviewPlaybackLeaves";
 import { StageGateBanner } from "./studio/shell/StageGateBanner";
 import { TrackHeader } from "./studio/shell/TrackHeader";
 import { SlotInspector } from "./studio/shell/SlotInspector";
@@ -66,7 +67,7 @@ import { CommandPalette, ShortcutSheet } from "./studio/shell/CommandPalette";
 import { buildStudioCommands } from "./studio/shell/commands";
 import { Inspector } from "./studio/shell/Inspector";
 import { ProgramMonitor } from "./studio/shell/ProgramMonitor";
-import { TransportBar, type TransportModel } from "./studio/shell/TransportBar";
+import { type TransportModel } from "./studio/shell/TransportBar";
 import { useSongTransport } from "./studio/shell/useSongTransport";
 import { useStudioKeyboard } from "./studio/shell/useStudioKeyboard";
 import { deriveDisplayBpm, fmt } from "./studio/math";
@@ -218,8 +219,8 @@ export default function StudioApp() {
   // Stable singleton held in state so render can read it without touching a ref.
   const [previewPlayer] = useState(() => new BrowserPreviewPlayer({ warmSourceLimit: 4, warmAheadSegments: 8 }));
   const previewPlayerRef = useRef(previewPlayer);
-  const [browserPreviewState, setBrowserPreviewState] = useState<PreviewPlayerState>(createPreviewPlayerState);
-  const [isBrowserPreviewActive, setIsBrowserPreviewActive] = useState(false);
+  const browserPreviewState = usePreviewPlayerSummary(previewPlayer);
+  const isBrowserPreviewActive = browserPreviewState.status === "playing" || browserPreviewState.status === "paused" || browserPreviewState.status === "loading";
   const [isPreviewExpanded, setIsPreviewExpanded] = useState(false);
   const [retainedBrowserPreviewSegments, setRetainedBrowserPreviewSegments] = useState<PreviewSegment[]>([]);
   const [roughCutPreviewRange, setRoughCutPreviewRange] = useState<PreviewCutRange | null>(null);
@@ -243,15 +244,6 @@ export default function StudioApp() {
     if (typeof window === "undefined") return;
     window.localStorage.setItem("svs.studio.activeTab", tab);
   }, [tab]);
-
-  useEffect(() => {
-    const player = previewPlayerRef.current;
-    const unsubscribe = player.subscribe((state) => {
-      setBrowserPreviewState(state);
-      setIsBrowserPreviewActive(state.status === "playing" || state.status === "paused" || state.status === "loading");
-    });
-    return unsubscribe;
-  }, []);
 
   useEffect(() => {
     return () => {
@@ -2405,7 +2397,6 @@ export default function StudioApp() {
     setPreviewState(createSectionRecomputeState());
     if (!options.preserveBrowserPreview) {
       previewPlayerRef.current.stop();
-      setIsBrowserPreviewActive(false);
     }
   }
 
@@ -2549,7 +2540,7 @@ export default function StudioApp() {
     ? {
         source: "preview",
         isPlaying: browserPreviewState.status === "playing" || browserPreviewState.status === "loading",
-        currentTime: browserPreviewState.currentTime,
+        currentTime: 0, // The transport leaf subscribes to the live preview clock.
         duration: browserPreviewState.totalDuration,
         label: `Instant preview · ${displayedBrowserPreviewSegments.length} cuts`,
         bpm: displayBpm,
@@ -2567,7 +2558,7 @@ export default function StudioApp() {
 
   function handleTransportToggle() {
     if (transportModel.source === "preview") {
-      const status = browserPreviewState.status;
+      const status = previewPlayer.getState().status;
       if (status === "playing" || status === "loading") previewPlayer.pause();
       else if (status === "paused") previewPlayer.resume();
       else void previewPlayer.play();
@@ -2584,9 +2575,6 @@ export default function StudioApp() {
     else if (transportModel.source === "song") songTransport.seek(0);
   }
 
-  const spinePlayhead = transportModel.source === "preview" && beatJoinAnalysis
-    ? Math.max(0, Math.min(1, browserPreviewState.currentTime / Math.max(beatJoinAnalysis.duration, 0.001)))
-    : songTransport.playhead;
   const monitorFocused = isPreviewExpanded && hasBrowserPreview;
   const showFfmpegProgramPreview = !hasBrowserPreview && !isBrowserPreviewActive && Boolean(previewAssetUrl);
   const showProgramMonitor = hasBrowserPreview || showFfmpegProgramPreview || monitorFocused;
@@ -2698,10 +2686,11 @@ export default function StudioApp() {
             />
 
             {beatJoinAnalysis && !monitorFocused ? (
-              <BeatSpine
+              <PreviewBeatSpine
+                player={hasBrowserPreview ? previewPlayer : null}
                 analysis={beatJoinAnalysis}
                 bpm={displayBpm ?? bpm}
-                playhead={spinePlayhead}
+                songPlayhead={songTransport.playhead}
                 onSeek={(next) => {
                   if (transportModel.source === "song") songTransport.seek(next);
                 }}
@@ -3015,7 +3004,8 @@ export default function StudioApp() {
           </Inspector>
         </div>
 
-        <TransportBar
+        <PreviewTransportBar
+          player={hasBrowserPreview ? previewPlayer : null}
           transport={transportModel}
           onToggle={handleTransportToggle}
           onStop={handleTransportStop}

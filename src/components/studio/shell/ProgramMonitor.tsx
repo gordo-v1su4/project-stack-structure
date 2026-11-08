@@ -2,7 +2,8 @@
 
 import { useId, useState } from "react";
 import { PreviewPlayer } from "../PreviewPlayerComponent";
-import type { BrowserPreviewPlayer, PreviewPlayerState, PreviewSegment } from "../previewPlayer";
+import type { BrowserPreviewPlayer, PreviewSegment } from "../previewPlayer";
+import type { PreviewPlayerSummary } from "../previewPlayerStore";
 import type { ShaderEffectCue } from "../shaderEffectPlan";
 import { getPreviewAssetFileName } from "../studioUiState";
 import type { BeatJoinAnalysis } from "../types";
@@ -29,7 +30,7 @@ export type MonitorGate = {
 type ProgramMonitorProps = {
   previewPlayer: BrowserPreviewPlayer;
   browserPreviewSegments: PreviewSegment[];
-  browserPreviewState: PreviewPlayerState;
+  browserPreviewState: PreviewPlayerSummary;
   isBrowserPreviewActive: boolean;
   previewEffectCues: ShaderEffectCue[];
   audioTimeline: Pick<BeatJoinAnalysis, "waveform" | "beats" | "onsets" | "duration"> | null;
@@ -93,7 +94,6 @@ export function ProgramMonitor({
             variant="monitor"
             player={previewPlayer}
             segments={browserPreviewSegments}
-            state={browserPreviewState}
             effectCues={previewEffectCues}
             audioTimeline={audioTimeline}
             isExpanded={focused}
