@@ -3,6 +3,8 @@
 set -euo pipefail
 
 readonly isolated_tests=(
+  "tests/unit/storagePrivacyRoutes.test.ts"
+  "tests/unit/studioMetadataReaders.test.ts"
   "tests/unit/nativeFirstFrameSource.test.ts"
   "tests/unit/nativeFirstFrameRoute.test.ts"
   "tests/unit/currentIdentityStore.test.ts"

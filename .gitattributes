@@ -1,2 +1,4 @@
 # Shell interpreters require LF even when a Windows checkout uses autocrlf.
 *.sh text eol=lf
+# Shared app/Media API contract has a pinned byte SHA256.
+config/studio-metadata-privacy.json text eol=lf

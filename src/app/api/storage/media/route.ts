@@ -2,6 +2,8 @@ import { mediaUploadBelongsToOwner } from "@/lib/essentiaUpload";
 import { buildMediaGatewayFileUrl, getMediaGatewayConfig, normalizeMediaPath } from "@/lib/mediaGateway";
 import { getSessionUser, unauthorizedResponse } from "@/lib/session";
 import { canReadMediaObject } from "@/lib/studioMediaAccess";
+import { isCanonicalStudioMetadata, isSafeStudioObjectKey } from "@/lib/studioMetadataPrivacy";
+import { isOwnedDraftStoragePath } from "@/lib/studioDraftPolicy";
 
 export const runtime = "nodejs";
 
@@ -15,23 +17,35 @@ export async function GET(request: Request) {
   const config = getMediaGatewayConfig();
   if (!config) return Response.json({ error: "Media gateway is not configured." }, { status: 503 });
   if (bucket !== config.bucket) return Response.json({ error: `bucket must be ${config.bucket}.` }, { status: 400 });
-  if (!objectKey.startsWith("media-uploads/")) {
+  if (!objectKey.startsWith("media-uploads/") || !isSafeStudioObjectKey(objectKey)) {
     return Response.json({ error: "objectKey must live under media-uploads/." }, { status: 400 });
   }
 
   const isLegacyRawMediaPool = /^media-uploads\/(video-source|source-audio)\//i.test(objectKey);
+  const metadata = isCanonicalStudioMetadata(bucket, objectKey);
   const canRead = mediaUploadBelongsToOwner(objectKey, user.id)
-    || isLegacyRawMediaPool
-    || await canReadMediaObject({ userId: user.id, bucket, objectKey });
+    || isOwnedDraftStoragePath(objectKey, user.id)
+    || (!metadata && (isLegacyRawMediaPool || await canReadMediaObject({ userId: user.id, bucket, objectKey })));
   if (!canRead) return Response.json({ error: "Object does not belong to the current user." }, { status: 403 });
 
   const range = request.headers.get("range");
-  const upstream = await fetch(buildMediaGatewayFileUrl(config, bucket, objectKey), {
-    cache: "no-store",
-    headers: range ? { range } : undefined,
-  });
+  let upstream: Response;
+  try {
+    upstream = await fetch(buildMediaGatewayFileUrl(config, bucket, objectKey), {
+      cache: "no-store",
+      headers: { Authorization: `Bearer ${config.token}`, ...(range ? { range } : {}) },
+      // Metadata must be served by the authenticated gateway, never an unsigned
+      // S3 redirect (including while an older gateway is still deployed).
+      redirect: metadata ? "manual" : "follow",
+      signal: request.signal,
+    });
+  } catch {
+    return Response.json({ error: "Project media could not be streamed." }, { status: 502 });
+  }
   if (!upstream.ok || !upstream.body) {
-    return Response.json({ error: "Project media could not be streamed." }, { status: upstream.status || 502 });
+    await upstream.body?.cancel();
+    const status = upstream.status >= 400 && upstream.status <= 599 ? upstream.status : 502;
+    return Response.json({ error: "Project media could not be streamed." }, { status });
   }
 
   const headers = new Headers({
