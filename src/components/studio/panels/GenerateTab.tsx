@@ -1576,6 +1576,7 @@ function GeneratedShotCard({
     maxTrimStart: committedTrimWindow.maxTrimStart,
     framesPerSecond: asset.mediaFrameRate,
   });
+  const hasNativeTrimFrames = Number.isInteger(asset.mediaFrameRate) && (asset.mediaFrameRate ?? 0) > 0;
   const activeTrimFrame = Math.max(0, Math.min(previewTrimFrame ?? trimStartFrame, maxTrimStartFrame));
   const { requiredDuration, sourceDuration, maxTrimStart, trimStart, trimEnd, selectedWidthPct, selectedLeftPct } = resolveGeneratedAssetTrimWindow({
     trimStart: previewTrimFrame === null ? committedTrimWindow.trimStart : activeTrimFrame / trimFramesPerSecond,
@@ -1710,7 +1711,7 @@ function GeneratedShotCard({
               <div className="mt-2 flex items-center gap-2">
                 <button
                   type="button"
-                  aria-label={`Move source window for ${asset.title ?? asset.model} one frame earlier`}
+                  aria-label={`Move source window for ${asset.title ?? asset.model} one ${hasNativeTrimFrames ? "frame" : "trim step"} earlier`}
                   disabled={activeTrimFrame <= 0}
                   onClick={() => commitTrimStart((activeTrimFrame - 1) / trimFramesPerSecond)}
                   className="h-7 w-7 shrink-0 rounded-[2px] border border-[#262626] text-[12px] text-[#777] hover:border-[#555] hover:text-[#ddd] disabled:opacity-30"
@@ -1744,16 +1745,17 @@ function GeneratedShotCard({
                 </div>
                 <button
                   type="button"
-                  aria-label={`Move source window for ${asset.title ?? asset.model} one frame later`}
+                  aria-label={`Move source window for ${asset.title ?? asset.model} one ${hasNativeTrimFrames ? "frame" : "trim step"} later`}
                   disabled={activeTrimFrame >= maxTrimStartFrame}
                   onClick={() => commitTrimStart((activeTrimFrame + 1) / trimFramesPerSecond)}
                   className="h-7 w-7 shrink-0 rounded-[2px] border border-[#262626] text-[12px] text-[#777] hover:border-[#555] hover:text-[#ddd] disabled:opacity-30"
                 >+</button>
               </div>
               <div className="mt-1 grid grid-cols-2 gap-2">
-                <div className="rounded-[1px] border border-[#1d343a] bg-[#071014] px-2 py-1"><span className="text-[#52737c]">IN / START FRAME</span><div className="mt-0.5 text-[#b6e6ef]">{trimStart.toFixed(2)}s · f{Math.round(trimStart * trimFramesPerSecond)}</div></div>
-                <div className="rounded-[1px] border border-[#1d343a] bg-[#071014] px-2 py-1"><span className="text-[#52737c]">OUT / END FRAME</span><div className="mt-0.5 text-[#b6e6ef]">{trimEnd.toFixed(2)}s · f{Math.round(trimEnd * trimFramesPerSecond)}</div></div>
+                <div className="rounded-sm border border-line bg-ink-1 px-2 py-1"><span className="text-fg-3">{hasNativeTrimFrames ? "IN / START FRAME" : "IN / START TIME"}</span><div className="mt-0.5 text-fg-1">{trimStart.toFixed(2)}s{hasNativeTrimFrames ? ` · f${Math.round(trimStart * trimFramesPerSecond)}` : ""}</div></div>
+                <div className="rounded-sm border border-line bg-ink-1 px-2 py-1"><span className="text-fg-3">{hasNativeTrimFrames ? "OUT / END FRAME" : "OUT / END TIME"}</span><div className="mt-0.5 text-fg-1">{trimEnd.toFixed(2)}s{hasNativeTrimFrames ? ` · f${Math.round(trimEnd * trimFramesPerSecond)}` : ""}</div></div>
               </div>
+              {!hasNativeTrimFrames && <p className="mt-1 text-fg-3">Native frame numbers unavailable. Trim controls use 1/{trimFramesPerSecond}s time steps.</p>}
               <div className="mt-2 flex flex-wrap gap-1.5">
                 <button type="button" disabled={!videoUrl || !previewActive} onClick={() => void playSelectedWindow()} className="rounded-[2px] border border-[#1d5362] px-2 py-1 uppercase tracking-[0.1em] text-[#6bc8dc] disabled:opacity-35">Play selected</button>
                 <button type="button" disabled={!videoUrl || !previewActive} onClick={() => commitTrimStart(videoRef.current?.currentTime ?? trimStart)} className="rounded-[2px] border border-[#303030] px-2 py-1 uppercase tracking-[0.1em] text-[#888] disabled:opacity-35">Set in at playhead</button>
