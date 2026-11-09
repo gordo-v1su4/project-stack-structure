@@ -1,0 +1,72 @@
+# Local completion batch: review checkpoint
+
+The full goal remains an actual dynamic full-song Love Me Tonight MP4 and the complete verified product workflow. This local batch is unfinished acceptance work toward that goal. It is not an approved film, deployed playback fix, or authorization to release.
+
+## Scope and source
+
+Worktree: `project-stack-structure-worktrees/workflow-local-batch`, branch `codex/local-workflow-batch`. Preserve the unrelated default checkout. No PR, merge, deployment or publication until Robert approves the concrete batch. No Trigger upgrade, paid provider, shared-service restart, old user-window reload, or inferred creative approval.
+
+Integrated local source:
+
+- `ed3773f`: inherited prepared-media scrubbing/resource reuse and exact elapsed-time seeking.
+- `85c10e7`: whole-song scene setting/action/transition previews, per-moment durable still recovery, separate direction review and server video gates.
+- `1661f1d`: versioned Story Bible foundation.
+- `7e709f7`: Save-as recovery after known conflicts; ambiguous body/index acknowledgements remain fenced with exact-ID GET reconciliation.
+- `61b94a4`, `9585558`, `68e362f`: source-aware 12-scene/36-moment creative proposal and explicit runtime/model readiness limits. These are unapproved model-neutral descriptors, not generated images or executable prompts.
+- `fc19b4f`: Bible panel, current saved-source author/reviewer projection and explicit canon review/rebinding.
+- `a562bba`: parent Story integration, automatic CAS save before Bible-bound planning, acknowledged revision propagation, confirmed anchor/music linkage, and a durable scene-review flag so malformed-plan normalization cannot bypass an opted-in gate.
+- `029e771`: confirmed positive canon scoped to each H3 shot-planning request, independently scoped reviewer constraints, matching client/server hashes, receipt validation and bounded model envelopes. Legacy requests without a Bible preserve their prior wire format and hash.
+- `29a69de`: header save/error feedback for the canon save and the confirmed Story snapshot wired into the Draft planner.
+- `b02e494`: a bounded current/standby canvas presentation shared by monitor, console and shader; master-song transport timing; exact exclusive visual trim endpoints; paused/rapid seek readiness; explicit master-start/stop/EOF errors, including gaps; resource cleanup. Native video remains the decoder and optional source-audio transport rather than being paused at the last visual frame.
+
+The matching caption-service source is isolated in `proxmox-home-worktrees/story-shot-canon-source`, branch `codex/story-shot-canon-source`, commit `5154dcdde1e56a821003057c92f4da6b2df721e8` (parent `1ea697856b7171bc0ebac9b1681fa371fb194f5a`). Its three-file patch supplies the scoped canon to the actual Qwen author and critic messages. Thirty offline Python tests, syntax checks and an independent source review pass, including Unicode fixture parity and legacy payloads. It is not deployed; repository HEAD does not establish live service capability. Include it in the same activation proposal because Bible-bound planning must fail closed against an older service. The ordinary ops checkout and unrelated infrastructure edits are untouched.
+
+The paired film controller owns live project writes, creative canon and GPU submissions. The orchestrator owns source integration, product and playback. Root subagents handle only assigned disjoint source/test seams or isolated fixtures.
+
+## Evidence obtained
+
+The integrated product suite passed 372 tests / 2,533 assertions with the normal isolated Bash runner and Bun on PATH. Coverage includes scene proof admission/worker checks, malformed-plan fail-closed behavior, still durability, Story Bible author/reviewer scope and receipts, planned drafts, project CAS and Save-as recovery. Log: `.tmp/final-product-batch-tests.log`. This excludes the separate native playback patch. Affected lint has no errors and retains two pre-existing StudioApp warnings.
+
+Frozen integrated source `b02e494` passed the full `bun run check`: **1,927 passed / 27 fixture-dependent skips / zero failures**, 10,800 assertions; typecheck passed, lint reported five existing warnings and zero errors. The skipped fixture tests do not establish those media paths. Log: `.tmp/final-combined-check.log`. Production `bun run build` also passed: `.tmp/final-combined-build.log`. Graft was refreshed after the source freeze; diff checks passed. No production environment, deployment or real remote-service E2E was exercised by these commands.
+
+Log SHA-256: check `86fc622778c9ccf3eb47124719a0b69ffe6c40939c0e2992338ea1784a9a8b85`; build `2dd7fccad92262138dd93091e0ace425d472f01363ffe34ca0b00ea1b87b4413`.
+
+Actual scene React components in a StrictMode fixture passed 23 interaction checks, including durable save before sole POST, failure/switch suppression, GET-only reload, exact transition identity references, actual edited direction in submitted prose, explicit approval and stale-image invalidation. Evidence: `.tmp/scene-proof-ui-20261109/evidence.json`.
+
+The actual StoryTab, Planner and Bible components passed 27 interaction checks: approved-story import; fact/relationship edit, review and removal; preservation of text through metadata changes; stale project/reference/story backup and explicit reset; automatic CAS before author/revise requests with acknowledged revisions; zero POST after rejected or stale saves; no-Bible compatibility; and model exclusion from human canon. Evidence: `.tmp/bible-ui-20261109/evidence.json`. The fixture uses the actual ProjectSaveSession and mirrors the StudioApp callback, but does not mount the complete StudioApp. Synthetic images and fake HTTP/persistence do not prove production, generated identity or the real saved-project flow.
+
+Desktop/mobile layouts used compiled actual `globals.css` through the installed Tailwind/PostCSS pipeline, with no added dependency. Screenshots in those evidence directories were visually inspected; neither page overflowed horizontally. Both fixture browsers and servers were closed.
+
+Equal-workload playback comparison used the actual frozen `ed3773f` native player and a bounded MediaBunny worker prototype. Two opposite-order 120-cut/40-second trials presented all 960 intended frames on both paths. Native additionally exposed 119 excluded-end frames per trial and stopped master audio about 80 ms early. Worker exposed no excluded frames and reached 40 seconds. Oracle pixel identity was checked. Native's shorter wall time is a pacing defect, not a speed win. The prototype closes its owned samples/bitmaps and is not integrated or production-certified. Detailed frozen receipts: `.tmp/playback-performance-20261109/equal-README.md`, `equal-summary.json`, `equal-audit.json`.
+
+Final candidate `b02e494` was tested through the actual mounted player, including monitor and compact/expanded console layouts. **20/20 checks passed**: paused and rapid latest-wins pixel oracles, exclusive visual endpoint, gap/resume, actual VFR and first one-frame cut, shader Canvas2D consuming the canonical raster, unmuted source-clip PCM through the final .85–.98-second interval, master endpoint 1.003829 seconds, and 44/44 owned bitmaps closed. WebGPU canonical-source/frame closure is unit tested; physical WebGPU output is not certified. Authoritative final receipt: `.tmp/playback-performance-20261109/presentation-evidence-2026-11-09T09-50-13-224Z.json`, superseding the 09:47 receipt. Root visually inspected the final monitor/expanded-console screenshots. These are isolated headless Chromium 153 fixtures with real media and compiled app CSS, not the user's production project or physical listening/display acceptance.
+
+That source-audio check certifies continuing PCM and stopped transports only. Its `.5–1.5` source trim's raw decoder clock actually reached `1.562313` at stop, about 62 ms beyond the selected out-point and 58.484 ms ahead of the relative master position. Source/master alignment and sample-accurate optional clip-audio trimming are not certified by this WebAudio-instrumented probe. The canvas remains visually trim-safe. Do not label this receipt as correct source-audio timing merely because its full-dwell assertion passes. Final-export audio timing is a separate FFmpeg/artifact boundary.
+
+The final 120-cut/40-second native canvas trial presented **959/960 intended frames**, every cut and every first frame, zero excluded-end frames, and 959 exact pixel hashes. The missing frame is the last included eighth frame of cut index 1 (source frame 67). This is a real remaining frame-loss limitation, not a waived success. Master audio ended at 40.010667 seconds; the run made one initial audio seek/wait, no per-cut audio seeks and no video waiting. One startup analyser-zero sample remains in the raw receipt (2,398 nonzero of 2,399 samples). The bounded worker prototype presented 960/960 with the same master endpoint and zero excluded-end frames; it remains an unintegrated comparison, with no new dependency promoted.
+
+Receipt `.tmp/playback-performance-20261109/equal-candidate-evidence-2026-11-09T09-49-16-396Z.json`, summary `equal-candidate-summary.json`, and `final-source-and-losses.json` preserve exact source hashes and missing-frame identity. The root Next build overlapped this last trial, so cadence is descriptive only (native p95/max interval 66.2/90.2 ms; worker 50.8/69.7 ms), not a speed conclusion. Earlier 955/960 provisional canvas and audio-truncating video-pause attempts are superseded, not final evidence. No test reproduced or certified repair of the user's multi-second production stutter. The candidate is a bounded trim/clock/seek correctness improvement; production smoothness and actual whole-song playback remain acceptance gates.
+
+The consolidated local playback report is `.tmp/playback-performance-20261109/equal-candidate-README.md`. Source files, raw receipts and superseded attempts are pinned separately so future acceptance does not mistake a summary filename for the tested source.
+
+## Local review status
+
+Source is frozen at `b02e494`; this packet adds documentation only. Product/canon, scene-server and playback source reviews are complete. No further source change is proposed in this batch; the measured frame loss and optional source-audio alignment remain explicit playback limitations. Full check/build, styled component fixtures, mounted media fixtures and diff checks pass within those stated limits. The concrete batch is ready for Robert's release decision, while the real acceptance below remains open. Linear V1S-448 and V1S-449 retain In Progress with the new source evidence; no ticket is closed from fixture checks.
+
+## Proposed coordinated release scope
+
+After Robert approves this concrete batch, prepare the review against the verified remote `main` base `e37b5babe3117edad8404fe33ff6f8115ad10442`. This branch includes the held owned-export/recovery changes from PR 69 (`77e27dc`) and their regression tests; avoid releasing a duplicate or competing PR. Review the combined web/worker source together with caption-service `5154dcd` before coordinated activation. Trigger remains pinned at 4.5.16.
+
+Activation needs the web app, existing Trigger tasks and the caption-service contract together. Verify owned/authenticated requests and durable recovery first on isolated technical data, then continue the single-controller film workflow. Do not silently degrade Bible-bound requests to an old service. This proposal does not authorize a model change, paid generation, interruption of another GPU owner, or any reload/write to the conflicted old window.
+
+No PR, push, merge, deployment or service restart has been performed by this batch. Approval is required because Robert explicitly held those actions until a substantial reviewable batch was ready.
+
+## Remaining real acceptance after approved activation
+
+Re-read the canonical saved film and exact reference bytes, preserve original/R41 and the conflicted window, reconcile the revised separate journeys into current confirmed story/canon, and bind a safe working copy before writes. The historical typed proposal cannot fabricate freshness or approval.
+
+Local SwarmUI listeners were unavailable at the controller's latest read-only check. Blender appeared in GPU process observations; that does not prove ownership or availability. Confirm the exact still/video profiles and current shared GPU state without interrupting unrelated work. Do not requeue held E33 or rejected Raw/ReGen2K experiments, infer a model winner, or promote a different model silently.
+
+Prove authenticated browser → Trigger → managed SwarmUI → durable full-quality stills → individual scene review/save/reload, including actual identity, atmosphere, geography, action and outgoing transitions. Then generate missing motion only through the approved direction, preserve useful existing material and inspect actual motion/continuity.
+
+Prepared whole-song playback, exact-draft human consent, complete full-song export/download and inspection of the actual final MP4 remain outstanding. Zero-footage live acceptance follows the existing film priority. No current check establishes final-film completion.
