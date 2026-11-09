@@ -27,6 +27,9 @@ import { nativeFirstFrameSelection, assertNativeFirstFrameReceipt, type NativeFi
 import { currentReferenceIdentityApprovalSha256 } from "../currentReferenceIdentity";
 import { buildLiveDraftTakes, completeH3ReviewRequest, readH3ReviewNotes, writeH3ReviewNotes, queueH3ReviewRevision } from "../liveDraftReview";
 import { LiveDraftTakeViewer } from "./LiveDraftTakeViewer";
+import { MiniMaxStillPanel } from "./MiniMaxStillPanel";
+import type { H3FirstFrameChoice } from "../h3FirstFrame";
+import { buildStillVideoRequest, restoreStillShotForm, stillCanonicalContext } from "../h3StillClient";
 
 type Props = {
   storyApproved?: boolean;
@@ -73,12 +76,15 @@ export function MiniMaxDraftPanel(props: Props) {
   const [pickupEdits, setPickupEdits] = useState<Record<string, { direction?: string; duration?: string; crowdIds?: string[] }>>({});
   const [handleFrames,setHandleFrames] = useState<Record<string,number>>({});
   const [pickupMode,setPickupMode] = useState<"references"|"first-frame">("references");
+  const [generatedStillChoice, setGeneratedStillChoice] = useState<{ context: string; shot: H3GenerationRequest; conditioning: H3FirstFrameChoice } | null>(null);
   type PreparedFrame = {file:File;context:string;source?:NativeFirstFrameSelection};
   const [preparedFirstFrame,setPreparedFirstFrame] = useState<PreparedFrame|null>(null);
   const preparedFirstFrameRef = useRef<PreparedFrame|null>(null);
   const firstFrameContextRef = useRef("");
+  const stillContextRef = useRef("");
+  const stillFormGuardRef = useRef("");
   const [nativeFrameChoice,setNativeFrameChoice] = useState<{sourceKey:string;frameIndex:number|null}|null>(null);
-  function prepareFrame(value:PreparedFrame|null){preparedFirstFrameRef.current=value;setPreparedFirstFrame(value);}
+  function prepareFrame(value:PreparedFrame|null){preparedFirstFrameRef.current=value;setPreparedFirstFrame(value);setGeneratedStillChoice(null);}
   const handleFramesRef = useRef<Record<string,number>>({});
   const latest = useRef(props);
   const mounted = useRef(true);
@@ -333,6 +339,14 @@ export function MiniMaxDraftPanel(props: Props) {
       const currentWindow = planH3DraftWindows(latest.current.segments).find(window => h3WindowKey(window) === chosenKey);
       if (!currentWindow) throw new Error("This song window changed while saving. Select its current missing window.");
       const segment = createH3PickupWindow(currentWindow, duration);
+      if (generatedStillChoice?.context === stillContext) {
+        if (stillContextRef.current !== generatedStillChoice.context) throw new Error("The shot changed while its generated frame was being prepared.");
+        if (generatedStillChoice.shot.projectId !== projectId || h3RequestWindowKey(generatedStillChoice.shot) !== h3WindowKey(segment)) throw new Error("The generated still no longer matches this exact shot.");
+        if (existingJobs.some(job => h3RequestWindowKey(job.request) === h3WindowKey(segment) && !isH3JobTerminal(job))) throw new Error("This exact shot already has an active video submission. Review its existing job first.");
+        const request = buildStillVideoRequest(generatedStillChoice, existingJobs);
+        persistBatch({ version: 1, projectId, planSignature: request.planSignature, requests: [request], paused: false });
+        setReview(null); await runBatch(); return;
+      }
       const previous = existingJobs.filter(job => h3RequestWindowKey(job.request) === h3WindowKey(segment)).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
       if (previous && !isH3JobTerminal(previous)) throw new Error("This exact shot already has a submission. Check its existing render in Generation progress.");
       const authorities = selectH3ReferenceAssetIds(latest.current.referenceAssets, direction, pickupMode === "references" ? pickupCrowdIds : []);
@@ -465,6 +479,27 @@ export function MiniMaxDraftPanel(props: Props) {
   const firstFrameContext=identityPolicySha256({target:pickupEditKey,planSignature:pickupWindow?.planSignature??"",duration:Number(pickupDuration),direction:pickupDirection,
     references:props.referenceAssets,source:nativeSourceSelection??null});
   const firstFrameFile=preparedFirstFrame?.context===firstFrameContext?preparedFirstFrame.file:null;
+  const stillContext = stillCanonicalContext({ projectId: props.projectId, windowKey: pickupEditKey, references: props.referenceAssets,
+    plan: props.project?.placementPlan ?? null, currentIdentity: props.project?.currentIdentity ?? null,
+    storyApproved: props.storyApproved ?? true });
+  stillContextRef.current = stillContext;
+  const stillFormGuard = identityPolicySha256({ context: stillContext, direction: pickupDirection, duration: pickupDuration });
+  stillFormGuardRef.current = stillFormGuard;
+  async function prepareStillShot(): Promise<H3GenerationRequest> {
+    if (!pickupWindow || !pickupDurationValid || !pickupDirection.trim() || !mayEdit()) throw new Error("Choose a current missing window, duration and named video direction first.");
+    const guard = stillFormGuard, key = h3WindowKey(pickupWindow), direction = pickupDirection, duration = Number(pickupDuration);
+    const projectId = await props.onEnsureSavedProject();
+    if (latest.current.projectId !== projectId || !mounted.current || latest.current.storyApproved === false) throw new Error("The saved project changed.");
+    const current = planH3DraftWindows(latest.current.segments).find(window => h3WindowKey(window) === key);
+    if (!current || guard !== stillFormGuardRef.current) throw new Error("The missing shot changed while saving.");
+    const target = createH3PickupWindow(current, duration);
+    const referenceAssetIds = selectH3ReferenceAssetIds(latest.current.referenceAssets, direction);
+    const policy = identityPolicyChoiceForReferences(latest.current.referenceAssets, referenceAssetIds);
+    if (!policy.identityPolicyFamily) throw new Error("Choose one or two named characters for a screened first-frame continuation.");
+    return { projectId, planSignature: target.planSignature!, requirementId: target.requirementId, timelineItemId: target.timelineItemId,
+      sectionId: target.sectionId, songStart: target.musicStart, songEnd: target.musicEnd, prompt: direction,
+      referenceAssetIds, requestIntentId: crypto.randomUUID(), attempt: 0, draftRevision: latest.current.draft?.revision ?? 0, ...policy };
+  }
   useEffect(()=>{firstFrameContextRef.current=firstFrameContext;},[firstFrameContext]);
   async function checkBankReferences(assetId: string) {
     const check = latest.current.onCheckCurrentReferences;
@@ -532,7 +567,7 @@ export function MiniMaxDraftPanel(props: Props) {
           </select></label>
           {pickupWindow ? <>
             <label className="block text-xs text-fg-3">Shot input<select aria-label="One shot input mode" value={pickupMode} disabled={editingBlocked}
-              onChange={event=>setPickupMode(event.target.value as "references"|"first-frame")} className="mt-1 block w-full rounded-md border border-line bg-ink-1 p-2 text-sm text-fg-1">
+              onChange={event=>{setPickupMode(event.target.value as "references"|"first-frame");setGeneratedStillChoice(null);}} className="mt-1 block w-full rounded-md border border-line bg-ink-1 p-2 text-sm text-fg-1">
               <option value="references">Named reference images</option><option value="first-frame">Continue from a first frame</option>
             </select></label>
             {pickupMode==="first-frame"?<div className="space-y-2">
@@ -588,13 +623,16 @@ export function MiniMaxDraftPanel(props: Props) {
             </fieldset>
             <label className="block text-xs text-fg-3">Edit duration (seconds)<input aria-label="One shot edit duration" type="number" step="any"
               min={Math.min(1, pickupMaximum)} max={pickupMaximum} value={pickupDuration} disabled={editingBlocked}
-              onChange={event => setPickupEdits(current => ({ ...current, [pickupEditKey]: { ...current[pickupEditKey], duration: event.target.value } }))}
+              onChange={event => { setGeneratedStillChoice(null); setPickupEdits(current => ({ ...current, [pickupEditKey]: { ...current[pickupEditKey], duration: event.target.value } })); }}
               className="mt-1 block w-32 rounded-md border border-line bg-ink-1 p-2 text-sm text-fg-1" /></label>
             <p className="text-xs text-fg-3">{pickupDurationValid ? `This shot fills ${preciseClock(pickupWindow.musicStart)}–${preciseClock(pickupWindow.musicStart + Number(pickupDuration))}.` : `Choose ${Math.min(1, pickupMaximum)}–${pickupMaximum.toFixed(3)} seconds.`} The rest of the draft stays in place.{pickupMaximum < 1 ? " This explicitly selected boundary sliver uses its full duration." : ""}</p>
             <label className="block text-xs text-fg-3">Shot direction<textarea aria-label="One shot direction" rows={4} maxLength={6000}
               value={pickupDirection} disabled={editingBlocked}
-              onChange={event => setPickupEdits(current => ({ ...current, [pickupEditKey]: { ...current[pickupEditKey], direction: event.target.value } }))}
+              onChange={event => { setGeneratedStillChoice(null); setPickupEdits(current => ({ ...current, [pickupEditKey]: { ...current[pickupEditKey], direction: event.target.value } })); }}
               className="mt-1 block w-full rounded-md border border-line bg-ink-1 p-2 text-sm text-fg-1" /></label>
+            <MiniMaxStillPanel projectId={props.projectId} context={stillContext} disabled={editingBlocked || !pickupDurationValid || activeJobs.length > 0 || Boolean(batch?.requests.length)}
+              prepareShot={prepareStillShot} onUse={selection => { setPickupEdits(current => ({ ...current, [pickupEditKey]: { ...current[pickupEditKey], ...restoreStillShotForm(selection.shot) } })); setGeneratedStillChoice({ ...selection, context: stillContext }); setMessage("The reviewed MiniMax frame is prepared with its frozen video direction. Create this shot to start identity screening and video generation."); }} />
+            {generatedStillChoice?.context === stillContext ? <p role="status" className="text-xs text-fg-2">Generated frame prepared. The video direction and named references are frozen for this take. <button type="button" className="underline" onClick={() => setGeneratedStillChoice(null)}>Clear generated frame</button></p> : null}
           </> : <p className="text-xs text-fg-3">Select a short boundary sliver explicitly, or prepare a missing story window.</p>}
           {batch?.requests.length ? <p className="text-xs text-fg-3">Continue or clear the saved requests before creating one shot.</p> : null}
           <Button disabled={editingBlocked || Boolean(unavailable) || !pickupWindow || !pickupDurationValid || !pickupDirection.trim() || Boolean(pickupReferenceError) || activeJobs.length > 0 || Boolean(batch?.requests.length)}

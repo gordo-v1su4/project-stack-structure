@@ -34,9 +34,13 @@ Canonical admission revalidates the saved story, placement window and owned raw 
 
 The managed provider adapter checks required node schemas and pinned model selectors before submitting once. Output names include both descriptor and still-job hashes. Timeouts, response loss, proxy errors and missing history remain unresolved; they do not authorize another generation. Cancellation before submission stops the job. After submission, cancellation observes only the owned attempt and excludes its result; it never interrupts unrelated GPU work.
 
+Each worker execution also carries a unique immutable submission claim UUID. A run ID alone cannot distinguish two concurrent executions of the same Trigger run: with identical timestamps their CAS/lost-acknowledgment comparisons could otherwise mistake each other's writes for success. Deterministic regression coverage forces the same revision and timestamp, injects a lost acknowledgment, and requires exactly one provider POST.
+
 Actual PNG preparation now runs in a bounded child process. It preserves the original 2048×1152 master bytes and makes the 1344×768 derivative using the geometry above, with encoded and decoded pixel hashes and Sharp/libvips version evidence. Immutable owned storage keeps both images and a generated-still provenance receipt, then registers the exact native artifact. This is not a native-video extraction receipt, an identity pass or a timeline selection. Existing first-frame video preflight must still screen the actual derivative before video GPU submission.
 
 Current limitations remain explicit: aesthetic shot/style references are rejected before GPU dispatch because their still-to-video handoff needs a separate frozen continuation request. Generic image-model selection has not been promoted to this new default. Packaged worker execution, browser review/reload, actual managed generation, deterministic first-frame screening and visual acceptance remain live gates. Source tests and a web build cannot substitute for those gates or final-film export.
+
+Draft's advanced one-shot controls now include MiniMax still preparation, separately authored opening-image prose, master/native review, explicit selection of a frame, and continuation using the unchanged frozen video request. Browser storage saves intent before the single POST; status and lost-ack recovery use GET only, including after reload. The old advanced Generate image tool still uses generic presets and remains separate unfinished migration work. This source UI has not yet been accepted in the live browser.
 
 ## Managed schema capacity review
 
