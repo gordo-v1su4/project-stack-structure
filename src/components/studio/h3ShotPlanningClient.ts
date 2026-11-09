@@ -92,6 +92,16 @@ export async function requestH3ShotPlanning(input: H3ShotPlanningInput, options:
     if (!receipt || !Number.isInteger(receipt.attempt) || receipt.attempt < 0 || receipt.attempt > 2
       || (receipt.runId !== undefined && !validId(receipt.runId))
       || (receipt.attempt > 0 && !validId(receipt.previousRunId))) throw new Error("Invalid saved shot planning receipt. No generation was started.");
+    // Storage is authoritative even when the worker crashed after writing it, or
+    // the run record has expired. Recover it before consulting run state or limits.
+    if (saved) {
+      const stored = await request(`${endpoint}?${new URLSearchParams(context)}`);
+      if (stored.response.status !== 200) throw new Error("Shot planning durable result is unavailable.");
+      if (stored.data.state === "ready") return parseReady(stored.data);
+      if (stored.data.success !== true || stored.data.state !== "missing" || stored.data.bindingSha256 !== bindingSha256) {
+        throw new Error("Invalid shot planning durable result status. No generation was started.");
+      }
+    }
     const save = () => {
       if (!storage) return;
       if (storage.getItem(key) !== saved) throw new Error("Another shot planning observation changed this attempt. Resume the saved run.");

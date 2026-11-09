@@ -12,10 +12,11 @@ function fixture() {
     directions: input.groups.flatMap(group => group.windows.map(window => ({ windowKey: window.key,
       direction: "Diego advances.", entryState: "Diego moves.", exitState: "Diego moves.", actionIndices: [] }))) };
   const ready = () => Response.json({ success: true, state: "ready", bindingSha256: input.bindingSha256, result });
+  const missing = () => Response.json({ success: true, state: "missing", bindingSha256: input.bindingSha256 });
   const queued = () => Response.json({ success: true, state: "queued", bindingSha256: input.bindingSha256, runId: "run-1" }, { status: 202 });
   const status = (completed = true, success = true) => Response.json({ id: "run-1", taskIdentifier: "qwen-h3-shot-planning", status: completed ? "COMPLETED" : "EXECUTING",
     isCompleted: completed, isSuccess: completed && success, isFailed: completed && !success, isCancelled: false });
-  return { input, result, ready, queued, status };
+  return { input, result, ready, missing, queued, status };
 }
 function fetcher(responses: Array<Response | (() => Promise<Response>)>) {
   const calls: Array<{ url: string; init?: RequestInit }> = [];
@@ -36,13 +37,13 @@ describe("owned browser shot planning observation", () => {
   test("a new explicit action retries proven failure, survives reload, and stops after three attempts", async () => {
     const f = fixture(), storage = storageFixture();
     for (let attempt = 0; attempt < 3; attempt++) {
-      const network = fetcher([...(attempt ? [f.status(true, false)] : []), f.queued(), f.status(true, false)]);
+      const network = fetcher([...(attempt ? [f.missing(), f.status(true, false)] : []), f.queued(), f.status(true, false)]);
       await expect(requestH3ShotPlanning(f.input, { ...network, storage })).rejects.toThrow("did not succeed");
       const posts = network.calls.filter(call => call.init?.method === "POST");
       expect(posts).toHaveLength(1);
       expect(JSON.parse(posts[0].init!.body as string)).toMatchObject(attempt ? { attempt, previousRunId: "run-1" } : { projectId: "project-a" });
     }
-    const capped = fetcher([f.status(true, false)]);
+    const capped = fetcher([f.missing(), f.status(true, false)]);
     await expect(requestH3ShotPlanning(f.input, { ...capped, storage })).rejects.toThrow("three-attempt limit");
     expect(capped.calls.some(call => call.init?.method === "POST")).toBe(false);
   });
@@ -51,15 +52,15 @@ describe("owned browser shot planning observation", () => {
     const f = fixture(), storage = storageFixture();
     const first = fetcher([f.queued(), async () => { throw new Error("offline"); }]);
     await expect(requestH3ShotPlanning(f.input, { ...first, storage })).rejects.toThrow("offline");
-    const resumed = fetcher([f.status(false), f.status(), f.ready()]);
+    const resumed = fetcher([f.missing(), f.status(false), f.status(), f.ready()]);
     expect(await requestH3ShotPlanning(f.input, { ...resumed, storage })).toEqual(f.result);
     expect(resumed.calls.every(call => call.init?.method !== "POST")).toBe(true);
     const uncertain = storageFixture();
     const lost = fetcher([async () => { throw new Error("lost ACK"); }]);
     await expect(requestH3ShotPlanning(f.input, { ...lost, storage: uncertain })).rejects.toThrow("lost ACK");
-    const replay = fetcher([f.queued(), f.status(), f.ready()]);
+    const replay = fetcher([f.missing(), f.queued(), f.status(), f.ready()]);
     await requestH3ShotPlanning(f.input, { ...replay, storage: uncertain });
-    expect(replay.calls[0].init!.body).toBe(lost.calls[0].init!.body);
+    expect(replay.calls[1].init!.body).toBe(lost.calls[0].init!.body);
   });
 
   test("a late ACK cannot overwrite a newer saved attempt", async () => {
@@ -78,9 +79,36 @@ describe("owned browser shot planning observation", () => {
       isCompleted: false, isSuccess: false, isFailed: false, isCancelled: true });
     const first = fetcher([f.queued(), cancelled()]);
     await expect(requestH3ShotPlanning(f.input, { ...first, storage })).rejects.toThrow("did not succeed");
-    const retry = fetcher([cancelled(), f.queued(), f.status(), f.ready()]);
+    const retry = fetcher([f.missing(), cancelled(), f.queued(), f.status(), f.ready()]);
     expect(await requestH3ShotPlanning(f.input, { ...retry, storage })).toEqual(f.result);
-    expect(JSON.parse(retry.calls[1].init!.body as string)).toMatchObject({ attempt: 1, previousRunId: "run-1" });
+    expect(JSON.parse(retry.calls[2].init!.body as string)).toMatchObject({ attempt: 1, previousRunId: "run-1" });
+  });
+  test("durable plan recovers before failed, expired, or unavailable run status even at attempt limit", async () => {
+    const f = fixture();
+    for (const unavailableRun of [f.status(true, false), () => Response.json({ error: "expired" }, { status: 404 }),
+      () => { throw new Error("run service unavailable"); }]) {
+      const storage = storageFixture();
+      storage.setItem(`h3-shot-planning-v1:${f.input.projectId}:${f.input.bindingSha256}`,
+        JSON.stringify({ attempt: 2, previousRunId: "run-previous", runId: "run-1" }));
+      // A worker may persist the result and then fail before Trigger acknowledges success.
+      const network = fetcher([f.ready(), typeof unavailableRun === "function" ? async () => unavailableRun() : unavailableRun]);
+      expect(await requestH3ShotPlanning(f.input, { ...network, storage })).toEqual(f.result);
+      expect(network.calls).toHaveLength(1);
+      expect(network.calls[0].init?.method).not.toBe("POST");
+    }
+  });
+
+  test("missing durable result and unavailable run never authorize dispatch", async () => {
+    const f = fixture(), storage = storageFixture();
+    storage.setItem(`h3-shot-planning-v1:${f.input.projectId}:${f.input.bindingSha256}`,
+      JSON.stringify({ attempt: 1, previousRunId: "run-previous", runId: "run-1" }));
+    const network = fetcher([f.missing(), Response.json({ error: "expired" }, { status: 404 })]);
+    await expect(requestH3ShotPlanning(f.input, { ...network, storage })).rejects.toThrow("failed (404)");
+    expect(network.calls).toHaveLength(2);
+    expect(network.calls.every(call => call.init?.method !== "POST")).toBe(true);
+    const unavailable = fetcher([Response.json({ error: "storage unavailable" }, { status: 503 })]);
+    await expect(requestH3ShotPlanning(f.input, { ...unavailable, storage })).rejects.toThrow("failed (503)");
+    expect(unavailable.calls).toHaveLength(1);
   });
   test("cached result is strict-parsed with one dispatch and no polling", async () => {
     const f = fixture(), network = fetcher([f.ready()]);
