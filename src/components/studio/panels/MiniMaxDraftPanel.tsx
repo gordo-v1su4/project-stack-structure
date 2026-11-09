@@ -31,10 +31,16 @@ import { MiniMaxStillPanel } from "./MiniMaxStillPanel";
 import type { H3FirstFrameChoice } from "../h3FirstFrame";
 import { buildStillVideoRequest, restoreStillShotForm, stillCanonicalContext } from "../h3StillClient";
 import type { StoryTreatment } from "../storyTreatments";
+import type { StoryPlanDraft } from "../musicVideoProject";
+import type { SceneProofPlan } from "../sceneProofs";
+import { sceneProofScopeSha256 } from "../sceneProofPlanning";
 
 type Props = {
   storyApproved?: boolean;
   confirmedTreatment?: StoryTreatment | null;
+  sceneProofPlan?: SceneProofPlan;
+  sceneProofReviewRequired?: boolean;
+  storyBeats?: StoryPlanDraft[];
   projectId: string | null;
   project?: MusicVideoProject | null;
   segments: EditPlanPreviewSegment[];
@@ -104,7 +110,8 @@ export function MiniMaxDraftPanel(props: Props) {
     const current = latest.current;
     if (!active || !mounted.current || active.controller.signal.aborted || current.projectId !== active.projectId || current.storyApproved === false || !current.project) return false;
     try { return buildH3DraftPlanningInput(active.projectId, current.project, current.referenceAssets,
-      { assets: current.assets, draft: current.draft, jobs: active.jobs, confirmedTreatment: current.confirmedTreatment }).bindingSha256 === active.binding
+      { assets: current.assets, draft: current.draft, jobs: active.jobs, confirmedTreatment: current.confirmedTreatment,
+        sceneProofPlan: current.sceneProofPlan, sceneProofReviewRequired: current.sceneProofReviewRequired, storyBeats: current.storyBeats }).bindingSha256 === active.binding
       && generationScopeSha256(current.aestheticReferences ?? null) === active.aesthetics; }
     catch { return false; }
   }
@@ -127,7 +134,8 @@ export function MiniMaxDraftPanel(props: Props) {
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; planning.current?.controller.abort(); }; }, []);
   useEffect(() => {
     if (planning.current && !planningIsCurrent()) planning.current.controller.abort();
-  }, [props.projectId, props.project, props.referenceAssets, props.aestheticReferences, props.storyApproved, props.assets, props.draft, props.confirmedTreatment]);
+  }, [props.projectId, props.project, props.referenceAssets, props.aestheticReferences, props.storyApproved, props.assets, props.draft, props.confirmedTreatment,
+    props.sceneProofPlan, props.sceneProofReviewRequired, props.storyBeats]);
 
   const readJobs = useCallback(async (projectId: string) => {
     const restored = await readH3DraftJobs(projectId);
@@ -268,7 +276,8 @@ export function MiniMaxDraftPanel(props: Props) {
       if (windows.length) {
         if (!latest.current.project) throw new Error("Restore the full confirmed story before preparing missing shots.");
         planningInput = buildH3DraftPlanningInput(projectId, latest.current.project, latest.current.referenceAssets,
-          { assets: latest.current.assets, draft: latest.current.draft, jobs: existingJobs, confirmedTreatment: latest.current.confirmedTreatment });
+          { assets: latest.current.assets, draft: latest.current.draft, jobs: existingJobs, confirmedTreatment: latest.current.confirmedTreatment,
+            sceneProofPlan: latest.current.sceneProofPlan, sceneProofReviewRequired: latest.current.sceneProofReviewRequired, storyBeats: latest.current.storyBeats });
         const coveredKeys = new Set(planningInput.groups.flatMap(group => group.windows)
           .filter(window => window.sourceEvidence || window.generatedEvidence).map(window => window.key));
         if (windows.some(window => coveredKeys.has(h3WindowKey(window)))) throw new Error("Some apparent gaps already contain canonical footage. Restore their playback sources before generating.");
@@ -317,11 +326,23 @@ export function MiniMaxDraftPanel(props: Props) {
         referenceAssetIds: [], requestIntentId: crypto.randomUUID(), attempt: 0, draftRevision: latest.current.draft?.revision ?? 0,
       };
       const referenceAssetIds = appendH3AestheticReferenceIds(selectH3ReferenceAssetIds(latest.current.referenceAssets, direction, original?.references.filter(ref => ref.role === "crowd").map(ref => ref.assetId)), latest.current.aestheticReferences, segment);
-      persistBatch(queueH3ReviewRevision(batchRef.current, { ...input,
-        ...(!original ? identityPolicyChoiceForReferences(latest.current.referenceAssets, referenceAssetIds) : {}), referenceAssetIds }));
+      persistBatch(queueH3ReviewRevision(batchRef.current, bindPreparedSceneRequest({ ...input,
+        ...(!original ? identityPolicyChoiceForReferences(latest.current.referenceAssets, referenceAssetIds) : {}), referenceAssetIds })));
       setReview(null); await runBatch();
     } catch (failure) { setError(failure instanceof Error ? failure.message : "Revision failed."); }
     finally { if (mounted.current && !running.current) setBusy(false); }
+  }
+
+  /** Only deliberate preparation may acquire current review authority. Recovery
+   * and queued POSTs keep their original binding and must fail if it changed. */
+  function bindPreparedSceneRequest(request: H3GenerationRequest): H3GenerationRequest {
+    const current = latest.current;
+    if (current.sceneProofPlan === undefined && !current.sceneProofReviewRequired) return request;
+    if (!current.project || !current.confirmedTreatment) throw new Error("Restore the confirmed scene plan before preparing this shot.");
+    const binding = sceneProofScopeSha256({ projectId: request.projectId, project: current.project,
+      treatment: current.confirmedTreatment, storyBeats: current.storyBeats ?? [], references: current.referenceAssets,
+      sceneProofPlan: current.sceneProofPlan, sceneProofReviewRequired: current.sceneProofReviewRequired }, request);
+    return { ...request, sceneProofScopeSha256: binding };
   }
 
   async function generateOneShot() {
@@ -345,7 +366,7 @@ export function MiniMaxDraftPanel(props: Props) {
         if (stillContextRef.current !== generatedStillChoice.context) throw new Error("The shot changed while its generated frame was being prepared.");
         if (generatedStillChoice.shot.projectId !== projectId || h3RequestWindowKey(generatedStillChoice.shot) !== h3WindowKey(segment)) throw new Error("The generated still no longer matches this exact shot.");
         if (existingJobs.some(job => h3RequestWindowKey(job.request) === h3WindowKey(segment) && !isH3JobTerminal(job))) throw new Error("This exact shot already has an active video submission. Review its existing job first.");
-        const request = buildStillVideoRequest(generatedStillChoice, existingJobs);
+        const request = bindPreparedSceneRequest(buildStillVideoRequest(generatedStillChoice, existingJobs));
         persistBatch({ version: 1, projectId, planSignature: request.planSignature, requests: [request], paused: false });
         setReview(null); await runBatch(); return;
       }
@@ -359,7 +380,7 @@ export function MiniMaxDraftPanel(props: Props) {
         requestIntentId: crypto.randomUUID(), attempt: 0, referenceAssetIds, draftRevision: latest.current.draft?.revision ?? 0,
         ...identityPolicyChoiceForReferences(latest.current.referenceAssets, referenceAssetIds),
       };
-      const request = prepareH3PickupRequest(input, previous, existingJobs, pickupMode);
+      const request = bindPreparedSceneRequest(prepareH3PickupRequest(input, previous, existingJobs, pickupMode));
       if(pickupMode==="first-frame"){
         if(!firstFrameFile)throw new Error("Choose a prepared native-size first-frame PNG. It will receive a CPU similarity screen before rendering.");
         const prepared=preparedFirstFrame;

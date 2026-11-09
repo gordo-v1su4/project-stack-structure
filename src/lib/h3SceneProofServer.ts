@@ -1,4 +1,4 @@
-import { normalizeSceneProofPlan, sceneMomentBinding, sceneProofContextSha256, sceneProofPrompt, sceneProofReviewStatus, sceneProofShot,
+import { sceneMomentBinding, sceneProofPrompt, sceneProofReviewStatus, sceneProofShot,
   type SceneProofBinding, type SceneProofContext } from "@/components/studio/sceneProofs";
 import { generationScopeSha256 } from "@/components/studio/generationScope";
 import type { H3GenerationRequest } from "@/components/studio/h3Generation";
@@ -8,26 +8,20 @@ import { H3RequestError, materializeH3Job } from "./h3GenerationServer";
 import { buildH3StillDescriptor, parseH3StillRequest, type H3StillRequest } from "./h3StillRequest";
 import { assertH3StillJob, readH3StillJob, type H3StillJob } from "./h3StillJobStore";
 import { pinH3JobReferences } from "./h3JobStore";
+import { currentSceneProofPlanningPlan, sceneProofWindowScope } from "@/components/studio/sceneProofPlanning";
 
 const same = (a: unknown, b: unknown) => generationScopeSha256(a) === generationScopeSha256(b);
 const conflict = () => new H3RequestError("Save and approve all current whole-song scene previews before generating video.", 409);
 
 function currentPlan(saved: SavedStudioProject) {
   const story = saved.draft.storyState, project = saved.draft.musicVideoProject;
-  const plan = normalizeSceneProofPlan(story.sceneProofPlan);
-  if (!plan || !project || !story.confirmedTreatmentSnapshot || plan.projectId !== saved.project.id) throw conflict();
+  if (!project || !story.confirmedTreatmentSnapshot) throw conflict();
   const context: SceneProofContext = { projectId: saved.project.id, project, treatment: story.confirmedTreatmentSnapshot,
     storyBeats: story.storyBeats, references: saved.draft.referenceAssets ?? [] };
-  // Narrative scenes can subdivide or cross musical sections. The ordered
-  // windows must still cover the actual whole master, with no duplicated time.
-  if (plan.contextSha256 !== sceneProofContextSha256(context) || !Number.isFinite(project.duration) || project.duration <= 0
-    || Math.abs(plan.scenes[0].songStart) > 0.001 || Math.abs(plan.scenes.at(-1)!.songEnd - project.duration) > 0.001
-    || plan.scenes.some((scene, index) => typeof scene.id !== "string" || !scene.id.trim() || scene.id.length > 200
-      || /[\x00-\x1f\x7f]/.test(scene.id) || scene.songEnd > project.duration + 0.001
-      || !context.treatment.anchors?.some(anchor => anchor.id === scene.anchorId)
-      || !project.storySections.some(section => section.id === scene.sectionId && Number.isFinite(section.start) && Number.isFinite(section.end)
-        && Math.min(section.end, scene.songEnd) > Math.max(section.start, scene.songStart))
-      || index > 0 && Math.abs(scene.songStart - plan.scenes[index - 1].songEnd) > 0.001)) throw conflict();
+  let plan;
+  try { plan = currentSceneProofPlanningPlan({ ...context, sceneProofPlan: story.sceneProofPlan, sceneProofReviewRequired: true }); }
+  catch { throw conflict(); }
+  if (!plan) throw conflict();
   return { plan, context };
 }
 
@@ -70,10 +64,21 @@ const defaults: ReviewDependencies = { read: readH3StillJob, pin: pinH3JobRefere
  * run without scene approval; a copied client proof is never evidence of a job.
  */
 export async function assertH3SceneProofsApproved(ownerId: string, saved: SavedStudioProject, bucket: string,
-  dependencies: ReviewDependencies = defaults) {
-  if (saved.draft.storyState.sceneProofPlan === undefined && !saved.draft.storyState.sceneProofReviewRequired) return; // Historical projects retain their workflow.
+  dependencies: ReviewDependencies = defaults, request?: H3GenerationRequest) {
+  if (saved.draft.storyState.sceneProofPlan === undefined && !saved.draft.storyState.sceneProofReviewRequired) {
+    if (request?.sceneProofScopeSha256 !== undefined) throw conflict();
+    return; // Historical projects retain their workflow.
+  }
   if (saved.project.ownerId !== normalizeStudioOwnerSegment(ownerId)) throw conflict();
   const { plan } = currentPlan(saved);
+  // Every unsubmitted video in an opted-in project must carry its prepared
+  // scope, including manual shots. Missing metadata cannot downgrade an old
+  // automatic queue to the historical workflow after a scene is re-approved.
+  if (request) {
+    let binding;
+    try { binding = generationScopeSha256(sceneProofWindowScope(plan, request)); } catch { throw conflict(); }
+    if (request.projectId !== saved.project.id || request.sceneProofScopeSha256 !== binding) throw conflict();
+  }
   for (const scene of plan.scenes) {
     if (sceneProofReviewStatus(plan, scene, plan.contextSha256) !== "approved") throw conflict();
     for (const moment of scene.moments) {

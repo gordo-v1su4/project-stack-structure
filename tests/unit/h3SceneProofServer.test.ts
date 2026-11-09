@@ -10,6 +10,7 @@ import { parseH3StillRequest, type H3StillRequest } from "@/lib/h3StillRequest";
 import type { StudioJsonObjectStore } from "@/lib/studioProjectObjectStore";
 import { prepareApprovedPlacements } from "@/components/studio/musicVideoProject";
 import { createPersistableStudioProjectDraft, hydrateStudioProjectDraft } from "@/components/studio/projectPersistence";
+import { sceneProofScopeSha256 } from "@/components/studio/sceneProofPlanning";
 
 async function fixture(ready = false, split = false) {
   const f = h3ProjectFixture(), rows = new Map<string, unknown>(), jobs = new Map<string, H3StillJob>();
@@ -114,6 +115,18 @@ test("video gate requires reviewed owned ready jobs and actual current reference
   await assertH3SceneProofsApproved("github-test", f.saved, "studio", f.approval);
   f.changeEtag();
   await expect(assertH3SceneProofsApproved("github-test", f.saved, "studio", f.approval)).rejects.toThrow("raw references changed");
+});
+
+test("new video scope binds approved direction to actual owned jobs; missing or stale scope cannot fall back to legacy", async () => {
+  const f = await fixture(true), context = { projectId: f.saved.project.id, project: f.saved.draft.musicVideoProject!,
+    treatment: f.saved.draft.storyState.confirmedTreatmentSnapshot!, storyBeats: [], references: f.saved.draft.referenceAssets!,
+    sceneProofPlan: f.saved.draft.storyState.sceneProofPlan };
+  const request = { ...f.request, sceneProofScopeSha256: sceneProofScopeSha256(context, f.request) };
+  await assertH3SceneProofsApproved("github-test", f.saved, "studio", f.approval, request);
+  await expect(assertH3SceneProofsApproved("github-test", f.saved, "studio", f.approval, f.request)).rejects.toThrow("scene previews");
+  await expect(assertH3SceneProofsApproved("github-test", f.saved, "studio", f.approval, { ...request, sceneProofScopeSha256: "0".repeat(64) })).rejects.toThrow("scene previews");
+  f.changeEtag();
+  await expect(assertH3SceneProofsApproved("github-test", f.saved, "studio", f.approval, request)).rejects.toThrow("raw references changed");
 });
 
 test("distinct narrative scenes can divide one musical section and cover the whole master", async () => {

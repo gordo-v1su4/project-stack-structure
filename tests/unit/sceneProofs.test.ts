@@ -36,7 +36,7 @@ function proof(input: SceneProofContext, initial: SceneProofPlan, roleIndex: num
 
 test("zero-footage planning uses actual song windows with three unapproved proposed moments", () => {
   const { input, plan } = fixture();
-  expect(input.project.videoMoments.length).toBe(0); expect(plan.scenes.length).toBe(input.project.storySections.length);
+  expect(input.project.videoMoments.length).toBe(0); expect(plan.scenes.length).toBe(input.treatment.anchors.length);
   expect(plan.scenes[0].songStart).toBe(0); expect(plan.scenes.at(-1)!.songEnd).toBe(10);
   expect(plan.scenes[0].moments.map(m => m.role)).toEqual(["setting", "action", "transition"]);
   expect(plan.scenes[0].referenceAssetIds).toEqual(["diego", "club"]);
@@ -140,4 +140,141 @@ test("representative stills use bounded saved placement windows within long pare
   const shot = sceneProofShot(input, plan, scene, scene.moments[2]);
   expect(shot.songEnd - shot.songStart).toBe(5); expect(shot.songStart >= 0 && shot.songEnd <= 20).toBe(true);
   expect(shot.timelineItemId).toBe(input.project.editPlan.timelineItems[0].id);
+});
+
+test("whole-story preparation retains every ordered anchor and ending when music has fewer sections", () => {
+  const { input } = fixture(), original = input.treatment.anchors[0], section = input.project.storySections[0];
+  input.project.duration = 100;
+  input.project.storySections = Array.from({ length: 10 }, (_, i) => ({ ...section, id: `music-${i}`, start: i * 10, end: (i + 1) * 10 }));
+  input.treatment.anchors = Array.from({ length: 17 }, (_, i) => ({ ...original, id: `narrative-${i}`, title: `Story beat ${i}`,
+    generationPrompt: `Diego reaches CLUB_MAIN marker ${i}.`, description: `Diego reaches marker ${i}.` }));
+  const plan = prepareSceneProofPlan(input);
+  expect(plan.scenes.map(s => s.anchorId)).toEqual(input.treatment.anchors.map(a => a.id));
+  expect(plan.scenes.map(s => s.id)).toEqual(input.treatment.anchors.map(a => a.id));
+  expect(plan.scenes.at(-1)!.direction).toBe(input.treatment.anchors.at(-1)!.generationPrompt);
+  expect(plan.scenes[0].songStart).toBe(0); expect(plan.scenes.at(-1)!.songEnd).toBe(100);
+  plan.scenes.forEach((scene, i) => {
+    expect(scene.songEnd > scene.songStart).toBe(true);
+    expect(scene.songStart).toBe(i ? plan.scenes[i - 1].songEnd : 0);
+    const music = input.project.storySections.find(s => s.id === scene.sectionId)!;
+    expect(Math.min(music.end, scene.songEnd) > Math.max(music.start, scene.songStart)).toBe(true);
+    expect(scene.review).toBe(undefined);
+    expect(scene.moments.every(m => !m.record && !m.proof)).toBe(true);
+    expect(sceneProofReviewStatus(plan, scene, plan.contextSha256)).toBe("missing");
+  });
+  expect(normalizeSceneProofPlan(plan)).toEqual(plan);
+});
+
+test("explicit narrative windows cross musical sections without being collapsed to section count", () => {
+  const { input } = fixture(), anchor = input.treatment.anchors[0], section = input.project.storySections[0];
+  input.project.duration = 30;
+  input.project.storySections = Array.from({ length: 3 }, (_, i) => ({ ...section, id: `music-${i}`, start: i * 10, end: (i + 1) * 10 }));
+  input.treatment.anchors = [{ ...anchor, songWindow: { start: 0, end: 15 } },
+    { ...anchor, id: "ending", songWindow: { start: 15, end: 30 } }];
+  const plan = prepareSceneProofPlan(input);
+  expect(plan.scenes.map(s => [s.anchorId, s.songStart, s.songEnd, s.sectionId])).toEqual([
+    [anchor.id, 0, 15, "music-0"], ["ending", 15, 30, "music-2"],
+  ]);
+});
+
+test("cross-section role proofs use their actual current cut and authored phase's named actors", () => {
+  const { input } = fixture(), anchor = input.treatment.anchors[0], section = input.project.storySections[0];
+  const item = input.project.editPlan.timelineItems[0], placement = input.project.placementPlan!.placements[0];
+  input.references.push({ ...input.references[0], id: "valentina", role: "character-2", displayName: "Valentina", storagePath: "media-uploads/github-test/references/valentina.png" });
+  input.project.duration = 40;
+  input.project.storySections = Array.from({ length: 4 }, (_, i) => ({ ...section, id: `music-${i}`, start: i * 10, end: (i + 1) * 10 }));
+  input.project.editPlan.timelineItems = input.project.storySections.map((s, i) => ({ ...item, id: `cut-${i}`, sectionId: s.id, start: s.start, end: s.end }));
+  input.project.placementPlan!.placements = input.project.editPlan.timelineItems.map((cut, i) => ({ ...placement,
+    id: `placement-${i}`, timelineItemId: cut.id, sectionId: cut.sectionId, songStart: cut.start, songEnd: cut.end }));
+  input.project.placementPlan!.inputSignature = placementInputSignature(input.project, input.project.placementPlan!.settings);
+  input.treatment.anchors = [{ ...anchor, generationPrompt: "CLUB_MAIN contains the declared story phases.", songWindow: { start: 0, end: 30 }, requirements: [
+    { id: "entry", momentId: anchor.id, description: "Diego stands at the CLUB_MAIN entry.", durationSeconds: 10, constraints: {} },
+    { id: "floor", momentId: anchor.id, description: "Valentina stands at the CLUB_MAIN center.", durationSeconds: 10, constraints: {} },
+    { id: "exit", momentId: anchor.id, description: "Diego stands at the CLUB_MAIN exit.", durationSeconds: 10, constraints: {} },
+  ] }, { ...anchor, id: "ending", generationPrompt: "Valentina stands at the CLUB_MAIN door.",
+    description: "Valentina stands at the CLUB_MAIN door.", songWindow: { start: 30, end: 40 } }];
+  const plan = prepareSceneProofPlan(input), scene = plan.scenes[0];
+  expect(scene.sectionId).toBe("music-0");
+  const shots = scene.moments.map(m => sceneProofShot(input, plan, scene, m));
+  expect(shots.map(s => s.timelineItemId)).toEqual(["cut-0", "cut-1", "cut-2"]);
+  expect(shots.map(s => s.sectionId)).toEqual(["music-0", "music-1", "music-2"]);
+  expect(shots.map(s => s.referenceAssetIds)).toEqual([["diego", "club"], ["club", "valentina"], ["diego", "club", "valentina"]]);
+  shots.forEach((shot, i) => {
+    const position = scene.songStart + (scene.songEnd - scene.songStart) * [0.1, 0.5, 0.9][i];
+    expect(shot.songStart <= position && shot.songEnd > position).toBe(true);
+    expect(shot.songEnd - shot.songStart).toBeLessThanOrEqual(12);
+    expect(shot.songStart >= scene.songStart && shot.songEnd <= scene.songEnd).toBe(true);
+  });
+  expect(shots[0].prompt).toContain("Diego stands at the CLUB_MAIN entry.");
+  expect(shots[2].prompt).toContain("Diego stands at the CLUB_MAIN exit.");
+  expect(shots[2].prompt).toContain("Valentina stands at the CLUB_MAIN door.");
+});
+
+test("representative proof cannot switch to a closer adjacent cut or hide missing beginning/ending coverage", () => {
+  const { input } = fixture(), placement = input.project.placementPlan!.placements[0];
+  input.project.placementPlan!.placements = [{ ...placement, songEnd: 9.5 }, { ...placement, id: "tail", songStart: 9.5 }];
+  input.project.placementPlan!.inputSignature = placementInputSignature(input.project, input.project.placementPlan!.settings);
+  let plan = prepareSceneProofPlan(input), scene = plan.scenes[0];
+  expect(sceneProofShot(input, plan, scene, scene.moments[2]).songEnd).toBe(9.5);
+  for (const [songStart, songEnd, roleIndex] of [[2, 10, 0], [0, 8, 2]]) {
+    input.project.placementPlan!.placements = [{ ...placement, songStart, songEnd }];
+    input.project.placementPlan!.inputSignature = placementInputSignature(input.project, input.project.placementPlan!.settings);
+    plan = prepareSceneProofPlan(input); scene = plan.scenes[0];
+    expect(() => sceneProofShot(input, plan, scene, scene.moments[roleIndex])).toThrow("at its song position");
+  }
+});
+
+test("long anchor proofs select authored phases by duration and remain bounded to real current cuts", () => {
+  const { input } = fixture();
+  input.project.duration = 60; input.project.storySections[0].end = 60;
+  input.project.editPlan.timelineItems[0].end = 60;
+  input.project.placementPlan!.placements[0].songEnd = 60;
+  input.project.placementPlan!.inputSignature = placementInputSignature(input.project, input.project.placementPlan!.settings);
+  input.treatment.anchors[0].requirements = [
+    { id: "entry", momentId: "arrival", description: "Diego stands beside the CLUB_MAIN entry.", durationSeconds: 12, constraints: {} },
+    { id: "floor", momentId: "arrival", description: "Diego stands at the CLUB_MAIN center.", durationSeconds: 36, constraints: {} },
+    { id: "exit", momentId: "arrival", description: "Diego stands beside the CLUB_MAIN exit.", durationSeconds: 12, constraints: {} },
+  ];
+  const plan = prepareSceneProofPlan(input), scene = plan.scenes[0];
+  expect(scene.moments[0].prompt).toContain("CLUB_MAIN entry");
+  expect(scene.moments[1].prompt).toBe("Diego stands at the CLUB_MAIN center.");
+  expect(scene.moments[2].prompt).toContain("CLUB_MAIN exit");
+  for (const moment of scene.moments) {
+    const shot = sceneProofShot(input, plan, scene, moment);
+    expect(shot.songEnd - shot.songStart).toBeLessThanOrEqual(12);
+    expect(shot.songStart >= scene.songStart && shot.songEnd <= scene.songEnd).toBe(true);
+    expect(shot.prompt).toBe(sceneProofPrompt(scene, moment));
+  }
+});
+
+test("story duration weights use actual music cues and permit more musical sections than narrative scenes", () => {
+  const { input } = fixture(), anchor = input.treatment.anchors[0], section = input.project.storySections[0];
+  input.project.duration = 50;
+  input.project.storySections = Array.from({ length: 25 }, (_, i) => ({ ...section, id: `music-${i}`, start: i * 2, end: (i + 1) * 2 }));
+  input.project.song = { ...input.project.song!, onsets: [19, 39], beats: [] };
+  input.treatment.anchors = [{ ...anchor, id: "first", title: "First" }, { ...anchor, id: "middle", title: "Middle" },
+    { ...anchor, id: "last", title: "Last", role: "closing" }];
+  const plan = prepareSceneProofPlan(input);
+  expect(plan.scenes.map(s => [s.songStart, s.songEnd])).toEqual([[0, 19], [19, 39], [39, 50]]);
+  input.project.song.onsets = [21, 41];
+  expect(sceneProofReviewStatus(plan, plan.scenes[0], sceneProofContextSha256(input))).toBe("stale");
+  expect(prepareSceneProofPlan(input).scenes.map(s => [s.songStart, s.songEnd])).toEqual([[0, 21], [21, 41], [41, 50]]);
+});
+
+test("malformed or incomplete whole-story timing fails closed without silently losing moments", () => {
+  const mutations: Array<(input: SceneProofContext) => void> = [
+    input => { input.treatment.anchors = []; },
+    input => { input.treatment.anchors.push({ ...input.treatment.anchors[0] }); },
+    input => { input.treatment.anchors = Array.from({ length: 25 }, (_, i) => ({ ...input.treatment.anchors[0], id: `beat-${i}` })); },
+    input => { input.treatment.anchors[0].songWindow = { start: 1, end: 10 }; },
+    input => { input.treatment.anchors[0].songWindow = { start: 0, end: 9 }; },
+    input => { input.treatment.anchors = [{ ...input.treatment.anchors[0], songWindow: { start: 0, end: 6 } },
+      { ...input.treatment.anchors[0], id: "overlap", songWindow: { start: 5, end: 10 } }]; },
+    input => { input.treatment.anchors[0].songWindow = { start: 0, end: 11 }; },
+    input => { input.treatment.anchors[0].requirements = [{ id: "bad", momentId: "arrival", description: "Declared action", durationSeconds: NaN, constraints: {} }]; },
+    input => { input.treatment.anchors[0].generationPrompt = ""; },
+    input => { input.project.storySections[0].start = 1; },
+    input => { input.project.duration = NaN; },
+  ];
+  for (const mutate of mutations) { const { input } = fixture(); mutate(input); expect(() => prepareSceneProofPlan(input)).toThrow(); }
 });

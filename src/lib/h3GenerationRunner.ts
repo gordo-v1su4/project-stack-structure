@@ -189,7 +189,7 @@ export async function runH3Generation(reference: H3JobReference, runId: string,
     if (!saved || !config) throw new Error("The saved project is unavailable.");
     if (!job.promptId && job.state !== "submitting" && job.state !== "submission_unknown" && !cancellationRequested(job)) {
       await validateSavedGenerationScope(ownerId, saved);
-      await assertH3SceneProofsApproved(ownerId, saved, config.bucket);
+      await assertH3SceneProofsApproved(ownerId, saved, config.bucket, undefined, job.request);
       const current = await pinH3JobReferences(materializeH3Job(ownerId, saved, job.request, config.bucket, {
         profile: job.profile, conditioningPreparationVersion: job.conditioningPreparationVersion, ...(job.firstFrame?{firstFrame:job.firstFrame}:{}),
       }));
@@ -255,7 +255,7 @@ export async function runH3Generation(reference: H3JobReference, runId: string,
         client.assertOpen();
         const latest = await readStudioProject(ownerId, projectId, { fresh: true });
         if (!latest) throw new Error("The saved project is unavailable before video submission.");
-        await assertH3SceneProofsApproved(ownerId, latest, config.bucket);
+        await assertH3SceneProofsApproved(ownerId, latest, config.bucket, undefined, job.request);
         await update({ state: "submitting", compiledPrompt: built.prompt, frames: built.frames, referenceHashes: hashes,
           conditioningReferenceHashes: conditioningHashes, ...(firstFrameBytes?{}:{conditioningPreparations: preparations}) });
         options.stage("Submitting the native H3 reference shot");

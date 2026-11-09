@@ -11,11 +11,15 @@ import { withCurrentReferenceIdentity } from "./currentReferenceIdentity";
 import type { GeneratedStudioAsset } from "./generatedAssets";
 import type { GeneratedDraftSelection } from "./generatedDraft";
 import type { StoryTreatment } from "./storyTreatments";
+import type { StoryPlanDraft } from "./musicVideoProject";
+import type { SceneProofPlan } from "./sceneProofs";
+import { currentSceneProofPlanningPlan, sceneProofWindowScope } from "./sceneProofPlanning";
 
 export function buildH3DraftPlanningInput(projectId: string, project: MusicVideoProject, references: ReferenceAsset[], context: {
   assets?: GeneratedStudioAsset[]; draft?: GeneratedDraftSelection | null; jobs?: H3GenerationJob[];
   canonicalEvidenceByWindowKey?: ReadonlyMap<string, SelectedFootageEvidence>;
   confirmedTreatment?: StoryTreatment | null;
+  sceneProofPlan?: SceneProofPlan; sceneProofReviewRequired?: boolean; storyBeats?: StoryPlanDraft[];
 } = {}) {
   const assets = withCurrentReferenceIdentity(context.assets ?? [], project.currentIdentity);
   const scaffold = buildH3ResolvedPlanningScaffold({ project, generatedAssets: assets, draft: context.draft });
@@ -31,10 +35,17 @@ export function buildH3DraftPlanningInput(projectId: string, project: MusicVideo
     if (!resolved) throw new Error("The selected footage no longer matches its canonical planning context.");
     return [[row.windowKey, resolved] as const];
   }));
+  const hasSceneProofs = context.sceneProofPlan !== undefined || context.sceneProofReviewRequired;
+  if (hasSceneProofs && !context.confirmedTreatment) throw new Error("Restore the confirmed story before planning approved scenes.");
+  const scenePlan = hasSceneProofs ? currentSceneProofPlanningPlan({ projectId, project, treatment: context.confirmedTreatment!,
+    storyBeats: context.storyBeats ?? [], references, sceneProofPlan: context.sceneProofPlan, sceneProofReviewRequired: context.sceneProofReviewRequired }) : undefined;
+  const sceneProofScopesByWindowKey = scenePlan ? new Map(scaffold.segments.map(window => [h3WindowKey(window),
+    sceneProofWindowScope(scenePlan, { songStart: window.musicStart, songEnd: window.musicEnd })])) : undefined;
   return buildH3ShotPlanningInput({ projectId, project,
     segments: scaffold.segments, generatedEvidenceByWindowKey: evidence, coverageBinding: scaffold.stableBindingPayload,
     subjectNames: references.filter(asset => asset.kind === "character" || asset.role.startsWith("character")).map(asset => asset.displayName),
     ...(context.confirmedTreatment ? { storyCanonSource: { treatment: context.confirmedTreatment, references } } : {}),
+    ...(sceneProofScopesByWindowKey ? { sceneProofScopesByWindowKey } : {}),
   });
 }
 
@@ -75,10 +86,14 @@ export function buildPlannedH3DraftRequests(params: {
       throw new Error("This missing window has no exact current shot direction. Review its partial pickup or changed cut plan before generating.");
     }
     const prompt = composePlannedH3ShotDirection(planned);
-    const referenceAssetIds = appendH3AestheticReferenceIds(selectH3ReferenceAssetIds(params.referenceAssets, prompt), params.aestheticReferences, window);
+    const scope = contextWindow?.sceneProofScope;
+    const authorityIds = scope ? new Set(scope.referenceAssetIds) : undefined;
+    const authorities = authorityIds ? params.referenceAssets.filter(reference => authorityIds.has(reference.id)) : params.referenceAssets;
+    const referenceAssetIds = appendH3AestheticReferenceIds(selectH3ReferenceAssetIds(authorities, prompt), params.aestheticReferences, window);
     return { projectId: params.projectId, planSignature: window.planSignature!, requirementId: window.requirementId,
       timelineItemId: window.timelineItemId, sectionId: window.sectionId, songStart: window.musicStart, songEnd: window.musicEnd,
       prompt, requestIntentId: params.newIntent ? params.newIntent() : crypto.randomUUID(), attempt: 0, referenceAssetIds,
-      ...identityPolicyChoiceForReferences(params.referenceAssets, referenceAssetIds), draftRevision: undefined };
+      ...identityPolicyChoiceForReferences(params.referenceAssets, referenceAssetIds), draftRevision: undefined,
+      ...(scope ? { sceneProofScopeSha256: scope.sha256 } : {}) };
   });
 }

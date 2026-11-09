@@ -3,6 +3,8 @@ import { H3_LEGACY_PROFILE, H3_PROFILE, H3_V2_PROFILE, H3_V2_CONDITIONING_PREPAR
 import { h3ProjectFixture } from "../helpers/h3Project";
 import { H3_FIRST_FRAME_PROFILE, type H3FirstFrameArtifact } from "@/components/studio/h3FirstFrame";
 import { firstFrameArtifactFixture } from "../helpers/h3FirstFrame";
+import { reviewedScenePlanningFixture } from "../helpers/sceneProofPlanning";
+import { sceneProofScopeSha256 } from "@/components/studio/sceneProofPlanning";
 
 const fixture = h3ProjectFixture();
 let signedIn = true, dispatches = 0;
@@ -68,6 +70,19 @@ const anotherRecoveryIntent = "55667788-1234-4123-8123-123456789abc";
 const resumeBody = (intent = recoveryIntent) => ({ projectId: "project-1", jobId: stored!.id, action: "resume", requestIntentId: intent });
 
 describe("authenticated H3 dispatch and recovery route", () => {
+  test("an old automatic packet cannot strip its scope or dispatch after its scene direction is re-approved", async () => {
+    reset(); const before = structuredClone(fixture.saved), reviewed = reviewedScenePlanningFixture();
+    Object.assign(fixture.saved, reviewed.saved);
+    try {
+      const request = { ...fixture.request, sceneProofScopeSha256: sceneProofScopeSha256(reviewed.source(), fixture.request) };
+      reviewed.plan.scenes[0].direction += " Diego changes to the upper doorway."; reviewed.prove(0);
+      fixture.saved.draft.storyState.sceneProofPlan = reviewed.plan;
+      expect((await POST(post(request))).status).toBe(409);
+      const { sceneProofScopeSha256: _old, ...stripped } = request; void _old;
+      expect((await POST(post(stripped))).status).toBe(409);
+      expect(stored).toBeNull(); expect(dispatches).toBe(0);
+    } finally { Object.assign(fixture.saved, before); reset(); }
+  });
   test("unapproved scene plans create no video job while submitted history remains recoverable", async () => {
     reset();
     fixture.saved.draft.storyState.sceneProofPlan = { version: 1, projectId: "project-1", contextSha256: "0".repeat(64), scenes: [] };

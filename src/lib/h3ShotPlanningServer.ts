@@ -81,6 +81,7 @@ export async function loadH3ShotPlanningContext(ownerId: string, projectId: stri
     input = buildH3DraftPlanningInput(projectId, project, saved.draft.referenceAssets ?? [], {
       assets, draft: saved.draft.generatedDraft, canonicalEvidenceByWindowKey: evidence,
       confirmedTreatment: story.confirmedTreatmentSnapshot,
+      sceneProofPlan: story.sceneProofPlan, sceneProofReviewRequired: story.sceneProofReviewRequired, storyBeats: story.storyBeats,
     });
   }
   catch { throw new H3ShotPlanningError("The current saved placements cannot supply a complete bounded shot planning context."); }

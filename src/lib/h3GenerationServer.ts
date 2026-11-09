@@ -56,6 +56,9 @@ export function parseH3Request(value: unknown): H3GenerationRequest {
     throw new H3RequestError("Choose a supported identity screen family.");
   }
   const prompt = text(v.prompt, "shot direction", 6000);
+  if (v.sceneProofScopeSha256 !== undefined && (typeof v.sceneProofScopeSha256 !== "string" || !/^[a-f0-9]{64}$/.test(v.sceneProofScopeSha256))) {
+    throw new H3RequestError("Use the exact current approved scene direction binding.");
+  }
   // The server compiles the native wrapper; input cannot redefine its reference map or cuts.
   if (/<(?:Subject|Picture|Video|Audio)\s|\[Shot\s|(?:^|\n)\s*(?:subject_definitions|detailed_description|summary)\s*:/i.test(prompt)) {
     throw new H3RequestError("Send visible shot direction; the server supplies the H3 reference wrapper.");
@@ -68,7 +71,8 @@ export function parseH3Request(value: unknown): H3GenerationRequest {
     requestIntentId: requestIntentId.toLowerCase(), attempt, seed: v.seed as number | undefined,
     draftRevision: v.draftRevision as number | undefined,
     ...(v.identityPolicyFamily === undefined ? {} : { identityPolicyFamily: v.identityPolicyFamily as H3GenerationRequest["identityPolicyFamily"] }),
-    ...(conditioning ? { conditioning } : {}) };
+    ...(conditioning ? { conditioning } : {}),
+    ...(v.sceneProofScopeSha256 === undefined ? {} : { sceneProofScopeSha256: v.sceneProofScopeSha256 as string }) };
 }
 
 function digest(value: unknown) { return createHash("sha256").update(JSON.stringify(value)).digest("hex"); }

@@ -1,5 +1,6 @@
 import { generationScopeSha256, effectiveGenerationScope, sourceReferenceManifest } from "./generationScope";
-import { anchorForStorySection, type StoryTreatment } from "./storyTreatments";
+import type { StoryTreatment } from "./storyTreatments";
+import { suggestStoryMomentWindows } from "./storyMusicPlacement";
 import type { MusicVideoProject, StoryPlanDraft } from "./musicVideoProject";
 import type { ReferenceAsset } from "./referenceAssets";
 import type { H3GenerationRequest } from "./h3Generation";
@@ -40,32 +41,60 @@ export function sceneProofContextSha256(input: SceneProofContext) {
   const { project, treatment, storyBeats, references, projectId } = input;
   return generationScopeSha256({ projectId, treatment, storyBeats, references: sourceReferenceManifest(references),
     scope: effectiveGenerationScope(project), currentIdentity: project.currentIdentity,
+    duration: project.duration,
     song: project.song && { sourceLabel: project.song.sourceLabel, storageBucket: project.song.storageBucket,
-      storagePath: project.song.storagePath, duration: project.song.duration, sections: project.song.sections },
+      storagePath: project.song.storagePath, duration: project.song.duration, sections: project.song.sections,
+      beats: project.song.beats, onsets: project.song.onsets },
     sections: project.storySections.map(({ id, label, start, end, prompt }) => ({ id, label, start, end, prompt })),
     targets: project.editPlan.timelineItems.map(({ id, sectionId, requirementId, start, end }) => ({ id, sectionId, requirementId, start, end })) });
 }
 
-/** One scene per actual song section; no inferred biographies, palettes or approval. */
+/** Keep every ordered story moment; musical sections do not determine story count. */
 export function prepareSceneProofPlan(input: SceneProofContext): SceneProofPlan {
-  const sections = input.project.storySections;
-  if (!sections.length || sections.length > 24 || sections.some(s => !Number.isFinite(s.start) || !Number.isFinite(s.end) || s.end <= s.start)) {
-    throw new Error("Confirm a timed story with at most 24 song sections before preparing scene previews.");
+  const { storySections: sections, duration, song } = input.project, anchors = input.treatment.anchors;
+  const validId = (id: unknown): id is string => typeof id === "string" && !!id.trim() && id.length <= 200 && !/[\x00-\x1f\x7f]/.test(id);
+  if (!Number.isFinite(duration) || duration <= 0 || !sections.length || !anchors?.length || anchors.length > 24
+    || new Set(anchors.map(a => a.id)).size !== anchors.length
+    || anchors.some(a => !validId(a.id) || typeof a.title !== "string" || !a.title.trim() || a.title.length > 200
+      || typeof a.generationPrompt !== "string" || !a.generationPrompt.trim()
+      || typeof a.description !== "string" || !a.description.trim()
+      || a.requirements?.some(r => typeof r.description !== "string" || !r.description.trim()
+        || r.durationSeconds !== undefined && (!Number.isFinite(r.durationSeconds) || r.durationSeconds <= 0)))
+    || new Set(sections.map(s => s.id)).size !== sections.length
+    || sections.some((s, index) => !validId(s.id) || !Number.isFinite(s.start) || !Number.isFinite(s.end) || s.start < 0
+      || s.end <= s.start || s.end > duration + 0.001 || Math.abs(s.start - (index ? sections[index - 1].end : 0)) > 0.001)
+    || Math.abs(sections.at(-1)!.end - duration) > 0.001) {
+    throw new Error("Confirm a whole-song timed story with one to 24 valid ordered story moments before preparing scene previews.");
+  }
+  const cues = [...(song?.onsets ?? []), ...(song?.beats ?? [])].filter(cue => Number.isFinite(cue) && cue > 0 && cue < duration);
+  const windows = suggestStoryMomentWindows(input.treatment, duration, cues);
+  if (windows.length !== anchors.length || windows.some((w, index) => !Number.isFinite(w.start) || !Number.isFinite(w.end)
+    || w.end <= w.start || Math.abs(w.start - (index ? windows[index - 1].end : 0)) > 0.001)
+    || Math.abs(windows.at(-1)!.end - duration) > 0.001) {
+    throw new Error("Story moment windows must cover the whole song without gaps or overlaps before preparing scene previews.");
   }
   const references = input.references.filter(r => r.storageStatus === "uploaded" && r.storageBucket && r.storagePath);
-  const scenes = sections.map((section, index): SceneProofScene => {
-    const anchor = anchorForStorySection(input.treatment, section.id, index, sections.length);
-    const direction = anchor?.generationPrompt || section.prompt;
-    const next = sections[index + 1] && anchorForStorySection(input.treatment, sections[index + 1].id, index + 1, sections.length);
-    const moments: SceneProofMoment[] = SCENE_PROOF_ROLES.map(role => ({ role, prompt: (role === "setting"
-      ? `${direction} Wide composition establishes the setting and the beginning of this action.`
-      : role === "action" ? direction
-      : `${direction} The outgoing composition carries the action toward ${next?.description || input.treatment.endingHook || "the final image"}.`).slice(0, 4000) }));
+  const scenes = windows.map(({ anchor, start, end }, index): SceneProofScene => {
+    const section = [...sections].sort((a, b) => (Math.min(b.end, end) - Math.max(b.start, start)) - (Math.min(a.end, end) - Math.max(a.start, start)))[0];
+    const direction = anchor.generationPrompt, next = anchors[index + 1];
+    const phases = anchor.requirements?.length ? anchor.requirements : [{ description: direction, durationSeconds: 1 }];
+    const weight = phases.reduce((sum, phase) => sum + (phase.durationSeconds ?? 1), 0);
+    if (!Number.isFinite(weight) || weight <= 0) throw new Error("Use finite positive story phase durations before preparing scene previews.");
+    const moments: SceneProofMoment[] = SCENE_PROOF_ROLES.map((role, roleIndex) => {
+      const position = weight * [0.1, 0.5, 0.9][roleIndex];
+      let cursor = 0;
+      const phase = phases.find(phase => { cursor += phase.durationSeconds ?? 1; return cursor > position; }) ?? phases.at(-1)!;
+      const prose = phase.description;
+      return { role, prompt: role === "setting" ? `${prose} Wide composition establishes the setting and the beginning of this action.`
+        : role === "action" ? prose : `${prose} The outgoing composition carries the action toward ${next?.description || input.treatment.endingHook || "the final image"}.` };
+    });
     const sceneProse = [direction, ...moments.map(m => m.prompt)].join("\n");
-    return { id: section.id, sectionId: section.id, anchorId: anchor?.id ?? section.id, title: anchor?.title || section.label,
-      songStart: section.start, songEnd: section.end, direction,
+    const scene: SceneProofScene = { id: anchor.id, sectionId: section.id, anchorId: anchor.id, title: anchor.title,
+      songStart: start, songEnd: end, direction,
       referenceAssetIds: references.filter(r => r.kind === "environment" || r.role === "environment" || ((r.kind === "character" || r.role.startsWith("character")) && mentionsName(sceneProse, r.displayName))).map(r => r.id).slice(0, 9),
       moments };
+    moments.forEach(moment => sceneProofPrompt(scene, moment));
+    return scene;
   });
   return { version: 1, projectId: input.projectId, contextSha256: sceneProofContextSha256(input), scenes };
 }
@@ -123,8 +152,9 @@ export function sceneProofShot(input: SceneProofContext, plan: SceneProofPlan, s
     if (end - start > 12) { start = Math.max(start, Math.min(position - 2.5, end - 5)); end = start + 5; }
     return [{ ...item, start, end }];
   });
-  const target = cuts.sort((a, b) => Math.abs((a.start + a.end) / 2 - position) - Math.abs((b.start + b.end) / 2 - position))[0];
-  if (!target) throw new Error("This scene needs a current saved placement before preparing its still.");
+  const target = cuts.filter(cut => cut.start <= position && cut.end > position)
+    .sort((a, b) => Math.abs((a.start + a.end) / 2 - position) - Math.abs((b.start + b.end) / 2 - position))[0];
+  if (!target) throw new Error("This scene moment needs a current saved placement at its song position before preparing its still.");
   if (!scene.referenceAssetIds.length || scene.referenceAssetIds.some(id => !input.references.some(ref => ref.id === id && ref.storageStatus === "uploaded"))) throw new Error("Select the named references for this scene.");
   const prompt = sceneProofPrompt(scene, moment);
   const referenceAssetIds = scene.referenceAssetIds.filter(id => {
