@@ -6,10 +6,10 @@ The user wants Joey's Story Bible Builder available alongside ONE SHOT, with the
 
 - Canonical builder: Hermes vault, `10-Infrastructure/Agent Skills/skills/story-bible-builder/`.
 - Original upstream SKILL SHA256: `c3f44e2d8e890da070fb1b41bd498cd9bfb71d3550048f1c74d4bea5e00f8145`.
-- Installation repairs the archive's reference layout and adapts its name/appearance/output defaults to the user's exact-name and uploaded-reference rules. Original source remains intact under `source/SKILL.md`; installation provenance is in `INSTALLATION.json`.
+- Installation repairs the archive's reference layout and adapts its name/appearance/output defaults to the user's exact-name and uploaded-reference rules. Original source remains intact under `source/upstream.md`; installation provenance is in `INSTALLATION.json`.
 - Tool links share the canonical copy; the vault installer registers the builder.
-- `love-me-tonight-canon/SKILL.md` is a 142-line self-contained seed from the approved treatment revision59/R41 plus the user's explicit dark-club and continuity corrections. Missing biography, voice, movement, world history and thesis stay `[TBD]`.
-- `love-me-tonight-canon/canon.json` is a normalized versioned local projection, pinned to that project's authored story and three named RAW reference authorities. It is not a modification of the live saved project.
+- `love-me-tonight-canon/SKILL.md` was initially seeded from approved treatment revision59/R41 plus the user's explicit dark-club and continuity corrections. The 2026-11-09 paired continuation reconciled the endorsed separate journeys and whole-song scene proofs in the canonical vault source (SHA256 `9ea11ed3b661b356a5846568c7162bdb538d2cbd1c492b572f9511bcfe2da154`). Proposed palette/topology remain subject to visual review. Missing biography, voice, movement, world history and thesis stay `[TBD]`.
+- `love-me-tonight-canon/canon.json` is a normalized historical projection, pinned to revision59's authored story and three named RAW reference authorities. It has not been rebound to the newest amendment and must not be projected as the amended app story. Neither file modifies the live saved project.
 
 ## Local product foundation
 
@@ -31,3 +31,5 @@ Required acceptance for that continuation:
 - Verify the real save/reload and prompt context in the UI before declaring application integration complete.
 
 No new provider generation, production project writes, PR, merge or deployment occurred for this bible checkpoint.
+
+The current execution proposal is [whole-song scene proofs](2026-11-09-love-me-tonight-scene-proofs.md): twelve contiguous scenes and three representative setting/action/transition moments per scene. Skills were assessed with explicit user/canon overrides; no generated images or scene-direction approvals are represented by this plan.
