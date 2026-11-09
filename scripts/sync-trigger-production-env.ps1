@@ -41,16 +41,20 @@ foreach ($record in $records) {
   }
 }
 
-function Read-BwsValue([string]$name) {
+function Read-BwsValue([string]$name, [bool]$AllowEmpty = $false) {
   if (-not $byName.ContainsKey($name)) { throw "Required BWS secret is missing: $name" }
   $record = bws secret get $byName[$name] --output json 2>$null | ConvertFrom-Json
-  if ($LASTEXITCODE -ne 0 -or -not $record.value) { throw "Unable to read BWS secret: $name" }
+  if ($LASTEXITCODE -ne 0 -or !$record.id -or (!$record.value -and !$AllowEmpty)) { throw "Unable to read BWS secret: $name" }
   return [string]$record.value
 }
 
 $variables = @{}
 foreach ($mapping in $manifest.triggerProduction) {
-  $variables[[string]$mapping.env] = Read-BwsValue ([string]$mapping.bws)
+  $variables[[string]$mapping.env] = Read-BwsValue ([string]$mapping.bws) -AllowEmpty ($mapping.env -eq 'RUSTFS_S3_ORIGIN_ADDRESS')
+}
+$originAddress = $variables['RUSTFS_S3_ORIGIN_ADDRESS']
+if ($originAddress -and ![System.Net.IPAddress]::TryParse($originAddress, [ref]([System.Net.IPAddress]$null))) {
+  throw 'The canonical storage origin must be a literal IP address or empty to disable routing.'
 }
 
 # Trigger workers run in Docker; host loopback is unreachable from the container.

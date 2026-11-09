@@ -71,7 +71,11 @@ function Set-VercelValue([string]$name, [string]$value, [switch]$Sensitive) {
 
 $secretMappings = @{}
 foreach ($entry in $manifest.required) { $secretMappings[[string]$entry.env] = [string]$entry.bws }
-foreach ($entry in $manifest.applicationProduction) { $secretMappings[[string]$entry.env] = [string]$entry.bws }
+# Recovery-only cloud hosting cannot reach the private self-hosted S3 origin.
+# Never export that connection setting to Vercel, including its empty value.
+foreach ($entry in $manifest.applicationProduction) {
+  if ($entry.env -ne 'RUSTFS_S3_ORIGIN_ADDRESS') { $secretMappings[[string]$entry.env] = [string]$entry.bws }
+}
 foreach ($entry in ($secretMappings.GetEnumerator() | Sort-Object Key)) {
   Set-VercelValue $entry.Key (Read-BwsValue $entry.Value) -Sensitive
 }

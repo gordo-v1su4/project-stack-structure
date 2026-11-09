@@ -15,11 +15,15 @@ $mapping.HIGGSFIELD_ALLOWED_IMAGE_HOSTS = 'STACK_STRUCTURE_HIGGSFIELD_ALLOWED_IM
 $values = @{}
 foreach ($key in $mapping.Keys) {
   $matches = @($records | Where-Object key -eq $mapping[$key])
-  if ($matches.Count -ne 1 -or !$matches[0].value) { throw "BWS lookup is unavailable or ambiguous for $key" }
+  if ($matches.Count -ne 1 -or (!$matches[0].value -and $key -ne 'RUSTFS_S3_ORIGIN_ADDRESS')) { throw "BWS lookup is unavailable or ambiguous for $key" }
   $value = [string]$matches[0].value
   if ($key.EndsWith('_JSON')) { $value = $value | ConvertFrom-Json | ConvertTo-Json -Compress -Depth 50 }
   if ($value -match '[\r\n]') { throw "Unsupported multiline environment value for $key" }
   $values[$key] = $value
+}
+$originAddress = $values.RUSTFS_S3_ORIGIN_ADDRESS
+if ($originAddress -and ![System.Net.IPAddress]::TryParse($originAddress, [ref]([System.Net.IPAddress]$null))) {
+  throw 'The canonical storage origin must be a literal IP address or empty to disable routing.'
 }
 $values.AUTH_URL = 'https://stack.v1su4.dev'
 $values.AUTH_TRUST_HOST = 'true'

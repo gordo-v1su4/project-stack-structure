@@ -1,3 +1,4 @@
+import { studioS3OriginOptions } from "./studioS3Origin";
 import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { createHash } from "node:crypto";
 import { isH3IdentityAssessmentId, type H3IdentityAssessment, type H3IdentityAssessmentScope } from "@/components/studio/h3IdentityAssessment";
@@ -11,10 +12,10 @@ function storage() {
   const gateway = getMediaGatewayConfig(), endpoint = process.env.RUSTFS_S3_ENDPOINT;
   const accessKeyId = process.env.RUSTFS_ACCESS_KEY, secretAccessKey = process.env.RUSTFS_SECRET_KEY;
   if (!gateway || !endpoint || !accessKeyId || !secretAccessKey || new URL(endpoint).protocol !== "https:") throw new Error("Durable assessment storage is not configured.");
-  const hash = createHash("sha256").update(JSON.stringify([endpoint,accessKeyId,secretAccessKey,process.env.RUSTFS_REGION])).digest("hex");
+  const hash = createHash("sha256").update(JSON.stringify([endpoint, accessKeyId, secretAccessKey, process.env.RUSTFS_S3_ORIGIN_ADDRESS?.trim() || "", process.env.RUSTFS_REGION])).digest("hex");
   if (cached?.hash !== hash) {
     cached?.client.destroy();
-    cached = { hash, client: new S3Client({ endpoint, region: process.env.RUSTFS_REGION || "us-east-1", forcePathStyle: true,
+    cached = { hash, client: new S3Client({ ...studioS3OriginOptions(endpoint), endpoint, region: process.env.RUSTFS_REGION || "us-east-1", forcePathStyle: true,
       credentials: { accessKeyId, secretAccessKey }, requestChecksumCalculation: "WHEN_REQUIRED", responseChecksumValidation: "WHEN_REQUIRED" }) };
   }
   return { client: cached.client, bucket: gateway.bucket };

@@ -1,3 +1,4 @@
+import { studioS3OriginOptions } from "./studioS3Origin";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import {
   S3Client, CreateMultipartUploadCommand, UploadPartCommand,
@@ -36,7 +37,7 @@ function config() {
     throw new DirectUploadError("Direct storage uploads are not configured.", 503);
   }
   if (new URL(endpoint).protocol !== "https:") throw new DirectUploadError("Storage requires HTTPS.", 503);
-  const client = new S3Client({
+  const client = new S3Client({ ...studioS3OriginOptions(endpoint),
     endpoint, region: process.env.RUSTFS_REGION || "us-east-1", forcePathStyle: true,
     credentials: { accessKeyId, secretAccessKey },
     requestChecksumCalculation: "WHEN_REQUIRED", responseChecksumValidation: "WHEN_REQUIRED",

@@ -72,7 +72,7 @@ DOCKHAND_ENV_ID=3
 ```
 
 `infra/app-vm/compose.yaml` is the value-free bootstrap/recovery snapshot.
-Dockhand owns the live Compose and all 30 masked runtime settings. Compose
+Dockhand owns the live Compose and its masked runtime settings. Compose
 references each setting explicitly; a remote absolute env-file path is resolved
 on the management host and does not work for this Hawser deployment. The runner
 synchronizes the private App VM values to Dockhand before activation.
@@ -80,6 +80,36 @@ Updates to credentials use BWS first; run
 `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sync-app-vm-env.ps1`
 from the authorized workstation, then redeploy through Dockhand. The script saves
 the previous server environment and prints no values.
+
+### Signed storage connections
+
+Set the optional nonsecret `RUSTFS_S3_ORIGIN_ADDRESS` from private configuration
+on the web runtime and Trigger production workers. Keep `RUSTFS_S3_ENDPOINT`
+on its configured public HTTPS hostname; server SDK connections resolve only
+that hostname to the configured origin IP. HTTPS certificate validation, TLS SNI, signed Host, ETag
+conditions and pixel hashes remain required. Presigned browser URLs retain
+the public hostname. An unreachable origin fails the request; no public-path
+fallback bypasses this setting.
+
+The transport pins the connection destination after signing, rather than relying
+on an Agent DNS hook ignored by the pinned Bun worker. It preserves the signed
+Host header and validates the origin certificate against the endpoint's TLS SNI.
+The Bun transport uses explicit TLS options and isolated connections; the pinned
+Bun 1.3 worker requires the standard HTTPS port and rejects other endpoint ports.
+
+This avoids intermittent `SignatureDoesNotMatch` responses observed through
+Cloudflare even with cache status BYPASS. Conditional reads of the same pinned
+objects passed through the Caddy HTTPS origin; the precise proxy transformation
+is not established. Do not remove `IfMatch` or substitute unconditional reads.
+
+The canonical value is BWS `STACK_STRUCTURE_RUSTFS_S3_ORIGIN_ADDRESS`; both
+production manifest sections map to that one record. Normal environment syncs
+derive the runtime setting from BWS. Keep it in the mode600 App VM environment,
+the explicit Dockhand Compose interpolation, and the Trigger production environment. Verify both
+deployed runtimes with complete pinned reference reads and conditional source
+byte-range reads before resuming content. To roll back routing, clear the
+canonical BWS value to empty, synchronize both runtimes and redeploy; preserve the preceding environment and
+Compose snapshots. No Caddy or public DNS change is required.
 
 ## Authentication and verification
 
