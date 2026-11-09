@@ -49,6 +49,8 @@ JWT-based E2E bypasses OAuth. After any `AUTH_*` environment change, also verify
 HTTPS origin, including certificate trust/name rejection and conditional 412
 responses. It creates and deletes an ephemeral synthetic certificate with
 OpenSSL (Git for Windows provides it; the build/test image installs it).
+The TLS probe runs in a separate process with fixed synthetic CA trust. It also
+checks binary/streamed uploads, encoded byte preservation, redirects and aborts.
 It uses no live credentials, media, or provider services.
 
 ## Saved-project H3 verification

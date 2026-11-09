@@ -2,15 +2,11 @@
 param(
   [string]$ManifestPath,
   [string]$TriggerApiUrl = "https://trigger.v1su4.dev",
-  [string]$StorageOriginAddress = $env:RUSTFS_S3_ORIGIN_ADDRESS,
   [switch]$DryRun
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
-if ($StorageOriginAddress -and ![System.Net.IPAddress]::TryParse($StorageOriginAddress, [ref]([System.Net.IPAddress]$null))) {
-  throw 'StorageOriginAddress must be a literal IP address or empty to disable origin routing.'
-}
 
 if ([string]::IsNullOrWhiteSpace($ManifestPath)) {
   $ManifestPath = Join-Path $PSScriptRoot "..\config\secrets.manifest.json"
@@ -21,7 +17,7 @@ if (-not (Get-Command bws -ErrorAction SilentlyContinue)) {
 }
 
 $manifest = Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json
-$variableNames = @($manifest.triggerProduction | ForEach-Object { [string]$_.env }) + @('RUSTFS_S3_ORIGIN_ADDRESS')
+$variableNames = @($manifest.triggerProduction | ForEach-Object { [string]$_.env })
 if ($DryRun) {
   Write-Host "Project: $($manifest.triggerProjectRef)"
   Write-Host "Production variables: $($variableNames -join ', ')"
@@ -45,26 +41,25 @@ foreach ($record in $records) {
   }
 }
 
-function Read-BwsValue([string]$name) {
+function Read-BwsValue([string]$name, [bool]$AllowEmpty = $false) {
   if (-not $byName.ContainsKey($name)) { throw "Required BWS secret is missing: $name" }
   $record = bws secret get $byName[$name] --output json 2>$null | ConvertFrom-Json
-  if ($LASTEXITCODE -ne 0 -or -not $record.value) { throw "Unable to read BWS secret: $name" }
+  if ($LASTEXITCODE -ne 0 -or !$record.id -or (!$record.value -and !$AllowEmpty)) { throw "Unable to read BWS secret: $name" }
   return [string]$record.value
 }
 
 $variables = @{}
 foreach ($mapping in $manifest.triggerProduction) {
-  $variables[[string]$mapping.env] = Read-BwsValue ([string]$mapping.bws)
+  $variables[[string]$mapping.env] = Read-BwsValue ([string]$mapping.bws) -AllowEmpty ($mapping.env -eq 'RUSTFS_S3_ORIGIN_ADDRESS')
+}
+$originAddress = $variables['RUSTFS_S3_ORIGIN_ADDRESS']
+if ($originAddress -and ![System.Net.IPAddress]::TryParse($originAddress, [ref]([System.Net.IPAddress]$null))) {
+  throw 'The canonical storage origin must be a literal IP address or empty to disable routing.'
 }
 
 # Trigger workers run in Docker; host loopback is unreachable from the container.
 $variables["SCENE_CAPTION_SMART_GATEWAY_INTERNAL_URL"] = "http://192.168.8.222:18091"
 $variables["SCENE_CAPTION_SMART_GATEWAY_URL"] = "http://192.168.8.222:18091"
-# Import merges named variables. Omit an unspecified origin so routine BWS
-# refreshes preserve private routing; explicit empty disables it for rollback.
-if ($PSBoundParameters.ContainsKey('StorageOriginAddress') -or $StorageOriginAddress) {
-  $variables["RUSTFS_S3_ORIGIN_ADDRESS"] = $StorageOriginAddress
-}
 
 $apiToken = Read-BwsValue "STACK_STRUCTURE_TRIGGER_PROD_SECRET_KEY"
 $body = @{ variables = $variables; override = $true } | ConvertTo-Json -Depth 5 -Compress

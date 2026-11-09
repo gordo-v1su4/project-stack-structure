@@ -1,20 +1,7 @@
 [CmdletBinding()]
-param(
-  [string]$HostName = 'gordo@192.168.8.222',
-  [string]$StorageOriginAddress = $env:RUSTFS_S3_ORIGIN_ADDRESS
-)
+param([string]$HostName = 'gordo@192.168.8.222')
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-# A normal BWS refresh must preserve the private server's routing setting.
-# An explicitly supplied empty value disables routing for rollback.
-if (!$PSBoundParameters.ContainsKey('StorageOriginAddress') -and !$StorageOriginAddress) {
-  $existingOrigin = @(ssh $HostName "sed -n 's/^RUSTFS_S3_ORIGIN_ADDRESS=//p' /opt/project-stack-structure/private.env")
-  if ($LASTEXITCODE -ne 0 -or $existingOrigin.Count -gt 1) { throw 'Unable to read the existing storage origin setting.' }
-  if ($existingOrigin.Count -eq 1) { $StorageOriginAddress = [string]$existingOrigin[0] }
-}
-if ($StorageOriginAddress -and ![System.Net.IPAddress]::TryParse($StorageOriginAddress, [ref]([System.Net.IPAddress]$null))) {
-  throw 'StorageOriginAddress must be a literal IP address or empty to disable origin routing.'
-}
 $root = Split-Path $PSScriptRoot -Parent
 $manifest = Get-Content (Join-Path $root 'config/secrets.manifest.json') -Raw | ConvertFrom-Json
 $parsedRecords = bws secret list $manifest.bwsProjectId --output json | ConvertFrom-Json
@@ -28,11 +15,15 @@ $mapping.HIGGSFIELD_ALLOWED_IMAGE_HOSTS = 'STACK_STRUCTURE_HIGGSFIELD_ALLOWED_IM
 $values = @{}
 foreach ($key in $mapping.Keys) {
   $matches = @($records | Where-Object key -eq $mapping[$key])
-  if ($matches.Count -ne 1 -or !$matches[0].value) { throw "BWS lookup is unavailable or ambiguous for $key" }
+  if ($matches.Count -ne 1 -or (!$matches[0].value -and $key -ne 'RUSTFS_S3_ORIGIN_ADDRESS')) { throw "BWS lookup is unavailable or ambiguous for $key" }
   $value = [string]$matches[0].value
   if ($key.EndsWith('_JSON')) { $value = $value | ConvertFrom-Json | ConvertTo-Json -Compress -Depth 50 }
   if ($value -match '[\r\n]') { throw "Unsupported multiline environment value for $key" }
   $values[$key] = $value
+}
+$originAddress = $values.RUSTFS_S3_ORIGIN_ADDRESS
+if ($originAddress -and ![System.Net.IPAddress]::TryParse($originAddress, [ref]([System.Net.IPAddress]$null))) {
+  throw 'The canonical storage origin must be a literal IP address or empty to disable routing.'
 }
 $values.AUTH_URL = 'https://stack.v1su4.dev'
 $values.AUTH_TRUST_HOST = 'true'
@@ -41,7 +32,6 @@ $values.TRIGGER_PROJECT_REF = $manifest.triggerProjectRef
 $values.MEDIA_GATEWAY_BUCKET = 'stack-structure'
 $values.MEDIA_GATEWAY_USER_ID = 'stack-structure'
 $values.MEDIA_GATEWAY_UPLOAD_PREFIX = 'media-uploads'
-$values.RUSTFS_S3_ORIGIN_ADDRESS = $StorageOriginAddress
 $scratch = Join-Path $root '.env.app-vm-sync'
 try {
   $lines = $values.Keys | Sort-Object | ForEach-Object { "$_=$($values[$_])" }

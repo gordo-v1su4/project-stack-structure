@@ -94,20 +94,21 @@ fallback bypasses this setting.
 The transport pins the connection destination after signing, rather than relying
 on an Agent DNS hook ignored by the pinned Bun worker. It preserves the signed
 Host header and validates the origin certificate against the endpoint's TLS SNI.
+The Bun transport uses explicit TLS options and isolated connections; the pinned
+Bun 1.3 worker requires the standard HTTPS port and rejects other endpoint ports.
 
 This avoids intermittent `SignatureDoesNotMatch` responses observed through
 Cloudflare even with cache status BYPASS. Conditional reads of the same pinned
 objects passed through the Caddy HTTPS origin; the precise proxy transformation
 is not established. Do not remove `IfMatch` or substitute unconditional reads.
 
-Supply the setting through the private process environment or the sync scripts'
-`-StorageOriginAddress` parameter. Normal syncs preserve the existing private
-setting when no override is supplied. Keep it in the mode600 App VM environment,
+The canonical value is BWS `STACK_STRUCTURE_RUSTFS_S3_ORIGIN_ADDRESS`; both
+production manifest sections map to that one record. Normal environment syncs
+derive the runtime setting from BWS. Keep it in the mode600 App VM environment,
 the explicit Dockhand Compose interpolation, and the Trigger production environment. Verify both
 deployed runtimes with complete pinned reference reads and conditional source
 byte-range reads before resuming content. To roll back routing, clear the
-setting on both runtimes and redeploy (pass `-StorageOriginAddress ''` to either
-environment sync script); preserve the preceding environment and
+canonical BWS value to empty, synchronize both runtimes and redeploy; preserve the preceding environment and
 Compose snapshots. No Caddy or public DNS change is required.
 
 ## Authentication and verification
