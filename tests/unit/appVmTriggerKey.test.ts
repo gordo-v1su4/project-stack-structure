@@ -13,8 +13,8 @@ const rejected = [undefined, null, "", " ", "[SENSITIVE]", "tr_dev_0123456789abc
 
 describe("App VM production Trigger credential class", () => {
   test("accepts both supported production key classes without returning credentials", () => {
-    expect(assertProductionTriggerKey(production)).toBeUndefined();
-    expect(assertProductionTriggerKey(additional)).toBeUndefined();
+    expect(assertProductionTriggerKey(production)).toBe(undefined);
+    expect(assertProductionTriggerKey(additional)).toBe(undefined);
   });
 
   test("rejects missing, nonproduction, malformed, quoted and whitespace-bearing values with one fixed error", () => {
