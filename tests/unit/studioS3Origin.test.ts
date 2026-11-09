@@ -3,7 +3,8 @@ import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { createServer, type Agent } from "node:https";
+import { Agent, createServer } from "node:https";
+import { NodeHttpHandler } from "@smithy/node-http-handler";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -11,8 +12,8 @@ import { studioS3OriginOptions } from "@/lib/studioS3Origin";
 
 const options = (endpoint = "https://storage.example.test", address = "127.0.0.1") =>
   studioS3OriginOptions(endpoint, { RUSTFS_S3_ORIGIN_ADDRESS: address });
-function agentFor(endpoint?: string, address?: string): Agent {
-  return (options(endpoint, address).requestHandler as { httpsAgent: Agent }).httpsAgent;
+function handlerFor(endpoint?: string, address?: string): NodeHttpHandler {
+  return options(endpoint, address).requestHandler as NodeHttpHandler;
 }
 
 describe("server-only signed S3 origin routing", () => {
@@ -26,21 +27,15 @@ describe("server-only signed S3 origin routing", () => {
     }
   });
 
-  test("lookup pins one authority, supports both lookup modes, and fails closed", async () => {
-    for (const [address, family] of [["127.0.0.1", 4], ["::1", 6]] as const) {
-      const agent = agentFor(undefined, address);
-      const lookup = agent.options.lookup!;
-      const resolve = (host: string, all: boolean, requestedFamily = 0) => new Promise((resolve, reject) => {
-        lookup(host, { all, family: requestedFamily }, (error, result) => error ? reject(error) : resolve(result));
-      });
+  test("IPv4 and IPv6 routing reject a changed authority before connecting", async () => {
+    for (const address of ["127.0.0.1", "::1"]) {
+      const handler = handlerFor(undefined, address);
       try {
-        expect(await resolve("STORAGE.EXAMPLE.TEST", false)).toBe(address);
-        expect(await resolve("storage.example.test", true)).toEqual([{ address, family }]);
-        await expect(resolve("another.example.test", false)).rejects.toThrow("another authority");
-        await expect(resolve("storage.example.test", false, family === 4 ? 6 : 4)).rejects.toThrow("address family");
-        expect(agent.options.rejectUnauthorized).not.toBe(false);
-        expect(agent.options.servername).toBe("storage.example.test");
-      } finally { agent.destroy(); }
+        const request: Parameters<NodeHttpHandler["handle"]>[0] = { protocol: "https:", hostname: "storage.example.test", port: 443, method: "GET", path: "/", headers: { host: "storage.example.test" }, query: {}, clone() { return this; } };
+        for (const changed of [{ protocol: "http:" }, { hostname: "another.example.test" }, { port: 444 }, { headers: { host: "another.example.test" } }]) {
+          await expect(handler.handle({ ...request, ...changed, clone: () => request })).rejects.toThrow("another authority");
+        }
+      } finally { handler.destroy(); }
     }
   });
 
@@ -68,10 +63,11 @@ describe("server-only signed S3 origin routing", () => {
     const port = (server.address() as import("node:net").AddressInfo).port;
     const endpoint = `https://storage.example.test:${port}`;
     const makeClient = (url = endpoint, trust = true) => {
-      const agent = agentFor(url);
-      if (trust) agent.options.ca = cert; // Trust only this test's ephemeral CA; production uses default trust.
+      const handler = handlerFor(url);
+      // Trust only this test's ephemeral CA; production uses default trust.
+      if (trust) handler.updateHttpClientConfig("httpsAgent", new Agent({ servername: new URL(url).hostname, ca: cert }));
       return new S3Client({ endpoint: url, region: "us-east-1", forcePathStyle: true, maxAttempts: 1,
-        credentials: { accessKeyId: "synthetic-access", secretAccessKey: "synthetic-secret" }, requestHandler: { httpsAgent: agent } });
+        credentials: { accessKeyId: "synthetic-access", secretAccessKey: "synthetic-secret" }, requestHandler: handler });
     };
     const client = makeClient(), untrusted = makeClient(endpoint, false), wrongName = makeClient(`https://wrong.example.test:${port}`);
     try {

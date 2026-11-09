@@ -91,6 +91,10 @@ conditions and pixel hashes remain required. Presigned browser URLs retain
 the public hostname. An unreachable origin fails the request; no public-path
 fallback bypasses this setting.
 
+The transport pins the connection destination after signing, rather than relying
+on an Agent DNS hook ignored by the pinned Bun worker. It preserves the signed
+Host header and validates the origin certificate against the endpoint's TLS SNI.
+
 This avoids intermittent `SignatureDoesNotMatch` responses observed through
 Cloudflare even with cache status BYPASS. Conditional reads of the same pinned
 objects passed through the Caddy HTTPS origin; the precise proxy transformation

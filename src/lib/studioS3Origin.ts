@@ -1,8 +1,9 @@
 import { Agent } from "node:https";
-import { isIP, type LookupFunction } from "node:net";
+import { isIP } from "node:net";
 import type { S3ClientConfig } from "@aws-sdk/client-s3";
+import { NodeHttpHandler } from "@smithy/node-http-handler";
 
-/** Server-only DNS routing. Endpoint, Host, TLS SNI and SigV4 authority stay
+/** Server-only connection routing. Endpoint, Host, TLS SNI and SigV4 authority stay
  * unchanged; browser presigned URLs still use the public endpoint. */
 export function studioS3OriginOptions(
   endpoint: string,
@@ -17,16 +18,24 @@ export function studioS3OriginOptions(
     throw new Error("Storage origin routing requires a literal origin IP and the configured HTTPS hostname endpoint.");
   }
   const hostname = url.hostname;
-  const lookup: LookupFunction = (requested, options, callback) => {
-    if (requested.toLowerCase() !== hostname.toLowerCase()) {
-      callback(new Error("Storage origin routing cannot resolve another authority."), "", family);
-      return;
-    }
-    if (options.family && options.family !== family) {
-      callback(new Error("Storage origin address does not match the requested address family."), "", family);
-      return;
-    }
-    callback(null, options.all ? [{ address, family }] : address, family);
-  };
-  return { requestHandler: { httpsAgent: new Agent({ keepAlive: true, maxSockets: 50, servername: hostname, lookup }) } };
+  const originAddress = address;
+  const agent = new Agent({ keepAlive: true, maxSockets: 50, servername: hostname });
+  class OriginHandler extends NodeHttpHandler {
+      // Bun 1.3.3 ignores Agent.lookup. Pin the socket destination explicitly,
+      // after signing; retain the signed Host and validate TLS against its SNI.
+      override handle(
+        request: Parameters<NodeHttpHandler["handle"]>[0],
+        options?: Parameters<NodeHttpHandler["handle"]>[1],
+      ) {
+        if (request.protocol !== url.protocol || request.hostname.toLowerCase() !== hostname.toLowerCase()
+          || (request.port || 443) !== Number(url.port || 443)
+          || request.headers.host?.toLowerCase() !== url.host.toLowerCase()) {
+          return Promise.reject(new Error("Storage origin routing cannot connect to another authority."));
+        }
+        const routed = request.clone();
+        routed.hostname = originAddress;
+        return super.handle(routed, options);
+      }
+  }
+  return { requestHandler: new OriginHandler({ httpsAgent: agent }) };
 }
