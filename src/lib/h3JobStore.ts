@@ -163,6 +163,9 @@ export async function downloadH3ReferenceImage(reference: H3ReferenceSnapshot) {
   if (!response.ContentLength || response.ContentLength > 32 * 1024 * 1024) throw new Error("The reference exceeds the supported image size.");
   const bytes = await response.Body!.transformToByteArray();
   if (bytes.byteLength !== response.ContentLength || bytes.byteLength > MAX_REFERENCE_BYTES) throw new Error("The immutable reference response was incomplete or exceeded its bound.");
+  if (reference.aesthetic && createHash("sha256").update(bytes).digest("hex") !== reference.aesthetic.originalSha256) {
+    throw new Error("The selected shot or style reference differs from its original uploaded bytes.");
+  }
   return { bytes: new Uint8Array(bytes).buffer, mime: response.ContentType?.split(";")[0]?.trim() ?? "", etag: response.ETag };
 }
 

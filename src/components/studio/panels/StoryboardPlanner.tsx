@@ -7,6 +7,7 @@ import type { EditPlanPreviewSegment } from "../musicVideoProject";
 import type { ReferenceAsset } from "../referenceAssets";
 import { waitForTriggerRunOutput } from "@/lib/clientTriggerRuns";
 import { fmt } from "../math";
+import { describePreviewBlocks } from "../previewBlockSummary";
 import { isStandalone2kStoryboardFrame } from "../wholeShotReplacement";
 import { buildFreshFramePrompt, buildSequenceGridPrompt, buildStoryboardSequences, canonicalStoryboardReferences, resolveSequenceGridDirection,
   bindStoryboardJobToSequence, storyboardJobMatchesSequence, storyboardSequenceReviewKey, storyboardSequenceSourceFrame, IMAGE_MODELS, IMAGE_PRICE_GUIDE, identifyStoryboardJob, serializeStoryboardJob, type GenerationBilling, type StoryboardImageModel,
@@ -227,7 +228,7 @@ export function StoryboardPlanner({ projectId, segments, references, assets, onA
       {sequences.map((sequence) => <article key={sequence.id} className="space-y-2 rounded border border-zinc-800 p-3">
         <label className="flex gap-2 text-xs"><input type="checkbox" checked={selected.includes(sequence.id)} disabled={busy || !!batch} onChange={(event) => setSelected((current) => event.target.checked ? [...current, sequence.id] : current.filter((id) => id !== sequence.id))} />
           <span>{sequence.label} · {fmt(sequence.songStart)}–{fmt(sequence.songEnd)}</span></label>
-        <p className="text-xs text-zinc-500">{sequence.cuts.length} resolved cuts · one 3×3 sequence board · suggested review scope, not a confirmed gap</p>
+        <p className="text-xs text-zinc-500">{describePreviewBlocks(sequence.cuts)} · one 3×3 sequence board · suggested review scope, not a confirmed gap</p>
         <label className="block text-xs text-zinc-400">Sequence direction<textarea aria-label={`Direction for ${sequence.id}`} className={field} rows={2} disabled={busy || !!batch} value={resolveSequenceGridDirection(sequence.direction ?? sectionDirections?.[sequence.sectionId], intents[storyboardSequenceReviewKey(sequence)])} placeholder="Add the story action for this section…" onChange={(event) => setIntents((current) => ({ ...current, [storyboardSequenceReviewKey(sequence)]: event.target.value }))} /></label>
         <div className="flex gap-2"><button className={button} disabled={blocked || busy || !!batch} onClick={() => void review([gridJob(sequence.id)])}>Review this grid</button>
           {onInspect ? <button className={button} onClick={() => onInspect(segments.indexOf(sequence.cuts[0]), segments.indexOf(sequence.cuts.at(-1)!))}>Watch sequence</button> : null}</div>

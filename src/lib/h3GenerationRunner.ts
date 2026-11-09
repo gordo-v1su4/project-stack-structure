@@ -32,18 +32,29 @@ const MAX_IMAGE_BYTES = 32 * 1024 * 1024;
 const executeImagePreparation = promisify(execFile);
 const IMAGE_EXTENSIONS: Record<string, string> = { "image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp" };
 class H3ProviderRejection extends Error {}
+class H3ProviderReadTransient extends Error {}
 
-async function providerJson(baseUrl: string, route: string, body?: unknown) {
-  const response = await fetch(buildSwarmComfyDirectUrl(baseUrl, route), {
-    ...(body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
-    cache: "no-store", signal: AbortSignal.timeout(20_000),
-  });
-  if (!response.ok) {
-    const message = `SwarmUI ${route.split("/")[0]} returned HTTP ${response.status}.`;
-    if (route === "prompt" && response.status >= 400 && response.status < 500) throw new H3ProviderRejection(message);
-    throw new Error(message);
+async function providerJson(baseUrl: string, route: string, body?: unknown, timeoutMs = 20_000) {
+  const pollRead = body === undefined && (route === "queue" || route.startsWith("history/"));
+  try {
+    const response = await fetch(buildSwarmComfyDirectUrl(baseUrl, route), {
+      ...(body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
+      cache: "no-store", signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!response.ok) {
+      const message = `SwarmUI ${route.split("/")[0]} returned HTTP ${response.status}.`;
+      if (route === "prompt" && response.status >= 400 && response.status < 500) throw new H3ProviderRejection(message);
+      if (pollRead && response.status >= 500 && response.status <= 599) throw new H3ProviderReadTransient(message);
+      throw new Error(message);
+    }
+    return await response.json() as Record<string, unknown>;
+  } catch (error) {
+    if (pollRead && error instanceof Error && (error instanceof TypeError || ["TimeoutError", "AbortError"].includes(error.name)
+      || ["ETIMEDOUT", "ESOCKETTIMEDOUT", "ECONNRESET", "ECONNREFUSED", "EAI_AGAIN", "ENOTFOUND"].includes(String((error as Error & { code?: string }).code)))) {
+      throw new H3ProviderReadTransient("SwarmUI status read is temporarily unavailable.");
+    }
+    throw error;
   }
-  return await response.json() as Record<string, unknown>;
 }
 
 /** Search by our durable correlation, including the response-loss window after POST /prompt. */
@@ -260,33 +271,53 @@ export async function runH3Generation(reference: H3JobReference, runId: string,
     }
     options.stage("Rendering the H3 shot on the local GPU");
     const started = Date.now();
+    const deadline = started + (options.timeoutSeconds ?? 1500) * 1000;
+    let readFailures = 0;
     let output: ComfyOutputRef | undefined;
-    while (Date.now() - started < (options.timeoutSeconds ?? 1500) * 1000) {
+    while (Date.now() < deadline) {
       const current = await readH3Job(ownerId, projectId, jobId);
-      const history = await providerJson(baseUrl, `history/${encodeURIComponent(job.promptId!)}`);
-      const status = getComfyHistoryStatus(history, job.promptId);
-      if (current && cancellationRequested(current) && (status === "error" || status === "completed")) {
-        await update({ state: "cancelled" });
-        throw new Error("H3 cancellation finalized; its output was not added to the draft.");
-      }
-      if (status === "error") {
-        await update({ state: "failed", error: "H3 execution failed on the local GPU." });
-        throw new Error("H3 execution failed on the local GPU.");
-      }
-      if (current && cancellationRequested(current)) {
-        const queue = await providerJson(baseUrl, "queue");
-        const pending = (queue.queue_pending as unknown[][] | undefined) ?? [];
-        if (pending.some(entry => entry[1] === job.promptId)) {
-          await providerJson(baseUrl, "queue", { delete: [job.promptId] });
+      if (!current || (current.runId && current.runId !== runId)) throw new Error("The current Trigger run no longer owns this job.");
+      if (current.state === "cancelled") throw new Error("This generation job was cancelled.");
+      try {
+        const history = await providerJson(baseUrl, `history/${encodeURIComponent(job.promptId!)}`, undefined, Math.max(1, Math.min(20_000, deadline - Date.now())));
+        const status = getComfyHistoryStatus(history, job.promptId);
+        if (current && cancellationRequested(current) && (status === "error" || status === "completed")) {
           await update({ state: "cancelled" });
-          throw new Error("H3 generation was cancelled before execution.");
+          throw new Error("H3 cancellation finalized; its output was not added to the draft.");
         }
-      } else if (status === "completed") {
-        output = extractComfyOutputRefs(history, job.promptId).find(asset => asset.kind === "video");
-        if (!output) throw new Error("H3 completed without a saved video.");
-        break;
+        if (status === "error") {
+          await update({ state: "failed", error: "H3 execution failed on the local GPU." });
+          throw new Error("H3 execution failed on the local GPU.");
+        }
+        if (current && cancellationRequested(current)) {
+          const queue = await providerJson(baseUrl, "queue", undefined, Math.max(1, Math.min(20_000, deadline - Date.now())));
+          const pending = (queue.queue_pending as unknown[][] | undefined) ?? [];
+          const running = (queue.queue_running as unknown[][] | undefined) ?? [];
+          if (pending.some(entry => entry[1] === job.promptId)) {
+            await providerJson(baseUrl, "queue", { delete: [job.promptId] });
+            await update({ state: "cancelled" });
+            throw new Error("H3 generation was cancelled before execution.");
+          }
+          if (Array.isArray(queue.queue_pending) && Array.isArray(queue.queue_running)
+            && !running.some(entry => entry[1] === job.promptId)) {
+            await update({ state: "cancelled", error: "Cancellation recorded; the provider has no queued or running entry for this prompt. No output was accepted." });
+            throw new Error("H3 cancellation recorded without accepting output or submitting replacement generation.");
+          }
+        } else if (status === "completed") {
+          output = extractComfyOutputRefs(history, job.promptId).find(asset => asset.kind === "video");
+          if (!output) throw new Error("H3 completed without a saved video.");
+          break;
+        }
+        readFailures = 0;
+      } catch (error) {
+        // Only idempotent status GETs qualify. Prompt submission and queue deletion
+        // are never replayed, including an uncertain HTTP response.
+        if (!(error instanceof H3ProviderReadTransient) || ++readFailures >= 5) throw error;
+        options.stage("Waiting to reconnect to the existing H3 render; no generation was repeated");
       }
-      await options.wait(3);
+      const remainingSeconds = (deadline - Date.now()) / 1000;
+      if (remainingSeconds <= 0) break;
+      await options.wait(Math.min(readFailures ? 3 * 2 ** (readFailures - 1) : 3, remainingSeconds));
     }
     if (!output) throw new Error("H3 is still running or its completion is unknown. Resume status reconciliation instead of rendering again.");
     await update({ state: "persisting" });

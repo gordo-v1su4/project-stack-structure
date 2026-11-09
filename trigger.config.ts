@@ -1,5 +1,5 @@
 import { defineConfig } from "@trigger.dev/sdk";
-import { additionalFiles, ffmpeg } from "@trigger.dev/build/extensions/core";
+import { additionalFiles, additionalPackages, ffmpeg } from "@trigger.dev/build/extensions/core";
 import { identityRuntime } from "./trigger.identity-runtime";
 import { controllerLogContainment } from "./trigger.controller-containment";
 
@@ -30,6 +30,9 @@ export default defineConfig({
   build: {
     extensions: [
       ffmpeg({ version: "7" }),
+      // Still preparation resolves Sharp inside a fixed child process. Install
+      // the pinned package for Linux; never copy this Windows host's binaries.
+      additionalPackages({ packages: ["sharp@0.34.5"] }),
       identityRuntime(),
       controllerLogContainment(),
       // The higgsfield CLI is spawned at runtime (not imported), so the

@@ -1,3 +1,4 @@
+import { normalizeAestheticReferences, type AestheticReferenceLibrary } from "./aestheticReferences";
 import { withCurrentReferenceIdentity } from "./currentReferenceIdentity";
 import { normalizeClipAudioSettings, type ClipAudioSettings } from "./clipAudio";
 import { compactProjectMatches } from "./compactProjectMatches";
@@ -84,6 +85,7 @@ export interface PersistedStudioProjectDraft {
   storyState: PersistedStoryState;
   musicVideoProject: MusicVideoProject | null;
   referenceAssets?: ReferenceAsset[];
+  aestheticReferences?: AestheticReferenceLibrary;
   generatedAssets?: GeneratedStudioAsset[];
   generatedDraft?: GeneratedDraftSelection | null;
   clipAudioSettings?: ClipAudioSettings;
@@ -97,6 +99,7 @@ export interface RuntimeStudioProjectDraft {
   storyState: PersistedStoryState;
   musicVideoProject: MusicVideoProject | null;
   referenceAssets: ReferenceAsset[];
+  aestheticReferences?: AestheticReferenceLibrary;
   generatedAssets: GeneratedStudioAsset[];
   generatedDraft?: GeneratedDraftSelection | null;
   clipAudioSettings?: ClipAudioSettings;
@@ -110,6 +113,7 @@ export function createPersistableStudioProjectDraft(params: {
   storyState: PersistedStoryState;
   musicVideoProject: MusicVideoProject | null;
   referenceAssets?: ReferenceAsset[];
+  aestheticReferences?: AestheticReferenceLibrary;
   generatedAssets?: GeneratedStudioAsset[];
   generatedDraft?: GeneratedDraftSelection | null;
   clipAudioSettings?: ClipAudioSettings;
@@ -173,6 +177,7 @@ export function createPersistableStudioProjectDraft(params: {
     storyState: normalizePersistedStoryState(params.storyState, false),
     musicVideoProject: params.musicVideoProject ? sanitizeMusicVideoProjectForStorage(params.musicVideoProject) : null,
     referenceAssets: (params.referenceAssets ?? []).map(sanitizeReferenceAssetForStorage),
+    aestheticReferences: normalizeAestheticReferences(params.aestheticReferences),
     generatedAssets: (params.generatedAssets ?? []).map(sanitizeGeneratedStudioAssetForStorage),
     generatedDraft: sanitizeGeneratedDraftSelection(params.generatedDraft),
     clipAudioSettings: normalizeClipAudioSettings(params.clipAudioSettings),
@@ -225,6 +230,7 @@ export function hydrateStudioProjectDraft(params: {
     storyState: normalizePersistedStoryState(params.draft.storyState, params.draft.version < 3),
     musicVideoProject: params.draft.musicVideoProject ? compactProjectMatches(params.draft.musicVideoProject) : null,
     referenceAssets: hydrateReferenceAssets(params.draft.referenceAssets ?? []),
+    aestheticReferences: normalizeAestheticReferences(params.draft.aestheticReferences),
     generatedAssets: withCurrentReferenceIdentity(hydrateGeneratedStudioAssets(params.draft.generatedAssets ?? []),params.draft.musicVideoProject?.currentIdentity),
     generatedDraft: sanitizeGeneratedDraftSelection(params.draft.generatedDraft),
     clipAudioSettings: normalizeClipAudioSettings(params.draft.clipAudioSettings),
@@ -314,6 +320,7 @@ export function isEmptyStudioProjectDraft(draft: PersistedStudioProjectDraft) {
     && draft.videoSources.length === 0
     && !draft.musicVideoProject
     && (draft.referenceAssets?.length ?? 0) === 0
+    && (draft.aestheticReferences?.assets.length ?? 0) === 0
     && (draft.generatedAssets?.length ?? 0) === 0
     && !draft.storyState.vocalStemName.trim()
     && !draft.storyState.transcriptSummary

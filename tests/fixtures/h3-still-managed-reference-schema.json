@@ -1,0 +1,28 @@
+{
+  "source": "managed SwarmUI 7861 schema capture h3-still-managed-schema-20261109/nodes.json",
+  "sourceSha256": "2b974ad9dfe2ff393a401e2afae2b028562114b18eba7fd3f2df4427016397f6",
+  "observedAt": "2026-11-09T04:20:46.781Z",
+  "nodeClass": "MiniMaxH3ReferenceToVideo",
+  "inputGroup": "optional",
+  "inputName": "ref_images",
+  "spec": [
+    "COMFY_AUTOGROW_V3",
+    {
+      "template": {
+        "input": {
+          "required": {
+            "ref_image": [
+              "IMAGE",
+              {
+                "tooltip": "Reference image (downscaled to 2048 short edge if larger, never upscaled)"
+              }
+            ]
+          }
+        },
+        "prefix": "ref_image_",
+        "min": 0,
+        "max": 9
+      }
+    }
+  ]
+}

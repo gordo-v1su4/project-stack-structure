@@ -1,6 +1,6 @@
 import {currentIdentityReviewSha256,currentReferenceIdentityApprovalSha256} from "./currentReferenceIdentity";
 import {
-  applyApprovedGeneratedAssets,
+  listApprovedGeneratedVideoAssets,
   applyGeneratedAssetOverlays,
   buildGeneratedAssetPlaybackUrl,
   generatedAssetMatchesPreviewSegment,
@@ -91,14 +91,20 @@ function selectedAssets(segments: EditPlanPreviewSegment[], assets: GeneratedStu
 }
 
 /** Draft playback includes only explicitly selected candidates over the approved edit. */
+export function orderedDraftGeneratedAssets(
+  segments: EditPlanPreviewSegment[], assets: GeneratedStudioAsset[], draft: GeneratedDraftSelection | null | undefined,
+): GeneratedStudioAsset[] {
+  const approved = listApprovedGeneratedVideoAssets(assets).sort((left, right) =>
+    Date.parse(left.approvedAt ?? left.createdAt) - Date.parse(right.approvedAt ?? right.createdAt));
+  return isGeneratedDraftCurrent(segments, draft) ? [...approved, ...selectedAssets(segments, assets, draft)] : approved;
+}
+
 export function applyDraftGeneratedAssets(
   segments: EditPlanPreviewSegment[],
   assets: GeneratedStudioAsset[],
   draft: GeneratedDraftSelection | null | undefined,
 ): EditPlanPreviewSegment[] {
-  const approved = applyApprovedGeneratedAssets(segments, assets);
-  if (!isGeneratedDraftCurrent(segments, draft)) return approved;
-  return applyGeneratedAssetOverlays(approved, selectedAssets(segments, assets, draft));
+  return applyGeneratedAssetOverlays(segments, orderedDraftGeneratedAssets(segments, assets, draft));
 }
 
 export function captureGeneratedDraftReview(
@@ -133,7 +139,13 @@ export function captureGeneratedDraftReview(
       identityVerification: asset.identityVerification, identityAssessmentId: asset.identityAssessmentId, identityAssessmentTrimStart: asset.identityAssessmentTrimStart,
       target: asset.target, trimStart: asset.trimStart ?? 0, approvedIdentityEvidenceSha256: asset.approvedIdentityEvidenceSha256,approvedCurrentReferenceEvidenceSha256:asset.approvedCurrentReferenceEvidenceSha256,
     })),
-    segments: applyDraftGeneratedAssets(segments, assets, draft),
+    // Planning provenance is bound by its own coverage snapshot. Keep existing
+    // prepared-review fingerprints byte-identical when playback is unchanged.
+    segments: applyDraftGeneratedAssets(segments, assets, draft).map(segment => {
+      const reviewSegment = { ...segment };
+      delete reviewSegment.generatedAssetId;
+      return reviewSegment;
+    }),
   });
   return { planSignature: draft.planSignature, revision: draft.revision, fingerprint };
 }

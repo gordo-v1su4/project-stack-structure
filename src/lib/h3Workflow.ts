@@ -1,6 +1,7 @@
 import { h3FrameCount, H3_FPS, H3_WIDTH, H3_HEIGHT, type H3GenerationJob } from "@/components/studio/h3Generation";
 import type { ComfyWorkflow } from "@/components/studio/localGeneration";
 import { assertReferenceLanguage } from "@/components/studio/referenceLanguage";
+import { assertSafeAestheticGuidance } from "@/components/studio/aestheticReferences";
 import { h3StableSeed } from "./h3GenerationServer";
 import { assertH3ConditioningProfile } from "./h3ReferenceConditioning";
 import { H3_FIRST_FRAME_PROFILE } from "@/components/studio/h3FirstFrame";
@@ -35,6 +36,7 @@ export function assertH3ShotProfile(body: string, seconds: number) {
 
 /** Native single-shot grammar; reference numbering is generated from actual input order. */
 export function compileH3Prompt(job: H3GenerationJob) {
+  for (const ref of job.references) if (ref.aesthetic) assertSafeAestheticGuidance(ref.aesthetic.guidance);
   const direction = job.request.prompt.trim();
   assertReferenceLanguage(direction, job.references.filter(r => r.role === "identity").map(r => r.canonicalName));
   if (/\bthe (?:woman|man|girl|boy|guy|dancer|singer|figure|person)\b/i.test(direction)) {
@@ -48,10 +50,14 @@ export function compileH3Prompt(job: H3GenerationJob) {
     const prompt = `For the target video, at 0.00 seconds into the target video, <Picture 1> (from [Shot 1]) is fully referenced.\n\nintegrated_multimodal_description: [Shot 1] ${body}\n\noverall_soundscape: Environmental room tone and movement sounds.\n\nnon_diegetic_music: N/A`;
     return {prompt,frameSchedule:{"0":body},frames:h3FrameCount(job.request.songEnd-job.request.songStart)};
   }
-  const definitions = job.references.map((ref, i) => ref.role === "crowd"
+  const definitions = job.references.map((ref, i) => ref.aesthetic
+    ? `<Subject ${i + 1}> is ${ref.canonicalName} from <Picture ${i + 1}>, guiding ${ref.aesthetic.purpose === "shot" ? "camera framing, blocking and screen direction" : "lighting, lens response, color and atmosphere"} only. Named character sheets control identity and wardrobe; the environment sheet controls location. Guidance: ${ref.aesthetic.guidance}`
+    : ref.role === "crowd"
     ? `<Subject ${i + 1}> is ${ref.canonicalName} from <Picture ${i + 1}>, guiding background extras variety and wardrobe range only.`
     : `<Subject ${i + 1}> is ${ref.canonicalName} from <Picture ${i + 1}>, the ${ref.role === "identity" ? "identity and wardrobe" : ref.role} authority.`);
-  const retention = job.references.map((ref, i) => ref.role === "crowd"
+  const retention = job.references.map((ref, i) => ref.aesthetic
+    ? `<Subject ${i + 1}> (appears in [Shot 1]): partially_preserved - transfer only the declared ${ref.aesthetic.purpose === "shot" ? "composition" : "optical style"}. Do not transfer people, identity, wardrobe, props or architecture from this reference.`
+    : ref.role === "crowd"
     ? `<Subject ${i + 1}> (appears in [Shot 1]): partially_preserved - transfer background extras variety and wardrobe range. Named character identity and wardrobe authorities and the environment authority remain unchanged.`
     : `<Subject ${i + 1}> (appears in [Shot 1]): fully_preserved - preserve ${ref.canonicalName}'s ${ref.role === "identity" ? "identity and wardrobe" : ref.role} reference.`);
   const environment = job.references.find(ref => ref.role === "environment")!.canonicalName;

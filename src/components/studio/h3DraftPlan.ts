@@ -1,3 +1,4 @@
+import { selectedAestheticReferences, type AestheticReferenceLibrary } from "./aestheticReferences";
 import { H3_MAX_SHOT_SECONDS, isH3JobTerminal, type H3GenerationJob, type H3GenerationRequest } from "./h3Generation";
 import type { GeneratedStudioAssetTarget } from "./generatedAssets";
 import type { EditPlanPreviewSegment } from "./musicVideoProject";
@@ -147,7 +148,7 @@ export function nextH3Attempt(job: H3GenerationJob, siblings: H3GenerationJob[],
   return { ...job.request, attempt, draftRevision, prompt };
 }
 
-export type H3DraftBatch = { version: 1; projectId: string; planSignature: string; requests: H3GenerationRequest[]; paused: boolean };
+export type H3DraftBatch = { version: 1; projectId: string; planSignature: string; requests: H3GenerationRequest[]; paused: boolean; pauseAfterRequest?: string };
 export function h3DraftBatchStorageKey(projectId: string) { return `stack-structure:h3-draft-batch:v1:${projectId}`; }
 export function parseH3DraftBatch(raw: string | null, projectId: string): H3DraftBatch | null {
   if (!raw) return null;
@@ -159,6 +160,15 @@ export function parseH3DraftBatch(raw: string | null, projectId: string): H3Draf
         || request.songEnd <= request.songStart || request.songEnd - request.songStart > H3_MAX_SHOT_SECONDS + 0.001
         || !Array.isArray(request.referenceAssetIds) || !request.prompt
         || !Number.isInteger(request.attempt ?? 0) || (request.attempt ?? 0) < 0 || (request.attempt ?? 0) > 2)) return null;
+    if (value.pauseAfterRequest !== undefined && (typeof value.pauseAfterRequest !== "string"
+      || value.pauseAfterRequest !== `${value.requests[0]?.requestIntentId}:${value.requests[0]?.attempt ?? 0}`)) return null;
     return { ...value, paused: Boolean(value.paused) };
   } catch { return null; }
+}
+
+/** Explicit scoped inputs only; storing references never opts a shot in. */
+export function appendH3AestheticReferenceIds(authorityIds: string[], library: AestheticReferenceLibrary | undefined, target: { sectionId: string; timelineItemId?: string }, selectedIds?: string[]) {
+  const ids = [...authorityIds, ...selectedAestheticReferences(library, target, selectedIds).map(asset => asset.id)];
+  if (ids.length > 9 || new Set(ids).size !== ids.length) throw new Error("Choose at most 9 distinct references, including identities, environment, crowd and shot/style refs.");
+  return ids;
 }

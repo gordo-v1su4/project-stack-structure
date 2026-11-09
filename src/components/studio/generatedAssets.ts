@@ -275,7 +275,7 @@ export function applyGeneratedAssetOverlays(segments: EditPlanPreviewSegment[], 
       if (!window) return [segment];
       const pieces: EditPlanPreviewSegment[] = [];
       if (window.songStart > segment.musicStart + 0.001) pieces.push(sliceSegment(segment, segment.musicStart, window.songStart));
-      pieces.push({ ...segment, kind: "source", gapReason: undefined, videoUrl,
+      pieces.push({ ...segment, kind: "source", gapReason: undefined, videoUrl, generatedAssetId: asset.id,
         musicStart: window.songStart, musicEnd: window.songEnd, startTime: window.sourceStart, endTime: window.sourceEnd,
         label: asset.title ?? `${asset.model} ${asset.provider === "editorial" ? "footage edit" : "generated replacement"}`, momentId: undefined, sourceClipId: undefined,
         sourceRefLabel: `${asset.provider === "editorial" ? "EDIT" : "GEN"} · ${asset.model}`, thumbnailUrl: asset.thumbnailUrl });

@@ -1,6 +1,7 @@
 "use client";
 
 import { referenceAwareCaption } from "../referenceLanguage";
+import { describePreviewBlocks } from "../previewBlockSummary";
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { fmt } from "../math";
@@ -419,9 +420,9 @@ export function GenerateTab({ project, analysis, storyGenerated, onSelectMatch, 
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="text-[10px] uppercase tracking-[0.18em] text-[#e05c00]">Resolved preview clips</div>
-            <div className="mt-1 text-[11px] text-[#6d6d6d]">Every card is an actual preview cut. Its thumbnail, source ID, scene, source time, and song time now come from the resolved edit—not the section&apos;s repeated primary Match image.</div>
+            <div className="mt-1 text-[11px] text-[#6d6d6d]">Each card is a resolved timeline block. A block can contain multiple camera cuts or a footage gap. Thumbnails, source IDs, scenes, source times, and song times come from the resolved edit.</div>
           </div>
-          <div className="font-mono text-[10px] text-[#777]">{previewSegments.length} resolved cuts · {describePreviewSelection(previewSegments, selectedPreviewRange)}</div>
+          <div className="font-mono text-[10px] text-[#777]">{describePreviewBlocks(previewSegments)} · {describePreviewSelection(previewSegments, selectedPreviewRange)}</div>
         </div>
         <ResolvedClipQueue
           project={project}
@@ -798,7 +799,7 @@ function ResolvedClipQueue({
   onSelectedPreviewRange: (range: PreviewCutRange | null) => void;
   onAuditionPreviewRange: (range: PreviewCutRange) => void;
 }) {
-  if (!segments.length) return <EmptyState label="No resolved preview cuts" detail="Generate Story and finish Match so the actual source sequence can be resolved." />;
+  if (!segments.length) return <EmptyState label="No resolved timeline blocks" detail="Generate Story and finish Match so the actual source sequence can be resolved." />;
   const duration = Math.max(segments[segments.length - 1]?.musicEnd ?? 0, 0.001);
   const momentsById = new Map(project?.videoMoments.map((moment) => [moment.id, moment]) ?? []);
   const cards = segments.map((segment, index) => {
@@ -919,7 +920,7 @@ function describePreviewSelection(segments: EditPlanPreviewSegment[], range: Pre
   const selected = segments.slice(range.startIndex, range.endIndex + 1);
   const first = selected[0];
   const last = selected[selected.length - 1];
-  if (!first || !last) return "no cut selected";
+  if (!first || !last) return "no timeline block selected";
   return `${selected.length} selected · song ${fmtCutTime(first.musicStart)}–${fmtCutTime(last.musicEnd)}`;
 }
 
@@ -1575,6 +1576,7 @@ function GeneratedShotCard({
     maxTrimStart: committedTrimWindow.maxTrimStart,
     framesPerSecond: asset.mediaFrameRate,
   });
+  const hasNativeTrimFrames = Number.isInteger(asset.mediaFrameRate) && (asset.mediaFrameRate ?? 0) > 0;
   const activeTrimFrame = Math.max(0, Math.min(previewTrimFrame ?? trimStartFrame, maxTrimStartFrame));
   const { requiredDuration, sourceDuration, maxTrimStart, trimStart, trimEnd, selectedWidthPct, selectedLeftPct } = resolveGeneratedAssetTrimWindow({
     trimStart: previewTrimFrame === null ? committedTrimWindow.trimStart : activeTrimFrame / trimFramesPerSecond,
@@ -1709,7 +1711,7 @@ function GeneratedShotCard({
               <div className="mt-2 flex items-center gap-2">
                 <button
                   type="button"
-                  aria-label={`Move source window for ${asset.title ?? asset.model} one frame earlier`}
+                  aria-label={`Move source window for ${asset.title ?? asset.model} one ${hasNativeTrimFrames ? "frame" : "trim step"} earlier`}
                   disabled={activeTrimFrame <= 0}
                   onClick={() => commitTrimStart((activeTrimFrame - 1) / trimFramesPerSecond)}
                   className="h-7 w-7 shrink-0 rounded-[2px] border border-[#262626] text-[12px] text-[#777] hover:border-[#555] hover:text-[#ddd] disabled:opacity-30"
@@ -1743,16 +1745,17 @@ function GeneratedShotCard({
                 </div>
                 <button
                   type="button"
-                  aria-label={`Move source window for ${asset.title ?? asset.model} one frame later`}
+                  aria-label={`Move source window for ${asset.title ?? asset.model} one ${hasNativeTrimFrames ? "frame" : "trim step"} later`}
                   disabled={activeTrimFrame >= maxTrimStartFrame}
                   onClick={() => commitTrimStart((activeTrimFrame + 1) / trimFramesPerSecond)}
                   className="h-7 w-7 shrink-0 rounded-[2px] border border-[#262626] text-[12px] text-[#777] hover:border-[#555] hover:text-[#ddd] disabled:opacity-30"
                 >+</button>
               </div>
               <div className="mt-1 grid grid-cols-2 gap-2">
-                <div className="rounded-[1px] border border-[#1d343a] bg-[#071014] px-2 py-1"><span className="text-[#52737c]">IN / START FRAME</span><div className="mt-0.5 text-[#b6e6ef]">{trimStart.toFixed(2)}s · f{Math.round(trimStart * trimFramesPerSecond)}</div></div>
-                <div className="rounded-[1px] border border-[#1d343a] bg-[#071014] px-2 py-1"><span className="text-[#52737c]">OUT / END FRAME</span><div className="mt-0.5 text-[#b6e6ef]">{trimEnd.toFixed(2)}s · f{Math.round(trimEnd * trimFramesPerSecond)}</div></div>
+                <div className="rounded-sm border border-line bg-ink-1 px-2 py-1"><span className="text-fg-3">{hasNativeTrimFrames ? "IN / START FRAME" : "IN / START TIME"}</span><div className="mt-0.5 text-fg-1">{trimStart.toFixed(2)}s{hasNativeTrimFrames ? ` · f${Math.round(trimStart * trimFramesPerSecond)}` : ""}</div></div>
+                <div className="rounded-sm border border-line bg-ink-1 px-2 py-1"><span className="text-fg-3">{hasNativeTrimFrames ? "OUT / END FRAME" : "OUT / END TIME"}</span><div className="mt-0.5 text-fg-1">{trimEnd.toFixed(2)}s{hasNativeTrimFrames ? ` · f${Math.round(trimEnd * trimFramesPerSecond)}` : ""}</div></div>
               </div>
+              {!hasNativeTrimFrames && <p className="mt-1 text-fg-3">Native frame numbers unavailable. Trim controls use 1/{trimFramesPerSecond}s time steps.</p>}
               <div className="mt-2 flex flex-wrap gap-1.5">
                 <button type="button" disabled={!videoUrl || !previewActive} onClick={() => void playSelectedWindow()} className="rounded-[2px] border border-[#1d5362] px-2 py-1 uppercase tracking-[0.1em] text-[#6bc8dc] disabled:opacity-35">Play selected</button>
                 <button type="button" disabled={!videoUrl || !previewActive} onClick={() => commitTrimStart(videoRef.current?.currentTime ?? trimStart)} className="rounded-[2px] border border-[#303030] px-2 py-1 uppercase tracking-[0.1em] text-[#888] disabled:opacity-35">Set in at playhead</button>

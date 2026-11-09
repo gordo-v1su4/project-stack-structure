@@ -58,7 +58,7 @@ describe("Trigger orchestration", () => {
       .not.toBe(createTriggerIdempotencyKey("caption", ["scene-1", "frame-b"]));
   });
 
-  test("uses the deployed production task identifiers", () => {
+  test("uses the configured task identifiers (deployment is verified separately)", () => {
     expect(STACK_STRUCTURE_TRIGGER_TASKS).toEqual({
       mediaVideoPipeline: "media-video-pipeline",
       mediaSceneDetection: "media-video-scene-detect",
@@ -67,6 +67,8 @@ describe("Trigger orchestration", () => {
       essentiaAnalysis: "essentia-analyze-stored-audio",
       smartSceneCaption: "qwen-smart-scene-caption",
       storyTreatment: "qwen-story-treatment",
+      h3ShotPlanning: "qwen-h3-shot-planning",
+      h3Still: "minimax-h3-still",
       localGeneration: "local-ai-generation",
       higgsfieldGeneration: "higgsfield-nano-banana-pro-grid",
       deepgramTranscription: "deepgram-transcribe-stored-audio",

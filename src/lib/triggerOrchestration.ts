@@ -15,6 +15,10 @@ import type { MediaSceneDetectionPayload, mediaVideoPipelineTask } from "@/trigg
 import type { FfglitchPayload, ffglitchTask } from "@/trigger/ffglitch";
 import type { ImageSplitterPayload, imageSplitterTask } from "@/trigger/imageSplitter";
 import type { StoryTreatmentPayload, storyTreatmentTask } from "@/trigger/storyTreatment";
+import type { h3ShotPlanningTask } from "@/trigger/h3ShotPlanning";
+import type { H3ShotPlanningReference } from "./h3ShotPlanningServer";
+import type { h3StillTask } from "@/trigger/h3Still";
+import type { H3StillJob } from "./h3StillJobStore";
 import { createTriggerIdempotencyKey } from "@/lib/triggerIdempotency";
 
 export const STACK_STRUCTURE_TRIGGER_TASKS = {
@@ -25,6 +29,8 @@ export const STACK_STRUCTURE_TRIGGER_TASKS = {
   essentiaAnalysis: "essentia-analyze-stored-audio",
   smartSceneCaption: "qwen-smart-scene-caption",
   storyTreatment: "qwen-story-treatment",
+  h3ShotPlanning: "qwen-h3-shot-planning",
+  h3Still: "minimax-h3-still",
   localGeneration: "local-ai-generation",
   higgsfieldGeneration: "higgsfield-nano-banana-pro-grid",
   deepgramTranscription: "deepgram-transcribe-stored-audio",
@@ -35,6 +41,53 @@ export const STACK_STRUCTURE_TRIGGER_TASKS = {
   ffglitch: "ffglitch-transform",
   imageSplitter: "image-split-grid",
 } as const;
+
+export async function triggerH3Still(job: H3StillJob) {
+  assertTriggerConfigured();
+  const dispatch = await buildDispatchContext(["stack-structure", "h3-still", "swarmui", "vm100-heavy"], {
+    stageLabel: "Waiting for MiniMax still capacity", progressMode: "provider",
+  });
+  if (dispatch.userId !== job.ownerId) throw new Error("Still generation belongs to another user.");
+  return tasks.trigger<typeof h3StillTask>(STACK_STRUCTURE_TRIGGER_TASKS.h3Still,
+    { ownerId: job.ownerId, projectId: job.projectId, jobId: job.id }, {
+      idempotencyKey: createTriggerIdempotencyKey("h3-still-v1", [job.ownerId, job.projectId, job.id]),
+      idempotencyKeyTTL: "30d", maxAttempts: 1,
+      tags: [...dispatch.tags, `project:${job.projectId}`, `h3-still:${job.id}`], metadata: dispatch.metadata,
+    }) as Promise<{ id: string }>;
+}
+
+/** Authenticated route verifies the previous run is terminal before calling.
+ * Reconciliation never creates a new creative attempt or provider submission. */
+export async function triggerH3StillReconciliation(job: H3StillJob, previousRunId: string, requestIntentId: string) {
+  assertTriggerConfigured();
+  if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(requestIntentId)
+    || job.runId !== previousRunId || !job.workflowSha256
+    || !["submitting", "submission_unknown", "rendering", "persisting", "cancel_requested"].includes(job.state)) throw new Error("Choose an existing unresolved still attempt.");
+  const dispatch = await buildDispatchContext(["stack-structure", "h3-still", "still-reconciliation", "vm100-heavy"], {
+    stageLabel: "Checking the existing MiniMax still attempt", progressMode: "provider",
+  });
+  if (dispatch.userId !== job.ownerId) throw new Error("Still reconciliation belongs to another user.");
+  return tasks.trigger<typeof h3StillTask>(STACK_STRUCTURE_TRIGGER_TASKS.h3Still,
+    { ownerId: job.ownerId, projectId: job.projectId, jobId: job.id, mode: "reconcile", previousRunId }, {
+      idempotencyKey: createTriggerIdempotencyKey("h3-still-reconcile-v1", [job.ownerId, job.id, previousRunId, requestIntentId]),
+      idempotencyKeyTTL: "30d", maxAttempts: 1,
+      tags: [...dispatch.tags, `project:${job.projectId}`, `h3-still:${job.id}`], metadata: dispatch.metadata,
+    }) as Promise<{ id: string }>;
+}
+
+export async function triggerH3ShotPlanning(reference: H3ShotPlanningReference, attempt = 0) {
+  assertTriggerConfigured();
+  if (!Number.isInteger(attempt) || attempt < 0 || attempt > 2) throw new Error("Shot planning permits only three explicit attempts.");
+  const dispatch = await buildDispatchContext(["stack-structure", "shot-planning", "qwen", "vm100-heavy"], {
+    stageLabel: "Waiting for shot planning capacity", progressMode: "indeterminate",
+  });
+  if (dispatch.userId !== reference.ownerId) throw new Error("Shot planning dispatch owner changed.");
+  return tasks.trigger<typeof h3ShotPlanningTask>(STACK_STRUCTURE_TRIGGER_TASKS.h3ShotPlanning, reference, {
+    idempotencyKey: createTriggerIdempotencyKey("h3-shot-planning-v1", [reference.ownerId, reference.projectId, reference.planSignature, reference.bindingSha256, String(attempt)]),
+    idempotencyKeyTTL: "30d", maxAttempts: 1,
+    tags: [...dispatch.tags, `project:${reference.projectId}`, `planning-binding:${reference.bindingSha256}`, `planning-attempt:${attempt}`], metadata: dispatch.metadata,
+  });
+}
 
 export async function triggerMediaSceneDetection(payload: MediaSceneDetectionPayload) {
   assertTriggerConfigured();

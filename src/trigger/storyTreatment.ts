@@ -205,7 +205,7 @@ export async function runStoryTreatmentGateway(payload: StoryTreatmentPayload, t
   }
 }
 
-async function ensureQwenBackend(
+export async function ensureQwenBackend(
   gatewayUrl: string,
   headers: Record<string, string> | undefined,
   triggerRunId: string,

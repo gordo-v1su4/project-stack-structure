@@ -32,6 +32,8 @@ export type H3ReferenceSnapshot = {
   version: string;
   /** Storage version pinned before queueing; conditional download rejects an overwrite. */
   etag?: string;
+  /** Only new explicitly selected aesthetic inputs carry this restriction. */
+  aesthetic?: { purpose: "shot" | "style"; guidance: string; originalSha256: string };
 };
 
 export type H3GenerationState = "queued" | "preparing" | "submitting" | "submission_unknown"
