@@ -1,6 +1,8 @@
-import { buildH3ShotPlanningInput, type H3ShotPlanningInput } from "@/components/studio/h3ShotPlanning";
-import { planH3DraftWindows } from "@/components/studio/h3DraftPlan";
-import { buildEditPlanPreviewSegments } from "@/components/studio/musicVideoProject";
+import type { H3ShotPlanningInput } from "@/components/studio/h3ShotPlanning";
+import { buildH3ResolvedPlanningScaffold } from "@/components/studio/h3ResolvedPlanningScaffold";
+import { buildH3DraftPlanningInput } from "@/components/studio/h3PlannedDraftRequests";
+import { withCurrentReferenceIdentity } from "@/components/studio/currentReferenceIdentity";
+import type { SelectedFootageEvidence } from "@/components/studio/selectedFootageEvidence";
 import { buildStoryContentSignature } from "@/components/studio/storyTreatments";
 import { buildStudioSourceContextSignature } from "@/components/studio/studioSourceContext";
 import { validateSavedGenerationScope } from "./generationScopeServer";
@@ -8,6 +10,7 @@ import { readStudioProject, type SavedStudioProject } from "./studioProjectStore
 import { normalizeStudioOwnerSegment, normalizeStudioProjectId } from "./studioStoragePaths";
 import { readH3ShotPlan, storeH3ShotPlan } from "./h3ShotPlanningStore";
 import { generateH3ShotPlan } from "./h3ShotPlanningGateway";
+import { resolveCanonicalSelectedFootageEvidence } from "./selectedFootageEvidenceServer";
 
 export class H3ShotPlanningError extends Error {
   constructor(message: string, readonly status = 409) { super(message); }
@@ -16,6 +19,7 @@ export class H3ShotPlanningError extends Error {
 type Dependencies = {
   read: typeof readStudioProject;
   validate: typeof validateSavedGenerationScope;
+  selectedEvidence?: typeof resolveCanonicalSelectedFootageEvidence;
 };
 
 /** The caller must obtain ownerId from the authenticated session or owned
@@ -52,15 +56,24 @@ export async function loadH3ShotPlanningContext(ownerId: string, projectId: stri
   }
   const scope = await dependencies.validate(ownerId, saved);
   if (!scope || scope !== expected.planSignature) throw new H3ShotPlanningError("The confirmed cut plan changed.");
-  // Use all saved placements as context, including existing footage. Empty
-  // videoSources makes planning copies into gaps solely for the existing
-  // bounded window splitter; it does not change or dispatch the actual edit.
-  const scaffold = planH3DraftWindows(buildEditPlanPreviewSegments({ project, videoSources: [] }));
-  const subjectNames = (saved.draft.referenceAssets ?? [])
-    .filter(asset => asset.kind === "character" || asset.role.startsWith("character"))
-    .map(asset => asset.displayName);
   let input: H3ShotPlanningInput;
-  try { input = buildH3ShotPlanningInput({ project, projectId, segments: scaffold, subjectNames }); }
+  try {
+    const assets = withCurrentReferenceIdentity(saved.draft.generatedAssets ?? [], project.currentIdentity);
+    const scaffold = buildH3ResolvedPlanningScaffold({ project, generatedAssets: assets, draft: saved.draft.generatedDraft });
+    const evidence = new Map<string, SelectedFootageEvidence>();
+    for (const row of scaffold.coverageLedger) {
+      if (row.kind !== "generated") continue;
+      const asset = assets.find(asset => asset.id === row.generatedAssetId);
+      if (!asset || row.sourceStart === undefined || row.sourceEnd === undefined) throw new Error("Selected footage is unavailable.");
+      const resolved = await (dependencies.selectedEvidence ?? resolveCanonicalSelectedFootageEvidence)({ selected: true, ownerId, projectId,
+        generationScope: scope, asset, window: { songStart: row.songStart, songEnd: row.songEnd, sourceStart: row.sourceStart, sourceEnd: row.sourceEnd }, currentIdentity: project.currentIdentity });
+      if (!resolved) throw new Error("Selected footage canonical evidence changed.");
+      evidence.set(row.windowKey, resolved);
+    }
+    input = buildH3DraftPlanningInput(projectId, project, saved.draft.referenceAssets ?? [], {
+      assets, draft: saved.draft.generatedDraft, canonicalEvidenceByWindowKey: evidence,
+    });
+  }
   catch { throw new H3ShotPlanningError("The current saved placements cannot supply a complete bounded shot planning context."); }
   if (input.planSignature !== scope || (expected.bindingSha256 !== undefined && input.bindingSha256 !== expected.bindingSha256)) {
     throw new H3ShotPlanningError("The story, cut plan or planning context changed.");

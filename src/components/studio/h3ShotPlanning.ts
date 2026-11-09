@@ -4,6 +4,7 @@ import { h3FrameCount, H3_FPS, H3_MAX_SHOT_SECONDS } from "./h3Generation";
 import type { EditPlanPreviewSegment, MusicVideoProject, StoryEditSettings } from "./musicVideoProject";
 import { isPlacementPlanCurrent } from "./musicVideoProject";
 import type { ShotRequirementConstraints } from "./storyMatchAssessment";
+import type { GeneratedFootageEvidence, SelectedFootageEvidence } from "./selectedFootageEvidence";
 
 export const H3_SHOT_PLANNING_LIMITS = {
   windows: 512, groups: 64, windowsPerGroup: 64, subjectNames: 32,
@@ -14,6 +15,8 @@ export type H3ShotPlanningWindow = {
   key: string; placementId: string; songStart: number; songEnd: number;
   inference: { fps: number; frames: number; durationSeconds: number };
   sourceEvidence?: { momentId: string; caption: string; sourceStart: number; sourceEnd: number };
+  generatedEvidence?: GeneratedFootageEvidence;
+  generatedEvidenceBindingSha256?: string;
 };
 export type H3ShotPlanningGroup = {
   id: string; timelineItemId: string; requirementId?: string; narrativeMomentId?: string; sectionId: string;
@@ -22,6 +25,7 @@ export type H3ShotPlanningGroup = {
 export type H3ShotPlanningInput = {
   version: 1; bindingSha256: string; projectId: string; planSignature: string;
   settings: StoryEditSettings; subjectNames: string[]; groups: H3ShotPlanningGroup[];
+  coverageSha256?: string;
 };
 export type H3ShotDirection = {
   windowKey: string; direction: string; entryState: string; exitState: string; actionIndices: number[];
@@ -60,6 +64,8 @@ function constraintsSnapshot(value: ShotRequirementConstraints | undefined): Sho
  */
 export function buildH3ShotPlanningInput(params: {
   project: MusicVideoProject; segments: EditPlanPreviewSegment[]; subjectNames?: string[]; projectId?: string;
+  generatedEvidenceByWindowKey?: ReadonlyMap<string, SelectedFootageEvidence>;
+  coverageBinding?: unknown;
 }): H3ShotPlanningInput {
   const { project, segments } = params;
   const planSignature = effectiveGenerationScope(project);
@@ -97,16 +103,42 @@ export function buildH3ShotPlanningInput(params: {
       throw new Error("Disjoint holes need explicit source-boundary context before shot planning.");
     }
     const frames = h3FrameCount(segment.musicEnd - segment.musicStart);
-    const moment = placement.kind === "source" ? project.videoMoments.find(moment => moment.id === placement.momentId) : undefined;
+    const selectedEvidence = params.generatedEvidenceByWindowKey?.get(key);
+    if (Boolean(segment.generatedAssetId) !== Boolean(selectedEvidence)) throw new Error("Applied generated coverage requires its exact canonical evidence.");
+    let generatedEvidence: GeneratedFootageEvidence | undefined;
+    let generatedEvidenceBindingSha256: string | undefined;
+    if (selectedEvidence) {
+      const value = selectedEvidence.evidence;
+      if (value.assetId !== segment.generatedAssetId || value.completion !== "unverified"
+        || !["requested-direction", "media-only"].includes(value.evidenceKind)
+        || !Number.isFinite(value.sourceStart) || !Number.isFinite(value.sourceEnd) || value.sourceStart < 0
+        || value.sourceEnd <= value.sourceStart || Math.abs(value.sourceStart - segment.startTime) > 0.000001
+        || Math.abs(value.sourceEnd - segment.endTime) > 0.000001
+        || Math.abs(value.sourceEnd - value.sourceStart - (segment.musicEnd - segment.musicStart)) > 0.000001
+        || (value.mediaSha256 !== undefined && !/^[a-f0-9]{64}$/.test(value.mediaSha256))) throw new Error("Generated planning evidence differs from its applied trim.");
+      generatedEvidence = { assetId: text(value.assetId, 200, "covered asset"), sourceStart: value.sourceStart, sourceEnd: value.sourceEnd,
+        evidenceKind: value.evidenceKind, completion: "unverified", ...(value.mediaSha256 ? { mediaSha256: value.mediaSha256 } : {}) };
+      if (value.evidenceKind === "requested-direction") {
+        if (!/^h3-[a-f0-9]{64}$/.test(value.jobId ?? "") || !value.mediaSha256) throw new Error("Canonical generated direction requires its job and media binding.");
+        generatedEvidence.jobId = value.jobId;
+        generatedEvidence.requestedDirection = text(value.requestedDirection, 6000, "prior requested direction");
+      } else if (value.jobId !== undefined || value.requestedDirection !== undefined) throw new Error("Media-only coverage cannot claim a generated action.");
+      const binding = JSON.stringify(selectedEvidence.canonicalBinding);
+      if (!binding || new TextEncoder().encode(binding).length > 16_384) throw new Error("Generated planning binding exceeds its bound.");
+      generatedEvidenceBindingSha256 = generationScopeSha256(selectedEvidence.canonicalBinding);
+    }
+    const moment = !segment.generatedAssetId && placement.kind === "source" ? project.videoMoments.find(moment => moment.id === placement.momentId) : undefined;
     const sourceStart = placement.sourceStart + segment.musicStart - placement.songStart;
     const sourceEnd = sourceStart + segment.musicEnd - segment.musicStart;
     if (moment && (!Number.isFinite(sourceStart) || !Number.isFinite(sourceEnd) || sourceStart < 0
       || sourceEnd > placement.sourceEnd + 0.001)) throw new Error("Source planning evidence exceeds its confirmed trim.");
     group.windows.push({ key, placementId: placement.id, songStart: segment.musicStart, songEnd: segment.musicEnd,
       inference: { fps: H3_FPS, frames, durationSeconds: frames / H3_FPS },
-      ...(moment ? { sourceEvidence: { momentId: moment.id, caption: text(moment.caption || moment.label, 1800, "source evidence"), sourceStart, sourceEnd } } : {}) });
+      ...(moment ? { sourceEvidence: { momentId: moment.id, caption: text(moment.caption || moment.label, 1800, "source evidence"), sourceStart, sourceEnd } } : {}),
+      ...(generatedEvidence ? { generatedEvidence, generatedEvidenceBindingSha256 } : {}) });
     if (groups.length > H3_SHOT_PLANNING_LIMITS.groups || group.windows.length > H3_SHOT_PLANNING_LIMITS.windowsPerGroup) throw new Error("Shot planning group count exceeds its bound.");
   }
+  if (params.generatedEvidenceByWindowKey && [...params.generatedEvidenceByWindowKey.keys()].some(key => !seen.has(key))) throw new Error("Generated evidence refers to another planning window.");
   for (const group of groups) {
     const item = project.editPlan.timelineItems.find(item => item.id === group.timelineItemId)!;
     if (group.windows[0].songStart !== item.start
@@ -115,7 +147,8 @@ export function buildH3ShotPlanningInput(params: {
   const settings = project.placementPlan.settings;
   if (!Number.isFinite(settings.cutDensity) || settings.cutDensity < 0 || settings.cutDensity > 1 || typeof settings.preferOnsets !== "boolean") throw new Error("Invalid confirmed shot pacing settings.");
   const body = { version: 1 as const, projectId: text(params.projectId ?? project.id, 200, "project"), planSignature,
-    settings: { cutDensity: settings.cutDensity, preferOnsets: settings.preferOnsets }, subjectNames, groups };
+    settings: { cutDensity: settings.cutDensity, preferOnsets: settings.preferOnsets }, subjectNames, groups,
+    ...(params.coverageBinding !== undefined ? { coverageSha256: generationScopeSha256(params.coverageBinding) } : {}) };
   if (new TextEncoder().encode(JSON.stringify(body)).length > H3_SHOT_PLANNING_LIMITS.inputBytes) throw new Error("Shot planning input exceeds its byte bound.");
   return { ...body, bindingSha256: generationScopeSha256(body) };
 }

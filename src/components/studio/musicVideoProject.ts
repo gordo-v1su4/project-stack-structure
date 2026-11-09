@@ -78,6 +78,8 @@ export interface SemanticClipMatch {
 }
 
 export interface EditPlanPreviewSegment {
+  /** Exact applied overlay provenance; never inferred from a playback URL. */
+  generatedAssetId?: string;
   useClipAudio?: boolean;
   placementId?: string;
   planSignature?: string;

@@ -90,12 +90,13 @@ export function MiniMaxDraftPanel(props: Props) {
   const continueBatch = useRef<(() => Promise<void>) | null>(null);
   const recoveryIntents = useRef(new Map<string, string>());
   const preparingDraft = useRef(false);
-  const planning = useRef<{ controller: AbortController; projectId: string; binding: string; aesthetics: string } | null>(null);
+  const planning = useRef<{ controller: AbortController; projectId: string; binding: string; aesthetics: string; jobs: H3GenerationJob[] } | null>(null);
   function planningIsCurrent() {
     const active = planning.current;
     const current = latest.current;
     if (!active || !mounted.current || active.controller.signal.aborted || current.projectId !== active.projectId || current.storyApproved === false || !current.project) return false;
-    try { return buildH3DraftPlanningInput(active.projectId, current.project, current.referenceAssets).bindingSha256 === active.binding
+    try { return buildH3DraftPlanningInput(active.projectId, current.project, current.referenceAssets,
+      { assets: current.assets, draft: current.draft, jobs: active.jobs }).bindingSha256 === active.binding
       && generationScopeSha256(current.aestheticReferences ?? null) === active.aesthetics; }
     catch { return false; }
   }
@@ -118,7 +119,7 @@ export function MiniMaxDraftPanel(props: Props) {
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; planning.current?.controller.abort(); }; }, []);
   useEffect(() => {
     if (planning.current && !planningIsCurrent()) planning.current.controller.abort();
-  }, [props.projectId, props.project, props.referenceAssets, props.aestheticReferences, props.storyApproved]);
+  }, [props.projectId, props.project, props.referenceAssets, props.aestheticReferences, props.storyApproved, props.assets, props.draft]);
 
   const readJobs = useCallback(async (projectId: string) => {
     const restored = await readH3DraftJobs(projectId);
@@ -256,11 +257,18 @@ export function MiniMaxDraftPanel(props: Props) {
       let windows = planH3DraftWindows(latest.current.segments);
       let planningInput: ReturnType<typeof buildH3DraftPlanningInput> | undefined;
       let planningResult: H3ShotPlanningResult | undefined;
+      if (windows.length) {
+        if (!latest.current.project) throw new Error("Restore the full confirmed story before preparing missing shots.");
+        planningInput = buildH3DraftPlanningInput(projectId, latest.current.project, latest.current.referenceAssets,
+          { assets: latest.current.assets, draft: latest.current.draft, jobs: existingJobs });
+        const coveredKeys = new Set(planningInput.groups.flatMap(group => group.windows)
+          .filter(window => window.sourceEvidence || window.generatedEvidence).map(window => window.key));
+        if (windows.some(window => coveredKeys.has(h3WindowKey(window)))) throw new Error("Some apparent gaps already contain canonical footage. Restore their playback sources before generating.");
+      }
       if (windows.some(window => !previousH3WindowJob(projectId, window, existingJobs))) {
-        if (!latest.current.project) throw new Error("Restore the full confirmed story before planning new shots.");
-        planningInput = buildH3DraftPlanningInput(projectId, latest.current.project, latest.current.referenceAssets);
+        if (!planningInput) throw new Error("Restore the current shot planning context.");
         planning.current = { controller: new AbortController(), projectId, binding: planningInput.bindingSha256,
-          aesthetics: generationScopeSha256(latest.current.aestheticReferences ?? null) };
+          aesthetics: generationScopeSha256(latest.current.aestheticReferences ?? null), jobs: existingJobs };
         setMessage("Planning and reviewing each musical shot before video generation…");
         const { requestH3ShotPlanning } = await import("../h3ShotPlanningClient");
         planningResult = await requestH3ShotPlanning(planningInput, { signal: planning.current.controller.signal, isCurrent: planningIsCurrent });

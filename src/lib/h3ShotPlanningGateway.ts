@@ -10,7 +10,7 @@ export type H3ShotAuthorInput = {
   version: 1; bindingSha256: string;
   context: { approvedDirection: string; constraints: ShotRequirementConstraints; subjectNames: string[];
     previousExitState?: string; completedActionCount: number; remainingWindowCount: number };
-  windows: ({ id: number } & Pick<H3ShotPlanningWindow, "songStart" | "songEnd" | "inference" | "sourceEvidence">)[];
+  windows: ({ id: number } & Pick<H3ShotPlanningWindow, "songStart" | "songEnd" | "inference" | "sourceEvidence" | "generatedEvidence">)[];
 };
 export type H3ShotChunkCandidate = { version: 1; bindingSha256: string;
   directions: (Omit<H3ShotDirection, "windowKey"> & { windowId: number })[] };
@@ -131,7 +131,8 @@ export async function generateH3ShotPlan(input: H3ShotPlanningInput, dependencie
       for (let offset = 0; offset < group.windows.length; offset += H3_SHOT_GATEWAY_LIMITS.chunkWindows) boundedJson({ version: 1, bindingSha256,
         context: { ...context, previousExitState: "界".repeat(800) }, windows: group.windows.slice(offset, offset + H3_SHOT_GATEWAY_LIMITS.chunkWindows).map((window, id) => ({ id: offset + id,
           songStart: window.songStart, songEnd: window.songEnd, inference: window.inference,
-          ...(window.sourceEvidence ? { sourceEvidence: window.sourceEvidence } : {}) })) });
+          ...(window.sourceEvidence ? { sourceEvidence: window.sourceEvidence } : {}),
+          ...(window.generatedEvidence ? { generatedEvidence: window.generatedEvidence } : {}) })) });
     }
     const directions: H3ShotDirection[] = [];
     for (const group of snapshot.groups) {
@@ -143,7 +144,8 @@ export async function generateH3ShotPlan(input: H3ShotPlanningInput, dependencie
           constraints: group.constraints, subjectNames: snapshot.subjectNames, ...(previousExitState !== undefined ? { previousExitState } : {}),
           completedActionCount, remainingWindowCount: group.windows.length - offset };
         const wireWindows = windows.map((window, index) => ({ id: offset + index, songStart: window.songStart, songEnd: window.songEnd, inference: window.inference,
-          ...(window.sourceEvidence ? { sourceEvidence: window.sourceEvidence } : {}) }));
+          ...(window.sourceEvidence ? { sourceEvidence: window.sourceEvidence } : {}),
+          ...(window.generatedEvidence ? { generatedEvidence: window.generatedEvidence } : {}) }));
         const wire: H3ShotAuthorInput = { version: 1,
           bindingSha256: generationScopeSha256({ inputBinding: bindingSha256, groupId: group.id, context, windows: wireWindows }), context, windows: wireWindows };
         const candidate = chunkCandidate(await post("/story/shots/author", wire), wire);

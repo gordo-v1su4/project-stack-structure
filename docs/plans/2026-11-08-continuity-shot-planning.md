@@ -67,14 +67,37 @@ verified zero video dispatch before planning and after a stale reply. A syntheti
 composed prompt passed strict H3 skill lint at 124 frames / 24 FPS. None of these
 fixtures proves actual model prose, visual continuity, identity or live acceptance.
 
-Exact window matching intentionally rejects a partial pickup whose remaining gap
-differs from the canonical full-plan subdivision. Automatic refinement for that
-case is still missing; applying an enclosing direction could repeat an action.
-This fail-closed boundary is not full partial-coverage workflow acceptance.
+The source now refines the complete requirement at applied footage boundaries.
+For a selected 0–3 second pickup, planning retains that media as context and
+prepares the exact remaining 3–10 second window. It reuses the existing approved
+and selected overlay order, carries explicit asset provenance, and binds stable
+media/target/trim facts without runtime URLs or unrelated bank entries.
+
+Canonical H3 jobs supply prior requested directions; editable asset descriptions
+cannot substitute for them. The server independently checks owned jobs, range
+assessments, issued policies and current-reference records. A browser's explicit
+cached-range projection is advisory only and cannot enable that mode server-side.
+Editorial imports supply media context with unknown action. Every prior direction
+is intent, not observed or completed action; the author/critic must reject
+unsupported continuity rather than assume the action happened inside a trim.
+
+Only actual missing windows can become new or retried requests. Missing browser
+URLs cannot turn canonical covered footage into a content gap. Planning's new
+provenance is excluded from legacy prepared-review fingerprints, preserving their
+byte identity when playback is unchanged.
+
+Validation: the full app check passed (1,631 tests, zero failed, 24 skipped), then
+the final covered-source guard passed nine affected tests and typecheck/lint.
+The companion gateway source is `1ea6978`; all 82 offline gateway tests passed.
+Independent review found the covered-source dispatch gap and it was fixed with
+an absent-URL regression covering both new and retry paths. No model, runtime,
+project/media write, PR or feature deployment occurred in this source slice.
+The separately released H3 worker demonstrated that this self-hosted platform's
+`small-2x` maps to 1 GiB; the new planning task itself remains undeployed.
 
 1. Verify the connected browser workflow through the real canonical planning
    task, owned run status, and stored result. Verify reload/recovery and changed
-   context handling, then add canonical refinement for partially covered windows.
+   context handling, including partially covered windows and uncertain footage evidence.
 2. Review the concrete coordinated gateway/worker/web release before activation.
    No gateway, service, queue or infrastructure deployment is included here.
 3. Verify admitted chunks fit the actual model context and yield useful reviewed

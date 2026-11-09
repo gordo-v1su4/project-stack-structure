@@ -50,6 +50,8 @@ describe("bounded H3 shot planning gateway", () => {
   test("authors/reviews full canonical groups in chunks with exact carried state and global action allocation", async () => {
     const input = fixture();
     input.groups[0].windows[1].sourceEvidence = { momentId: "accepted-source", caption: "Already holding the rail.", sourceStart: 3, sourceEnd: 4 };
+    input.groups[0].windows[2].generatedEvidence = { assetId: "selected-prefix", sourceStart: 4, sourceEnd: 5,
+      evidenceKind: "media-only", completion: "unverified", mediaSha256: "a".repeat(64) };
     const inputBody = { ...input }; delete (inputBody as Partial<typeof input>).bindingSha256;
     input.bindingSha256 = generationScopeSha256(inputBody);
     const mock = gateway();
@@ -66,6 +68,7 @@ describe("bounded H3 shot planning gateway", () => {
     expect(authors[0].context.constraints).toEqual(input.groups[0].constraints);
     expect(authors[0].windows[0].inference).toEqual(input.groups[0].windows[0].inference);
     expect(authors[0].windows[1].sourceEvidence).toEqual(input.groups[0].windows[1].sourceEvidence);
+    expect(authors[0].windows[2].generatedEvidence).toEqual(input.groups[0].windows[2].generatedEvidence);
     expect(new Set(authors.map(author => author.bindingSha256)).size).toBe(3);
     for (const author of authors) expect(author.bindingSha256).toBe(generationScopeSha256({ inputBinding: input.bindingSha256,
       groupId: input.groups[0].id, context: author.context, windows: author.windows }));
