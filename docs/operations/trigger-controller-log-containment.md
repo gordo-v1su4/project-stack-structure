@@ -6,6 +6,43 @@ This application's `controllerLogContainment()` build extension applies one exac
 
 The controller version, full original source SHA-256, exact statement count, path containment and patched output SHA-256 are checked. Any SDK/bundler drift fails the build and requires review of the actual new controller; do not remove these checks to make an upgrade build pass. The actual 4.5.16 source was verified offline before implementation. Unit checks cover nested credential sentinels, unchanged execution data and rejected drift.
 
+## Import-rebound source candidate — November 9, 2026
+
+The PR67 worker build stopped at the source checksum guard before publishing. Its
+4.5.16 controller and the reviewed isolated-cache fixture both contain 549,810
+bytes, 15,433 LF characters and no CRLF. Their complete diff consists of three
+generated import basenames: `FT6KN5ZP` → `CEB7UULU`, `QOCO22YJ` → `7Q5UQ7TD`,
+and `2FIQRGT7` → `FT6LMJRK`. Reversing those three substitutions reproduces the
+reviewed file byte for byte. The execution body and single unsafe log statement
+are unchanged.
+
+The candidate adds one exact source/output pair while preserving the old pair:
+
+| Original SHA-256 | Contained SHA-256 |
+| --- | --- |
+| `06f44ebdc32828b1e65259c749e5ecd8c4e4d38daacdbdeb3d9e9d1799d9065b` | `601eefa76f120098c948bb11adbd80dec88e7c5b10a6fc6923cd5e2e1fd1b152` |
+| `48744f08e1b31704279ff6245208e4ef6520299401480dafd96e4b6f33fd3e62` | `9fa7a554fafd1c8798d9f2b816d724e3ce0b40391029a4a5f4e63a1825475a42` |
+
+Only an exact known contained output is idempotent. Unknown source/output hashes,
+including further import, body or whitespace changes, still reject. No generic
+path/chunk normalization or SDK upgrade is introduced. The packaged-JavaScript
+verifier admits only the two exact contained outputs by default; its explicit
+fixture override remains available to tests, never to CLI arguments.
+
+All three downloaded chunks match their exact filename, byte count and SHA-256
+in the retained pre-COPY `stack-worker-javascript.sha256.json`. Their 3, 1 and 25
+named controller imports respectively exist in their export lists, and all three
+relative specifiers retain the same eight-parent path to root chunks. The release
+controller separately reported syntax checks passing for the failed controller
+and all three chunks under the published worker's Node 20.19.6, in an isolated
+CPU container with network disabled. No worker module was executed by those checks.
+
+**Release pending:** complete packaged-image verification, release review and a
+new approved deployment remain separate gates. This source candidate is not proof of a
+published worker, healthy startup or completed film. Retain the failed source
+and reviewed fixtures as ignored offline evidence rather than checking bundled
+controller source into Git.
+
 The config imports only `scripts/trigger-controller-patch-core.ts`, a pure module with no executable entry point, top-level await or `import.meta`. The separate `scripts/patch-trigger-controller.ts` wrapper runs only as an explicit build command. Both files are packaged in the image. A regression using the actual CLI's Node 24.18.0 CommonJS c12/jiti loader reproduced the previous `import.meta` failure and loaded the corrected full config, without authentication or deployment. The same check exercised the extension and confirmed the pinned CLI template copies the application before patching and patches before startup. Direct Bun invocation produced the pinned patched checksum. The required check passes **1,040 tests, 22 skips, zero failures**; the optional installed-CLI loader fixture was separately verified on the real Linux Node toolchain.
 
 For each release, verify that the containment command follows the application copy, verify the built controller checksum, run a bounded CPU task, and inspect **only sanitized startup-log structure**: the attempt properties must contain the metadata allowlist and no `start`/`envVars` object. Do not print raw runner logs or runtime environments.
