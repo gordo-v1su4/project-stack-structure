@@ -14,6 +14,7 @@ import type { SavedStudioProject, StudioProjectSummary } from "@/lib/studioProje
 import type { StoryBrief, StoryGenerationMeta, StoryTreatment } from "./storyTreatments";
 import { encodeStudioJsonRequest, STUDIO_JSON_TRANSPORT_HEADERS } from "@/lib/studioJsonTransport";
 import { normalizeFinalExportIntent, type FinalExportIntent } from "./finalExportRecovery";
+import { normalizeSceneProofPlan, type SceneProofPlan } from "./sceneProofs";
 
 export const STUDIO_PROJECT_STORAGE_KEY = "project-stack-structure:studio-project:v1";
 export { ACTIVE_STUDIO_PROJECT_KEY } from "./projectSelection";
@@ -37,6 +38,7 @@ export type PersistedStoryState = {
   generationMeta?: StoryGenerationMeta | null;
   storyContentSignature?: string | null;
   confirmedSourceContextSignature?: string | null;
+  sceneProofPlan?: SceneProofPlan;
 };
 
 export type PersistedVideoSource = Omit<UploadedVideoSource, "videoUrl"> & {
@@ -519,6 +521,7 @@ export function normalizePersistedStoryState(state: PersistedStoryState, legacy:
     && confirmedTreatmentSnapshot?.reconciliation?.status !== "pending";
   return {
     ...state,
+    sceneProofPlan: normalizeSceneProofPlan(state.sceneProofPlan),
     storyGenerated: hasConfirmedPlan,
     brief: { text: typeof state.brief?.text === "string" ? state.brief.text.slice(0, 4_000) : "" },
     treatments,

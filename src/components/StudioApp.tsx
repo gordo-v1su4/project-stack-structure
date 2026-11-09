@@ -63,6 +63,8 @@ import { MatchTab, type MatchMode } from "./studio/panels/MatchTab";
 import { MusicCutExplorer } from "./studio/panels/MusicCutExplorer";
 import { SplitTab } from "./studio/panels/SplitTab";
 import { createDefaultStoryTabState, StoryTab } from "./studio/panels/StoryTab";
+import { prepareSceneProofSave } from "./studio/sceneProofPersistence";
+import type { SceneProofPlan } from "./studio/sceneProofs";
 import { ActRail } from "./studio/shell/ActRail";
 import { PreviewBeatSpine, PreviewTransportBar } from "./studio/shell/PreviewPlaybackLeaves";
 import { StageGateBanner } from "./studio/shell/StageGateBanner";
@@ -2334,6 +2336,25 @@ export default function StudioApp() {
     } finally { autosaveInFlightRef.current = false; }
   }
 
+  async function persistSceneProofPlan(plan: SceneProofPlan, expected?: SceneProofPlan) {
+    const startingEpoch = projectSaveSessionRef.current!.contextEpoch;
+    while (autosaveInFlightRef.current) await new Promise(resolve => setTimeout(resolve, 50));
+    const live = draftReviewLiveRef.current;
+    if (projectSaveSessionRef.current!.contextEpoch !== startingEpoch) throw new Error("The open project changed before saving scene previews.");
+    const draft = prepareSceneProofSave(live.projectId, live.project, plan, expected);
+    autosaveInFlightRef.current = true;
+    try {
+      flushSync(() => setStoryState(current => ({ ...current, sceneProofPlan: plan })));
+      await saveVersionedProject({ projectId: live.projectId, name: live.projectName, draft }, { cache: false }, startingEpoch);
+      if (projectSaveSessionRef.current!.contextEpoch !== startingEpoch) throw new Error("The open project changed while saving scene previews.");
+      setSaveState({ kind: "saved", at: Date.now(), scope: "project", detail: "Scene preview state saved." });
+    } catch (error) {
+      if (projectSaveSessionRef.current!.contextEpoch === startingEpoch) setSaveState({ kind: "error", at: null, scope: "project",
+        detail: error instanceof Error ? error.message : "Scene preview save failed; generation is blocked." });
+      throw error;
+    } finally { autosaveInFlightRef.current = false; }
+  }
+
   async function ensureH3ProjectSaved() {
     const startingProjectId = draftReviewLiveRef.current.projectId;
     await flushPendingAutosaveRef.current?.();
@@ -2885,6 +2906,9 @@ export default function StudioApp() {
 
             {tab === "story" && (
               <StoryTab
+                savedProjectId={activeProjectId}
+                onEnsureSavedProject={ensureH3ProjectSaved}
+                onPersistSceneProofPlan={persistSceneProofPlan}
                 existingProject={storedMusicVideoProject}
                 analysis={beatJoinAnalysis}
                 audioStatus={audioStatus}

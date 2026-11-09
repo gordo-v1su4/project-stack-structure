@@ -11,6 +11,17 @@ async function submitting(f: ReturnType<typeof fixture>) {
 }
 
 describe("owned frozen H3 still jobs", () => {
+  test("optional scene bindings are immutable job identity and legacy jobs retain their shape", async () => {
+    const f = fixture(), legacy = await createH3StillJob(f.input, f.objects);
+    expect(Object.hasOwn(legacy, "sceneProof")).toBe(false);
+    const g = fixture(), sceneProof = { sceneId: "verse", momentId: "action" as const, bindingSha256: "a".repeat(64) };
+    const bound = await createH3StillJob({ ...g.input, sceneProof }, g.objects);
+    expect(bound.id).not.toBe(legacy.id); expect(bound.sceneProof).toEqual(sceneProof);
+    await expect(updateH3StillJob(bound.ownerId, bound.projectId, bound.id, "run-1", current => ({
+      ...current, sceneProof: { ...sceneProof, momentId: "transition" },
+    }), g.objects)).rejects.toThrow("frozen");
+    await expect(createH3StillJob({ ...g.input, sceneProof: { ...sceneProof, bindingSha256: "not-a-hash" } }, g.objects)).rejects.toThrow("scene preview binding");
+  });
   test("terminal worker preparation can finish without resetting ownership or authorizing the same attempt again", async () => {
     const f = fixture(), job = await createH3StillJob(f.input, f.objects);
     await updateH3StillJob(job.ownerId, job.projectId, job.id, "run-dead", current => ({ ...current, state: "preparing" }), f.objects);

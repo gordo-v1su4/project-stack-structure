@@ -3,7 +3,7 @@ import { h3ProjectFixture } from "../helpers/h3Project";
 import { acknowledgeStillClientRecord, buildStillContinuation, buildStillVideoRequest, assertStillClientJob, canCreateStill, parseStillClientRecord, restoreStillShotForm, sameStillFutureCreative, stillCanonicalContext, stillClientRequest, stillClientStorageKey, type StillClientRecord } from "@/components/studio/h3StillClient";
 import type { H3GenerationJob } from "@/components/studio/h3Generation";
 import type { H3StillJob } from "@/lib/h3StillJobStore";
-import { StillClientAdmissionError, releaseRejectedStillRecord } from "@/components/studio/h3StillClient";
+import { StillClientAdmissionError, releaseRejectedStillRecord, submitStillClientIntent } from "@/components/studio/h3StillClient";
 
 function fixture() {
   const { request } = h3ProjectFixture(); request.identityPolicyFamily = "sface-yunet-foreground-frontal-v2";
@@ -171,4 +171,55 @@ test("explicit video creation retries the same frame at most three times and giv
   expect({ ...fresh, requestIntentId: first.requestIntentId, conditioning: undefined }).toEqual({ ...before, conditioning: undefined });
   expect(record.request.shot).toEqual(before);
   expect(() => buildStillVideoRequest(revised, [completed(first, "rendering")])).toThrow("active video submission");
+});
+
+test("scene moments have separate intent recovery keys and a delayed ACK cannot replace a revised context", () => {
+  const { record, job } = fixture(), rows = new Map<string, string>();
+  const storage = { getItem: (key: string) => rows.get(key) ?? null, setItem: (key: string, value: string) => { rows.set(key, value); }, removeItem: (key: string) => { rows.delete(key); } };
+  expect(stillClientStorageKey(record.projectId)).toBe(`studio-minimax-still-v1:${record.projectId}`);
+  const scopes = ["scene:a/setting", "scene:a/action", "scene:a/transition"];
+  expect(new Set(scopes.map(scope => stillClientStorageKey(record.projectId, scope))).size).toBe(3);
+  for (const scope of scopes) storage.setItem(stillClientStorageKey(record.projectId, scope), JSON.stringify(record));
+  expect(acknowledgeStillClientRecord(storage, { ...record, jobId: job.id }, scopes[1])).toBe(true);
+  expect(JSON.parse(storage.getItem(stillClientStorageKey(record.projectId, scopes[0]))!).jobId).toBe(undefined);
+  const changed = { ...record, context: "e".repeat(64) };
+  storage.setItem(stillClientStorageKey(record.projectId, scopes[2]), JSON.stringify(changed));
+  expect(acknowledgeStillClientRecord(storage, { ...record, jobId: job.id }, scopes[2])).toBe(false);
+  expect(releaseRejectedStillRecord(storage, record, scopes[2])).toBe(false);
+});
+
+test("a scene's durable intent is awaited before its sole POST, with binding retained for GET-only device recovery", async () => {
+  const { record, job } = fixture(), events: string[] = [], rows = new Map<string, string>();
+  const sceneProof = { sceneId: "scene-one", momentId: "setting" as const, bindingSha256: record.context };
+  record.request.sceneProof = sceneProof;
+  job.sceneProof = sceneProof;
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const request = submitStillClientIntent(record, { storage: { setItem: (key, value) => { rows.set(key, value); events.push("browser"); } }, storageScope: "scene-one/setting",
+    onRecord: async next => { events.push("saving"); expect(next.request.sceneProof).toEqual(sceneProof); await gate; events.push("durable"); },
+    isCurrent: () => true, fetchImpl: (async (_input, init) => { events.push(init!.method!); return Response.json({ job }); }) as typeof fetch });
+  await Promise.resolve(); expect(events).toEqual(["saving"]); expect(rows.size).toBe(0);
+  release(); expect((await request).id).toBe(job.id);
+  expect(events).toEqual(["saving", "durable", "browser", "POST"]);
+  // Another browser starts with the server-supplied record and no local state.
+  const recovered = parseStillClientRecord(JSON.parse(JSON.stringify(record)), record.projectId)!;
+  const methods: string[] = [];
+  await stillClientRequest("GET", recovered, (async (_input, init) => { methods.push(init!.method!); return Response.json({ job }); }) as typeof fetch);
+  expect(methods).toEqual(["GET"]);
+  expect(() => assertStillClientJob({ ...job, sceneProof: { ...sceneProof, momentId: "action" } }, record)).toThrow("another frozen request");
+  expect(parseStillClientRecord({ ...record, context: "f".repeat(64) }, record.projectId)).toBeNull();
+  for (const invalid of [null, { ...sceneProof, extra: true }, { ...sceneProof, sceneId: "x".repeat(201) },
+    { ...sceneProof, sceneId: "scene\nother" }, { ...sceneProof, momentId: "portrait" }]) {
+    expect(parseStillClientRecord({ ...record, request: { ...record.request, sceneProof: invalid } }, record.projectId)).toBeNull();
+  }
+});
+
+test("failed durable saves and scene changes while saving submit no provider request", async () => {
+  const { record } = fixture(); let posts = 0, writes = 0;
+  const options = { storage: { setItem: () => { writes++; } }, isCurrent: () => true,
+    fetchImpl: (async () => { posts++; throw new Error("Should never POST"); }) as typeof fetch };
+  await expect(submitStillClientIntent(record, { ...options, onRecord: async () => { throw new Error("Project save unconfirmed"); } })).rejects.toThrow("Project save unconfirmed");
+  let current = true;
+  await expect(submitStillClientIntent(record, { ...options, isCurrent: () => current, onRecord: async () => { current = false; } })).rejects.toThrow("No generation was submitted");
+  expect(posts).toBe(0); expect(writes).toBe(0);
 });

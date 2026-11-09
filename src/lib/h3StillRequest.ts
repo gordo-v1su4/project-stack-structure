@@ -3,8 +3,9 @@ import { H3_FIRST_FRAME_PROFILE } from "@/components/studio/h3FirstFrame";
 import { H3RequestError, parseH3Request } from "./h3GenerationServer";
 import { assertH3ShotProfile, compileH3Prompt } from "./h3Workflow";
 import { freezeH3Still, h3StillDigest, type H3StillDescriptor } from "./h3StillProfile";
+import type { SceneProofBinding } from "@/components/studio/sceneProofs";
 
-export type H3StillRequest = { shot: H3GenerationRequest; creativePrompt: string; seed: number; requestIntentId: string; attempt: number };
+export type H3StillRequest = { shot: H3GenerationRequest; creativePrompt: string; seed: number; requestIntentId: string; attempt: number; sceneProof?: SceneProofBinding };
 export type H3StillReferenceReceipt = { assetId: string; etag: string; rawSha256: string };
 const SHOT_FIELDS = ["projectId", "planSignature", "requirementId", "timelineItemId", "sectionId", "songStart", "songEnd", "prompt",
   "referenceAssetIds", "requestIntentId", "attempt", "seed", "draftRevision", "identityPolicyFamily"];
@@ -12,11 +13,20 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const hash = (value: unknown): value is string => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
 const detached = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
+export function parseH3SceneProofBinding(value: unknown): SceneProofBinding {
+  const binding = value as SceneProofBinding;
+  if (!binding || typeof binding !== "object" || Array.isArray(binding)
+    || Object.keys(binding).some(key => !["sceneId", "momentId", "bindingSha256"].includes(key))
+    || typeof binding.sceneId !== "string" || !binding.sceneId.trim() || binding.sceneId.length > 200 || /[\x00-\x1f\x7f]/.test(binding.sceneId)
+    || !["setting", "action", "transition"].includes(binding.momentId) || !hash(binding.bindingSha256)) throw new H3RequestError("Use the exact saved scene preview binding.");
+  return { sceneId: binding.sceneId, momentId: binding.momentId, bindingSha256: binding.bindingSha256 };
+}
+
 /** Browser input contains creative intent and project identities, never a workflow or backend path. */
 export function parseH3StillRequest(value: unknown): H3StillRequest {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new H3RequestError("A still request is required.");
   const root = value as Record<string, unknown>;
-  if (Object.keys(root).some(key => !["shot", "creativePrompt", "seed", "requestIntentId", "attempt"].includes(key))) throw new H3RequestError("Unknown still request field.");
+  if (Object.keys(root).some(key => !["shot", "creativePrompt", "seed", "requestIntentId", "attempt", "sceneProof"].includes(key))) throw new H3RequestError("Unknown still request field.");
   if (!root.shot || typeof root.shot !== "object" || Array.isArray(root.shot)
     || Object.keys(root.shot).some(key => !SHOT_FIELDS.includes(key))) throw new H3RequestError("Use an unconditioned future video shot without workflow fields.");
   if (typeof root.creativePrompt !== "string" || !root.creativePrompt.trim() || root.creativePrompt !== root.creativePrompt.trim()
@@ -32,7 +42,8 @@ export function parseH3StillRequest(value: unknown): H3StillRequest {
   // replacing or incrementing the independently frozen future video request.
   parseH3Request({ ...shot, prompt: root.creativePrompt });
   return { shot: detached(shot), creativePrompt: root.creativePrompt, seed: root.seed as number,
-    requestIntentId: root.requestIntentId, attempt: root.attempt as number };
+    requestIntentId: root.requestIntentId, attempt: root.attempt as number,
+    ...(root.sceneProof === undefined ? {} : { sceneProof: parseH3SceneProofBinding(root.sceneProof) }) };
 }
 
 /** The caller must materialize against the fresh owned project and conditionally

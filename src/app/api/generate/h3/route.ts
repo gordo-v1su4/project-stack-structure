@@ -12,6 +12,7 @@ import { H3_FIRST_FRAME_PROFILE, H3_FIRST_FRAME_PREPARATION } from "@/components
 import { readH3FirstFrame, assertH3FirstFrameMatchesJob } from "@/lib/h3FirstFrameStore";
 import { studioJsonResponse } from "@/lib/studioJsonTransportServer";
 import { validateSavedGenerationScope, recordGenerationScopeBaseline, SourceConfirmationError } from "@/lib/generationScopeServer";
+import { assertH3SceneProofsApproved } from "@/lib/h3SceneProofServer";
 
 export const runtime = "nodejs";
 
@@ -75,6 +76,10 @@ export async function POST(request: Request) {
     }
     // Compile before enqueue so invalid language or reference roles create no GPU work.
     try { compileH3Prompt(proposed); } catch (error) { throw new H3RequestError((error as Error).message, 422); }
+    const existing = await readH3Job(user.id, input.projectId, proposed.id);
+    if (!existing?.promptId && !["submitting", "submission_unknown", "rendering", "persisting", "ready", "cancel_requested", "cancelled"].includes(existing?.state ?? "")) {
+      await assertH3SceneProofsApproved(user.id, project, config.bucket);
+    }
     await recordGenerationScopeBaseline(user.id, project);
     await claimH3GenerationIntent(proposed);
     const job = await createH3Job(proposed);
