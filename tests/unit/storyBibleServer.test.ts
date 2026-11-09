@@ -118,7 +118,9 @@ test("missing canon context cannot bypass verification through a revision Bible"
 
 test("canon parser rejects malformed context and never accepts a client projection field", () => {
   const f = fixture();
-  expect(parseStoryTreatmentRequest(f.request).canonContext!.bible).toEqual(f.bible);
+  // HTTP JSON omits the fixture's undefined optional fact value.
+  const wireBible = JSON.parse(JSON.stringify(f.bible));
+  expect(parseStoryTreatmentRequest(f.request).canonContext!.bible).toEqual(wireBible);
   for (const context of [{ ...f.request.canonContext, expectedRevision: "*" }, { ...f.request.canonContext, projectId: "../other" }, { ...f.request.canonContext, projection: {} }, { ...f.request.canonContext, bible: { version: 99 } }]) {
     expect(() => parseStoryTreatmentRequest({ ...f.request, canonContext: context })).toThrow();
   }
