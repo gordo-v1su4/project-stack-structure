@@ -1,3 +1,4 @@
+import { studioS3OriginOptions } from "./studioS3Origin";
 import { createHash } from "node:crypto";
 import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { canonicalIdentityPolicyJson, getH3PolicyFamily, normalizeH3IssuedDraftPolicy,
@@ -15,10 +16,10 @@ function storage() {
   const gateway = getMediaGatewayConfig(), endpoint = process.env.RUSTFS_S3_ENDPOINT;
   const accessKeyId = process.env.RUSTFS_ACCESS_KEY, secretAccessKey = process.env.RUSTFS_SECRET_KEY;
   if (!gateway || !endpoint || !accessKeyId || !secretAccessKey || new URL(endpoint).protocol !== "https:") throw new Error("Durable identity policy storage is not configured.");
-  const fingerprint = identityPolicySha256([endpoint, accessKeyId, secretAccessKey, process.env.RUSTFS_REGION ?? ""]);
+  const fingerprint = identityPolicySha256([endpoint, accessKeyId, secretAccessKey, process.env.RUSTFS_S3_ORIGIN_ADDRESS?.trim() || "", process.env.RUSTFS_REGION ?? ""]);
   if (cached?.fingerprint !== fingerprint) {
     cached?.client.destroy();
-    cached = { fingerprint, client: new S3Client({ endpoint, region: process.env.RUSTFS_REGION || "us-east-1", forcePathStyle: true,
+    cached = { fingerprint, client: new S3Client({ ...studioS3OriginOptions(endpoint), endpoint, region: process.env.RUSTFS_REGION || "us-east-1", forcePathStyle: true,
       credentials: { accessKeyId, secretAccessKey }, requestChecksumCalculation: "WHEN_REQUIRED", responseChecksumValidation: "WHEN_REQUIRED" }) };
   }
   return { client: cached.client, bucket: gateway.bucket };

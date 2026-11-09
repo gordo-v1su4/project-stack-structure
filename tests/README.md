@@ -45,6 +45,12 @@ Final export defaults on in `trigger-smoke` mode and off in `studio` mode; set `
 
 JWT-based E2E bypasses OAuth. After any `AUTH_*` environment change, also verify interactive sign-in by clicking through the production browser flow, as required by [AGENTS.md](../AGENTS.md).
 
+`bun run test studioS3Origin` exercises real signed SDK requests through a local
+HTTPS origin, including certificate trust/name rejection and conditional 412
+responses. It creates and deletes an ephemeral synthetic certificate with
+OpenSSL (Git for Windows provides it; the build/test image installs it).
+It uses no live credentials, media, or provider services.
+
 ## Saved-project H3 verification
 
 `bun run test exportFrameTiming projectExportValidation` also checks encoded

@@ -1,3 +1,4 @@
+import { studioS3OriginOptions } from "./studioS3Origin";
 import { open, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import {
@@ -47,7 +48,7 @@ export async function uploadWorkerFileToStorage({ filePath, fileName, folder, en
     }
   }
   if (new URL(endpoint!).protocol !== "https:") throw new Error("Direct worker storage requires HTTPS.");
-  const client = clientFactory({
+  const client = clientFactory({ ...studioS3OriginOptions(endpoint!, env),
     endpoint, region: env.RUSTFS_REGION || "us-east-1", forcePathStyle: true,
     credentials: { accessKeyId: accessKeyId!, secretAccessKey: secretAccessKey! },
     requestChecksumCalculation: "WHEN_REQUIRED", responseChecksumValidation: "WHEN_REQUIRED",

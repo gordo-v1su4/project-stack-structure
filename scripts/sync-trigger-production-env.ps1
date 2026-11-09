@@ -2,11 +2,15 @@
 param(
   [string]$ManifestPath,
   [string]$TriggerApiUrl = "https://trigger.v1su4.dev",
+  [string]$StorageOriginAddress = '192.168.8.222',
   [switch]$DryRun
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+if ($StorageOriginAddress -and ![System.Net.IPAddress]::TryParse($StorageOriginAddress, [ref]([System.Net.IPAddress]$null))) {
+  throw 'StorageOriginAddress must be a literal IP address or empty to disable origin routing.'
+}
 
 if ([string]::IsNullOrWhiteSpace($ManifestPath)) {
   $ManifestPath = Join-Path $PSScriptRoot "..\config\secrets.manifest.json"
@@ -17,7 +21,7 @@ if (-not (Get-Command bws -ErrorAction SilentlyContinue)) {
 }
 
 $manifest = Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json
-$variableNames = @($manifest.triggerProduction | ForEach-Object { [string]$_.env })
+$variableNames = @($manifest.triggerProduction | ForEach-Object { [string]$_.env }) + @('RUSTFS_S3_ORIGIN_ADDRESS')
 if ($DryRun) {
   Write-Host "Project: $($manifest.triggerProjectRef)"
   Write-Host "Production variables: $($variableNames -join ', ')"
@@ -56,6 +60,7 @@ foreach ($mapping in $manifest.triggerProduction) {
 # Trigger workers run in Docker; host loopback is unreachable from the container.
 $variables["SCENE_CAPTION_SMART_GATEWAY_INTERNAL_URL"] = "http://192.168.8.222:18091"
 $variables["SCENE_CAPTION_SMART_GATEWAY_URL"] = "http://192.168.8.222:18091"
+$variables["RUSTFS_S3_ORIGIN_ADDRESS"] = $StorageOriginAddress
 
 $apiToken = Read-BwsValue "STACK_STRUCTURE_TRIGGER_PROD_SECRET_KEY"
 $body = @{ variables = $variables; override = $true } | ConvertTo-Json -Depth 5 -Compress

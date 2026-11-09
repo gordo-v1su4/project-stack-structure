@@ -1,3 +1,4 @@
+import { studioS3OriginOptions } from "./studioS3Origin";
 import { GetObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client, type GetObjectCommandOutput } from "@aws-sdk/client-s3";
 import { createHash } from "node:crypto";
 import type { H3GenerationJob, H3ReferenceSnapshot } from "@/components/studio/h3Generation";
@@ -15,10 +16,10 @@ function storage() {
   if (!gateway || !endpoint || !accessKeyId || !secretAccessKey || new URL(endpoint).protocol !== "https:") {
     throw new Error("Durable generation storage is not configured.");
   }
-  const fingerprint = createHash("sha256").update(JSON.stringify([endpoint, accessKeyId, secretAccessKey, process.env.RUSTFS_REGION])).digest("hex");
+  const fingerprint = createHash("sha256").update(JSON.stringify([endpoint, accessKeyId, secretAccessKey, process.env.RUSTFS_S3_ORIGIN_ADDRESS?.trim() || "", process.env.RUSTFS_REGION])).digest("hex");
   if (cached?.fingerprint === fingerprint) return { bucket: gateway.bucket, client: cached.client };
   cached?.client.destroy();
-  const client = new S3Client({ endpoint,
+  const client = new S3Client({ ...studioS3OriginOptions(endpoint), endpoint,
     region: process.env.RUSTFS_REGION || "us-east-1", forcePathStyle: true,
     credentials: { accessKeyId, secretAccessKey },
     requestChecksumCalculation: "WHEN_REQUIRED", responseChecksumValidation: "WHEN_REQUIRED",

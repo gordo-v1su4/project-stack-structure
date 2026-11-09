@@ -1,3 +1,4 @@
+import { studioS3OriginOptions } from "./studioS3Origin";
 import { createHash } from "node:crypto";
 import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import type { H3GenerationJob } from "@/components/studio/h3Generation";
@@ -26,7 +27,7 @@ function storage() {
     accessKeyId = process.env.RUSTFS_ACCESS_KEY, secretAccessKey = process.env.RUSTFS_SECRET_KEY;
   if (!config || !endpoint || new URL(endpoint).protocol !== "https:" || !accessKeyId || !secretAccessKey) throw new Error("Durable still storage is not configured.");
   const bucket = config.bucket;
-  const client = new S3Client({ endpoint, region: process.env.RUSTFS_REGION || "us-east-1", forcePathStyle: true,
+  const client = new S3Client({ ...studioS3OriginOptions(endpoint), endpoint, region: process.env.RUSTFS_REGION || "us-east-1", forcePathStyle: true,
     credentials: { accessKeyId, secretAccessKey }, maxAttempts: 1, requestChecksumCalculation: "WHEN_REQUIRED", responseChecksumValidation: "WHEN_REQUIRED" });
   const bytes: H3StillByteStore = {
     bucket,

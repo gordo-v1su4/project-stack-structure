@@ -72,7 +72,7 @@ DOCKHAND_ENV_ID=3
 ```
 
 `infra/app-vm/compose.yaml` is the value-free bootstrap/recovery snapshot.
-Dockhand owns the live Compose and all 30 masked runtime settings. Compose
+Dockhand owns the live Compose and its masked runtime settings. Compose
 references each setting explicitly; a remote absolute env-file path is resolved
 on the management host and does not work for this Hawser deployment. The runner
 synchronizes the private App VM values to Dockhand before activation.
@@ -80,6 +80,29 @@ Updates to credentials use BWS first; run
 `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sync-app-vm-env.ps1`
 from the authorized workstation, then redeploy through Dockhand. The script saves
 the previous server environment and prints no values.
+
+### Signed storage connections
+
+Set the optional nonsecret `RUSTFS_S3_ORIGIN_ADDRESS=192.168.8.222` on the web
+runtime and Trigger production workers. The S3 endpoint stays
+`https://s3.v1su4.dev`; server SDK connections resolve only that hostname to the
+App VM Caddy origin. HTTPS certificate validation, TLS SNI, signed Host, ETag
+conditions and pixel hashes remain required. Presigned browser URLs retain
+the public hostname. An unreachable origin fails the request; no public-path
+fallback bypasses this setting.
+
+This avoids intermittent `SignatureDoesNotMatch` responses observed through
+Cloudflare even with cache status BYPASS. Conditional reads of the same pinned
+objects passed through the Caddy HTTPS origin; the precise proxy transformation
+is not established. Do not remove `IfMatch` or substitute unconditional reads.
+
+Keep the setting in the mode600 App VM environment and the explicit Dockhand
+Compose interpolation, and in the Trigger production environment. Verify both
+deployed runtimes with complete pinned reference reads and conditional source
+byte-range reads before resuming content. To roll back routing, clear the
+setting on both runtimes and redeploy (pass `-StorageOriginAddress ''` to either
+environment sync script); preserve the preceding environment and
+Compose snapshots. No Caddy or public DNS change is required.
 
 ## Authentication and verification
 

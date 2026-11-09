@@ -1,7 +1,13 @@
 [CmdletBinding()]
-param([string]$HostName = 'gordo@192.168.8.222')
+param(
+  [string]$HostName = 'gordo@192.168.8.222',
+  [string]$StorageOriginAddress = '192.168.8.222'
+)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+if ($StorageOriginAddress -and ![System.Net.IPAddress]::TryParse($StorageOriginAddress, [ref]([System.Net.IPAddress]$null))) {
+  throw 'StorageOriginAddress must be a literal IP address or empty to disable origin routing.'
+}
 $root = Split-Path $PSScriptRoot -Parent
 $manifest = Get-Content (Join-Path $root 'config/secrets.manifest.json') -Raw | ConvertFrom-Json
 $parsedRecords = bws secret list $manifest.bwsProjectId --output json | ConvertFrom-Json
@@ -28,6 +34,7 @@ $values.TRIGGER_PROJECT_REF = $manifest.triggerProjectRef
 $values.MEDIA_GATEWAY_BUCKET = 'stack-structure'
 $values.MEDIA_GATEWAY_USER_ID = 'stack-structure'
 $values.MEDIA_GATEWAY_UPLOAD_PREFIX = 'media-uploads'
+$values.RUSTFS_S3_ORIGIN_ADDRESS = $StorageOriginAddress
 $scratch = Join-Path $root '.env.app-vm-sync'
 try {
   $lines = $values.Keys | Sort-Object | ForEach-Object { "$_=$($values[$_])" }

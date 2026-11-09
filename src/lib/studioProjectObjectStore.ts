@@ -1,3 +1,4 @@
+import { studioS3OriginOptions } from "./studioS3Origin";
 import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { createHash } from "node:crypto";
 import { getMediaGatewayConfig } from "./mediaGateway";
@@ -30,10 +31,10 @@ function storage() {
   if (!gateway || !endpoint || !accessKeyId || !secretAccessKey || new URL(endpoint).protocol !== "https:") {
     throw new Error("Durable project storage is not configured.");
   }
-  const fingerprint = createHash("sha256").update(JSON.stringify([endpoint, accessKeyId, secretAccessKey, process.env.RUSTFS_REGION, gateway.bucket])).digest("hex");
+  const fingerprint = createHash("sha256").update(JSON.stringify([endpoint, accessKeyId, secretAccessKey, process.env.RUSTFS_S3_ORIGIN_ADDRESS?.trim() || "", process.env.RUSTFS_REGION, gateway.bucket])).digest("hex");
   if (cached?.fingerprint === fingerprint) return cached;
   cached?.client.destroy();
-  const client = new S3Client({ endpoint, region: process.env.RUSTFS_REGION || "us-east-1", forcePathStyle: true,
+  const client = new S3Client({ ...studioS3OriginOptions(endpoint), endpoint, region: process.env.RUSTFS_REGION || "us-east-1", forcePathStyle: true,
     credentials: { accessKeyId, secretAccessKey }, maxAttempts: 1,
     requestChecksumCalculation: "WHEN_REQUIRED", responseChecksumValidation: "WHEN_REQUIRED" });
   cached = { fingerprint, client, bucket: gateway.bucket };
