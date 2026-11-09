@@ -9,7 +9,11 @@ class FrameVideo {
   duration = 30;
   readyState = 4;
   paused = true;
-  src = "";
+  private assignedSrc: string | null = null;
+  readonly ownerDocument = { baseURI: "https://studio.test/editor/project" };
+  get src() { return this.assignedSrc ? new URL(this.assignedSrc, this.ownerDocument.baseURI).href : ""; }
+  set src(value: string) { this.assignedSrc = value; }
+  getAttribute(name: string) { return name === "src" ? this.assignedSrc : null; }
   style: Record<string, string> = {};
   get currentTime() { return this.time; }
   set currentTime(time: number) {
@@ -28,7 +32,7 @@ class FrameVideo {
   play() { this.paused = false; return Promise.resolve(); }
   pause() { this.paused = true; }
   load() {}
-  removeAttribute(name: string) { if (name === "src") this.src = ""; }
+  removeAttribute(name: string) { if (name === "src") this.assignedSrc = null; }
   requestVideoFrameCallback(callback: () => void) {
     const id = ++this.nextFrameId;
     this.frames.set(id, callback);

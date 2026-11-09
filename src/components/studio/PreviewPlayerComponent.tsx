@@ -8,6 +8,7 @@ import {
   type PreviewSegment,
 } from "./previewPlayer";
 import { usePreviewPlayerState } from "./usePreviewPlayerState";
+import { PreviewTimelineScrubber } from "./PreviewTimelineScrubber";
 import { registerMediaPlaybackGroup } from "./mediaPlaybackOwnership";
 import type { ShaderEffectCue } from "./shaderEffectPlan";
 import {
@@ -224,18 +225,18 @@ export function PreviewPlayer({
               className={`${shaderMode === "canvas2d" ? "block" : "hidden"} pointer-events-none absolute inset-0 h-full w-full`}
               aria-hidden="true"
             />
-            <div className="studio-hud pointer-events-none absolute bottom-3 left-3 rounded-md px-2 py-1 font-mono text-[10.5px] text-accent">
+            <div className="studio-hud pointer-events-none absolute bottom-16 left-3 rounded-md px-2 py-1 font-mono text-[10.5px] text-accent">
               Live {shaderMode === "webgpu" ? "WebGPU" : shaderMode === "canvas2d" ? "Canvas FX" : "Shader"}
               {activeShaderLabel ? ` · ${activeShaderLabel}` : ""}
             </div>
           </>
         ) : null}
         {hasShaderCues && shaderError ? (
-          <div className="studio-hud pointer-events-none absolute bottom-3 right-3 max-w-[55%] rounded-md px-2 py-1 font-mono text-[10.5px] text-danger">{shaderError}</div>
+          <div className="studio-hud pointer-events-none absolute bottom-16 right-3 max-w-[55%] rounded-md px-2 py-1 font-mono text-[10.5px] text-danger">{shaderError}</div>
         ) : null}
         {state.status === "loading" ? (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/50">
-            <span className="font-display text-[22px] italic text-fg-1 animate-pulse">loading cut…</span>
+          <div data-preview-loading="true" className="pointer-events-none absolute right-2 top-2 rounded-md border border-line bg-ink-0/90 px-2 py-1 text-[10px] text-fg-2">
+            Loading preview…
           </div>
         ) : null}
         {state.status === "ended" ? (
@@ -244,8 +245,11 @@ export function PreviewPlayer({
           </div>
         ) : null}
         {state.errorMessage ? (
-          <div className="studio-hud absolute bottom-3 left-3 right-3 rounded-md px-3 py-2 text-[12px] text-danger">{state.errorMessage}</div>
+          <div className="studio-hud absolute bottom-16 left-3 right-3 rounded-md px-3 py-2 text-[12px] text-danger">{state.errorMessage}</div>
         ) : null}
+        <div className="absolute inset-x-0 bottom-0 z-20 border-t border-line bg-ink-0/95 px-3">
+          <PreviewTimelineScrubber player={player} segments={segments} />
+        </div>
       </div>
     );
   }
@@ -321,10 +325,8 @@ export function PreviewPlayer({
             </div>
           ) : null}
           {state.status === "loading" && (
-            <div className="absolute inset-0 flex items-center justify-center bg-[#00000088] rounded-[2px]">
-              <span className="text-[10px] font-mono text-[#e05c00] animate-pulse">
-                LOADING SEGMENT...
-              </span>
+            <div data-preview-loading="true" className="pointer-events-none absolute bottom-2 right-2 rounded-md border border-line bg-ink-0/90 px-2 py-1 text-[10px] text-fg-2">
+              Loading preview…
             </div>
           )}
           {state.status === "ended" && (
@@ -449,6 +451,8 @@ export function PreviewPlayer({
           </div>
         ) : null}
       </div>
+
+      <PreviewTimelineScrubber player={player} segments={segments} />
 
       <div className={isExpanded ? "flex items-center gap-2" : "hidden"}>
         {state.status === "playing" ? (

@@ -79,6 +79,9 @@ export class BrowserPreviewPlayer {
   private playbackAbort = new AbortController();
   private gapOffset = 0;
   private gapStartedAt: number | null = null;
+  private pendingSeekTime: number | null = null;
+  private seekPlaybackIntent: boolean | null = null;
+  private seekedTimelineEnd = false;
   private elementOwnerTokens = new WeakMap<HTMLVideoElement, number>();
   private warmElements = new Map<string, HTMLVideoElement>();
   private audioElement: HTMLAudioElement | null = null;
@@ -148,7 +151,7 @@ export class BrowserPreviewPlayer {
     if (!this.videoElement) return 0;
     const currentSegment = this.segments[this.currentIndex];
     if (!currentSegment) return 0;
-    return getMasterAudioTimeForPosition(this.segments, this.currentIndex, currentSegment.kind === "gap" ? this.currentGapOffset() : this.videoElement.currentTime);
+    return getMasterAudioTimeForPosition(this.segments, this.currentIndex, currentSegment.kind === "gap" ? currentSegment.startTime + this.currentGapOffset() : this.videoElement.currentTime);
   }
 
   private startMasterAudio() {
@@ -212,6 +215,9 @@ export class BrowserPreviewPlayer {
 
   async play() {
     if (!this.videoElement || this.segments.length === 0) return;
+    this.pendingSeekTime = null;
+    this.seekPlaybackIntent = null;
+    this.seekedTimelineEnd = false;
     this.status = "loading";
     this.emit();
     const token = this.invalidatePlayback();
@@ -231,19 +237,34 @@ export class BrowserPreviewPlayer {
   pause() {
     markPlaybackTiming("player-pause-entry");
     if (!this.videoElement) return;
+    const pendingSeekTime = this.pendingSeekTime;
     if (this.segments[this.currentIndex]?.kind === "gap") { this.gapOffset = this.currentGapOffset(); this.gapStartedAt = null; }
     pauseWithPlaybackTiming(this.videoElement, "active-video");
     this.pauseMasterAudio();
     markPlaybackGroupState([...this.elements, this.audioElement]);
-    this.invalidatePlayback();
+    const token = this.invalidatePlayback();
+    if (this.pendingSeekTime !== null) this.seekPlaybackIntent = false;
     this.status = "paused";
     this.stopProgressLoop();
     this.emit();
     markPlaybackTiming("player-pause-return");
+    // Pausing cancels autoplay, not the requested frame. Continue preparing it
+    // silently so a paused scrub does not leave the previous image displayed.
+    if (pendingSeekTime !== null && token === this.playbackToken && this.status === "paused") void this.seekToPosition(pendingSeekTime, false);
   }
 
   resume() {
     if (!this.videoElement) return;
+    if (this.pendingSeekTime !== null) {
+      void this.seekToPosition(this.pendingSeekTime, true);
+      return;
+    }
+    if (this.seekedTimelineEnd && this.status === "paused") {
+      this.status = "ended";
+      this.currentSegmentEndTime = null;
+      this.emit();
+      return;
+    }
     if (this.segments[this.currentIndex]?.kind === "gap") {
       const token = this.invalidatePlayback();
       void this.playGap(this.segments[this.currentIndex]!, token).then(() => this.advanceToNext(token));
@@ -293,6 +314,9 @@ export class BrowserPreviewPlayer {
   }
 
   private failPlayback(message: string) {
+    this.pendingSeekTime = null;
+    this.seekPlaybackIntent = null;
+    this.seekedTimelineEnd = false;
     this.stopProgressLoop();
     this.pauseMasterAudio();
     this.currentSegmentEndTime = null;
@@ -305,6 +329,9 @@ export class BrowserPreviewPlayer {
     markPlaybackTiming("player-stop-entry");
     this.gapOffset = 0;
     this.gapStartedAt = null;
+    this.pendingSeekTime = null;
+    this.seekPlaybackIntent = null;
+    this.seekedTimelineEnd = false;
     this.invalidatePlayback();
     this.stopProgressLoop();
     this.pauseMasterAudio();
@@ -325,12 +352,96 @@ export class BrowserPreviewPlayer {
     markPlaybackTiming("player-stop-return");
   }
 
-  seekToSegment(index: number) {
-    if (index < 0 || index >= this.segments.length) return;
-    this.stop();
+  seekToSegment(index: number): Promise<void> {
+    if (!Number.isInteger(index) || index < 0 || index >= this.segments.length) return Promise.resolve();
+    return this.seekToTime(this.segments.slice(0, index).reduce((sum, segment) => sum + segment.endTime - segment.startTime, 0));
+  }
+
+  /** Elapsed assembled-preview seconds, matching getState().currentTime.
+   * Latest request wins. Resolves preparation, never the remaining playback;
+   * current errors are reported through state, so fire-and-forget UI is safe. */
+  seekToTime(seconds: number): Promise<void> {
+    return this.seekToPosition(seconds, this.seekPlaybackIntent ?? (this.status === "playing" || this.status === "loading"));
+  }
+
+  private async seekToPosition(seconds: number, shouldPlay: boolean): Promise<void> {
+    if (!Number.isFinite(seconds) || !this.videoElement || !this.segments.length) return;
+    const timelineTime = Math.min(this.totalDuration, Math.max(0, seconds));
+    let index = 0, elapsed = 0;
+    while (index < this.segments.length - 1 && elapsed + this.segments[index]!.endTime - this.segments[index]!.startTime <= timelineTime) {
+      elapsed += this.segments[index]!.endTime - this.segments[index]!.startTime;
+      index++;
+    }
+    const segment = this.segments[index]!;
+    const offset = Math.min(segment.endTime - segment.startTime, timelineTime - elapsed);
+    const sourceTime = segment.startTime + offset;
+    const token = this.invalidatePlayback();
+    this.stopProgressLoop();
+    for (const element of this.elements) element?.pause();
+    this.pauseMasterAudio();
+    this.nextSegmentIsLive = false;
+    this.currentSegmentEndTime = null;
     this.currentIndex = index;
-    this.warmSourcesAround(index);
-    void this.play();
+    this.gapOffset = offset;
+    this.gapStartedAt = null;
+    this.pendingSeekTime = timelineTime;
+    this.seekPlaybackIntent = shouldPlay;
+    this.seekedTimelineEnd = timelineTime === this.totalDuration;
+    this.errorMessage = null;
+    this.status = "loading";
+    // Reuse the standby decoder if it already owns this resource; never clear
+    // either assignment or the warm cache just to move the playhead.
+    if (segment.kind !== "gap" && !hasAssignedVideoSource(this.videoElement!, segment.videoUrl)
+      && this.standbyElement && hasAssignedVideoSource(this.standbyElement, segment.videoUrl)) {
+      this.activeElementIndex = this.activeElementIndex === 0 ? 1 : 0;
+    }
+    this.applyElementVisibility();
+    this.emit();
+    if (token !== this.playbackToken) return;
+    const video = this.videoElement!;
+    try {
+      if (segment.kind !== "gap") {
+        // Timeline end is logical; the final trim's source end is exclusive.
+        // Seek just inside it rather than exposing the next, unapproved frame.
+        const exclusiveEnd = this.seekedTimelineEnd ? segment.endTime : undefined;
+        const landingTime = exclusiveEnd === undefined ? sourceTime
+          : exclusiveEnd - Math.min(0.000001, (segment.endTime - segment.startTime) / 2);
+        await this.prepareVisibleVideo(video, { ...segment, startTime: landingTime }, token, exclusiveEnd);
+      }
+      if (token !== this.playbackToken) return;
+      if (this.audioElement) {
+        try { this.audioElement.currentTime = getMasterAudioTimeForPosition(this.segments, index, sourceTime); }
+        catch { /* Metadata may arrive later; normal playback drift corrects it. */ }
+      }
+      if (shouldPlay && !this.seekedTimelineEnd && segment.kind !== "gap") {
+        await video.play();
+        if (token !== this.playbackToken) {
+          if (this.elementOwnerTokens.get(video) === token) video.pause();
+          return;
+        }
+      }
+      this.pendingSeekTime = null;
+      this.seekPlaybackIntent = null;
+      this.currentSegmentEndTime = segment.endTime;
+      if (!shouldPlay || this.seekedTimelineEnd) {
+        this.status = shouldPlay ? "ended" : "paused";
+        this.emit();
+      } else {
+        let playing: Promise<void>;
+        if (segment.kind === "gap") playing = this.playGap(segment, token).then(() => this.advanceToNext(token));
+        else {
+          this.nextSegmentIsLive = true;
+          playing = this.playSegment(index, token, true);
+        }
+        void playing.catch(error => {
+          if (token === this.playbackToken) this.failPlayback(error instanceof Error ? error.message : "Playback failed after seeking.");
+        });
+      }
+    } catch (error) {
+      if (token !== this.playbackToken) return;
+      video.pause();
+      this.failPlayback(error instanceof Error ? error.message : "Could not seek preview playback.");
+    }
   }
 
   getState(): PreviewPlayerState {
@@ -375,9 +486,10 @@ export class BrowserPreviewPlayer {
     return [...this.warmElements.keys()];
   }
 
-  private async playSegment(index: number, token: number) {
+  private async playSegment(index: number, token: number, preserveWarmCache = false) {
+    if (token !== this.playbackToken) return;
     const video = this.videoElement;
-    if (!video || index >= this.segments.length || token !== this.playbackToken) {
+    if (!video || index >= this.segments.length) {
       this.status = "ended";
       this.emit();
       return;
@@ -392,7 +504,7 @@ export class BrowserPreviewPlayer {
 
     this.currentIndex = index;
     this.currentSegmentEndTime = null;
-    this.warmSourcesAround(index);
+    if (!preserveWarmCache) this.warmSourcesAround(index);
     this.applyElementVisibility();
     if (segment.kind === "gap") {
       this.gapOffset = 0;
@@ -411,7 +523,10 @@ export class BrowserPreviewPlayer {
       if (token !== this.playbackToken) return;
 
       await video.play();
-      if (token !== this.playbackToken) return;
+      if (token !== this.playbackToken) {
+        if (this.elementOwnerTokens.get(video) === token) video.pause();
+        return;
+      }
     }
 
     this.status = "playing";
@@ -513,12 +628,13 @@ export class BrowserPreviewPlayer {
     });
   }
 
-  private async prepareVisibleVideo(video: HTMLVideoElement, segment: PreviewSegment, token: number) {
+  private async prepareVisibleVideo(video: HTMLVideoElement, segment: PreviewSegment, token: number, exclusiveEnd?: number) {
+    if (token !== this.playbackToken) return;
     this.elementOwnerTokens.set(video, token);
     // stop() clears src, but Chromium can retain currentSrc until its next
     // resource-selection task. That stale URL has no playable metadata.
     // Trust the assigned source so immediate section replays always reload.
-    const sameSource = video.src === segment.videoUrl;
+    const sameSource = hasAssignedVideoSource(video, segment.videoUrl);
     if (!sameSource) {
       video.pause();
       video.preload = "auto";
@@ -528,7 +644,7 @@ export class BrowserPreviewPlayer {
 
     await waitForMetadata(video, token, () => this.playbackToken, this.playbackAbort.signal);
     if (token !== this.playbackToken) return;
-    await seekVideo(video, segment.startTime, token, () => this.playbackToken, this.playbackAbort.signal);
+    await seekVideo(video, segment.startTime, token, () => this.playbackToken, this.playbackAbort.signal, exclusiveEnd);
   }
 
   private waitForSegmentEnd(endTime: number, token: number): Promise<void> {
@@ -658,6 +774,9 @@ export class BrowserPreviewPlayer {
   }
 
   private computeCurrentTime(): number {
+    if (this.pendingSeekTime !== null) return this.pendingSeekTime;
+    if (this.status === "idle") return 0;
+    if (this.status === "ended" || (this.seekedTimelineEnd && this.status === "paused")) return this.totalDuration;
     if (!this.videoElement || this.segments.length === 0) return 0;
 
     let elapsed = 0;
@@ -822,6 +941,21 @@ function releaseVideoElement(video: HTMLVideoElement) {
   video.remove();
 }
 
+function hasAssignedVideoSource(video: HTMLVideoElement, requested: string): boolean {
+  // The reflected .src is absolute even when a segment uses /api/storage/media.
+  // The attribute establishes that a source is still assigned after stop();
+  // currentSrc can retain the previous resource after that attribute is cleared.
+  const assigned = video.getAttribute("src");
+  if (!assigned) return false;
+  if (assigned === requested) return true;
+  try {
+    const base = video.ownerDocument?.baseURI;
+    return new URL(assigned, base).href === new URL(requested, base).href;
+  } catch {
+    return false;
+  }
+}
+
 function waitForMetadata(video: HTMLVideoElement, token: number, getToken: () => number, signal: AbortSignal): Promise<void> {
   if (video.readyState >= HTMLMediaElement.HAVE_METADATA) return Promise.resolve();
   return new Promise((resolve, reject) => {
@@ -848,7 +982,7 @@ function waitForMetadata(video: HTMLVideoElement, token: number, getToken: () =>
   });
 }
 
-function seekVideo(video: HTMLVideoElement, time: number, token: number, getToken: () => number, signal: AbortSignal): Promise<void> {
+function seekVideo(video: HTMLVideoElement, time: number, token: number, getToken: () => number, signal: AbortSignal, exclusiveEnd?: number): Promise<void> {
   return new Promise((resolve, reject) => {
     if (token !== getToken()) {
       resolve();
@@ -856,33 +990,38 @@ function seekVideo(video: HTMLVideoElement, time: number, token: number, getToke
     }
 
     const targetTime = Number.isFinite(video.duration) && video.duration > 0
-      ? Math.min(Math.max(0, time), Math.max(0, video.duration - 0.01))
+      ? Math.min(Math.max(0, time), Math.max(0, video.duration - (exclusiveEnd === undefined ? 0.01 : 0.000001)))
       : Math.max(0, time);
+    const atTarget = () => exclusiveEnd === undefined
+      ? Math.abs(video.currentTime - targetTime) < 0.01
+      : video.currentTime < exclusiveEnd && Math.abs(video.currentTime - targetTime) <= 0.000001;
 
     const cleanup = () => {
       video.removeEventListener("seeked", onSeeked);
       video.removeEventListener("error", onError);
-      signal.removeEventListener("abort", onSeeked);
+      signal.removeEventListener("abort", onAbort);
     };
     const onSeeked = () => {
+      if (token === getToken() && (video.seeking || !atTarget())) return;
       cleanup();
       resolve();
     };
+    const onAbort = () => { cleanup(); resolve(); };
     const onError = () => {
       cleanup();
       reject(new Error("Could not seek preview video."));
     };
 
-    if (Math.abs(video.currentTime - targetTime) < 0.01) {
+    if (atTarget() && !video.seeking) {
       resolve();
       return;
     }
 
-    video.addEventListener("seeked", onSeeked, { once: true });
-    signal.addEventListener("abort", onSeeked, { once: true });
+    video.addEventListener("seeked", onSeeked);
+    signal.addEventListener("abort", onAbort, { once: true });
     video.addEventListener("error", onError, { once: true });
     try {
-      video.currentTime = targetTime;
+      if (!atTarget()) video.currentTime = targetTime;
     } catch (error) {
       cleanup();
       reject(error);
