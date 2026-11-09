@@ -4,17 +4,21 @@ import type { ShotRequirementConstraints } from "@/components/studio/storyMatchA
 import { resolveSceneCaptionGatewayAuth } from "./sceneCaptionGateway";
 
 export const H3_SHOT_GATEWAY_LIMITS = { chunkWindows: 24, bodyBytes: 128 * 1024, contextCharacters: 24_000,
+  canonModelEnvelopeOverheadBytes: 16 * 1024,
   timeoutMs: 900_000, maximumTimeoutMs: 1_800_000 } as const;
 export const H3_SHOT_REVIEW_VIOLATIONS = ["approved_story", "subjects", "constraints", "action_order", "repeated_action", "boundary_state", "continuity", "unclear"] as const;
+type CanonScope = NonNullable<H3ShotPlanningInput["groups"][number]["storyCanon"]>;
+type AuthorCanon = Pick<CanonScope, "version" | "bibleSha256" | "projectionSha256" | "scopeSha256" | "subjectNames" | "referenceAssetIds" | "positiveFacts">;
+type ReviewCanon = Pick<CanonScope, "version" | "bibleSha256" | "projectionSha256" | "scopeSha256" | "reviewConstraints">;
 export type H3ShotAuthorInput = {
   version: 1; bindingSha256: string;
   context: { approvedDirection: string; constraints: ShotRequirementConstraints; subjectNames: string[];
-    previousExitState?: string; completedActionCount: number; remainingWindowCount: number };
+    previousExitState?: string; completedActionCount: number; remainingWindowCount: number; storyCanon?: AuthorCanon };
   windows: ({ id: number } & Pick<H3ShotPlanningWindow, "songStart" | "songEnd" | "inference" | "sourceEvidence" | "generatedEvidence">)[];
 };
-export type H3ShotChunkCandidate = { version: 1; bindingSha256: string;
+export type H3ShotChunkCandidate = { version: 1; bindingSha256: string; canonScopeSha256?: string;
   directions: (Omit<H3ShotDirection, "windowKey"> & { windowId: number })[] };
-export type H3ShotSemanticReview = { version: 1; bindingSha256: string; candidateSha256: string;
+export type H3ShotSemanticReview = { version: 1; bindingSha256: string; candidateSha256: string; canonScopeSha256?: string;
   status: "passed" | "rejected"; violations: (typeof H3_SHOT_REVIEW_VIOLATIONS)[number][] };
 type Dependencies = { fetchImpl?: typeof fetch; now?: () => number; timeoutMs?: number; signal?: AbortSignal;
   env?: Record<string, string | undefined> };
@@ -30,7 +34,9 @@ function boundedJson(value: unknown): string {
 const objectKeys = (value: unknown, keys: string[]): value is Record<string, unknown> => Boolean(value && typeof value === "object"
   && !Array.isArray(value) && Object.keys(value).length === keys.length && Object.keys(value).every(key => keys.includes(key)));
 function chunkCandidate(value: unknown, input: H3ShotAuthorInput): H3ShotChunkCandidate {
-  if (!objectKeys(value, ["version", "bindingSha256", "directions"]) || value.version !== 1
+  const canon = input.context.storyCanon;
+  if (!objectKeys(value, ["version", "bindingSha256", "directions", ...(canon ? ["canonScopeSha256"] : [])]) || value.version !== 1
+    || (canon && value.canonScopeSha256 !== canon.scopeSha256)
     || value.bindingSha256 !== input.bindingSha256 || !Array.isArray(value.directions) || value.directions.length !== input.windows.length) fail("Shot author returned a different chunk binding or coverage.");
   const candidate = value as H3ShotChunkCandidate;
   let previousExit = input.context.previousExitState;
@@ -53,6 +59,17 @@ function chunkCandidate(value: unknown, input: H3ShotAuthorInput): H3ShotChunkCa
   }
   if (input.context.remainingWindowCount === input.windows.length && actionIndex !== actions.length) fail("Shot author did not finish the approved action sequence.");
   return candidate;
+}
+
+function canonContexts(scope?: CanonScope): { author?: AuthorCanon; review?: ReviewCanon } {
+  if (!scope) return {};
+  const { scopeSha256, ...body } = scope;
+  if (generationScopeSha256(body) !== scopeSha256) fail("Shot planning canon scope changed.");
+  const { version, bibleSha256, projectionSha256, subjectNames, referenceAssetIds, positiveFacts, reviewConstraints } = scope;
+  // Whitelist the public projection; the full Bible and provenance never travel.
+  const tags = { version, bibleSha256, projectionSha256, scopeSha256 };
+  return { author: { ...tags, subjectNames: [...subjectNames], referenceAssetIds: [...referenceAssetIds], positiveFacts: positiveFacts.map(({ id, text }) => ({ id, text })) },
+    review: { ...tags, reviewConstraints: reviewConstraints.map(({ id, text }) => ({ id, text })) } };
 }
 
 /** Author and independently review bounded chunks. A passed semantic review is
@@ -123,26 +140,70 @@ export async function generateH3ShotPlan(input: H3ShotPlanningInput, dependencie
     catch { return fail("Shot planning gateway returned invalid JSON."); }
   }
   try {
+    const chunkSizes: number[] = [];
+    // JSON escapes can expand one valid boundary-state code unit to six
+    // characters. Use the same maximum sentinel for context and byte admission.
+    const maximumBoundaryState = "\ud800".repeat(800);
     // Admit every possible chunk context and request before any model call.
     for (const group of snapshot.groups) {
-      const context = { approvedDirection: group.approvedDirection, constraints: group.constraints, subjectNames: snapshot.subjectNames,
-        completedActionCount: 0, remainingWindowCount: group.windows.length };
-      if (JSON.stringify({ ...context, previousExitState: "x".repeat(800) }).length > H3_SHOT_GATEWAY_LIMITS.contextCharacters) fail("Shot planning context exceeds gateway admission limits.");
+      const canon = canonContexts(group.storyCanon);
+      const context = { approvedDirection: group.approvedDirection, constraints: group.constraints, subjectNames: group.storyCanon?.subjectNames ?? snapshot.subjectNames,
+        completedActionCount: 0, remainingWindowCount: group.windows.length, ...(canon.author ? { storyCanon: canon.author } : {}) };
+      const maximumContext = { ...context, completedActionCount: (group.constraints.actionSequence ?? []).length, previousExitState: maximumBoundaryState };
+      if (JSON.stringify(maximumContext).length > H3_SHOT_GATEWAY_LIMITS.contextCharacters) fail("Shot planning context exceeds gateway admission limits.");
+      if (canon.review) {
+        if (JSON.stringify({ context: maximumContext, canonReview: canon.review }).length > H3_SHOT_GATEWAY_LIMITS.contextCharacters) fail("Shot planning canon review context exceeds gateway admission limits.");
+        // Canon jobs pre-admit their largest legal review candidate as well as
+        // author input. Legacy jobs retain their exact historical chunking.
+        let admitted = 0;
+        for (let size = H3_SHOT_GATEWAY_LIMITS.chunkWindows; size >= 1 && !admitted; size--) {
+          let fits = true;
+          for (let offset = 0; offset < group.windows.length; offset += size) {
+            const windows = group.windows.slice(offset, offset + size).map((window, id) => ({ id: offset + id,
+              songStart: window.songStart, songEnd: window.songEnd, inference: window.inference,
+              ...(window.sourceEvidence ? { sourceEvidence: window.sourceEvidence } : {}), ...(window.generatedEvidence ? { generatedEvidence: window.generatedEvidence } : {}) }));
+            // A JSON-escaped UTF-16 code unit can occupy six bytes. Count that
+            // worst case rather than assuming every returned character is UTF-8.
+            const input = { version: 1, bindingSha256, context: maximumContext, windows };
+            const candidate = { version: 1, bindingSha256, canonScopeSha256: canon.review.scopeSha256,
+              directions: windows.map(window => ({ windowId: window.id, direction: "\ud800".repeat(1600), entryState: maximumBoundaryState, exitState: maximumBoundaryState,
+                actionIndices: (group.constraints.actionSequence ?? []).map((_, index) => index) })) };
+            try {
+              boundedJson(input); boundedJson({ input, candidate, candidateSha256: "x".repeat(64), canonReview: canon.review });
+              // The service critic also receives mechanically composed prose,
+              // then JSON-quotes its entire user message inside the model
+              // envelope. Reserve the source contract's fixed 16KiB for system
+              // text, schema, model ID and options; no service cap is increased.
+              const criticInput = { input, candidate, canonReview: canon.review,
+                composedDirections: windows.map(window => ({ windowId: window.id, prompt: "\ud800".repeat(3208) })) };
+              const quotedBytes = new TextEncoder().encode(JSON.stringify(JSON.stringify(criticInput))).length - 2;
+              if (quotedBytes + H3_SHOT_GATEWAY_LIMITS.canonModelEnvelopeOverheadBytes > H3_SHOT_GATEWAY_LIMITS.bodyBytes) { fits = false; break; }
+            }
+            catch { fits = false; break; }
+          }
+          if (fits) admitted = size;
+        }
+        if (!admitted) fail("Shot planning canon review payload exceeds gateway admission limits.");
+        chunkSizes.push(admitted);
+        continue;
+      }
+      chunkSizes.push(H3_SHOT_GATEWAY_LIMITS.chunkWindows);
       for (let offset = 0; offset < group.windows.length; offset += H3_SHOT_GATEWAY_LIMITS.chunkWindows) boundedJson({ version: 1, bindingSha256,
-        context: { ...context, previousExitState: "界".repeat(800) }, windows: group.windows.slice(offset, offset + H3_SHOT_GATEWAY_LIMITS.chunkWindows).map((window, id) => ({ id: offset + id,
+        context: maximumContext, windows: group.windows.slice(offset, offset + H3_SHOT_GATEWAY_LIMITS.chunkWindows).map((window, id) => ({ id: offset + id,
           songStart: window.songStart, songEnd: window.songEnd, inference: window.inference,
           ...(window.sourceEvidence ? { sourceEvidence: window.sourceEvidence } : {}),
           ...(window.generatedEvidence ? { generatedEvidence: window.generatedEvidence } : {}) })) });
     }
     const directions: H3ShotDirection[] = [];
-    for (const group of snapshot.groups) {
+    for (const [groupIndex, group] of snapshot.groups.entries()) {
+      const canon = canonContexts(group.storyCanon), chunkSize = chunkSizes[groupIndex];
       let previousExitState: string | undefined;
       let completedActionCount = 0;
-      for (let offset = 0; offset < group.windows.length; offset += H3_SHOT_GATEWAY_LIMITS.chunkWindows) {
-        const windows = group.windows.slice(offset, offset + H3_SHOT_GATEWAY_LIMITS.chunkWindows);
+      for (let offset = 0; offset < group.windows.length; offset += chunkSize) {
+        const windows = group.windows.slice(offset, offset + chunkSize);
         const context: H3ShotAuthorInput["context"] = { approvedDirection: group.approvedDirection,
-          constraints: group.constraints, subjectNames: snapshot.subjectNames, ...(previousExitState !== undefined ? { previousExitState } : {}),
-          completedActionCount, remainingWindowCount: group.windows.length - offset };
+          constraints: group.constraints, subjectNames: group.storyCanon?.subjectNames ?? snapshot.subjectNames, ...(previousExitState !== undefined ? { previousExitState } : {}),
+          completedActionCount, remainingWindowCount: group.windows.length - offset, ...(canon.author ? { storyCanon: canon.author } : {}) };
         const wireWindows = windows.map((window, index) => ({ id: offset + index, songStart: window.songStart, songEnd: window.songEnd, inference: window.inference,
           ...(window.sourceEvidence ? { sourceEvidence: window.sourceEvidence } : {}),
           ...(window.generatedEvidence ? { generatedEvidence: window.generatedEvidence } : {}) }));
@@ -150,8 +211,9 @@ export async function generateH3ShotPlan(input: H3ShotPlanningInput, dependencie
           bindingSha256: generationScopeSha256({ inputBinding: bindingSha256, groupId: group.id, context, windows: wireWindows }), context, windows: wireWindows };
         const candidate = chunkCandidate(await post("/story/shots/author", wire), wire);
         const candidateSha256 = generationScopeSha256(candidate);
-        const review = await post("/story/shots/review", { input: wire, candidate, candidateSha256 });
-        if (!objectKeys(review, ["version", "bindingSha256", "candidateSha256", "status", "violations"]) || review.version !== 1
+        const review = await post("/story/shots/review", { input: wire, candidate, candidateSha256, ...(canon.review ? { canonReview: canon.review } : {}) });
+        if (!objectKeys(review, ["version", "bindingSha256", "candidateSha256", "status", "violations", ...(canon.review ? ["canonScopeSha256"] : [])]) || review.version !== 1
+          || (canon.review && review.canonScopeSha256 !== canon.review.scopeSha256)
           || review.bindingSha256 !== wire.bindingSha256 || review.candidateSha256 !== candidateSha256 || !Array.isArray(review.violations)
           || review.violations.length > H3_SHOT_REVIEW_VIOLATIONS.length || new Set(review.violations).size !== review.violations.length
           || review.violations.some(code => !H3_SHOT_REVIEW_VIOLATIONS.includes(code as typeof H3_SHOT_REVIEW_VIOLATIONS[number]))

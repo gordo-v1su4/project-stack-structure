@@ -5,6 +5,7 @@ import type { EditPlanPreviewSegment, MusicVideoProject, StoryEditSettings } fro
 import { isPlacementPlanCurrent } from "./musicVideoProject";
 import type { ShotRequirementConstraints } from "./storyMatchAssessment";
 import type { GeneratedFootageEvidence, SelectedFootageEvidence } from "./selectedFootageEvidence";
+import { buildH3StoryCanonScope, type H3ShotCanonScope, type H3StoryCanonSource } from "./h3StoryCanon";
 
 export const H3_SHOT_PLANNING_LIMITS = {
   windows: 512, groups: 64, windowsPerGroup: 64, subjectNames: 32,
@@ -21,6 +22,7 @@ export type H3ShotPlanningWindow = {
 export type H3ShotPlanningGroup = {
   id: string; timelineItemId: string; requirementId?: string; narrativeMomentId?: string; sectionId: string;
   approvedDirection: string; constraints: ShotRequirementConstraints; windows: H3ShotPlanningWindow[];
+  storyCanon?: H3ShotCanonScope;
 };
 export type H3ShotPlanningInput = {
   version: 1; bindingSha256: string; projectId: string; planSignature: string;
@@ -66,6 +68,7 @@ export function buildH3ShotPlanningInput(params: {
   project: MusicVideoProject; segments: EditPlanPreviewSegment[]; subjectNames?: string[]; projectId?: string;
   generatedEvidenceByWindowKey?: ReadonlyMap<string, SelectedFootageEvidence>;
   coverageBinding?: unknown;
+  storyCanonSource?: H3StoryCanonSource;
 }): H3ShotPlanningInput {
   const { project, segments } = params;
   const planSignature = effectiveGenerationScope(project);
@@ -143,6 +146,10 @@ export function buildH3ShotPlanningInput(params: {
     const item = project.editPlan.timelineItems.find(item => item.id === group.timelineItemId)!;
     if (group.windows[0].songStart !== item.start
       || group.windows.at(-1)!.songEnd !== item.end) throw new Error("Plan the full ordered requirement, not only its remaining holes.");
+    if (params.storyCanonSource) {
+      const canon = buildH3StoryCanonScope(params.projectId ?? project.id, params.storyCanonSource, group);
+      if (canon) group.storyCanon = canon;
+    }
   }
   const settings = project.placementPlan.settings;
   if (!Number.isFinite(settings.cutDensity) || settings.cutDensity < 0 || settings.cutDensity > 1 || typeof settings.preferOnsets !== "boolean") throw new Error("Invalid confirmed shot pacing settings.");
