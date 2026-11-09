@@ -31,13 +31,13 @@ export function TransportBar({ transport, onToggle, onStop, onRewind, statusLabe
   return (
     <footer className="flex h-11 shrink-0 items-center gap-4 border-t border-line bg-ink-0 px-3">
       <div className="flex items-center gap-1">
-        <TransportButton label="Return to start (K)" onClick={onRewind} disabled={disabled}>
+        <TransportButton action="rewind" label="Return to start (K)" onClick={onRewind} disabled={disabled}>
           <SkipBackIcon size={14} />
         </TransportButton>
-        <TransportButton label={transport.isPlaying ? "Pause (Space)" : "Play (Space)"} onClick={onToggle} disabled={disabled} primary>
+        <TransportButton action="toggle" label={transport.isPlaying ? "Pause (Space)" : "Play (Space)"} onClick={onToggle} disabled={disabled} primary>
           {transport.isPlaying ? <PauseIcon size={14} /> : <PlayIcon size={14} />}
         </TransportButton>
-        <TransportButton label="Stop" onClick={onStop} disabled={disabled}>
+        <TransportButton action="stop" label="Stop" onClick={onStop} disabled={disabled}>
           <StopIcon size={12} />
         </TransportButton>
       </div>
@@ -78,10 +78,11 @@ export function TransportBar({ transport, onToggle, onStop, onRewind, statusLabe
   );
 }
 
-function TransportButton({ label, onClick, disabled, primary = false, children }: { label: string; onClick: () => void; disabled: boolean; primary?: boolean; children: React.ReactNode }) {
+function TransportButton({ action, label, onClick, disabled, primary = false, children }: { action: "toggle" | "stop" | "rewind"; label: string; onClick: () => void; disabled: boolean; primary?: boolean; children: React.ReactNode }) {
   return (
     <button
       type="button"
+      data-playback-action={action}
       aria-label={label}
       title={label}
       onClick={onClick}
