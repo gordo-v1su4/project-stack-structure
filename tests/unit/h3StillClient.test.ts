@@ -3,6 +3,7 @@ import { h3ProjectFixture } from "../helpers/h3Project";
 import { acknowledgeStillClientRecord, buildStillContinuation, buildStillVideoRequest, assertStillClientJob, canCreateStill, parseStillClientRecord, restoreStillShotForm, sameStillFutureCreative, stillCanonicalContext, stillClientRequest, stillClientStorageKey, type StillClientRecord } from "@/components/studio/h3StillClient";
 import type { H3GenerationJob } from "@/components/studio/h3Generation";
 import type { H3StillJob } from "@/lib/h3StillJobStore";
+import { StillClientAdmissionError, releaseRejectedStillRecord } from "@/components/studio/h3StillClient";
 
 function fixture() {
   const { request } = h3ProjectFixture(); request.identityPolicyFamily = "sface-yunet-foreground-frontal-v2";
@@ -53,6 +54,35 @@ test("ACK loss preserves one POST; reload recovers by GET intent without resubmi
   expect(calls[1].url).toContain(`requestIntentId=${record.request.requestIntentId}`);
   expect(calls[1].url).toContain("attempt=1");
 });
+test("only an explicit pre-job rejection releases an intent, never a bare conflict or uncertain error", async () => {
+  const { record } = fixture();
+  for (const status of [400, 409, 422, 503]) {
+    for (const admission of [undefined, "rejected-before-job"]) {
+      const fetcher = (async () => Response.json({ error: "Rejected", admission }, { status })) as typeof fetch;
+      let failure: unknown;
+      try { await stillClientRequest("POST", record, fetcher); } catch (error) { failure = error; }
+      expect(failure instanceof StillClientAdmissionError).toBe(status !== 503 && admission === "rejected-before-job");
+    }
+  }
+  const fetcher = (async () => Response.json({ error: "Not found", admission: "rejected-before-job" }, { status: 409 })) as typeof fetch;
+  let failure: unknown;
+  try { await stillClientRequest("GET", { ...record, jobId: `h3-still-${"a".repeat(64)}` }, fetcher); } catch (error) { failure = error; }
+  expect(failure instanceof StillClientAdmissionError).toBe(false);
+  await expect(stillClientRequest("GET", record, fetcher)).rejects.toBeInstanceOf(StillClientAdmissionError);
+});
+
+test("a delayed rejection cannot clear a newer intent or an acknowledged job", () => {
+  const { record, job } = fixture(), rows = new Map<string, string>();
+  const storage = { getItem: (key: string) => rows.get(key) ?? null, removeItem: (key: string) => { rows.delete(key); } };
+  const key = stillClientStorageKey(record.projectId);
+  rows.set(key, JSON.stringify({ ...record, request: { ...record.request, attempt: 2 } }));
+  expect(releaseRejectedStillRecord(storage, record)).toBe(false); expect(rows.has(key)).toBe(true);
+  rows.set(key, JSON.stringify({ ...record, jobId: job.id }));
+  expect(releaseRejectedStillRecord(storage, record)).toBe(false); expect(rows.has(key)).toBe(true);
+  rows.set(key, JSON.stringify(record));
+  expect(releaseRejectedStillRecord(storage, record)).toBe(true); expect(rows.has(key)).toBe(false);
+});
+
 test("an uncertain new attempt cannot reuse the prior ready preview to enable another submission", () => {
   const { record, job } = fixture();
   expect(canCreateStill(record, job)).toBe(true);

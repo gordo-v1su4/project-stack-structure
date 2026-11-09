@@ -85,7 +85,7 @@ export async function triggerH3ShotPlanning(reference: H3ShotPlanningReference, 
   return tasks.trigger<typeof h3ShotPlanningTask>(STACK_STRUCTURE_TRIGGER_TASKS.h3ShotPlanning, reference, {
     idempotencyKey: createTriggerIdempotencyKey("h3-shot-planning-v1", [reference.ownerId, reference.projectId, reference.planSignature, reference.bindingSha256, String(attempt)]),
     idempotencyKeyTTL: "30d", maxAttempts: 1,
-    tags: [...dispatch.tags, `project:${reference.projectId}`], metadata: dispatch.metadata,
+    tags: [...dispatch.tags, `project:${reference.projectId}`, `planning-binding:${reference.bindingSha256}`, `planning-attempt:${attempt}`], metadata: dispatch.metadata,
   });
 }
 

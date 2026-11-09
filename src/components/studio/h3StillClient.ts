@@ -25,6 +25,14 @@ export function acknowledgeStillClientRecord(storage: Pick<Storage, "getItem" | 
   return true;
 }
 export const isStillTerminal = (state: string) => ["ready", "failed", "cancelled"].includes(state);
+/** A rejected response can release only its exact current unacknowledged intent. */
+export function releaseRejectedStillRecord(storage: Pick<Storage, "getItem" | "removeItem">, rejected: StillClientRecord): boolean {
+  const key = stillClientStorageKey(rejected.projectId);
+  const current = parseStillClientRecord(JSON.parse(storage.getItem(key) ?? "null"), rejected.projectId);
+  if (!current || current.jobId || identityPolicySha256(current) !== identityPolicySha256(rejected)) return false;
+  storage.removeItem(key);
+  return true;
+}
 /** Recovery binds canonical shot context, never transient form values or browser URLs. */
 export function stillCanonicalContext(value: { projectId: string | null; windowKey: string; references: ReferenceAsset[];
   plan: unknown; currentIdentity: unknown; storyApproved: boolean }) {
@@ -106,9 +114,9 @@ export async function stillClientRequest(method: "POST" | "GET" | "PATCH" | "DEL
     method, cache: "no-store", headers: body ? { "Content-Type": "application/json" } : undefined,
     ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(method === "POST" ? 180_000 : 30_000),
   });
-  const value = await response.json() as { job?: unknown; error?: string };
+  const value = await response.json() as { job?: unknown; error?: string; admission?: string };
   if (!response.ok) {
-    if (method === "POST" && [400, 422].includes(response.status)) throw new StillClientAdmissionError(value.error || "The still was rejected before dispatch.");
+    if ((method === "POST" || method === "GET" && !record.jobId) && [400, 409, 422].includes(response.status) && value.admission === "rejected-before-job") throw new StillClientAdmissionError(value.error || "The still was rejected before dispatch.");
     throw new Error(value.error || "Still request could not be confirmed. Its saved intent is retained.");
   }
   return assertStillClientJob(value.job, record);

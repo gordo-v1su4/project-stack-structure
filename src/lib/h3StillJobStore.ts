@@ -36,6 +36,46 @@ function key(ownerId: string, projectId: string, id: string) {
 function intentKey(ownerId: string, projectId: string, intent: string, attempt: number) {
   return `${scope(ownerId, projectId)}intent-${intent}-${attempt}.json`;
 }
+type StillIntentClaim = { version: 1; ownerId: string; projectId: string; requestIntentId: string; attempt: number; jobId: string };
+type StillIntentRejection = Omit<StillIntentClaim, "jobId"> & { state: "rejected-before-job" };
+export class H3StillIntentRejectedError extends Error {
+  constructor() { super("This still intent was rejected before job creation. No generation was submitted."); }
+}
+function validateIntent(ownerId: string, projectId: string, requestIntentId: string, attempt: number) {
+  scope(ownerId, projectId);
+  if (!uuid(requestIntentId) || !Number.isInteger(attempt) || attempt < 0 || attempt > 2) throw new Error("Choose a valid original H3 still intent and attempt.");
+}
+function parseIntent(value: unknown, ownerId: string, projectId: string, requestIntentId: string, attempt: number): StillIntentClaim | StillIntentRejection {
+  const claim = value as StillIntentClaim & Partial<StillIntentRejection>;
+  const rejected = claim?.state === "rejected-before-job";
+  const fields = ["version", "ownerId", "projectId", "requestIntentId", "attempt", rejected ? "state" : "jobId"];
+  if (!claim || typeof claim !== "object" || Array.isArray(claim) || Buffer.byteLength(JSON.stringify(claim), "utf8") > 4096
+    || claim.version !== 1 || claim.ownerId !== ownerId || claim.projectId !== projectId || claim.requestIntentId !== requestIntentId
+    || claim.attempt !== attempt || Object.keys(claim).some(field => !fields.includes(field)) || fields.some(field => !Object.hasOwn(claim, field))
+    || !rejected && !/^h3-still-[a-f0-9]{64}$/.test(claim.jobId)) throw new Error("Stored H3 still intent ownership differs.");
+  return claim;
+}
+/** A rejection and a creation claim compete for the SAME conditional key.
+ * An active claim (even before its job write) must never be cleared or replaced.
+ * Unknown storage outcomes are not proof of rejection and must retain the intent. */
+export async function rejectH3StillIntent(ownerId: string, projectId: string, requestIntentId: string, attempt: number,
+  objects: StudioJsonObjectStore = studioProjectObjects): Promise<boolean> {
+  validateIntent(ownerId, projectId, requestIntentId, attempt);
+  const objectKey = intentKey(ownerId, projectId, requestIntentId, attempt);
+  const rejection: StillIntentRejection = { version: 1, ownerId, projectId, requestIntentId, attempt, state: "rejected-before-job" };
+  const read = async () => {
+    const record = await objects.read<unknown>(objectKey);
+    return record ? parseIntent(record.value, ownerId, projectId, requestIntentId, attempt) : null;
+  };
+  const existing = await read();
+  if (existing) return "state" in existing;
+  try { await objects.write(objectKey, rejection, null); return true; }
+  catch (error) {
+    const restored = await read();
+    if (restored) return "state" in restored;
+    throw error;
+  }
+}
 function frozen(input: H3StillJobInput) {
   const detached = clone(input), { ownerId, projectId } = detached;
   scope(ownerId, projectId);
@@ -135,14 +175,11 @@ export async function readH3StillJob(ownerId: string, projectId: string, id: str
  */
 export async function readH3StillJobByIntent(ownerId: string, projectId: string, requestIntentId: string, attempt: number,
   objects: StudioJsonObjectStore = studioProjectObjects): Promise<H3StillJob | null> {
-  scope(ownerId, projectId);
-  if (!uuid(requestIntentId) || !Number.isInteger(attempt) || attempt < 0 || attempt > 2) throw new Error("Choose a valid original H3 still intent and attempt.");
-  const record = await objects.read<{ version: 1; ownerId: string; projectId: string; requestIntentId: string; attempt: number; jobId: string }>(intentKey(ownerId, projectId, requestIntentId, attempt));
+  validateIntent(ownerId, projectId, requestIntentId, attempt);
+  const record = await objects.read<unknown>(intentKey(ownerId, projectId, requestIntentId, attempt));
   if (!record) return null;
-  const claim = record.value;
-  if (!claim || Buffer.byteLength(JSON.stringify(claim), "utf8") > 4096 || claim.version !== 1 || claim.ownerId !== ownerId || claim.projectId !== projectId || claim.requestIntentId !== requestIntentId
-    || claim.attempt !== attempt || !/^h3-still-[a-f0-9]{64}$/.test(claim.jobId)
-    || Object.keys(claim).some(field => !["version", "ownerId", "projectId", "requestIntentId", "attempt", "jobId"].includes(field))) throw new Error("Stored H3 still intent ownership differs.");
+  const claim = parseIntent(record.value, ownerId, projectId, requestIntentId, attempt);
+  if ("state" in claim) throw new H3StillIntentRejectedError();
   const job = await readH3StillJob(ownerId, projectId, claim.jobId, objects);
   if (!job) throw new StudioProjectConflictError("This still intent is reserved but its durable job is not confirmed. Check the same intent again; no replacement was submitted.");
   if (job.requestIntentId !== requestIntentId || job.attempt !== attempt) throw new Error("Stored H3 still job differs from its original intent.");
@@ -154,14 +191,14 @@ export async function createH3StillJob(input: H3StillJobInput, objects: StudioJs
   const body = frozen(input), id = identity(body), objectKey = key(body.ownerId, body.projectId, id);
   const now = new Date().toISOString(), job: H3StillJob = { version: 1, id, ...body, state: "queued", createdAt: now, updatedAt: now };
   bounded(job);
-  type Claim = { version: 1; ownerId: string; projectId: string; requestIntentId: string; attempt: number; jobId: string };
-  const claim: Claim = { version: 1, ownerId: body.ownerId, projectId: body.projectId, requestIntentId: body.requestIntentId, attempt: body.attempt, jobId: id };
+  const claim: StillIntentClaim = { version: 1, ownerId: body.ownerId, projectId: body.projectId, requestIntentId: body.requestIntentId, attempt: body.attempt, jobId: id };
   const claimKey = intentKey(body.ownerId, body.projectId, body.requestIntentId, body.attempt);
   const readClaim = async (attempt: number) => {
-    const record = await objects.read<Claim>(intentKey(body.ownerId, body.projectId, body.requestIntentId, attempt));
-    if (record && (record.value.version !== 1 || record.value.ownerId !== body.ownerId || record.value.projectId !== body.projectId
-      || record.value.requestIntentId !== body.requestIntentId || record.value.attempt !== attempt || !/^h3-still-[a-f0-9]{64}$/.test(record.value.jobId))) throw new Error("H3 still intent ownership differs.");
-    return record?.value ?? null;
+    const record = await objects.read<unknown>(intentKey(body.ownerId, body.projectId, body.requestIntentId, attempt));
+    if (!record) return null;
+    const value = parseIntent(record.value, body.ownerId, body.projectId, body.requestIntentId, attempt);
+    if ("state" in value) throw new H3StillIntentRejectedError();
+    return value;
   };
   const existingClaim = await readClaim(body.attempt);
   if (existingClaim && !same(existingClaim, claim)) throw new StudioProjectConflictError("This still intent already identifies another frozen image request.");
@@ -221,6 +258,26 @@ export async function updateH3StillJob(ownerId: string, projectId: string, id: s
 export async function requestH3StillCancellation(ownerId: string, projectId: string, id: string, objects: StudioJsonObjectStore = studioProjectObjects) {
   return mutate(ownerId, projectId, id, current => terminal(current.state) || current.cancelRequestedAt ? current
     : { ...current, state: current.runId ? "cancel_requested" : "cancelled", cancelRequestedAt: new Date().toISOString() }, objects);
+}
+
+/** Authority boundary: caller must first prove the exact owned Trigger run is
+ * terminal. This never clears ownership or makes a frozen attempt submit again.
+ * Missing provider history is not evidence for this operation: every durable
+ * submission marker must still be absent in the winning conditional write.
+ */
+export async function finishH3StillPreparation(ownerId: string, projectId: string, id: string, expectedRunId: string,
+  objects: StudioJsonObjectStore = studioProjectObjects) {
+  if (!text(expectedRunId, 256)) throw new Error("An exact terminal still worker run is required.");
+  return mutate(ownerId, projectId, id, current => {
+    if (current.runId !== expectedRunId || current.workflowSha256 !== undefined || current.providerSchemaSha256 !== undefined
+      || current.submissionClaimId !== undefined || current.promptId !== undefined || current.result !== undefined || current.workerRecoveries?.length
+      || !["queued", "preparing", "cancel_requested", "failed", "cancelled"].includes(current.state)) {
+      throw new StudioProjectConflictError("The still worker or submission boundary changed; reload its existing attempt.");
+    }
+    if (current.state === "failed" || current.state === "cancelled") return current;
+    return { ...current, state: current.cancelRequestedAt || current.state === "cancel_requested" ? "cancelled" : "failed",
+      error: "The previous worker ended before submitting this still. Start an explicit new still attempt to continue." };
+  }, objects);
 }
 
 /** Trust boundary: the authenticated orchestrator must first retrieve the exact

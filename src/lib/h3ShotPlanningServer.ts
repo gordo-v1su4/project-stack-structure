@@ -5,7 +5,7 @@ import { withCurrentReferenceIdentity } from "@/components/studio/currentReferen
 import type { SelectedFootageEvidence } from "@/components/studio/selectedFootageEvidence";
 import { buildStoryContentSignature } from "@/components/studio/storyTreatments";
 import { buildStudioSourceContextSignature } from "@/components/studio/studioSourceContext";
-import { validateSavedGenerationScope } from "./generationScopeServer";
+import { recordGenerationScopeBaseline, validateSavedGenerationScope } from "./generationScopeServer";
 import { readStudioProject, type SavedStudioProject } from "./studioProjectStore";
 import { normalizeStudioOwnerSegment, normalizeStudioProjectId } from "./studioStoragePaths";
 import { readH3ShotPlan, storeH3ShotPlan } from "./h3ShotPlanningStore";
@@ -19,6 +19,7 @@ export class H3ShotPlanningError extends Error {
 type Dependencies = {
   read: typeof readStudioProject;
   validate: typeof validateSavedGenerationScope;
+  baseline?: typeof recordGenerationScopeBaseline;
   selectedEvidence?: typeof resolveCanonicalSelectedFootageEvidence;
 };
 
@@ -54,7 +55,11 @@ export async function loadH3ShotPlanningContext(ownerId: string, projectId: stri
   }) !== story.confirmedSourceContextSignature) {
     throw new H3ShotPlanningError("The master, footage or references changed after story approval.");
   }
-  const scope = await dependencies.validate(ownerId, saved);
+  // A freshly confirmed v2 story has no generation submission yet. Admit only
+  // its unchanged strong story/source context while assembling the exact input;
+  // canonical media/reference pinning and strict validation still precede work.
+  const needsBaseline = project.generationScopeVersion === 2 && !project.generationScope;
+  const scope = await dependencies.validate(ownerId, saved, needsBaseline ? { allowUnissuedBaseline: true } : {});
   if (!scope || scope !== expected.planSignature) throw new H3ShotPlanningError("The confirmed cut plan changed.");
   let input: H3ShotPlanningInput;
   try {
@@ -77,6 +82,10 @@ export async function loadH3ShotPlanningContext(ownerId: string, projectId: stri
   catch { throw new H3ShotPlanningError("The current saved placements cannot supply a complete bounded shot planning context."); }
   if (input.planSignature !== scope || (expected.bindingSha256 !== undefined && input.bindingSha256 !== expected.bindingSha256)) {
     throw new H3ShotPlanningError("The story, cut plan or planning context changed.");
+  }
+  if (needsBaseline) {
+    await (dependencies.baseline ?? recordGenerationScopeBaseline)(ownerId, saved);
+    if (await dependencies.validate(ownerId, saved) !== scope) throw new H3ShotPlanningError("The confirmed cut plan changed.");
   }
   return { saved, input };
 }

@@ -4,6 +4,7 @@ import { H3ShotPlanningError, loadH3ShotPlanningContext } from "@/lib/h3ShotPlan
 import { effectiveGenerationScope } from "@/components/studio/generationScope";
 import type { H3ShotPlanningResult } from "@/components/studio/h3ShotPlanning";
 import { h3ProjectFixture } from "../helpers/h3Project";
+import type { retrieveTriggerRun } from "@/lib/triggerOrchestration";
 
 async function fixture() {
   const { saved } = h3ProjectFixture();
@@ -27,6 +28,31 @@ async function fixture() {
 }
 
 describe("authenticated shot planning API", () => {
+  test("retry requires the exact prior owned terminal failed run and bounded predecessor", async () => {
+    const f = await fixture();
+    const previous = { id: "run_previous", taskIdentifier: "qwen-h3-shot-planning", isCompleted: true,
+      isSuccess: false, isFailed: true, isCancelled: false, tags: [`user:${(await f.dependencies.session())!.id}`,
+        `project:${f.body.projectId}`, `planning-binding:${f.context.input.bindingSha256}`, "planning-attempt:0"] };
+    const retry = { ...f.body, attempt: 1, previousRunId: previous.id };
+    const retrieve = (value: unknown) => (async () => value) as typeof retrieveTriggerRun;
+    for (const extra of [{ isCompleted: false }, { isSuccess: true }, { taskIdentifier: "other" }, { id: "other" },
+      { tags: previous.tags.filter(tag => !tag.startsWith("user:")) },
+      { tags: previous.tags.map(tag => tag.startsWith("planning-binding:") ? `planning-binding:${"0".repeat(64)}` : tag) },
+      { tags: previous.tags.map(tag => tag === "planning-attempt:0" ? "planning-attempt:1" : tag) }]) {
+      const response = await createShotPlanningHandlers({ ...f.dependencies, retrieve: retrieve({ ...previous, ...extra }) }).POST(f.request(retry));
+      expect(response.status).toBe(409);
+    }
+    expect(f.counts().dispatches).toBe(0);
+    const handlers = createShotPlanningHandlers({ ...f.dependencies, retrieve: retrieve(previous) });
+    expect((await handlers.POST(f.request({ ...f.body, attempt: 1 }))).status).toBe(400);
+    expect((await handlers.POST(f.request({ ...retry, attempt: 2 }))).status).toBe(409);
+    expect((await handlers.POST(f.request(retry))).status).toBe(202);
+    expect(f.counts().dispatches).toBe(1);
+    const cancelled = createShotPlanningHandlers({ ...f.dependencies, retrieve: retrieve({ ...previous,
+      isCompleted: false, isSuccess: false, isFailed: false, isCancelled: true }) });
+    expect((await cancelled.POST(f.request(retry))).status).toBe(202);
+    expect(f.counts().dispatches).toBe(2);
+  });
   test("anonymous calls are denied before reading malformed input or project data", async () => {
     const f = await fixture();
     const handlers = createShotPlanningHandlers({ ...f.dependencies, session: async () => null });

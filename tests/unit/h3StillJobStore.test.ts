@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { claimH3StillReconciliation, createH3StillJob, readH3StillJob, readH3StillJobByIntent, requestH3StillCancellation, updateH3StillJob, type H3StillJob, type H3StillResult } from "@/lib/h3StillJobStore";
+import { claimH3StillReconciliation, createH3StillJob, finishH3StillPreparation, readH3StillJob, readH3StillJobByIntent, requestH3StillCancellation, updateH3StillJob, type H3StillJob, type H3StillResult } from "@/lib/h3StillJobStore";
 import { freezeH3Still } from "@/lib/h3StillProfile";
 import { StudioProjectConflictError, type StudioJsonObjectStore } from "@/lib/studioProjectObjectStore";
 
@@ -11,6 +11,38 @@ async function submitting(f: ReturnType<typeof fixture>) {
 }
 
 describe("owned frozen H3 still jobs", () => {
+  test("terminal worker preparation can finish without resetting ownership or authorizing the same attempt again", async () => {
+    const f = fixture(), job = await createH3StillJob(f.input, f.objects);
+    await updateH3StillJob(job.ownerId, job.projectId, job.id, "run-dead", current => ({ ...current, state: "preparing" }), f.objects);
+    const finished = await finishH3StillPreparation(job.ownerId, job.projectId, job.id, "run-dead", f.objects);
+    expect(finished.state).toBe("failed"); expect(finished.runId).toBe("run-dead"); expect(finished.workflowSha256).toBe(undefined);
+    expect(await finishH3StillPreparation(job.ownerId, job.projectId, job.id, "run-dead", f.objects)).toEqual(finished);
+    const retry = await createH3StillJob({ ...f.input, attempt: 1 }, f.objects);
+    expect(retry.id).not.toBe(job.id); expect(retry.state).toBe("queued"); expect(retry.shotRequest).toEqual(job.shotRequest);
+    const g = fixture(), cancelled = await createH3StillJob(g.input, g.objects);
+    await updateH3StillJob(cancelled.ownerId, cancelled.projectId, cancelled.id, "run-dead", current => ({ ...current, state: "preparing" }), g.objects);
+    await requestH3StillCancellation(cancelled.ownerId, cancelled.projectId, cancelled.id, g.objects);
+    expect((await finishH3StillPreparation(cancelled.ownerId, cancelled.projectId, cancelled.id, "run-dead", g.objects)).state).toBe("cancelled");
+  });
+
+  test("preparation finalization refuses stale owners and a submitting write that wins its CAS", async () => {
+    const f = fixture(), job = await createH3StillJob(f.input, f.objects);
+    await updateH3StillJob(job.ownerId, job.projectId, job.id, "run-dead", current => ({ ...current, state: "preparing" }), f.objects);
+    await expect(finishH3StillPreparation(job.ownerId, job.projectId, job.id, "wrong-run", f.objects)).rejects.toThrow();
+    let raced = false;
+    const objects: StudioJsonObjectStore = { ...f.objects, async write(key, value, revision) {
+      if (!raced && (value as H3StillJob).state === "failed") {
+        raced = true;
+        await updateH3StillJob(job.ownerId, job.projectId, job.id, "run-dead", current => ({ ...current, state: "submitting", workflowSha256: "f".repeat(64), providerSchemaSha256: "9".repeat(64), submissionClaimId: "00000000-0000-4000-8000-000000000099" }), f.objects);
+      }
+      return f.objects.write(key, value, revision);
+    } };
+    await expect(finishH3StillPreparation(job.ownerId, job.projectId, job.id, "run-dead", objects)).rejects.toThrow();
+    const saved = (await readH3StillJob(job.ownerId, job.projectId, job.id, f.objects))!;
+    expect(saved.state).toBe("submitting"); expect(saved.submissionClaimId).toBe("00000000-0000-4000-8000-000000000099");
+    await expect(finishH3StillPreparation(job.ownerId, job.projectId, job.id, "run-dead", f.objects)).rejects.toThrow();
+  });
+
   test("lost creation ACK restores the same intent after project edits without materialization or writes", async () => {
     const f = fixture(), job = await createH3StillJob(f.input, f.objects), writes = f.writes();
     // Caller retained its intent but lost the response/job ID, then edited its local project context.

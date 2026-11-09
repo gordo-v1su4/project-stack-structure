@@ -6,10 +6,13 @@ type ClientOptions = {
   timeoutMs?: number;
   pollIntervalMs?: number;
   fetch?: typeof fetch;
+  /** Durable attempt receipts. Reload resumes observation; only a new explicit call retries a proven failure. */
+  storage?: Pick<Storage, "getItem" | "setItem">;
   /** Recheck the mounted project's snapshot before every request and return. */
   isCurrent?: () => boolean;
 };
 const endpoint = "/api/generate/h3/shot-planning";
+type PlanningReceipt = { attempt: number; runId?: string; previousRunId?: string };
 
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid shot planning response.");
@@ -81,18 +84,52 @@ export async function requestH3ShotPlanning(input: H3ShotPlanningInput, options:
   };
   try {
     const context = { projectId: snapshot.projectId, planSignature: snapshot.planSignature, bindingSha256 };
-    const initial = await request(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(context) });
+    const storage = options.storage ?? (typeof window !== "undefined" ? window.localStorage : undefined);
+    const key = `h3-shot-planning-v1:${snapshot.projectId}:${bindingSha256}`;
+    let saved = storage?.getItem(key);
+    let receipt: PlanningReceipt = saved ? JSON.parse(saved) : { attempt: 0 };
+    const validId = (value: unknown) => typeof value === "string" && /^[a-zA-Z0-9_-]{1,200}$/.test(value);
+    if (!receipt || !Number.isInteger(receipt.attempt) || receipt.attempt < 0 || receipt.attempt > 2
+      || (receipt.runId !== undefined && !validId(receipt.runId))
+      || (receipt.attempt > 0 && !validId(receipt.previousRunId))) throw new Error("Invalid saved shot planning receipt. No generation was started.");
+    const save = () => {
+      if (!storage) return;
+      if (storage.getItem(key) !== saved) throw new Error("Another shot planning observation changed this attempt. Resume the saved run.");
+      saved = JSON.stringify(receipt);
+      storage.setItem(key, saved);
+    };
+    const runState = async (runId: string) => {
+      const { data: run } = await request(`/api/orchestration/runs/${encodeURIComponent(runId)}`);
+      if (run.id !== runId || typeof run.status !== "string"
+        || (run.taskIdentifier !== undefined && run.taskIdentifier !== "qwen-h3-shot-planning")
+        || ["isCompleted", "isSuccess", "isFailed", "isCancelled"].some(key => typeof run[key] !== "boolean")
+        || (run.isSuccess && (!run.isCompleted || run.isFailed || run.isCancelled))) throw new Error("Invalid owned shot planning run status.");
+      return run;
+    };
+    // This boundary is an explicit user invocation, never an automatic poll retry.
+    // A pending run is observed without POST; an uncertain ACK replays the same idempotent attempt.
+    let resumedRun: string | undefined = receipt.runId;
+    if (resumedRun) {
+      const previous = await runState(resumedRun);
+      if ((previous.isCompleted || previous.isCancelled) && !previous.isSuccess && (previous.isFailed || previous.isCancelled)) {
+        if (receipt.attempt >= 2) throw new Error("Shot planning reached its three-attempt limit. Existing footage is unchanged.");
+        receipt = { attempt: receipt.attempt + 1, previousRunId: resumedRun };
+        resumedRun = undefined;
+      }
+    }
+    save(); // Persist before dispatch, including when its acknowledgment might be lost.
+    const initial = resumedRun ? { response: { status: 202 }, data: { success: true, state: "queued", bindingSha256, runId: resumedRun } }
+      : await request(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...context,
+        ...(receipt.attempt > 0 ? { attempt: receipt.attempt, previousRunId: receipt.previousRunId } : {}) }) });
     if (initial.response.status === 200) return parseReady(initial.data);
     if (initial.response.status !== 202 || initial.data.success !== true || initial.data.state !== "queued"
       || initial.data.bindingSha256 !== bindingSha256 || typeof initial.data.runId !== "string" || !/^[a-zA-Z0-9_-]{1,200}$/.test(initial.data.runId)) {
       throw new Error("Shot planning dispatch returned an invalid acknowledgment. It was not retried.");
     }
     const runId = initial.data.runId;
+    receipt = { ...receipt, runId }; save();
     while (true) {
-      const { data: run } = await request(`/api/orchestration/runs/${encodeURIComponent(runId)}`);
-      if (run.id !== runId || typeof run.status !== "string"
-        || (run.taskIdentifier !== undefined && run.taskIdentifier !== "qwen-h3-shot-planning")
-        || ["isCompleted", "isSuccess", "isFailed", "isCancelled"].some(key => typeof run[key] !== "boolean")) throw new Error("Invalid owned shot planning run status.");
+      const run = await runState(runId);
       if (run.isFailed || run.isCancelled || (run.isCompleted && !run.isSuccess)) throw new Error("Shot planning run did not succeed. Existing footage is unchanged.");
       if (run.isCompleted && run.isSuccess) break;
       if (run.isSuccess) throw new Error("Shot planning run status is inconsistent.");

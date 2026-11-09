@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { H3GenerationRequest } from "../h3Generation";
 import type { H3FirstFrameChoice } from "../h3FirstFrame";
 import type { H3StillJob } from "@/lib/h3StillJobStore";
-import { acknowledgeStillClientRecord, buildStillContinuation, canCreateStill, isStillTerminal, parseStillClientRecord, sameStillFutureCreative, StillClientAdmissionError, stillClientRequest, stillClientStorageKey, stillMediaUrl, type StillClientRecord } from "../h3StillClient";
+import { acknowledgeStillClientRecord, releaseRejectedStillRecord, buildStillContinuation, canCreateStill, isStillTerminal, parseStillClientRecord, sameStillFutureCreative, StillClientAdmissionError, stillClientRequest, stillClientStorageKey, stillMediaUrl, type StillClientRecord } from "../h3StillClient";
 import { Button, StatusDot } from "../ui";
 
 export function MiniMaxStillPanel({ projectId, context, disabled, prepareShot, onUse }: {
@@ -32,7 +32,10 @@ export function MiniMaxStillPanel({ projectId, context, disabled, prepareShot, o
           const acknowledged = { ...saved, jobId: value.id };
           const accepted = acknowledgeStillClientRecord(localStorage, acknowledged);
           if (accepted && serial.current === generation) { setRecord(acknowledged); setJob(value); }
-        }).catch(failure => { if (serial.current === generation) setError((failure as Error).message); });
+        }).catch(failure => { if (serial.current === generation) {
+          if (failure instanceof StillClientAdmissionError && releaseRejectedStillRecord(localStorage, saved)) { setRecord(null); setJob(null); }
+          setError((failure as Error).message);
+        } });
       }
     } catch { setError("The saved still could not be restored."); }
     return () => { serial.current = generation + 1; };
@@ -53,6 +56,7 @@ export function MiniMaxStillPanel({ projectId, context, disabled, prepareShot, o
     if (activeRequest.current || busy || disabled || !projectId || !prose.trim() || !canCreateStill(record, job)) return;
     activeRequest.current = true;
     setBusy(true); setError(null); const start = live.current, generation = serial.current;
+    let pending: StillClientRecord | null = null;
     try {
       const proposed = await prepareShot();
       if (live.current.context !== start.context || live.current.projectId !== start.projectId || live.current.disabled) throw new Error("The shot changed before still submission.");
@@ -61,6 +65,7 @@ export function MiniMaxStillPanel({ projectId, context, disabled, prepareShot, o
       const next: StillClientRecord = { version: 1, projectId: shot.projectId, context: start.context,
         request: { shot, creativePrompt: prose.trim(), seed: crypto.getRandomValues(new Uint32Array(1))[0],
           requestIntentId: retry ? record.request.requestIntentId : crypto.randomUUID(), attempt: retry ? record.request.attempt + 1 : 0 } };
+      pending = next;
       setJob(null); save(next); // New intent invalidates the old preview before one POST; lost ACK cannot expose another attempt.
       const value = await stillClientRequest("POST", next);
       const acknowledged = { ...next, jobId: value.id };
@@ -68,7 +73,7 @@ export function MiniMaxStillPanel({ projectId, context, disabled, prepareShot, o
       if (accepted && serial.current === generation) { setRecord(acknowledged); setJob(value); }
     } catch (failure) {
       if (serial.current === generation) {
-        if (failure instanceof StillClientAdmissionError) { localStorage.removeItem(stillClientStorageKey(start.projectId!)); setRecord(null); setJob(null); }
+        if (failure instanceof StillClientAdmissionError && pending && releaseRejectedStillRecord(localStorage, pending)) { setRecord(null); setJob(null); }
         setError((failure as Error).message);
       }
     }
@@ -81,7 +86,10 @@ export function MiniMaxStillPanel({ projectId, context, disabled, prepareShot, o
     setBusy(true); setError(null); const generation = serial.current;
     try { const value = await stillClientRequest(method, record); const acknowledged = { ...record, jobId: value.id };
       if (acknowledgeStillClientRecord(localStorage, acknowledged) && serial.current === generation) { setRecord(acknowledged); setJob(value); } }
-    catch (failure) { if (serial.current === generation) setError((failure as Error).message); }
+    catch (failure) { if (serial.current === generation) {
+      if (failure instanceof StillClientAdmissionError && releaseRejectedStillRecord(localStorage, record)) { setRecord(null); setJob(null); }
+      setError((failure as Error).message);
+    } }
     finally { if (serial.current === generation) { activeRequest.current = false; setBusy(false); } }
   }
   return <details className="rounded-md border border-line bg-ink-1 p-3">

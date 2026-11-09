@@ -1,11 +1,12 @@
 import { getSessionUser } from "@/lib/session";
 import { H3ShotPlanningError, loadH3ShotPlanningContext } from "@/lib/h3ShotPlanningServer";
 import { readH3ShotPlan } from "@/lib/h3ShotPlanningStore";
-import { triggerH3ShotPlanning } from "@/lib/triggerOrchestration";
+import { retrieveTriggerRun, triggerH3ShotPlanning } from "@/lib/triggerOrchestration";
 
 const reply = (value: unknown, status: number) => Response.json(value, { status, headers: { "Cache-Control": "no-store" } });
 type Dependencies = { session: typeof getSessionUser; load: typeof loadH3ShotPlanningContext;
-  read: typeof readH3ShotPlan; trigger: (...args: Parameters<typeof triggerH3ShotPlanning>) => Promise<{ id: string }> };
+  read: typeof readH3ShotPlan; trigger: (...args: Parameters<typeof triggerH3ShotPlanning>) => Promise<{ id: string }>;
+  retrieve?: typeof retrieveTriggerRun };
 const defaults: Dependencies = { session: getSessionUser, load: loadH3ShotPlanningContext, read: readH3ShotPlan, trigger: triggerH3ShotPlanning };
 
 async function readBody(request: Request) {
@@ -37,18 +38,30 @@ export function createShotPlanningHandlers(dependencies: Dependencies = defaults
     try {
       const value = dispatch ? await readBody(request) : Object.fromEntries(new URL(request.url).searchParams);
       if (!value || typeof value !== "object" || Array.isArray(value)
-        || Object.keys(value).some(key => !["projectId", "planSignature", "bindingSha256", ...(dispatch ? ["attempt"] : [])].includes(key))) {
+        || Object.keys(value).some(key => !["projectId", "planSignature", "bindingSha256", ...(dispatch ? ["attempt", "previousRunId"] : [])].includes(key))) {
         throw new H3ShotPlanningError("Invalid planning request fields.", 400);
       }
-      const { projectId, planSignature, bindingSha256, attempt = 0 } = value;
+      const { projectId, planSignature, bindingSha256, attempt = 0, previousRunId } = value;
       if (typeof projectId !== "string" || !/^[a-z0-9_-]{1,96}$/.test(projectId)
         || typeof planSignature !== "string" || !planSignature.trim() || planSignature.length > 200
         || (bindingSha256 !== undefined && (typeof bindingSha256 !== "string" || !/^[a-f0-9]{64}$/.test(bindingSha256)))
-        || !Number.isInteger(attempt) || attempt < 0 || attempt > 2) throw new H3ShotPlanningError("Invalid planning request context.", 400);
+        || !Number.isInteger(attempt) || attempt < 0 || attempt > 2
+        || (attempt === 0 ? previousRunId !== undefined : typeof previousRunId !== "string" || !/^[a-zA-Z0-9_-]{1,200}$/.test(previousRunId))) throw new H3ShotPlanningError("Invalid planning request context.", 400);
       const { input } = await dependencies.load(user.id, projectId, { planSignature, bindingSha256 });
       const result = await dependencies.read(user.id, projectId, input);
       if (result) return reply({ success: true, state: "ready", bindingSha256: input.bindingSha256, result }, 200);
       if (!dispatch) return reply({ success: true, state: "missing", bindingSha256: input.bindingSha256 }, 200);
+      if (attempt > 0) {
+        const previous = await (dependencies.retrieve ?? retrieveTriggerRun)(previousRunId);
+        if (previous.id !== previousRunId || previous.taskIdentifier !== "qwen-h3-shot-planning"
+          || !previous.tags.includes(`user:${user.id}`) || !previous.tags.includes(`project:${projectId}`)
+          || !previous.tags.includes(`planning-binding:${input.bindingSha256}`)
+          || !previous.tags.includes(`planning-attempt:${attempt - 1}`)
+          || !(previous.isCompleted === true || previous.isCancelled === true) || previous.isSuccess !== false
+          || !(previous.isFailed === true || previous.isCancelled === true)) {
+          throw new H3ShotPlanningError("Only a terminal unsuccessful run for this exact plan can authorize another attempt.", 409);
+        }
+      }
       const queued = await dependencies.trigger({ ownerId: user.id, projectId, planSignature: input.planSignature, bindingSha256: input.bindingSha256 }, attempt);
       return reply({ success: true, state: "queued", bindingSha256: input.bindingSha256, runId: queued.id }, 202);
     } catch (error) {

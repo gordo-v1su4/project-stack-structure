@@ -91,6 +91,15 @@ describe("durable H3 still runner", () => {
     expect((await runH3Still(f.ref, "run-1", f.options, f.d)).state).toBe("ready");
     expect(f.count.prepare).toBe(0); expect(f.count.submit).toBe(0); expect(f.count.persist).toBe(1);
   });
+  test("a saved prompt surviving submission_unknown restores rendering before persisting", async () => {
+    const f = await fixture(); await f.existing();
+    await f.d.update(f.ref.ownerId, f.ref.projectId, f.ref.jobId, "run-1", current => ({ ...current, state: "submission_unknown", error: "Prior observation timed out" }));
+    const persist = f.d.persist;
+    f.d.persist = async (...args) => { expect(args[0].state).toBe("persisting"); return persist(...args); };
+    expect((await runH3Still(f.ref, "run-1", f.options, f.d)).state).toBe("ready");
+    expect(f.count.submit).toBe(0); expect(f.count.prepare).toBe(0); expect(f.count.validate).toBe(0); expect(f.count.persist).toBe(1);
+    expect((await f.read())!.promptId).toBe("prompt-1");
+  });
   test("provider restart and empty history remain uncertain at the deadline without resubmission", async () => {
     const f = await fixture(); await f.existing("submission_unknown");
     f.d.reconcile = async () => { f.count.reconcile++; return undefined; };

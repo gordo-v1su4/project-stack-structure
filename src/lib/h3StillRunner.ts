@@ -127,6 +127,13 @@ export async function runH3Still(reference: H3StillJobReference, runId: string, 
         if (job.promptId) {
           options.stage(cancelled(job) ? "Observing the cancelled still attempt without interrupting other work" : "Rendering the MiniMax still");
           const state = await within(d.status(prepared, job.id, job.promptId, transport()));
+          // A saved prompt can survive an observation timeout. Restore its legal
+          // rendering state only after the provider validates the exact owned
+          // prompt; unknown history never grants this transition or another POST.
+          if (state.status === "running" || state.status === "completed") {
+            await mutate(current => current.state === "submission_unknown" && !cancelled(current)
+              ? { ...current, state: "rendering", error: undefined } : current);
+          }
           if (state.status === "failed") {
             await mutate(current => ({ ...current, state: cancelled(current) ? "cancelled" : "failed", error: "The existing still provider workflow failed." }));
             return { jobId: job.id, state: job.state };

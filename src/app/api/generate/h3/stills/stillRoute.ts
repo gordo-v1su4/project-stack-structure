@@ -1,17 +1,17 @@
 import { getSessionUser } from "@/lib/session";
 import { readStudioProject } from "@/lib/studioProjectStore";
-import { prepareH3StillJob } from "@/lib/h3StillServer";
-import { readH3StillJob, readH3StillJobByIntent, requestH3StillCancellation } from "@/lib/h3StillJobStore";
+import { prepareH3StillJob, H3StillAdmissionError } from "@/lib/h3StillServer";
+import { finishH3StillPreparation, readH3StillJob, readH3StillJobByIntent, requestH3StillCancellation, H3StillIntentRejectedError } from "@/lib/h3StillJobStore";
 import { triggerH3Still, triggerH3StillReconciliation, retrieveTriggerRun } from "@/lib/triggerOrchestration";
 import { H3RequestError } from "@/lib/h3GenerationServer";
 import { SourceConfirmationError } from "@/lib/generationScopeServer";
 
 type Dependencies = { session: typeof getSessionUser; project: typeof readStudioProject; prepare: typeof prepareH3StillJob;
   read: typeof readH3StillJob; cancel: typeof requestH3StillCancellation; trigger: typeof triggerH3Still;
-  run: typeof retrieveTriggerRun; reconcile: typeof triggerH3StillReconciliation; intent: typeof readH3StillJobByIntent };
+  run: typeof retrieveTriggerRun; reconcile: typeof triggerH3StillReconciliation; intent: typeof readH3StillJobByIntent; finishPreparation: typeof finishH3StillPreparation };
 const defaults: Dependencies = { session: getSessionUser, project: readStudioProject, prepare: prepareH3StillJob,
   read: readH3StillJob, cancel: requestH3StillCancellation, trigger: triggerH3Still,
-  run: retrieveTriggerRun, reconcile: triggerH3StillReconciliation, intent: readH3StillJobByIntent };
+  run: retrieveTriggerRun, reconcile: triggerH3StillReconciliation, intent: readH3StillJobByIntent, finishPreparation: finishH3StillPreparation };
 const reply = (value: unknown, status = 200) => Response.json(value, { status, headers: { "Cache-Control": "no-store" } });
 
 async function readBody(request: Request): Promise<unknown> {
@@ -54,10 +54,19 @@ export function createH3StillHandlers(dependencies: Dependencies = defaults) {
           || typeof body.requestIntentId !== "string" || !/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(body.requestIntentId)) throw new H3RequestError("Choose an owned still and an explicit check intent.");
         if (!await dependencies.project(user.id, body.projectId, { fresh: true })) throw new H3RequestError("Project not found.", 404);
         const job = await dependencies.read(user.id, body.projectId, body.jobId);
-        if (!job?.runId || !job.workflowSha256 || !["submitting", "submission_unknown", "rendering", "persisting", "cancel_requested"].includes(job.state)) throw new H3RequestError("Choose an existing unresolved still attempt.", 409);
+        const beforeSubmission = job && ["queued", "preparing", "cancel_requested"].includes(job.state)
+          && job.workflowSha256 === undefined && job.providerSchemaSha256 === undefined && job.submissionClaimId === undefined
+          && job.promptId === undefined && job.result === undefined && !job.workerRecoveries?.length;
+        if (!job?.runId || !beforeSubmission && (!job.workflowSha256 || !["submitting", "submission_unknown", "rendering", "persisting", "cancel_requested"].includes(job.state))) throw new H3RequestError("Choose an existing unresolved still attempt.", 409);
         const previous = await dependencies.run(job.runId);
         if (!previous.tags.includes(`user:${user.id}`) || !previous.tags.includes(`h3-still:${job.id}`)
-          || !(previous.isCompleted || previous.isCancelled)) throw new H3RequestError("The previous still worker must finish before checking it with another run.", 409);
+          || !(previous.isCompleted || previous.isCancelled || previous.isFailed)) throw new H3RequestError("The previous still worker must finish before checking it with another run.", 409);
+        if (beforeSubmission) {
+          let finished;
+          try { finished = await dependencies.finishPreparation(user.id, body.projectId, job.id, job.runId); }
+          catch { throw new H3RequestError("The still worker or submission boundary changed. Reload before checking this attempt.", 409); }
+          return reply({ success: true, job: finished, runId: finished.runId, screenStatus: "pending-worker-preflight" });
+        }
         const run = await dependencies.reconcile(job, job.runId, body.requestIntentId);
         return reply({ success: true, job, runId: run.id }, 202);
       }
@@ -84,7 +93,9 @@ export function createH3StillHandlers(dependencies: Dependencies = defaults) {
       return reply({ success: true, job, screenStatus: "pending-worker-preflight" });
     } catch (error) {
       const known = error instanceof H3RequestError || error instanceof SourceConfirmationError;
-      return reply({ error: known ? error.message : "MiniMax still preparation is unavailable. No replacement generation was submitted." }, known ? error.status : 503);
+      const rejected = error instanceof H3StillAdmissionError || error instanceof H3StillIntentRejectedError;
+      return reply({ error: known ? error.message : "MiniMax still preparation is unavailable. No replacement generation was submitted.",
+        ...((operation === "create" || operation === "read") && rejected ? { admission: "rejected-before-job" } : {}) }, known ? error.status : rejected ? 409 : 503);
     }
   }
   return { POST: (request: Request) => handle(request, "create"), GET: (request: Request) => handle(request, "read"),

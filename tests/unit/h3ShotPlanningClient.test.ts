@@ -29,6 +29,59 @@ function fetcher(responses: Array<Response | (() => Promise<Response>)>) {
 }
 
 describe("owned browser shot planning observation", () => {
+  const storageFixture = () => {
+    const values = new Map<string, string>();
+    return { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value); } };
+  };
+  test("a new explicit action retries proven failure, survives reload, and stops after three attempts", async () => {
+    const f = fixture(), storage = storageFixture();
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const network = fetcher([...(attempt ? [f.status(true, false)] : []), f.queued(), f.status(true, false)]);
+      await expect(requestH3ShotPlanning(f.input, { ...network, storage })).rejects.toThrow("did not succeed");
+      const posts = network.calls.filter(call => call.init?.method === "POST");
+      expect(posts).toHaveLength(1);
+      expect(JSON.parse(posts[0].init!.body as string)).toMatchObject(attempt ? { attempt, previousRunId: "run-1" } : { projectId: "project-a" });
+    }
+    const capped = fetcher([f.status(true, false)]);
+    await expect(requestH3ShotPlanning(f.input, { ...capped, storage })).rejects.toThrow("three-attempt limit");
+    expect(capped.calls.some(call => call.init?.method === "POST")).toBe(false);
+  });
+
+  test("reload observes pending acknowledged work without dispatch and unknown ACK replays the same attempt", async () => {
+    const f = fixture(), storage = storageFixture();
+    const first = fetcher([f.queued(), async () => { throw new Error("offline"); }]);
+    await expect(requestH3ShotPlanning(f.input, { ...first, storage })).rejects.toThrow("offline");
+    const resumed = fetcher([f.status(false), f.status(), f.ready()]);
+    expect(await requestH3ShotPlanning(f.input, { ...resumed, storage })).toEqual(f.result);
+    expect(resumed.calls.every(call => call.init?.method !== "POST")).toBe(true);
+    const uncertain = storageFixture();
+    const lost = fetcher([async () => { throw new Error("lost ACK"); }]);
+    await expect(requestH3ShotPlanning(f.input, { ...lost, storage: uncertain })).rejects.toThrow("lost ACK");
+    const replay = fetcher([f.queued(), f.status(), f.ready()]);
+    await requestH3ShotPlanning(f.input, { ...replay, storage: uncertain });
+    expect(replay.calls[0].init!.body).toBe(lost.calls[0].init!.body);
+  });
+
+  test("a late ACK cannot overwrite a newer saved attempt", async () => {
+    const f = fixture(), storage = storageFixture();
+    const network = fetcher([async () => {
+      storage.setItem(`h3-shot-planning-v1:${f.input.projectId}:${f.input.bindingSha256}`, JSON.stringify({ attempt: 1, previousRunId: "run-1", runId: "run-2" }));
+      return f.queued();
+    }]);
+    await expect(requestH3ShotPlanning(f.input, { ...network, storage })).rejects.toThrow("Another shot planning observation");
+    expect(network.calls).toHaveLength(1);
+    expect(storage.getItem(`h3-shot-planning-v1:${f.input.projectId}:${f.input.bindingSha256}`)).toContain("run-2");
+  });
+  test("SDK cancellation is terminal for explicit retry even when isCompleted is false", async () => {
+    const f = fixture(), storage = storageFixture();
+    const cancelled = () => Response.json({ id: "run-1", taskIdentifier: "qwen-h3-shot-planning", status: "CANCELED",
+      isCompleted: false, isSuccess: false, isFailed: false, isCancelled: true });
+    const first = fetcher([f.queued(), cancelled()]);
+    await expect(requestH3ShotPlanning(f.input, { ...first, storage })).rejects.toThrow("did not succeed");
+    const retry = fetcher([cancelled(), f.queued(), f.status(), f.ready()]);
+    expect(await requestH3ShotPlanning(f.input, { ...retry, storage })).toEqual(f.result);
+    expect(JSON.parse(retry.calls[1].init!.body as string)).toMatchObject({ attempt: 1, previousRunId: "run-1" });
+  });
   test("cached result is strict-parsed with one dispatch and no polling", async () => {
     const f = fixture(), network = fetcher([f.ready()]);
     expect(await requestH3ShotPlanning(f.input, network)).toEqual(f.result);
