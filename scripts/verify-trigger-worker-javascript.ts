@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { lstat, open, readdir, realpath } from "node:fs/promises";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { TRIGGER_CONTROLLER_PATCHED_SHA256 } from "./trigger-controller-patch-core";
+import { isReviewedPatchedControllerSha256 } from "./trigger-controller-patch-core";
 
 export const WORKER_JAVASCRIPT_MANIFEST = "stack-worker-javascript.sha256.json";
 const MAX_FILES = 512, MAX_FILE_BYTES = 128 * 1024 * 1024, MAX_TOTAL_BYTES = 512 * 1024 * 1024;
@@ -84,14 +84,15 @@ function controllerPath(relative: string) {
     || relative.split("/").some(part => !part || part === "." || part === "..") || !relative.endsWith("/managed-run-controller.mjs")) fail("controller path is invalid");
   return relative;
 }
-/** Test seam only changes the expected fixture hash; CLI always requires the reviewed patch hash. */
+/** Test seam only changes the expected fixture hash; CLI requires an exact reviewed patch output. */
 export async function verifyPackagedWorkerJavaScript(root: string, controller: string, manifest: unknown,
-  expectedControllerSha256 = TRIGGER_CONTROLLER_PATCHED_SHA256) {
+  expectedControllerSha256?: string) {
   const expected = normalizeManifest(manifest), actual = await createWorkerJavaScriptManifest(root);
   if (JSON.stringify(actual.files.map(file => file.file)) !== JSON.stringify(expected.files.map(file => file.file))) fail("bundle file set differs from the clean build");
   for (let i = 0; i < actual.files.length; i++) if (actual.files[i].bytes !== expected.files[i].bytes || actual.files[i].sha256 !== expected.files[i].sha256) fail("differs from the clean build", actual.files[i].file);
   const controllerFile = await fingerprint(root, controllerPath(controller));
-  if (!hashPattern.test(expectedControllerSha256) || controllerFile.sha256 !== expectedControllerSha256) fail("controller patch checksum differs", "managed-run-controller.mjs");
+  if (expectedControllerSha256 === undefined ? !isReviewedPatchedControllerSha256(controllerFile.sha256)
+    : !hashPattern.test(expectedControllerSha256) || controllerFile.sha256 !== expectedControllerSha256) fail("controller patch checksum differs", "managed-run-controller.mjs");
   const files = [...actual.files.map(file => file.file), controller], deadline = Date.now() + TOTAL_CHECK_MS;
   // NODE_OPTIONS/NODE_PATH are deliberately absent: --check must not preload application code.
   const env = { NODE_ENV: "production" as const, PATH: process.env.PATH, ...(process.platform === "win32" ? { SystemRoot: process.env.SystemRoot } : {}) };

@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { createWorkerJavaScriptManifest, verifyPackagedWorkerJavaScript, WORKER_JAVASCRIPT_MANIFEST } from "../../scripts/verify-trigger-worker-javascript";
+import { patchTriggerControllerSource } from "../../scripts/trigger-controller-patch-core";
 
 const folders: string[] = [], controller = "tmp/cli/managed-run-controller.mjs";
 const controllerSource = "export const controller = true;\n";
@@ -20,6 +21,16 @@ async function fixture(source = "import './absent.mjs'; export const untouched =
   return { root, manifest: await createWorkerJavaScriptManifest(root) };
 }
 describe("packaged Trigger worker JavaScript guard", () => {
+  for (const file of [".tmp/security-audit/managed-run-controller-4.5.16-isolated-cache.mjs", ".tmp/security-audit/managed-run-controller-4.5.16-import-rebound.mjs"]) {
+    (existsSync(file) ? test : test.skip)(`default production verification accepts exact patched fixture ${path.basename(file)} without an override`, async () => {
+      const { root, manifest } = await fixture();
+      const patched = patchTriggerControllerSource(await readFile(file, "utf8"));
+      await writeFile(path.join(root, controller), patched);
+      expect((await verifyPackagedWorkerJavaScript(root, controller, manifest)).checkedFiles).toContain(controller);
+      await writeFile(path.join(root, controller), patched + "\n");
+      await expect(verifyPackagedWorkerJavaScript(root, controller, manifest)).rejects.toThrow("controller patch checksum differs");
+    });
+  }
   test("actual Node checks all root entries/chunks and exact controller without evaluating or resolving imports", async () => {
     const marker = "must-not-execute.txt", { root, manifest } = await fixture(`import './absent.mjs'; import {writeFileSync} from 'node:fs'; writeFileSync('${marker}','DO_NOT_RUN');\n`);
     const result = await verifyPackagedWorkerJavaScript(root, controller, manifest, controllerHash);

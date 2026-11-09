@@ -9,6 +9,17 @@ import path from "node:path";
 export const TRIGGER_CONTROLLER_VERSION = "4.5.16";
 export const TRIGGER_CONTROLLER_SOURCE_SHA256 = "06f44ebdc32828b1e65259c749e5ecd8c4e4d38daacdbdeb3d9e9d1799d9065b";
 export const TRIGGER_CONTROLLER_PATCHED_SHA256 = "601eefa76f120098c948bb11adbd80dec88e7c5b10a6fc6923cd5e2e1fd1b152";
+// Exact 4.5.16 import-rebound bundle: controller body is byte-identical after
+// replacing three reviewed generated chunk names. No generic normalization.
+export const TRIGGER_CONTROLLER_REBOUND_SOURCE_SHA256 = "48744f08e1b31704279ff6245208e4ef6520299401480dafd96e4b6f33fd3e62";
+export const TRIGGER_CONTROLLER_REBOUND_PATCHED_SHA256 = "9fa7a554fafd1c8798d9f2b816d724e3ce0b40391029a4a5f4e63a1825475a42";
+export const TRIGGER_CONTROLLER_REVIEWED_PAIRS: Readonly<Record<string, string>> = Object.freeze({
+  [TRIGGER_CONTROLLER_SOURCE_SHA256]: TRIGGER_CONTROLLER_PATCHED_SHA256,
+  [TRIGGER_CONTROLLER_REBOUND_SOURCE_SHA256]: TRIGGER_CONTROLLER_REBOUND_PATCHED_SHA256,
+});
+export function isReviewedPatchedControllerSha256(hash: string): boolean {
+  return Object.values(TRIGGER_CONTROLLER_REVIEWED_PAIRS).includes(hash);
+}
 export const UNSAFE_ATTEMPT_LOG = 'this.sendDebugLog("started attempt", { start: start.data });';
 export const SAFE_ATTEMPT_LOG = 'this.sendDebugLog("started attempt", { runId: this.runFriendlyId, attemptNumber });';
 const digest = (source: string) => createHash("sha256").update(source).digest("hex");
@@ -22,11 +33,16 @@ export function replaceAttemptLogStatement(source: string): string {
 }
 
 export function patchTriggerControllerSource(source: string): string {
-  if (digest(source) !== TRIGGER_CONTROLLER_SOURCE_SHA256) {
+  const sourceSha256 = digest(source);
+  // Repeating containment on an exact known output is safe; arbitrary sources
+  // containing the safe statement are never accepted by this branch.
+  if (isReviewedPatchedControllerSha256(sourceSha256)) return source;
+  const expectedPatchedSha256 = TRIGGER_CONTROLLER_REVIEWED_PAIRS[sourceSha256];
+  if (!expectedPatchedSha256) {
     throw new Error("Trigger controller source differs from the reviewed 4.5.16 bundle; refusing to build an unreviewed image.");
   }
   const patched = replaceAttemptLogStatement(source);
-  if (digest(patched) !== TRIGGER_CONTROLLER_PATCHED_SHA256) {
+  if (digest(patched) !== expectedPatchedSha256) {
     throw new Error("Trigger controller containment output failed its pinned checksum.");
   }
   return patched;
@@ -40,7 +56,7 @@ export async function patchTriggerControllerFile(file: string): Promise<void> {
   }
   const source = await readFile(absolute, "utf8"), patched = patchTriggerControllerSource(source);
   await writeFile(absolute, patched);
-  if (digest(await readFile(absolute, "utf8")) !== TRIGGER_CONTROLLER_PATCHED_SHA256) {
+  if (digest(await readFile(absolute, "utf8")) !== digest(patched)) {
     throw new Error("Trigger controller containment could not verify the written bundle.");
   }
 }

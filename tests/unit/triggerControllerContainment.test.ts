@@ -8,9 +8,22 @@ import { spawnSync } from "node:child_process";
 import type { BuildContext, BuildLayer } from "@trigger.dev/core/v3/build";
 import { controllerLogContainment } from "../../trigger.controller-containment";
 import { patchTriggerControllerSource, replaceAttemptLogStatement, SAFE_ATTEMPT_LOG,
-  TRIGGER_CONTROLLER_SOURCE_SHA256, TRIGGER_CONTROLLER_PATCHED_SHA256, UNSAFE_ATTEMPT_LOG } from "../../scripts/trigger-controller-patch-core";
+  TRIGGER_CONTROLLER_SOURCE_SHA256, TRIGGER_CONTROLLER_PATCHED_SHA256, UNSAFE_ATTEMPT_LOG,
+  TRIGGER_CONTROLLER_REBOUND_SOURCE_SHA256, TRIGGER_CONTROLLER_REBOUND_PATCHED_SHA256,
+  TRIGGER_CONTROLLER_REVIEWED_PAIRS, isReviewedPatchedControllerSha256 } from "../../scripts/trigger-controller-patch-core";
 
 describe("app-image Trigger controller log containment", () => {
+  test("only the two exact input/output pairs are admitted; safe-looking unknown controllers remain rejected", () => {
+    expect(TRIGGER_CONTROLLER_REVIEWED_PAIRS).toEqual({
+      "06f44ebdc32828b1e65259c749e5ecd8c4e4d38daacdbdeb3d9e9d1799d9065b": "601eefa76f120098c948bb11adbd80dec88e7c5b10a6fc6923cd5e2e1fd1b152",
+      "48744f08e1b31704279ff6245208e4ef6520299401480dafd96e4b6f33fd3e62": "9fa7a554fafd1c8798d9f2b816d724e3ce0b40391029a4a5f4e63a1825475a42",
+    });
+    expect(Object.isFrozen(TRIGGER_CONTROLLER_REVIEWED_PAIRS)).toBe(true);
+    for (const value of Object.keys(TRIGGER_CONTROLLER_REVIEWED_PAIRS)) expect(isReviewedPatchedControllerSha256(value)).toBe(false);
+    for (const value of Object.values(TRIGGER_CONTROLLER_REVIEWED_PAIRS)) expect(isReviewedPatchedControllerSha256(value)).toBe(true);
+    expect(isReviewedPatchedControllerSha256("0".repeat(64))).toBe(false);
+    expect(() => patchTriggerControllerSource(SAFE_ATTEMPT_LOG)).toThrow("differs from the reviewed");
+  });
   (process.env.STACK_TRIGGER_CONFIG_LOADER_CLI_ROOT && process.env.STACK_TRIGGER_CONFIG_LOADER_NODE_BINARY ? test : test.skip)("actual Node/CJS pinned 4.5.16 c12/jiti config loader imports only the pure containment core", () => {
     const result = spawnSync(process.env.STACK_TRIGGER_CONFIG_LOADER_NODE_BINARY!, ["tests/helpers/loadTriggerConfig.mjs", process.env.STACK_TRIGGER_CONFIG_LOADER_CLI_ROOT!, process.cwd()],
       { encoding: "utf8", timeout: 30_000 });
@@ -86,11 +99,32 @@ describe("app-image Trigger controller log containment", () => {
     expect(hash(source)).toBe(TRIGGER_CONTROLLER_SOURCE_SHA256);
     const patched = patchTriggerControllerSource(source);
     expect(hash(patched)).toBe(TRIGGER_CONTROLLER_PATCHED_SHA256);
+    expect(patchTriggerControllerSource(patched)).toBe(patched);
     expect(patched).not.toContain(UNSAFE_ATTEMPT_LOG);
     expect(patched.split(SAFE_ATTEMPT_LOG)).toHaveLength(2);
     const runtime = globalThis as unknown as { Bun: { Transpiler: new (options: { loader: "js"; target: "bun" }) => { transformSync(source: string): string } } };
     expect(() => new runtime.Bun.Transpiler({ loader: "js", target: "bun" }).transformSync(patched)).not.toThrow();
     expect(() => patchTriggerControllerSource(source + "\n")).toThrow("differs from the reviewed");
+  });
+
+  (existsSync(".tmp/security-audit/managed-run-controller-4.5.16-import-rebound.mjs") ? test : test.skip)("exact import-rebound controller patches idempotently and any further import/body/whitespace drift rejects", async () => {
+    const source = await readFile(".tmp/security-audit/managed-run-controller-4.5.16-import-rebound.mjs", "utf8");
+    const hash = (value: string) => createHash("sha256").update(value).digest("hex");
+    expect(hash(source)).toBe(TRIGGER_CONTROLLER_REBOUND_SOURCE_SHA256);
+    expect(source.split(UNSAFE_ATTEMPT_LOG)).toHaveLength(2);
+    const patched = patchTriggerControllerSource(source);
+    expect(hash(patched)).toBe(TRIGGER_CONTROLLER_REBOUND_PATCHED_SHA256);
+    expect(patched).toBe(source.replace(UNSAFE_ATTEMPT_LOG, SAFE_ATTEMPT_LOG));
+    expect(patched).not.toContain(UNSAFE_ATTEMPT_LOG);
+    expect(patchTriggerControllerSource(patched)).toBe(patched);
+    for (const drift of [source + "\n", source.replaceAll("\n", "\r\n"), source.replace("chunk-CEB7UULU", "chunk-AAAAAAAA"), patched + "\n", source.replace(UNSAFE_ATTEMPT_LOG, UNSAFE_ATTEMPT_LOG + UNSAFE_ATTEMPT_LOG)]) {
+      expect(() => patchTriggerControllerSource(drift)).toThrow("differs from the reviewed");
+    }
+    const priorPath = ".tmp/security-audit/managed-run-controller-4.5.16-isolated-cache.mjs";
+    if (existsSync(priorPath)) {
+      const prior = await readFile(priorPath, "utf8");
+      expect(source.replace("chunk-CEB7UULU.mjs", "chunk-FT6KN5ZP.mjs").replace("chunk-7Q5UQ7TD.mjs", "chunk-QOCO22YJ.mjs").replace("chunk-FT6LMJRK.mjs", "chunk-2FIQRGT7.mjs")).toBe(prior);
+    }
   });
 
   (existsSync(".tmp/security-audit/managed-run-controller-4.5.16.mjs") ? test : test.skip)("archived prior packaging stays unchanged and cannot silently replace the current reviewed bundle", async () => {
