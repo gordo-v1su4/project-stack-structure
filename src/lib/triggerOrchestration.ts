@@ -15,6 +15,8 @@ import type { MediaSceneDetectionPayload, mediaVideoPipelineTask } from "@/trigg
 import type { FfglitchPayload, ffglitchTask } from "@/trigger/ffglitch";
 import type { ImageSplitterPayload, imageSplitterTask } from "@/trigger/imageSplitter";
 import type { StoryTreatmentPayload, storyTreatmentTask } from "@/trigger/storyTreatment";
+import type { h3ShotPlanningTask } from "@/trigger/h3ShotPlanning";
+import type { H3ShotPlanningReference } from "./h3ShotPlanningServer";
 import { createTriggerIdempotencyKey } from "@/lib/triggerIdempotency";
 
 export const STACK_STRUCTURE_TRIGGER_TASKS = {
@@ -25,6 +27,7 @@ export const STACK_STRUCTURE_TRIGGER_TASKS = {
   essentiaAnalysis: "essentia-analyze-stored-audio",
   smartSceneCaption: "qwen-smart-scene-caption",
   storyTreatment: "qwen-story-treatment",
+  h3ShotPlanning: "qwen-h3-shot-planning",
   localGeneration: "local-ai-generation",
   higgsfieldGeneration: "higgsfield-nano-banana-pro-grid",
   deepgramTranscription: "deepgram-transcribe-stored-audio",
@@ -35,6 +38,20 @@ export const STACK_STRUCTURE_TRIGGER_TASKS = {
   ffglitch: "ffglitch-transform",
   imageSplitter: "image-split-grid",
 } as const;
+
+export async function triggerH3ShotPlanning(reference: H3ShotPlanningReference, attempt = 0) {
+  assertTriggerConfigured();
+  if (!Number.isInteger(attempt) || attempt < 0 || attempt > 2) throw new Error("Shot planning permits only three explicit attempts.");
+  const dispatch = await buildDispatchContext(["stack-structure", "shot-planning", "qwen", "vm100-heavy"], {
+    stageLabel: "Waiting for shot planning capacity", progressMode: "indeterminate",
+  });
+  if (dispatch.userId !== reference.ownerId) throw new Error("Shot planning dispatch owner changed.");
+  return tasks.trigger<typeof h3ShotPlanningTask>(STACK_STRUCTURE_TRIGGER_TASKS.h3ShotPlanning, reference, {
+    idempotencyKey: createTriggerIdempotencyKey("h3-shot-planning-v1", [reference.ownerId, reference.projectId, reference.planSignature, reference.bindingSha256, String(attempt)]),
+    idempotencyKeyTTL: "30d", maxAttempts: 1,
+    tags: [...dispatch.tags, `project:${reference.projectId}`], metadata: dispatch.metadata,
+  });
+}
 
 export async function triggerMediaSceneDetection(payload: MediaSceneDetectionPayload) {
   assertTriggerConfigured();

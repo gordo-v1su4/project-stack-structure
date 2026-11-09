@@ -23,20 +23,40 @@ Identical replay reads the existing result; a different result conflicts. Lost
 acknowledgements reconcile through readback without another write. This seam
 does not authenticate a browser, approve a shot or authorize video generation.
 
+## Authenticated planning checkpoint
+
+The source now includes an authenticated canonical planning API, an owned
+`qwen-h3-shot-planning` Trigger task, immutable cache reuse, and a fresh binding
+check after inference. Existing source captions and exact source trims supply
+advisory continuity evidence. They do not establish visible action or identity.
+
+The dedicated author/critic transport divides each requirement into at most
+24-window chunks, carries the preceding state and completed action prefix, and
+checks separate digest-bound review before accepting a result. Requests and
+responses, total time and explicit dispatch attempts are bounded. There is no
+automatic repair, retry or fallback to unreviewed directions.
+
+The companion canonical homelab gateway source includes both routes and its
+packaged module. Deadline expiry kills and reaps the local HTTP exchange child
+before releasing the gateway lock; it does not prove remote model cancellation.
+Neither gateway changes nor the new worker task have been deployed. The source
+inventory has 18 tasks; the last verified production worker still has 17.
+
+Validation: app check passed (1,592 tests, 24 skipped, 7,615 assertions), typecheck,
+lint (zero errors; five existing warnings), and production build passed. Independent
+API/worker review found no concrete P1/P2, with 25 focused tests passing. All 78
+offline gateway tests passed without network, model or service calls. These checks
+do not prove live model quality, integration, video or final-film acceptance.
+
 ## Remaining end-to-end slice
 
-1. Build the complete canonical planning scaffold on the authenticated server,
-   preserving exact musical windows and existing source evidence. Recheck fresh
-   project/story/reference bindings before using model output.
-2. Add bounded authoring and separate semantic/transition review through the
-   existing Qwen infrastructure. The current story-author endpoint enforces a
-   treatment schema; shot JSON cannot be sent there as if it were supported.
-   A dedicated shots transport needs strict schemas, streaming request byte caps,
-   fixed server model/instructions, GPU-lock/lifecycle reuse and one deadline.
+1. Connect the browser's automatic missing-shot workflow to the canonical
+   planning task, owned run status, and stored result. Verify reload/recovery and
+   stop on changed context before preparing any video request.
+2. Review the concrete coordinated gateway/worker/web release before activation.
    No gateway, service, queue or infrastructure deployment is included here.
-3. Budget smaller contiguous inference batches explicitly. Foundation limits
-   describe aggregate data admission, not a claim that the full song fits one
-   model context or output. Carry boundary context without repeating actions.
+3. Verify admitted chunks fit the actual model context and yield useful reviewed
+   directions; aggregate admission is not a context-window guarantee.
 4. Preserve explicit manual pickup/revision directions and frozen submitted or
    pending requests. Bind durable unsubmitted overrides to the same inputs.
 5. Resolve automatic missing-shot requests from the stored directions. Keep

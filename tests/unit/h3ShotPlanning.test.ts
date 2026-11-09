@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { buildH3ShotPlanningInput, parseH3ShotPlanningResult, H3_SHOT_PLANNING_LIMITS, type H3ShotPlanningInput, type H3ShotPlanningResult } from "@/components/studio/h3ShotPlanning";
-import { createMusicVideoProject, prepareApprovedPlacements, buildEditPlanPreviewSegments, type EditPlanPreviewSegment } from "@/components/studio/musicVideoProject";
+import { createMusicVideoProject, prepareApprovedPlacements, buildEditPlanPreviewSegments, placementInputSignature, type EditPlanPreviewSegment } from "@/components/studio/musicVideoProject";
 import { h3FrameCount, H3_FPS } from "@/components/studio/h3Generation";
 
 function fixture() {
@@ -32,7 +32,64 @@ function output(input: H3ShotPlanningInput): H3ShotPlanningResult {
   }))) };
 }
 
+function sourceFixture() {
+  const { project } = fixture();
+  project.videoMoments = [{ id: "source-moment", sourceClipId: 0, label: "Source fallback label", caption: "Already holding the rail while moving forward.",
+    start: 0, end: 20, duration: 20 }];
+  const placement = project.placementPlan!.placements[0];
+  Object.assign(placement, { kind: "source", momentId: "source-moment", sourceStart: 5, sourceEnd: 15 });
+  project.placementPlan!.inputSignature = placementInputSignature(project, project.placementPlan!.settings);
+  const segments = buildEditPlanPreviewSegments({ project, videoSources: [] }).flatMap(segment => [
+    { ...segment, musicEnd: segment.musicStart + 5 }, { ...segment, musicStart: segment.musicStart + 5 },
+  ]);
+  return { project, placement, segments };
+}
+
 describe("canonical H3 shot planning contract", () => {
+  test("source evidence comes from canonical source placements even when planning copies are gaps", () => {
+    const { project, segments } = sourceFixture();
+    const before = structuredClone(project);
+    expect(segments.every(segment => segment.kind === "gap")).toBe(true);
+    const input = buildH3ShotPlanningInput({ project, segments });
+    expect(input.groups[0].windows.map(window => window.sourceEvidence)).toEqual([
+      { momentId: "source-moment", caption: "Already holding the rail while moving forward.", sourceStart: 5, sourceEnd: 10 },
+      { momentId: "source-moment", caption: "Already holding the rail while moving forward.", sourceStart: 10, sourceEnd: 15 },
+    ]);
+    expect(input.groups[1].windows.every(window => window.sourceEvidence === undefined)).toBe(true);
+    expect(project).toEqual(before);
+    project.videoMoments[0].caption = "Revised canonical source caption.";
+    project.placementPlan!.inputSignature = placementInputSignature(project, project.placementPlan!.settings);
+    const revised = buildEditPlanPreviewSegments({ project, videoSources: [] }).flatMap(segment => [
+      { ...segment, musicEnd: segment.musicStart + 5 }, { ...segment, musicStart: segment.musicStart + 5 },
+    ]);
+    const changed = buildH3ShotPlanningInput({ project, segments: revised });
+    expect(changed.groups[0].windows[0].sourceEvidence!.caption).toBe("Revised canonical source caption.");
+    expect(changed.bindingSha256).not.toBe(input.bindingSha256);
+    expect(input.groups[0].windows[0].sourceEvidence!.caption).toBe("Already holding the rail while moving forward.");
+  });
+
+  test("source evidence rejects nonfinite/negative trims and windows extending beyond the confirmed source end", () => {
+    for (const trim of [ { sourceStart: -1, sourceEnd: 9 }, { sourceStart: NaN, sourceEnd: 15 },
+      { sourceStart: Infinity, sourceEnd: 15 }, { sourceStart: 5, sourceEnd: 14 }, { sourceStart: 5, sourceEnd: 4 } ]) {
+      const { project, placement, segments } = sourceFixture();
+      Object.assign(placement, trim);
+      expect(() => buildH3ShotPlanningInput({ project, segments })).toThrow("confirmed trim");
+    }
+  });
+
+  test("source caption fallback remains bounded and never invents caption text", () => {
+    const { project } = sourceFixture();
+    const prepare = () => {
+      project.placementPlan!.inputSignature = placementInputSignature(project, project.placementPlan!.settings);
+      const segments = buildEditPlanPreviewSegments({ project, videoSources: [] });
+      return buildH3ShotPlanningInput({ project, segments });
+    };
+    project.videoMoments[0].caption = "";
+    expect(prepare().groups[0].windows[0].sourceEvidence!.caption).toBe("Source fallback label");
+    project.videoMoments[0].caption = "x".repeat(1801);
+    expect(() => prepare()).toThrow("source evidence");
+  });
+
   test("retains approved constraints, names, pacing, story bindings and actual inference timing as detached data", () => {
     const { input, project, names } = fixture();
     expect(input.projectId).toBe("saved-project");

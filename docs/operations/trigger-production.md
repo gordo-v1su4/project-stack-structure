@@ -26,6 +26,7 @@ environment, or deployment history here.
 | `essentia-analyze-stored-audio` | `vm100-heavy` (1) | analysis JSON in RustFS |
 | `qwen-smart-scene-caption` | `vm100-heavy` (1) | caption JSON in RustFS |
 | `qwen-story-treatment` | `vm100-heavy` (1) | story treatments JSON |
+| `qwen-h3-shot-planning` | `vm100-heavy` (1) | owned immutable shot directions (source candidate; not deployed) |
 | `local-ai-generation` | `vm100-heavy` (1) | generated objects in RustFS |
 | `ffmpeg-preview-or-concat` | `media-assembly` (2) | preview MP4 in RustFS |
 | `ffmpeg-final-music-video-export` | `media-assembly` (2) | final MP4 in RustFS |

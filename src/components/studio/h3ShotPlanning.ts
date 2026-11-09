@@ -13,6 +13,7 @@ export const H3_SHOT_PLANNING_LIMITS = {
 export type H3ShotPlanningWindow = {
   key: string; placementId: string; songStart: number; songEnd: number;
   inference: { fps: number; frames: number; durationSeconds: number };
+  sourceEvidence?: { momentId: string; caption: string; sourceStart: number; sourceEnd: number };
 };
 export type H3ShotPlanningGroup = {
   id: string; timelineItemId: string; requirementId?: string; narrativeMomentId?: string; sectionId: string;
@@ -96,8 +97,14 @@ export function buildH3ShotPlanningInput(params: {
       throw new Error("Disjoint holes need explicit source-boundary context before shot planning.");
     }
     const frames = h3FrameCount(segment.musicEnd - segment.musicStart);
+    const moment = placement.kind === "source" ? project.videoMoments.find(moment => moment.id === placement.momentId) : undefined;
+    const sourceStart = placement.sourceStart + segment.musicStart - placement.songStart;
+    const sourceEnd = sourceStart + segment.musicEnd - segment.musicStart;
+    if (moment && (!Number.isFinite(sourceStart) || !Number.isFinite(sourceEnd) || sourceStart < 0
+      || sourceEnd > placement.sourceEnd + 0.001)) throw new Error("Source planning evidence exceeds its confirmed trim.");
     group.windows.push({ key, placementId: placement.id, songStart: segment.musicStart, songEnd: segment.musicEnd,
-      inference: { fps: H3_FPS, frames, durationSeconds: frames / H3_FPS } });
+      inference: { fps: H3_FPS, frames, durationSeconds: frames / H3_FPS },
+      ...(moment ? { sourceEvidence: { momentId: moment.id, caption: text(moment.caption || moment.label, 1800, "source evidence"), sourceStart, sourceEnd } } : {}) });
     if (groups.length > H3_SHOT_PLANNING_LIMITS.groups || group.windows.length > H3_SHOT_PLANNING_LIMITS.windowsPerGroup) throw new Error("Shot planning group count exceeds its bound.");
   }
   for (const group of groups) {
