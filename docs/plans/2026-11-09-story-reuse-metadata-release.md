@@ -26,9 +26,9 @@ Local application receipts are in `.tmp/revised-story-privacy-integration-202611
 
 ## Exact approval scope
 
-Approve preparation/merge of the application and ops PRs and the following coordinated self-hosted activation:
+Approve preparation/merge of the application and ops PRs and these coordinated self-hosted actions. The activation order in the next section governs their execution:
 
-1. Build and verify the matching existing application worker, then deploy the matching web through App VM/Dockhand. No Vercel operation, Trigger upgrade, paid generation or OAuth change.
+1. Build and verify a matching version of the existing application worker and the web artifact. Activate the worker/web through their existing self-hosted paths only after the gateway/privacy gates below pass. No Vercel operation, Trigger upgrade, paid generation or OAuth change.
 2. Replace only the Media API source with the reviewed three-file overlay built from the exact currently running immutable image, using `--pull=false --network=none`. Preserve its existing base, dependencies, command, environment and volumes. No normal mutable-base/unlocked dependency rebuild; no RustFS/caption/model service recreation.
 3. Apply the exact reviewed anonymous-only metadata deny to the existing `stack-structure` bucket. No other bucket, object move, object-body change or existing object ACL change.
 4. In the existing Cloudflare zone, inspect and privately back up the current rules, validate and activate only the reviewed metadata cache-bypass rule, preserving other rules. Purge only four Stack namespace roots: direct-S3 and gateway paths for `media-uploads/projects/` and `media-uploads/studio-drafts/`. This covers historical/deleted/query variants. Public media beneath projects may temporarily have a cold cache; its origin access stays public. No whole-zone/bucket purge.
