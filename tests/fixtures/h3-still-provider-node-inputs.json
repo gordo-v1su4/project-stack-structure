@@ -1,0 +1,896 @@
+{
+  "sourceSha256": "2b974ad9dfe2ff393a401e2afae2b028562114b18eba7fd3f2df4427016397f6",
+  "note": "Input schemas only; model catalog options reduced to the four pinned names for offline transport tests.",
+  "nodes": {
+    "UNETLoader": {
+      "input": {
+        "required": {
+          "unet_name": [
+            "COMBO",
+            {
+              "options": [
+                "minimax_h3_ref2va_pruned_int8_convrot.safetensors"
+              ]
+            }
+          ],
+          "weight_dtype": [
+            [
+              "default",
+              "fp8_e4m3fn",
+              "fp8_e4m3fn_fast",
+              "fp8_e5m2"
+            ],
+            {
+              "advanced": true
+            }
+          ]
+        }
+      }
+    },
+    "MiniMaxH3SigmaShift": {
+      "input": {
+        "required": {
+          "model": [
+            "MODEL",
+            {}
+          ],
+          "shift_video": [
+            "FLOAT",
+            {
+              "default": 12,
+              "min": 0.01,
+              "max": 100,
+              "step": 0.01
+            }
+          ],
+          "shift_audio": [
+            "FLOAT",
+            {
+              "default": 3,
+              "min": 0.01,
+              "max": 100,
+              "step": 0.01
+            }
+          ]
+        }
+      }
+    },
+    "CLIPLoader": {
+      "input": {
+        "required": {
+          "clip_name": [
+            "COMBO",
+            {
+              "options": [
+                "qwen3vl_32b_minimax_h3_int4_convrot.safetensors"
+              ]
+            }
+          ],
+          "type": [
+            [
+              "stable_diffusion",
+              "stable_cascade",
+              "sd3",
+              "stable_audio",
+              "mochi",
+              "ltxv",
+              "pixart",
+              "cosmos",
+              "lumina2",
+              "wan",
+              "hidream",
+              "chroma",
+              "ace",
+              "omnigen2",
+              "qwen_image",
+              "hunyuan_image",
+              "flux2",
+              "ovis",
+              "longcat_image",
+              "cogvideox",
+              "lens",
+              "pixeldit",
+              "ideogram4",
+              "boogu",
+              "krea2",
+              "joyimage",
+              "mage",
+              "minimax",
+              "yue2",
+              "flux3",
+              "moss_image",
+              "fibo2"
+            ]
+          ]
+        },
+        "optional": {
+          "device": [
+            [
+              "default",
+              "cpu"
+            ],
+            {
+              "advanced": true
+            }
+          ]
+        }
+      }
+    },
+    "VAELoader": {
+      "input": {
+        "required": {
+          "vae_name": [
+            "COMBO",
+            {
+              "options": [
+                "minimax_h3_video_vae_int8_convrot.safetensors"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "MiniMaxH3ReferenceToVideo": {
+      "input": {
+        "required": {
+          "clip": [
+            "CLIP",
+            {}
+          ],
+          "prompt": [
+            "STRING",
+            {
+              "multiline": true,
+              "dynamicPrompts": true
+            }
+          ],
+          "width": [
+            "INT",
+            {
+              "default": 1344,
+              "min": 32,
+              "max": 16384,
+              "step": 32
+            }
+          ],
+          "height": [
+            "INT",
+            {
+              "default": 768,
+              "min": 32,
+              "max": 16384,
+              "step": 32
+            }
+          ],
+          "length": [
+            "INT",
+            {
+              "tooltip": "Frame count at 24 fps, (124 = ~5s, trained range is ~124-362)",
+              "default": 124,
+              "min": 5,
+              "max": 3600,
+              "step": 17
+            }
+          ],
+          "ref_image_size": [
+            "COMBO",
+            {
+              "tooltip": "Reference image sizing. 'match' scales each ref (down only, keeping aspect) to the generation's pixel area; 'max' uses the reference pipeline's 2048px short edge for best identity fidelity. Reference tokens ride through every sampling step, so 'max' can be several times slower.",
+              "default": "match",
+              "multiselect": false,
+              "options": [
+                "match",
+                "max"
+              ]
+            }
+          ]
+        },
+        "optional": {
+          "vae": [
+            "VAE",
+            {
+              "tooltip": "Video VAE. Without it reference images/videos only condition the text encoder."
+            }
+          ],
+          "audio_vae": [
+            "VAE",
+            {
+              "tooltip": "Audio VAE. Without it reference audio only conditions the text encoder."
+            }
+          ],
+          "ref_images": [
+            "COMFY_AUTOGROW_V3",
+            {
+              "template": {
+                "input": {
+                  "required": {
+                    "ref_image": [
+                      "IMAGE",
+                      {
+                        "tooltip": "Reference image (downscaled to 2048 short edge if larger, never upscaled)"
+                      }
+                    ]
+                  }
+                },
+                "prefix": "ref_image_",
+                "min": 0,
+                "max": 9
+              }
+            }
+          ],
+          "ref_videos": [
+            "COMFY_AUTOGROW_V3",
+            {
+              "template": {
+                "input": {
+                  "required": {
+                    "ref_video": [
+                      "IMAGE",
+                      {
+                        "tooltip": "Reference video frames at 24 fps (2-15s)"
+                      }
+                    ]
+                  }
+                },
+                "prefix": "ref_video_",
+                "min": 0,
+                "max": 3
+              }
+            }
+          ],
+          "ref_video_audios": [
+            "COMFY_AUTOGROW_V3",
+            {
+              "template": {
+                "input": {
+                  "required": {
+                    "ref_video_audio": [
+                      "AUDIO",
+                      {
+                        "tooltip": "Soundtrack of the same-numbered reference video"
+                      }
+                    ]
+                  }
+                },
+                "prefix": "ref_video_audio_",
+                "min": 0,
+                "max": 3
+              }
+            }
+          ],
+          "ref_audios": [
+            "COMFY_AUTOGROW_V3",
+            {
+              "template": {
+                "input": {
+                  "required": {
+                    "ref_audio": [
+                      "AUDIO",
+                      {
+                        "tooltip": "Standalone reference audio"
+                      }
+                    ]
+                  }
+                },
+                "prefix": "ref_audio_",
+                "min": 0,
+                "max": 3
+              }
+            }
+          ]
+        }
+      }
+    },
+    "FizgigH3StillLatent": {
+      "input": {
+        "required": {
+          "width": [
+            "INT",
+            {
+              "default": 768,
+              "min": 64,
+              "max": 4096,
+              "step": 32,
+              "tooltip": "Image width in pixels (multiple of 32)."
+            }
+          ],
+          "height": [
+            "INT",
+            {
+              "default": 1344,
+              "min": 64,
+              "max": 4096,
+              "step": 32,
+              "tooltip": "Image height in pixels (multiple of 32)."
+            }
+          ],
+          "batch_size": [
+            "INT",
+            {
+              "default": 1,
+              "min": 1,
+              "max": 64
+            }
+          ]
+        }
+      }
+    },
+    "BasicGuider": {
+      "input": {
+        "required": {
+          "model": [
+            "MODEL",
+            {}
+          ],
+          "conditioning": [
+            "CONDITIONING",
+            {}
+          ]
+        }
+      }
+    },
+    "RandomNoise": {
+      "input": {
+        "required": {
+          "noise_seed": [
+            "INT",
+            {
+              "default": 0,
+              "min": 0,
+              "max": 18446744073709552000,
+              "control_after_generate": true
+            }
+          ]
+        }
+      }
+    },
+    "KSamplerSelect": {
+      "input": {
+        "required": {
+          "sampler_name": [
+            "COMBO",
+            {
+              "multiselect": false,
+              "options": [
+                "euler",
+                "euler_cfg_pp",
+                "euler_ancestral",
+                "euler_ancestral_cfg_pp",
+                "heun",
+                "heunpp2",
+                "exp_heun_2_x0",
+                "exp_heun_2_x0_sde",
+                "dpm_2",
+                "dpm_2_ancestral",
+                "lms",
+                "dpm_fast",
+                "dpm_adaptive",
+                "dpmpp_2s_ancestral",
+                "dpmpp_2s_ancestral_cfg_pp",
+                "dpmpp_sde",
+                "dpmpp_sde_gpu",
+                "dpmpp_2m",
+                "dpmpp_2m_cfg_pp",
+                "dpmpp_2m_sde",
+                "dpmpp_2m_sde_gpu",
+                "dpmpp_2m_sde_heun",
+                "dpmpp_2m_sde_heun_gpu",
+                "dpmpp_3m_sde",
+                "dpmpp_3m_sde_gpu",
+                "ddpm",
+                "lcm",
+                "ipndm",
+                "ipndm_v",
+                "deis",
+                "cfgpp_ud10_ab",
+                "res_multistep",
+                "res_multistep_cfg_pp",
+                "res_multistep_ancestral",
+                "res_multistep_ancestral_cfg_pp",
+                "gradient_estimation",
+                "gradient_estimation_cfg_pp",
+                "er_sde",
+                "seeds_2",
+                "seeds_3",
+                "sa_solver",
+                "sa_solver_pece",
+                "ddim",
+                "uni_pc",
+                "uni_pc_bh2",
+                "legacy_rk",
+                "rk",
+                "rk_beta",
+                "deis_3m_ode",
+                "deis_2m_ode",
+                "deis_3m",
+                "deis_2m",
+                "res_6s_ode",
+                "res_5s_ode",
+                "res_3s_ode",
+                "res_2s_ode",
+                "res_3m_ode",
+                "res_2m_ode",
+                "res_6s",
+                "res_5s",
+                "res_3s",
+                "res_2s",
+                "res_3m",
+                "res_2m"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "BasicScheduler": {
+      "input": {
+        "required": {
+          "model": [
+            "MODEL",
+            {}
+          ],
+          "scheduler": [
+            "COMBO",
+            {
+              "multiselect": false,
+              "options": [
+                "simple",
+                "sgm_uniform",
+                "karras",
+                "exponential",
+                "ddim_uniform",
+                "beta",
+                "normal",
+                "linear_quadratic",
+                "kl_optimal",
+                "beta57",
+                "bong_tangent"
+              ]
+            }
+          ],
+          "steps": [
+            "INT",
+            {
+              "default": 20,
+              "min": 1,
+              "max": 10000
+            }
+          ],
+          "denoise": [
+            "FLOAT",
+            {
+              "default": 1,
+              "min": 0,
+              "max": 1,
+              "step": 0.01
+            }
+          ]
+        }
+      }
+    },
+    "SamplerCustomAdvanced": {
+      "input": {
+        "required": {
+          "noise": [
+            "NOISE",
+            {}
+          ],
+          "guider": [
+            "GUIDER",
+            {}
+          ],
+          "sampler": [
+            "SAMPLER",
+            {}
+          ],
+          "sigmas": [
+            "SIGMAS",
+            {}
+          ],
+          "latent_image": [
+            "LATENT",
+            {}
+          ]
+        }
+      }
+    },
+    "LTXVSeparateAVLatent": {
+      "input": {
+        "required": {
+          "av_latent": [
+            "LATENT",
+            {}
+          ]
+        }
+      }
+    },
+    "MinimaxH3LatentUpscaler3D": {
+      "input": {
+        "required": {
+          "latent": [
+            "*",
+            {
+              "tooltip": "Input latent (image or video)."
+            }
+          ],
+          "model_name": [
+            "COMBO",
+            {
+              "options": [
+                "minimax_h3_latent_upscaler_3d_conv_v1_fp16.safetensors"
+              ]
+            }
+          ],
+          "mode": [
+            "COMFY_DYNAMICCOMBO_V3",
+            {
+              "tooltip": "How the target size is computed.",
+              "options": [
+                {
+                  "key": "scale by multiplier",
+                  "inputs": {
+                    "required": {
+                      "scale": [
+                        "FLOAT",
+                        {
+                          "tooltip": "Upscale factor.",
+                          "default": 2,
+                          "min": 1,
+                          "max": 4,
+                          "step": 0.05
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "key": "target dimensions",
+                  "inputs": {
+                    "required": {
+                      "width": [
+                        "INT",
+                        {
+                          "tooltip": "Target pixel width.",
+                          "default": 1280,
+                          "min": 64,
+                          "max": 8192,
+                          "step": 8
+                        }
+                      ],
+                      "height": [
+                        "INT",
+                        {
+                          "tooltip": "Target pixel height.",
+                          "default": 704,
+                          "min": 64,
+                          "max": 8192,
+                          "step": 8
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "key": "megapixels",
+                  "inputs": {
+                    "required": {
+                      "megapixels": [
+                        "FLOAT",
+                        {
+                          "tooltip": "Target megapixels.",
+                          "default": 1,
+                          "min": 0.1,
+                          "max": 16,
+                          "step": 0.1
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          ],
+          "align": [
+            "INT",
+            {
+              "tooltip": "Pixel-space alignment. 32 is strictly recommended.",
+              "default": 32,
+              "min": 1,
+              "max": 512,
+              "step": 1
+            }
+          ],
+          "enable_temporal_chunking": [
+            "BOOLEAN",
+            {
+              "tooltip": "Enable temporal chunking to save VRAM for long videos and fix end-frame flickering.",
+              "default": true
+            }
+          ],
+          "force_unload": [
+            "BOOLEAN",
+            {
+              "tooltip": "Unload model to CPU after inference to free VRAM for subsequent nodes. Disable if you run this node repeatedly to avoid reload overhead.",
+              "default": true
+            }
+          ],
+          "device": [
+            "COMBO",
+            {
+              "default": "cuda",
+              "multiselect": false,
+              "options": [
+                "cuda",
+                "rocm",
+                "cpu"
+              ]
+            }
+          ],
+          "precision": [
+            "COMBO",
+            {
+              "default": "fp16",
+              "multiselect": false,
+              "options": [
+                "fp32",
+                "fp16",
+                "bf16"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "LTXVConcatAVLatent": {
+      "input": {
+        "required": {
+          "video_latent": [
+            "LATENT",
+            {}
+          ],
+          "audio_latent": [
+            "LATENT",
+            {}
+          ]
+        }
+      }
+    },
+    "FizgigH3StillDecode": {
+      "input": {
+        "required": {
+          "samples": [
+            "LATENT"
+          ],
+          "vae": [
+            "VAE"
+          ]
+        }
+      }
+    },
+    "ImageScale": {
+      "input": {
+        "required": {
+          "image": [
+            "IMAGE"
+          ],
+          "upscale_method": [
+            [
+              "nearest-exact",
+              "bilinear",
+              "area",
+              "bicubic",
+              "lanczos"
+            ]
+          ],
+          "width": [
+            "INT",
+            {
+              "default": 512,
+              "min": 0,
+              "max": 16384,
+              "step": 1
+            }
+          ],
+          "height": [
+            "INT",
+            {
+              "default": 512,
+              "min": 0,
+              "max": 16384,
+              "step": 1
+            }
+          ],
+          "crop": [
+            [
+              "disabled",
+              "center"
+            ]
+          ]
+        }
+      }
+    },
+    "SaveImage": {
+      "input": {
+        "required": {
+          "images": [
+            "IMAGE",
+            {
+              "tooltip": "The images to save."
+            }
+          ],
+          "filename_prefix": [
+            "STRING",
+            {
+              "default": "ComfyUI",
+              "tooltip": "The prefix for the file to save. This may include formatting information such as %date:yyyy-MM-dd% or %Empty Latent Image.width% to include values from nodes."
+            }
+          ]
+        },
+        "hidden": {
+          "prompt": "PROMPT",
+          "extra_pnginfo": "EXTRA_PNGINFO"
+        }
+      }
+    },
+    "LoadImage": {
+      "input": {
+        "required": {
+          "image": [
+            [
+              "9d98d0d3-3b9a-43e1-9d8b-a217f4f4b0a5.png",
+              "A-mj-female-harness-v2-01.png",
+              "A-mj-female-headshot-2.1-smile-01.png",
+              "A-mj-female-ref-rerun-01.png",
+              "A-mj-female-ref-rerun-02.png",
+              "C04-ava-closeup-01.png",
+              "C04-ava-glimpse-01.png",
+              "C04-ava-glimpse-best-1664-169.png",
+              "C04-ava-glimpse-best-1664.png",
+              "C04-ava-relight-best-up.png",
+              "C04-ava-relight-best.png",
+              "C04-closeup-src-1664-169.png",
+              "C04-closeup-src-1664.png",
+              "C04-plate-1664x928.png",
+              "E4-anchor-169-169.png",
+              "E4-anchor-169.png",
+              "E4-anchor-up.png",
+              "FB-kiss-A-ava-marcus.png",
+              "FB-kiss-A-ava-only.png",
+              "FB-kiss-B-ava-marcus.png",
+              "FB-kiss-B-ava-only-v3.png",
+              "FEST-panel2-ava-wetface.png",
+              "IMG-A-169-169.png",
+              "IMG-A-169.png",
+              "IMG-A-padded-for-outpaint-169.png",
+              "IMG-A-padded-for-outpaint.png",
+              "IMG-B-169-169.png",
+              "IMG-B-169.png",
+              "IMG-B-padded-for-outpaint-169.png",
+              "IMG-B-padded-for-outpaint.png",
+              "NONKEEPER-A-mj-female-env-final-01-envswap-scene-ab-preblend.png",
+              "_Futuristic_jungle_rave_nocturnal_romantic_thriller._Massive__4fd96b12-aec3-4cc3-b480-86ec68d6a5d8_1 (1).png",
+              "ava-hair-loose-s23092701.png",
+              "ava-new-face-lock-01.png",
+              "ava-sheet-A-mixed-01-gordo-marked.png",
+              "ava-sheet-A-mixed-01.png",
+              "ava-wardrobe-harness-rerun-01.png",
+              "ava-wardrobe-harness-rerun-02.png",
+              "ava-wardrobe-harness-v2-01-lean.png",
+              "bloodrush_kai_main_rain_closeup.png",
+              "cf06983f-86f0-48fc-9570-89f193172548.png",
+              "costume-ref-02-ava-harness-handhold.png",
+              "cu-ava-02-v82hd.png",
+              "cu-marcus-02-v82hd.png",
+              "e075f547-d53d-45b1-a206-5d23307760a9.png",
+              "env-angle-E4-anchor.png",
+              "env-final-01-169.png",
+              "env-final-01.png",
+              "env-final-02-169.png",
+              "env-final-02.png",
+              "example.png",
+              "h3-c04-ava-1344x768.png",
+              "h3-pinned-sw700-A-1344-1344x768.png",
+              "h3-pinned-sw700-B-1664-1664x928.png",
+              "h3-plate-1344x768.png",
+              "h3-ref-ava-sheet.png",
+              "h3-ref-marcus-sheet.png",
+              "h3-sw700-i2v-sw700-first-1344x768.png",
+              "h3fast-upscale-firstframe-gordo1mp-d033.png",
+              "h3qt_plate_58d063ce.png",
+              "h3qt_rafa-front.png",
+              "h3qt_rafa-portrait.png",
+              "hf_20261007_142933_fe26c478-b4cc-478d-9b1a-9d5be5648b3c.png",
+              "hf_20261009_045912_2c92a505-e709-4e13-b973-e4806af05a62.png",
+              "hf_20261009_050008_fa8f12a7-1a9d-4d58-8cbd-274ce624123d.png",
+              "hf_20261009_050057_e1fd9c3a-ca53-4900-8518-e62b3883abe1.png",
+              "jungle-rave-v7-sw700.png",
+              "lens-01-festival-night-moonlight.jpg",
+              "love-me-tonight-bar-trio-1344x768.png",
+              "love-me-tonight-bar-trio-ref2va-endframe-0123.png",
+              "marcus-face-ref.png",
+              "marcus-face-tight.png",
+              "marcus-look-ref-01.jpg",
+              "mvvm-c2-anchor-early.png",
+              "mvvm-c2-anchor-last.png",
+              "mvvm-c2-close-early.png",
+              "mvvm-c2-close-last.png",
+              "mvvm-c2-first.png",
+              "mvvm-c2-scene-t4.5.png",
+              "mvvm-c2-scene-t8.6.png",
+              "mvvm-festival-plate.png",
+              "mvvm-guide-a.png",
+              "mvvm-guide-b.png",
+              "mvvm-lune-master-named.png",
+              "mvvm-lune-multi-0.png",
+              "mvvm-lune-multi-1.png",
+              "mvvm-lune-multi-2.png",
+              "mvvm-lune-multi-3.png",
+              "mvvm-lune-multi-4.png",
+              "mvvm-lune-multi-5.png",
+              "mvvm-lune-multi-6.png",
+              "mvvm-lune-multi-7.png",
+              "mvvm-lune-portrait.png",
+              "mvvm-lune-pose0.png",
+              "mvvm-lune-pose1.png",
+              "mvvm-lune-pose2.png",
+              "mvvm-lune-pose3.png",
+              "mvvm-lune-pose4.png",
+              "mvvm-lune-pose5.png",
+              "mvvm-lune-refmod-sheet.png",
+              "mvvm-plate-festival-12.png",
+              "mvvm-plate-gorge-12.png",
+              "mvvm-plate-jungle-floor-12.png",
+              "mvvm-plate-moon-cliff-12.png",
+              "mvvm-refvid-cliff.png",
+              "mvvm-refvid-festival-a.png",
+              "mvvm-refvid-festival-b.png",
+              "mvvm-refvid-jungle.png",
+              "mvvm-refvid-moonwater.png",
+              "mvvm-refvid-underwater.png",
+              "mvvm-sd-longing-car-lens.png",
+              "mvvm-sd-longing-window.png",
+              "panel1-jungle-169.png",
+              "panel2-wetface-169.png",
+              "panel5-moon-169.png",
+              "plate-A01.png",
+              "plate-A02.png",
+              "plate-A03.png",
+              "plate-B01.png",
+              "plate-B02.png",
+              "plate-B03.png",
+              "plate-B04.png",
+              "plate-C01.png",
+              "plate-D01.png",
+              "plate-E01.png",
+              "plate-E02.png",
+              "plate-E03.png",
+              "plate-E04.png",
+              "postjump-groundtruth-impact-workflow-1536x864.png",
+              "pursuers-fireescape-groundtruth-workflow-1536x864.png",
+              "qwen2511_01_kai_character_sheet_1mp.jpg",
+              "qwen2511_02_video_haven_1mp.jpg",
+              "qwen2511_03_amber_vials_1mp.jpg",
+              "qwen2511_kai_glasses_portrait_20260809.png",
+              "rerun-01.png",
+              "rerun-02.png",
+              "rerun-04.png",
+              "rooftop-original-exposure-authority-workflow-1536x864.png",
+              "sw700-night-01.png",
+              "thr-bf16-s40.png",
+              "thr-int8-s30.png",
+              "upres_img1.png",
+              "upres_img1_nomos.png",
+              "upres_img2.png",
+              "upres_img2_nomos.png",
+              "upres_img3.png",
+              "upres_img3_nomos.png"
+            ],
+            {
+              "image_upload": true
+            }
+          ]
+        }
+      }
+    }
+  }
+}

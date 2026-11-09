@@ -68,6 +68,7 @@ describe("Trigger orchestration", () => {
       smartSceneCaption: "qwen-smart-scene-caption",
       storyTreatment: "qwen-story-treatment",
       h3ShotPlanning: "qwen-h3-shot-planning",
+      h3Still: "minimax-h3-still",
       localGeneration: "local-ai-generation",
       higgsfieldGeneration: "higgsfield-nano-banana-pro-grid",
       deepgramTranscription: "deepgram-transcribe-stored-audio",
