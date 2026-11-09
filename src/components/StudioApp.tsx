@@ -82,6 +82,7 @@ import { buildStudioPipelineInput } from "./studio/buildStudioPipelineInput";
 import { buildPipelineState } from "./studio/studioPipeline";
 import { isStoryPlanConfirmable, selectedTreatment, type StoryTreatment } from "./studio/storyTreatments";
 import { TriggerRunTerminalError, waitForTriggerRunOutput } from "@/lib/clientTriggerRuns";
+import { currentCompletedExport, discardStaleCompletedExport } from "./studio/completedExportFreshness";
 import { assertFinalExportReplayAllowed, finalExportSnapshotSha256, isFinalExportIntentCurrent, rebindFinalExportAfterMigration, releaseStaleFinalExportPreview, waitForCurrentFinalExport, type FinalExportIntent } from "./studio/finalExportRecovery";
 import {
   createSectionRecomputeState,
@@ -203,6 +204,7 @@ export default function StudioApp() {
   const [isFinalExporting, setIsFinalExporting] = useState(false);
   const [finalExportIntent, setFinalExportIntent] = useState<FinalExportIntent | undefined>();
   const finalExportFlightRef = useRef<object | null>(null);
+  const exportSnapshotEpochRef = useRef({ key: "", epoch: 0 });
   const [isShaderCaptureExporting, setIsShaderCaptureExporting] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>(() => createSaveState("local"));
   const [draftRestored, setDraftRestored] = useState(false);
@@ -313,7 +315,7 @@ export default function StudioApp() {
           setActiveProjectId(project.id);
           setActiveProjectName(project.name);
         }
-        applyRestoredProjectDraft(draft);
+        applyRestoredProjectDraft(draft, project?.id ?? null);
         skipNextDirtyMarkRef.current = true;
         setSaveState({
           kind: "restored",
@@ -376,14 +378,14 @@ export default function StudioApp() {
           isPreviewExpanded,
           committedSplit: committedBeatSplit ?? undefined,
           finalExportIntent,
-          finalExport: finalExportUrl ? {
-            videoUrl: finalExportUrl,
-            downloadFileName: finalExportName ?? "stack-structure-final.mp4",
-            cueCount: finalExportCueCount,
-            status: finalExportStatus,
-          } : undefined,
+          finalExport: finalExportUrl ? { videoUrl: finalExportUrl, downloadFileName: finalExportName ?? "stack-structure-final.mp4", cueCount: finalExportCueCount, status: finalExportStatus } : undefined,
         },
       },
+    };
+    const pending = pendingAutosaveRef.current;
+    pending.params.workflowUiSettings = {
+      ...pending.params.workflowUiSettings,
+      finalExport: currentCompletedExport(createPersistableStudioProjectDraft(pending.params), activeProjectId),
     };
     if (skipNextDirtyMarkRef.current) {
       skipNextDirtyMarkRef.current = false;
@@ -566,7 +568,7 @@ export default function StudioApp() {
     };
   }, []);
 
-  function applyRestoredProjectDraft(draft: RuntimeStudioProjectDraft) {
+  function applyRestoredProjectDraft(draft: RuntimeStudioProjectDraft, projectId: string | null) {
     skipRestoredAutosaveRef.current = true;
     finalExportFlightRef.current = null;
     setIsFinalExporting(false);
@@ -605,7 +607,7 @@ export default function StudioApp() {
     setShaderAccentKinds(workflowUi?.shaderAccentKinds ?? {});
     if (workflowUi?.isPreviewExpanded !== undefined) setIsPreviewExpanded(workflowUi.isPreviewExpanded);
     setCommittedBeatSplit(workflowUi?.committedSplit ?? null);
-    const restoredFinalExport = workflowUi?.finalExport;
+    const restoredFinalExport = currentCompletedExport(createPersistableStudioProjectDraft(draft), projectId);
     setFinalExportUrl(restoredFinalExport?.videoUrl ?? null);
     setFinalExportName(restoredFinalExport?.downloadFileName ?? null);
     setFinalExportCueCount(restoredFinalExport?.cueCount ?? 0);
@@ -617,7 +619,7 @@ export default function StudioApp() {
     pendingAutosaveRef.current = null;
     projectSaveSessionRef.current!.restore(project.id, revision);
     setRoughCutSelection(null);
-    applyRestoredProjectDraft(draft);
+    applyRestoredProjectDraft(draft, project.id);
     setActiveProjectId(project.id);
     setActiveProjectName(project.name);
     skipNextDirtyMarkRef.current = true;
@@ -1287,7 +1289,7 @@ export default function StudioApp() {
           isPreviewExpanded,
           committedSplit: committedBeatSplit ?? undefined,
           finalExportIntent,
-          finalExport: finalExportUrl ? { videoUrl: finalExportUrl, downloadFileName: finalExportName ?? "stack-structure-final.mp4", cueCount: finalExportCueCount, status: finalExportStatus } : undefined,
+          finalExport: undefined,
         },
       },
       { audioFile },
@@ -1310,7 +1312,7 @@ export default function StudioApp() {
     try {
       flushSync(() => setFinalExportIntent(intent));
       await saveVersionedProject({ projectId: intent.projectId, name: live.projectName,
-        draft: { ...live.project, workflowUiSettings: { ...live.project.workflowUiSettings, finalExportIntent: intent } } }, { cache: false });
+        draft: discardStaleCompletedExport({ ...live.project, workflowUiSettings: { ...live.project.workflowUiSettings, finalExportIntent: intent } }, intent.projectId) }, { cache: false });
       if (!isFinalExportIntentCurrent(intent, draftReviewLiveRef.current.projectId, draftReviewLiveRef.current.project)) {
         const latest = draftReviewLiveRef.current;
         if (latest.projectId === intent.projectId) await saveVersionedProject({ projectId: latest.projectId, name: latest.projectName, draft: latest.project }, { cache: false });
@@ -1359,6 +1361,10 @@ export default function StudioApp() {
       && isFinalExportIntentCurrent(intent, startingProjectId, draftReviewLiveRef.current.project)
       ? intent.requestKey : `final-export-${crypto.randomUUID()}`;
     setIsFinalExporting(true);
+    // Never pair the next ready receipt with a previous render's URL.
+    setFinalExportUrl(null);
+    setFinalExportName(null);
+    setFinalExportCueCount(0);
     setDone(false);
     setProgress(5);
     setFinalExportError(null);
@@ -1580,11 +1586,14 @@ export default function StudioApp() {
       setPreviewState((current) => updateSectionRecomputeProgress(current, { requestKey, progress: 90 }));
       setPreviewState((current) => markSectionReady(current, asset));
       setPreviewState((current) => swapReadySection(current, requestKey));
-      setFinalExportUrl(asset.videoUrl ?? null);
-      setFinalExportName(asset.downloadFileName ?? "stack-structure-final.mp4");
-      setFinalExportCueCount(asset.effectCues?.length ?? 0);
-      setFinalExportStatus(`Final MP4 ready · ${(asset.duration || 0).toFixed(1)}s · ${asset.effectCues?.length ?? 0} synced shader cues.`);
-      setFinalExportIntent({ ...intent, state: "ready" });
+      const completedIntent: FinalExportIntent = { ...intent, state: "ready" };
+      flushSync(() => {
+        setFinalExportUrl(asset.videoUrl ?? null);
+        setFinalExportName(asset.downloadFileName ?? "stack-structure-final.mp4");
+        setFinalExportCueCount(asset.effectCues?.length ?? 0);
+        setFinalExportStatus(`Final MP4 ready · ${(asset.duration || 0).toFixed(1)}s · ${asset.effectCues?.length ?? 0} synced shader cues.`);
+        setFinalExportIntent(completedIntent);
+      });
       workflowCheckpointAutosaveRequestedRef.current = true;
       setProgress(100);
       setDone(true);
@@ -1630,8 +1639,20 @@ export default function StudioApp() {
       return;
     }
 
-    const requestKey = `webgpu-final-export-${Date.now()}`;
+    const requestKey = `final-export-webgpu-${crypto.randomUUID()}`;
+    const captureIntent: FinalExportIntent = { version: 1, projectId: activeProjectId, requestKey,
+      snapshotSha256: finalExportSnapshotSha256(persistableProjectDraft), createdAt: new Date().toISOString(), state: "ready" };
+    const captureEpoch = exportSnapshotEpochRef.current.epoch;
+    const assertCaptureCurrent = () => {
+      if (captureEpoch !== exportSnapshotEpochRef.current.epoch
+        || !isFinalExportIntentCurrent(captureIntent, draftReviewLiveRef.current.projectId, draftReviewLiveRef.current.project)) {
+        throw new Error("The project or shader settings changed during capture. Export the current cut again.");
+      }
+    };
     setIsShaderCaptureExporting(true);
+    setFinalExportUrl(null);
+    setFinalExportName(null);
+    setFinalExportCueCount(0);
     setDone(false);
     setProgress(5);
     setFinalExportError(null);
@@ -1650,6 +1671,7 @@ export default function StudioApp() {
 
     try {
       const audioFile = await resolveMasterAudioFile(beatJoinAnalysis, audioFileRef.current);
+      assertCaptureCurrent();
       const mimeType = getBestMediaRecorderMimeType();
       canvas.dataset.stutterCaptureResolution = "720p";
       const stream = canvas.captureStream(24);
@@ -1687,6 +1709,7 @@ export default function StudioApp() {
       setPreviewState((current) => updateSectionRecomputeProgress(current, { requestKey, progress: 70 }));
 
       const form = new FormData();
+      assertCaptureCurrent();
       form.set("audio", audioFile);
       const urls = [...new Set(storyPreviewSegments.map(segment => segment.videoUrl))];
       const refs = urls.map(url => {
@@ -1725,18 +1748,28 @@ export default function StudioApp() {
         shaderRenderSource?: string;
       };
 
+      assertCaptureCurrent();
+      if (asset.requestKey !== requestKey || !asset.videoUrl || !/^https:\/\//i.test(asset.videoUrl)
+        || !Number.isFinite(asset.duration) || asset.duration <= 0) throw new Error("WebGPU export returned invalid durable media.");
       setProgress(95);
       setPreviewState((current) => updateSectionRecomputeProgress(current, { requestKey, progress: 95 }));
       setPreviewState((current) => markSectionReady(current, asset));
       setPreviewState((current) => swapReadySection(current, requestKey));
-      setFinalExportUrl(asset.videoUrl ?? null);
-      setFinalExportName(asset.downloadFileName ?? "stack-structure-webgpu-final.mp4");
-      setFinalExportCueCount(shaderEffectCues.length);
-      setFinalExportStatus(`WebGPU MP4 ready · ${(asset.duration || 0).toFixed(1)}s · ${shaderEffectCues.length} live shader cues captured.`);
+      flushSync(() => {
+        setFinalExportUrl(asset.videoUrl ?? null);
+        setFinalExportName(asset.downloadFileName ?? "stack-structure-webgpu-final.mp4");
+        setFinalExportCueCount(shaderEffectCues.length);
+        setFinalExportStatus(`WebGPU MP4 ready · ${(asset.duration || 0).toFixed(1)}s · ${shaderEffectCues.length} live shader cues captured.`);
+        setFinalExportIntent(captureIntent);
+      });
       workflowCheckpointAutosaveRequestedRef.current = true;
       setProgress(100);
       setDone(true);
     } catch (error) {
+      if (captureEpoch !== exportSnapshotEpochRef.current.epoch) {
+        setPreviewState(current => releaseStaleFinalExportPreview(current, captureIntent, draftReviewLiveRef.current.projectId));
+        return;
+      }
       const message = error instanceof Error ? error.message : "Unknown WebGPU shader capture export error.";
       setFinalExportError(message);
       setFinalExportStatus("WebGPU shader capture export failed.");
@@ -1839,6 +1872,16 @@ export default function StudioApp() {
   const handleStoryProjectChange = useCallback((next: MusicVideoProject) => {
     setMusicVideoProject((current) => current && storyProjectInputSignature(current) === storyProjectInputSignature(next) ? current : next);
   }, []);
+
+  function invalidateCompletedExport() {
+    // Keep an in-flight intent intact so its existing snapshot/replay guards settle it.
+    setFinalExportUrl(null);
+    setFinalExportName(null);
+    setFinalExportCueCount(0);
+    setDone(false);
+    if (finalExportIntent?.state === "ready") setFinalExportStatus("Export the current shader settings to create a new MP4.");
+    workflowCheckpointAutosaveRequestedRef.current = true;
+  }
 
   function invalidateArrangementOutput() {
     finalExportFlightRef.current = null;
@@ -2082,56 +2125,7 @@ export default function StudioApp() {
     return { sceneCount, captionReady, captionTotal };
   }, [videoSources]);
 
-  const activeStoryTreatment = storyState.confirmedTreatmentSnapshot
-    ?? selectedTreatment(storyState.treatments, storyState.selectedTreatmentId);
-  const pipeline = useMemo(() => buildPipelineState(buildStudioPipelineInput({
-    activeTab: tab,
-    hasAudioAnalysis: beatJoinAnalysis !== null,
-    hasLyricTranscript: Boolean(storyState.transcriptSummary?.chunks.length),
-    referenceAssets,
-    videoCount: videoSources.length,
-    sceneCount: ingestStats.sceneCount,
-    captionReadyCount: ingestStats.captionReady,
-    captionTotalCount: ingestStats.captionTotal,
-    storyTreatmentSelected: Boolean(storyState.selectedTreatmentId || storyState.confirmedTreatmentId),
-    storyAnchorsResolved: isStoryPlanConfirmable(activeStoryTreatment),
-    storyPlanConfirmed: storyState.storyGenerated
-      && Boolean(storyState.confirmedTreatmentId)
-      && Boolean(storyState.storyContentSignature)
-      && Boolean(musicVideoProject && isPlacementPlanCurrent(musicVideoProject)),
-    musicVideoProject,
-    generatedAssets,
-    generatedDraft,
-    resolvedDraftSegments: draftPreviewSegments,
-    storySegmentCount: storyPreviewSegments.length,
-    hasCommittedSplit: isCommittedSplitCurrent,
-    shaderPresetLabel: shaderPresetSummary.preset.label,
-    finalExportReady: Boolean(finalExportUrl) && storyState.storyGenerated,
-  })), [
-    tab,
-    beatJoinAnalysis,
-    storyState.storyGenerated,
-    storyState.selectedTreatmentId,
-    storyState.confirmedTreatmentId,
-    activeStoryTreatment,
-    storyState.storyContentSignature,
-    storyState.transcriptSummary,
-    referenceAssets,
-    videoSources.length,
-    ingestStats,
-    musicVideoProject,
-    storyPreviewSegments.length,
-    draftPreviewSegments,
-    isCommittedSplitCurrent,
-    shaderPresetSummary.preset.label,
-    finalExportUrl,
-    generatedAssets,
-    generatedDraft,
-  ]);
-  const activePipelineStage = pipeline.stages.find((stage) => stage.active) ?? null;
-  const activeStageBlocked = Boolean(activePipelineStage && !activePipelineStage.available);
-
-  const persistableProjectDraft = useMemo(() => createPersistableStudioProjectDraft({
+  const persistableProjectDraft = useMemo(() => discardStaleCompletedExport(createPersistableStudioProjectDraft({
     analysis: beatJoinAnalysis,
     videoSources,
     storyState,
@@ -2157,7 +2151,63 @@ export default function StudioApp() {
       finalExportIntent,
       finalExport: finalExportUrl ? { videoUrl: finalExportUrl, downloadFileName: finalExportName ?? "stack-structure-final.mp4", cueCount: finalExportCueCount, status: finalExportStatus } : undefined,
     },
-  }), [beatJoinAnalysis, clipAudioSettings, captionMode, colorGradient, committedBeatSplit, finalExportIntent, finalExportCueCount, finalExportName, finalExportStatus, finalExportUrl, rawGeneratedAssets, generatedDraft, isPreviewExpanded, matchLyricCueBlend, matchLyricMergeWindow, matchMode, matchOnsetDensity, musicVideoProject, referenceAssets, aestheticReferences, shaderAccentKinds, shaderPresetId, splitMode, storyState, tab, videoSources]);
+  }), activeProjectId), [activeProjectId, beatJoinAnalysis, clipAudioSettings, captionMode, colorGradient, committedBeatSplit, finalExportIntent, finalExportCueCount, finalExportName, finalExportStatus, finalExportUrl, rawGeneratedAssets, generatedDraft, isPreviewExpanded, matchLyricCueBlend, matchLyricMergeWindow, matchMode, matchOnsetDensity, musicVideoProject, referenceAssets, aestheticReferences, shaderAccentKinds, shaderPresetId, splitMode, storyState, tab, videoSources]);
+  const currentFinalExport = currentCompletedExport(persistableProjectDraft, activeProjectId);
+  const exportSnapshotKey = `${activeProjectId ?? ""}:${finalExportSnapshotSha256(persistableProjectDraft)}`;
+  useLayoutEffect(() => {
+    if (exportSnapshotEpochRef.current.key !== exportSnapshotKey) {
+      exportSnapshotEpochRef.current = { key: exportSnapshotKey, epoch: exportSnapshotEpochRef.current.epoch + 1 };
+    }
+  }, [exportSnapshotKey]);
+
+  const activeStoryTreatment = storyState.confirmedTreatmentSnapshot
+    ?? selectedTreatment(storyState.treatments, storyState.selectedTreatmentId);
+  const pipeline = useMemo(() => buildPipelineState(buildStudioPipelineInput({
+    activeTab: tab,
+    hasAudioAnalysis: beatJoinAnalysis !== null,
+    hasLyricTranscript: Boolean(storyState.transcriptSummary?.chunks.length),
+    referenceAssets,
+    videoCount: videoSources.length,
+    sceneCount: ingestStats.sceneCount,
+    captionReadyCount: ingestStats.captionReady,
+    captionTotalCount: ingestStats.captionTotal,
+    storyTreatmentSelected: Boolean(storyState.selectedTreatmentId || storyState.confirmedTreatmentId),
+    storyAnchorsResolved: isStoryPlanConfirmable(activeStoryTreatment),
+    storyPlanConfirmed: storyState.storyGenerated
+      && Boolean(storyState.confirmedTreatmentId)
+      && Boolean(storyState.storyContentSignature)
+      && Boolean(musicVideoProject && isPlacementPlanCurrent(musicVideoProject)),
+    musicVideoProject,
+    generatedAssets,
+    generatedDraft,
+    resolvedDraftSegments: draftPreviewSegments,
+    storySegmentCount: storyPreviewSegments.length,
+    hasCommittedSplit: isCommittedSplitCurrent,
+    shaderPresetLabel: shaderPresetSummary.preset.label,
+    finalExportReady: Boolean(currentFinalExport) && storyState.storyGenerated,
+  })), [
+    tab,
+    beatJoinAnalysis,
+    storyState.storyGenerated,
+    storyState.selectedTreatmentId,
+    storyState.confirmedTreatmentId,
+    activeStoryTreatment,
+    storyState.storyContentSignature,
+    storyState.transcriptSummary,
+    referenceAssets,
+    videoSources.length,
+    ingestStats,
+    musicVideoProject,
+    storyPreviewSegments.length,
+    draftPreviewSegments,
+    isCommittedSplitCurrent,
+    shaderPresetSummary.preset.label,
+    currentFinalExport,
+    generatedAssets,
+    generatedDraft,
+  ]);
+  const activePipelineStage = pipeline.stages.find((stage) => stage.active) ?? null;
+  const activeStageBlocked = Boolean(activePipelineStage && !activePipelineStage.available);
 
   const draftReviewLiveRef = useRef({ state: currentGeneratedReviewState, segments: baseStoryPreviewSegments, project: persistableProjectDraft, projectId: activeProjectId, projectName: activeProjectName });
   useLayoutEffect(() => {
@@ -2495,7 +2545,7 @@ export default function StudioApp() {
     isRunning: isAnyRunRunning,
     progress,
     // Split's completion is implicit (auto-commit); its header shows the cut count instead.
-    done: done && tab !== "review" && tab !== "split",
+    done: done && tab !== "review" && tab !== "split" && (tab !== "compose" || Boolean(currentFinalExport)),
     processingLabel: isFinalExporting ? "Rendering final MP4" : `Preparing preview · ${previewState.stage}`,
     completedLabel,
   };
@@ -2853,16 +2903,16 @@ export default function StudioApp() {
                 shaderPresetSummary={shaderPresetSummary}
                 shaderEffectCues={shaderEffectCues}
                 accentKinds={shaderAccentKinds}
-                onAccentKindChange={(sync, kind) => setShaderAccentKinds((current) => ({ ...current, [sync]: kind }))}
-                finalExportStatus={finalExportStatus}
+                onAccentKindChange={(sync, kind) => { invalidateCompletedExport(); setShaderAccentKinds((current) => ({ ...current, [sync]: kind })); }}
+                finalExportStatus={finalExportUrl && !currentFinalExport && !isFinalExporting && !isShaderCaptureExporting ? "The saved render is for an earlier snapshot. Export the current cut." : finalExportStatus}
                 finalExportError={finalExportError}
-                finalExportUrl={finalExportUrl}
+                finalExportUrl={currentFinalExport?.videoUrl ?? null}
                 finalExportName={finalExportName}
                 finalExportCueCount={finalExportCueCount}
                 finalExportDisabledReason={finalExportDisabledReason}
                 isFinalExporting={isFinalExporting}
                 isShaderCaptureExporting={isShaderCaptureExporting}
-                onShaderPresetId={(id) => setShaderPresetId(id as typeof shaderPresetId)}
+                onShaderPresetId={(id) => { invalidateCompletedExport(); setShaderPresetId(id as typeof shaderPresetId); }}
                 onFinalExport={() => void runFinalExport()}
                 onWebGpuExport={() => void runWebGpuShaderCaptureExport()}
                 onSelectStory={() => handleSelectTab("story")}
