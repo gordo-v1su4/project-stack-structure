@@ -115,6 +115,7 @@ type GeneratedAnchor = Omit<StoryAnchor, "coverage" | "candidates" | "selectedCa
 type GeneratedTreatment = Omit<StoryTreatment, "anchors"> & { anchors: GeneratedAnchor[] };
 
 export type StoryTreatmentRequest = {
+  canonContext?: { projectId: string; expectedRevision: string; bible: StoryBible };
   brief: string;
   song: {
     title?: string;
@@ -268,6 +269,7 @@ export function parseStoryTreatmentRequest(value: unknown): StoryTreatmentReques
     : [];
   return {
     brief: limitedString(record.brief, 4_000, ""),
+    ...(record.canonContext === undefined ? {} : { canonContext: parseStoryCanonContext(record.canonContext) }),
     song: {
       title: optionalString(song.title, 180),
       duration: Number.isFinite(song.duration) ? clamp(Number(song.duration), 0, 60 * 60) : undefined,
@@ -289,6 +291,15 @@ export function parseStoryTreatmentRequest(value: unknown): StoryTreatmentReques
       ? Math.round(clamp(Number(record.validationAttempt), 0, 1))
       : undefined,
   };
+}
+
+function parseStoryCanonContext(value: unknown): NonNullable<StoryTreatmentRequest["canonContext"]> {
+  const record = asRecord(value, "Story canon context must be an object.");
+  if (Object.keys(record).some(key => !["projectId", "expectedRevision", "bible"].includes(key))
+    || typeof record.projectId !== "string" || !/^[a-zA-Z0-9_-]{1,96}$/.test(record.projectId)
+    || typeof record.expectedRevision !== "string" || !record.expectedRevision || record.expectedRevision.length > 256
+    || record.expectedRevision === "*" || /[\r\n]/.test(record.expectedRevision)) throw new Error("Invalid saved story canon identity or revision.");
+  return { projectId: record.projectId, expectedRevision: record.expectedRevision, bible: normalizeStoryBible(record.bible) };
 }
 
 export function parseGeneratedTreatments(value: unknown): GeneratedTreatment[] {

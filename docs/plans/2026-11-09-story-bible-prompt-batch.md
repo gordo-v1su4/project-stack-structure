@@ -17,9 +17,19 @@ The previous six-file uncommitted foundation was preserved before being carried 
 
 The adapter validates bounded detached canon, provenance, exact names and project/story/reference bindings. It excludes proposed/private/unknown facts, separates positive context from review constraints, persists optional treatment canon and invalidates confirmation when canon changes. Treatments without a bible retain historical signature behavior.
 
+## Local authoring integration
+
+The continuation adds a Story Bible panel inside the treatment planner, exact approved-story extraction, bounded structured import, proposed fact edits and explicit human fact confirmation. Current named references supply names; name changes belong in Setup. Stale story bindings display prior facts alongside the revised story before an explicit review/rebind action. Project/reference changes require current canon rather than an implicit migration.
+
+The planner accepts the actual saved project ID/revision and an optional `onPrepareStoryContext` CAS-save hook from its parent. Bible-bound author/revise requests await that hook once per intent and use its fresh saved revision; input changes during preparation cancel dispatch. No confirmed-placement gate is required for initial Story work. The authenticated story route fresh-reads the owner-scoped project, requires exact persisted canon equality and current metadata bindings, and rejects stale/foreign context before Trigger dispatch. The author receives confirmed public positive facts; the independent reviewer receives those same facts plus confirmed review/exclusion constraints. Private, proposed and unknown facts remain out of model context. Context budgets fail explicitly instead of truncating canon.
+
+Model story revisions preserve the original Bible without silently rebinding it or accepting model-authored canon. Using a story with stale canon saves an unconfirmed draft and exposes the review panel. Changed canon invalidates existing story confirmation. The ordinary no-Bible/unsaved story path remains available.
+
+Verification: 98 affected tests pass, alongside TypeScript, targeted ESLint and diff checks on the local combined authoring batch. Independent review found and prompted fixes for stale-reference recovery, unsaved fact text on metadata edits and missing relationship review controls; targeted helper tests cover those fixes, with browser checks still required. Resetting stale canon is explicit, exposes the previous JSON/download, and inherits no approval. That panel backup is temporary local UI state, not a durable saved recovery copy. Tests use synthetic projects and mocked dispatch; no model generation, deployed browser acceptance or live project recovery is established by those results. Root owns actual saved-ID/revision/CAS-save propagation, StoryTab confirmation guard, integrated browser checks and later release review.
+
 ## Remaining app work
 
-The installed agent skills can supply canon to future prompt-writing work now. Automatic application injection is not complete. The deployed app has no story-bible editor/import action or automatic canon projection into treatment/shot planning yet. Those changes must be implemented and verified as part of the local batch before claiming the main story builder is integrated.
+The installed agent skills can supply canon to future prompt-writing work now. Local treatment author/reviewer injection is implemented above, but has not been released. Automatic downstream H3 shot-planner injection, integrated save/reload/browser acceptance and prompt-adapter acceptance remain incomplete. Do not claim deployed integration from this local source batch.
 
 Required acceptance for that continuation:
 

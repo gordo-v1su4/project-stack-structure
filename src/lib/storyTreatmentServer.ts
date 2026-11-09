@@ -10,6 +10,7 @@ import {
 import { getStoryTreatmentGatewayConfig } from "@/lib/storyTreatmentGateway";
 import { REFERENCE_LANGUAGE_RULE, VISIBLE_WRITING_RULE } from "@/components/studio/referenceLanguage";
 import { assertStoryLoglineReview, isStoryReviewDeploymentError } from "@/lib/storyLoglineReview";
+import { StoryCanonError, storyCanonPromptData, type VerifiedStoryCanon } from "./storyBibleServer";
 import {
   triggerStoryTreatment,
   waitForTriggerRunResult,
@@ -18,6 +19,7 @@ import {
 } from "@/lib/triggerOrchestration";
 
 type GenerateStoryTreatmentsOptions = {
+  canon?: VerifiedStoryCanon;
   requestIntentId?: string;
   now?: () => Date;
   trigger?: (payload: {
@@ -36,6 +38,9 @@ export async function queueStoryTreatmentGeneration(
   request: StoryTreatmentRequest,
   options: GenerateStoryTreatmentsOptions = {},
 ) {
+  if ((request.canonContext || request.revision?.treatment.storyBible) && !options.canon) throw new StoryCanonError("Resolve saved story canon before dispatch.");
+  const constraints = [...(request.constraints ?? []), ...(request.revision ? [request.revision.instruction] : [])];
+  const canon = storyCanonPromptData(options.canon, request.brief ?? "", constraints);
   const gateway = getStoryTreatmentGatewayConfig();
   const usingDefaults = !options.trigger;
   if (usingDefaults && !gateway.configured) {
@@ -48,12 +53,12 @@ export async function queueStoryTreatmentGeneration(
   const handle = await trigger({
     operation: request.revision ? "revise" : "generate",
     instructions: request.revision ? STORY_REVISION_INSTRUCTIONS : STORY_DIRECTOR_INSTRUCTIONS,
-    input: buildStoryInput(request, attempt),
+    input: buildStoryInput(request, attempt, options.canon),
     model,
     maxTokens: request.revision ? 4_000 : 7_000,
     reviewContext: {
       brief: request.brief ?? "",
-      constraints: [...(request.constraints ?? []), ...(request.revision ? [request.revision.instruction] : [])],
+      constraints: [...constraints, ...canon.review],
     },
   }, { requestIntentId: options.requestIntentId ?? crypto.randomUUID(), validationAttempt: attempt });
   return { runId: handle.id, model };
@@ -156,7 +161,8 @@ const STORY_RESPONSE_SHAPE = {
   }],
 };
 
-export function buildStoryInput(request: StoryTreatmentRequest, attempt: number) {
+export function buildStoryInput(request: StoryTreatmentRequest, attempt: number, verifiedCanon?: VerifiedStoryCanon) {
+  const canon = storyCanonPromptData(verifiedCanon, request.brief ?? "", [...(request.constraints ?? []), ...(request.revision ? [request.revision.instruction] : [])]);
   const context = {
     userBrief: request.brief || "No user brief supplied. Propose a visual story from song and available footage, keeping unfilmed requirements explicit.",
     song: request.song,
@@ -167,6 +173,7 @@ export function buildStoryInput(request: StoryTreatmentRequest, attempt: number)
         note: "Footage coverage is assessed separately after this revision. Preserve unfilmed requirements from the brief and edited story." }
       : request.footage,
     constraints: request.constraints ?? [],
+    ...(verifiedCanon ? { storyCanon: { source: canon.source, positiveFacts: canon.positive } } : {}),
     ...(request.revision ? { selectedTreatment: storyAuthoringContext(request.revision.treatment), revisionInstruction: request.revision.instruction } : {}),
   };
   return [
