@@ -15,7 +15,7 @@ Signed S3 SDK calls can use the nonsecret `RUSTFS_S3_ORIGIN_ADDRESS` production
 setting, matching the web runtime. This changes only server DNS routing while
 retaining the HTTPS endpoint, TLS validation and signed authority. See
 [signed storage connections](app-vm-deployment.md#signed-storage-connections)
-for the origin address, verification and rollback. Keep this runtime setting
+for origin configuration, verification and rollback. Keep this runtime setting
 when synchronizing BWS-backed variables; it is not a replacement credential.
 
 Pindeck is a separate Trigger project. Never reuse its task IDs, queues, keys,

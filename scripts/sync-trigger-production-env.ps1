@@ -2,7 +2,7 @@
 param(
   [string]$ManifestPath,
   [string]$TriggerApiUrl = "https://trigger.v1su4.dev",
-  [string]$StorageOriginAddress = '192.168.8.222',
+  [string]$StorageOriginAddress = $env:RUSTFS_S3_ORIGIN_ADDRESS,
   [switch]$DryRun
 )
 
@@ -60,7 +60,11 @@ foreach ($mapping in $manifest.triggerProduction) {
 # Trigger workers run in Docker; host loopback is unreachable from the container.
 $variables["SCENE_CAPTION_SMART_GATEWAY_INTERNAL_URL"] = "http://192.168.8.222:18091"
 $variables["SCENE_CAPTION_SMART_GATEWAY_URL"] = "http://192.168.8.222:18091"
-$variables["RUSTFS_S3_ORIGIN_ADDRESS"] = $StorageOriginAddress
+# Import merges named variables. Omit an unspecified origin so routine BWS
+# refreshes preserve private routing; explicit empty disables it for rollback.
+if ($PSBoundParameters.ContainsKey('StorageOriginAddress') -or $StorageOriginAddress) {
+  $variables["RUSTFS_S3_ORIGIN_ADDRESS"] = $StorageOriginAddress
+}
 
 $apiToken = Read-BwsValue "STACK_STRUCTURE_TRIGGER_PROD_SECRET_KEY"
 $body = @{ variables = $variables; override = $true } | ConvertTo-Json -Depth 5 -Compress

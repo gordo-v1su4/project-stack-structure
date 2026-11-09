@@ -1,10 +1,17 @@
 [CmdletBinding()]
 param(
   [string]$HostName = 'gordo@192.168.8.222',
-  [string]$StorageOriginAddress = '192.168.8.222'
+  [string]$StorageOriginAddress = $env:RUSTFS_S3_ORIGIN_ADDRESS
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+# A normal BWS refresh must preserve the private server's routing setting.
+# An explicitly supplied empty value disables routing for rollback.
+if (!$PSBoundParameters.ContainsKey('StorageOriginAddress') -and !$StorageOriginAddress) {
+  $existingOrigin = @(ssh $HostName "sed -n 's/^RUSTFS_S3_ORIGIN_ADDRESS=//p' /opt/project-stack-structure/private.env")
+  if ($LASTEXITCODE -ne 0 -or $existingOrigin.Count -gt 1) { throw 'Unable to read the existing storage origin setting.' }
+  if ($existingOrigin.Count -eq 1) { $StorageOriginAddress = [string]$existingOrigin[0] }
+}
 if ($StorageOriginAddress -and ![System.Net.IPAddress]::TryParse($StorageOriginAddress, [ref]([System.Net.IPAddress]$null))) {
   throw 'StorageOriginAddress must be a literal IP address or empty to disable origin routing.'
 }
