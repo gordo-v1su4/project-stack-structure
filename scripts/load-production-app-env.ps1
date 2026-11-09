@@ -26,10 +26,10 @@ foreach ($record in $parsedRecords) {
   }
 }
 
-function Read-BwsValue([string]$name) {
+function Read-BwsValue([string]$name, [bool]$AllowEmpty = $false) {
   if (-not $byName.ContainsKey($name)) { throw "Required BWS secret is missing: $name" }
   $record = bws secret get $byName[$name] --output json 2>$null | ConvertFrom-Json
-  if ($LASTEXITCODE -ne 0 -or -not $record.value) { throw "Unable to read BWS secret: $name" }
+  if ($LASTEXITCODE -ne 0 -or !$record.id -or (!$record.value -and !$AllowEmpty)) { throw "Unable to read BWS secret: $name" }
   return [string]$record.value
 }
 
@@ -38,7 +38,11 @@ foreach ($entry in $manifest.required) { $mapping[[string]$entry.env] = [string]
 foreach ($entry in $manifest.applicationProduction) { $mapping[[string]$entry.env] = [string]$entry.bws }
 
 foreach ($entry in $mapping.GetEnumerator()) {
-  Set-Item -Path "Env:$($entry.Key)" -Value (Read-BwsValue $entry.Value)
+  Set-Item -Path "Env:$($entry.Key)" -Value (Read-BwsValue $entry.Value -AllowEmpty ($entry.Key -eq 'RUSTFS_S3_ORIGIN_ADDRESS'))
+}
+$originAddress = $env:RUSTFS_S3_ORIGIN_ADDRESS
+if ($originAddress -and ![System.Net.IPAddress]::TryParse($originAddress, [ref]([System.Net.IPAddress]$null))) {
+  throw 'The canonical storage origin must be a literal IP address or empty to disable routing.'
 }
 $env:AUTH_URL = $AppUrl
 $env:AUTH_TRUST_HOST = "true"

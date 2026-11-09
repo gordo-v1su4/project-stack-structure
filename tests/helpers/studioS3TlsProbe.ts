@@ -8,6 +8,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { studioS3OriginOptions } from "../../src/lib/studioS3Origin";
 
 // Separate process keeps test-only CA trust fixed for the entire TLS session.
+async function main() {
 const [cert, key, otherCert, otherKey] = await Promise.all(process.argv.slice(2, 6).map(file => readFile(file)));
 const payload = Buffer.from(Array.from({ length: 128 * 1024 }, (_, index) => index % 251));
 const compressed = gzipSync(payload), uploads: Buffer[] = [];
@@ -34,8 +35,7 @@ const server = createServer({ cert, key }, async (req, res) => {
 });
 let untrustedRequests = 0;
 const untrustedServer = createServer({ cert: otherCert, key: otherKey }, (_req, res) => { untrustedRequests++; res.end(); });
-const pinnedBun = process.versions.bun?.startsWith("1.3.");
-await new Promise<void>(resolve => server.listen(pinnedBun ? 443 : 0, "127.0.0.1", resolve));
+await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
 const port = (server.address() as import("node:net").AddressInfo).port;
 await new Promise<void>(resolve => untrustedServer.listen(port, "127.0.0.2", resolve));
 const endpoint = `https://storage.example.test:${port}`, authority = new URL(endpoint).host;
@@ -50,7 +50,6 @@ function client(url = endpoint, address = "127.0.0.1") {
 }
 try {
   const x = client(), input = { Bucket: "studio", Key: "pinned.bin", IfMatch: '"pinned"', Range: "bytes=0-0" };
-  if (pinnedBun) assert.throws(() => client("https://storage.example.test:444"), /standard HTTPS port/);
   await assert.rejects(client(endpoint, "127.0.0.2").send(new GetObjectCommand(input)));
   await assert.rejects(client(`https://wrong.example.test:${port}`).send(new GetObjectCommand(input)));
   assert.equal(requests.length, 0); assert.equal(untrustedRequests, 0);
@@ -81,3 +80,5 @@ try {
   for (const x of clients) x.destroy();
   await Promise.all([server, untrustedServer].map(server => new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()))));
 }
+}
+void main().catch(error => { console.error(error); process.exitCode = 1; });

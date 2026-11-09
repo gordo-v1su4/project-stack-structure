@@ -49,8 +49,11 @@ JWT-based E2E bypasses OAuth. After any `AUTH_*` environment change, also verify
 HTTPS origin, including certificate trust/name rejection and conditional 412
 responses. It creates and deletes an ephemeral synthetic certificate with
 OpenSSL (Git for Windows provides it; the build/test image installs it).
-The TLS probe runs in a separate process with fixed synthetic CA trust. It also
+The TLS probe runs in a separate Node process on ephemeral unprivileged ports,
+with fixed synthetic CA trust. It also
 checks binary/streamed uploads, encoded byte preservation, redirects and aborts.
+The pinned Bun standard-port transport is a separate isolated-container release
+qualification; the default local suite never reserves port 443.
 It uses no live credentials, media, or provider services.
 
 ## Saved-project H3 verification

@@ -44,7 +44,11 @@ describe("server-only signed S3 origin routing", () => {
     const certs = ["trusted", "untrusted"].map(name => ({ cert: path.join(directory, name + ".pem"), key: path.join(directory, name + "-key.pem") }));
     try {
       for (const files of certs) execFileSync(openssl, ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj", "/CN=storage.example.test", "-addext", "subjectAltName=DNS:storage.example.test", "-keyout", files.key, "-out", files.cert], { stdio: "ignore" });
-      const output = execFileSync(process.execPath, [path.resolve("tests/helpers/studioS3TlsProbe.ts"), certs[0].cert, certs[0].key, certs[1].cert, certs[1].key], {
+      // The default suite uses unprivileged ephemeral ports. The pinned Bun
+      // standard-port lane is qualified separately in an isolated container.
+      const probe = path.join(directory, "probe.cjs");
+      execFileSync(process.execPath, ["build", "tests/helpers/studioS3TlsProbe.ts", "--target=node", "--format=cjs", "--outfile", probe], { stdio: "ignore" });
+      const output = execFileSync("node", [probe, certs[0].cert, certs[0].key, certs[1].cert, certs[1].key], {
         env: { ...process.env, NODE_EXTRA_CA_CERTS: certs[0].cert }, encoding: "utf8", timeout: 10_000,
       });
       expect(JSON.parse(output).passed).toBe(true);
