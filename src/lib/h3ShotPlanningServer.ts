@@ -10,7 +10,7 @@ import { readStudioProject, type SavedStudioProject } from "./studioProjectStore
 import { normalizeStudioOwnerSegment, normalizeStudioProjectId } from "./studioStoragePaths";
 import { readH3ShotPlan, storeH3ShotPlan } from "./h3ShotPlanningStore";
 import { generateH3ShotPlan } from "./h3ShotPlanningGateway";
-import { resolveCanonicalSelectedFootageEvidence } from "./selectedFootageEvidenceServer";
+import { createCanonicalSelectedFootageEvidenceResolver, type resolveCanonicalSelectedFootageEvidence } from "./selectedFootageEvidenceServer";
 
 export class H3ShotPlanningError extends Error {
   constructor(message: string, readonly status = 409) { super(message); }
@@ -66,11 +66,12 @@ export async function loadH3ShotPlanningContext(ownerId: string, projectId: stri
     const assets = withCurrentReferenceIdentity(saved.draft.generatedAssets ?? [], project.currentIdentity);
     const scaffold = buildH3ResolvedPlanningScaffold({ project, generatedAssets: assets, draft: saved.draft.generatedDraft });
     const evidence = new Map<string, SelectedFootageEvidence>();
+    const selectedEvidence = dependencies.selectedEvidence ?? createCanonicalSelectedFootageEvidenceResolver();
     for (const row of scaffold.coverageLedger) {
       if (row.kind !== "generated") continue;
       const asset = assets.find(asset => asset.id === row.generatedAssetId);
       if (!asset || row.sourceStart === undefined || row.sourceEnd === undefined) throw new Error("Selected footage is unavailable.");
-      const resolved = await (dependencies.selectedEvidence ?? resolveCanonicalSelectedFootageEvidence)({ selected: true, ownerId, projectId,
+      const resolved = await selectedEvidence({ selected: true, ownerId, projectId,
         ...(row.reusedTakePlacementId ? { reusedTakePlacement: saved.draft.generatedDraft?.reusedTakePlacements?.find(placement => placement.id === row.reusedTakePlacementId),
           reuseOrigins: project.generationScope?.body.reuseOrigins } : {}),
         generationScope: scope, asset, window: { songStart: row.songStart, songEnd: row.songEnd, sourceStart: row.sourceStart, sourceEnd: row.sourceEnd }, currentIdentity: project.currentIdentity });

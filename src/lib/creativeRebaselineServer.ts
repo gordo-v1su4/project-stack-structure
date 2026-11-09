@@ -51,6 +51,26 @@ export async function prepareCreativeRebaseline(params: { ownerId: string; saved
     baselines.push(baseline);
   }
   if (!baselines.length) throw new SourceConfirmationError("No canonical historical source baseline is available.");
+  const semantic = generationSemanticSha256(project);
+  const finish = async (receipt: GenerationScopeReceipt, enroll: boolean) => {
+    const candidate = { ...draft, musicVideoProject: { ...project, generationScope: receipt },
+      generatedDraft: { planSignature: scope, revision: (draft.generatedDraft?.revision ?? 0) + 1, assetIds: [],
+        sourceConfirmationSha256: receipt.sha256, sourceReviewRequired: true, reusedTakePlacements: [] },
+      workflowUiSettings: { ...draft.workflowUiSettings, committedSplit: undefined, finalExport: undefined, finalExportIntent: undefined } };
+    if (enroll) await storeGenerationScopeBaseline(receipt);
+    await storeGenerationScopeReceipt(receipt);
+    await validateSavedGenerationScope(ownerId, { ...saved, draft: candidate });
+    return { draft: candidate, receipt, expectedRevision: saved.revision };
+  };
+  // Reconfirming unchanged Story inputs must not extend an already issued native
+  // baseline with new carryover authority, nor re-enroll its immutable coordinate.
+  const unchanged = baselines.find(baseline => baseline.body.kind === "baseline"
+    && baseline.body.scopeSignature === scope && baseline.body.semanticSha256 === semantic);
+  if (unchanged) {
+    if (unchanged.body.storySha256 !== storySha(draft)
+      || effectiveGenerationScope({ ...project, generationScope: unchanged }) !== scope) throw new SourceConfirmationError("The issued baseline differs from the confirmed story.");
+    return finish(unchanged, false);
+  }
   const reuseOrigins: ReuseOrigin[] = [];
   for (const asset of withCurrentReferenceIdentity(draft.generatedAssets ?? [], project.currentIdentity)) {
     const job = jobs.find(job => job.id === asset.jobId);
@@ -67,18 +87,11 @@ export async function prepareCreativeRebaseline(params: { ownerId: string; saved
   const body: GenerationScopeReceipt["body"] = { version: 1, kind: "baseline", ownerId, projectId: saved.project.id,
     baselineRevision: saved.revision, fromSourceContext: context, toSourceContext: context,
     fromInputSignature: project.placementPlan.inputSignature, toInputSignature: project.placementPlan.inputSignature,
-    scopeSignature: scope, semanticSha256: generationSemanticSha256(project), references: sourceReferenceManifest(draft.referenceAssets ?? []),
+    scopeSignature: scope, semanticSha256: semantic, references: sourceReferenceManifest(draft.referenceAssets ?? []),
     rawReferences: origin.body.rawReferences, sourceMediaVersions: origin.body.sourceMediaVersions, appendedReferenceIds: [],
     sourceInventorySha256: sourceSha(draft), storySha256: storySha(draft), reuseOrigins,
     ...(origin.body.reprise?.placementsSha256 === generationScopeSha256(project.placementPlan.placements) ? { reprise: origin.body.reprise } : {}),
     ...(project.currentIdentity ? { currentIdentityMigrationSha256: project.currentIdentity.migrationSha256 } : {}) };
   const sha256 = generationScopeSha256(body), receipt: GenerationScopeReceipt = { version: 1, id: `generation-scope-${sha256}`, sha256, body };
-  const candidate = { ...draft, musicVideoProject: { ...project, generationScope: receipt },
-    generatedDraft: { planSignature: scope, revision: (draft.generatedDraft?.revision ?? 0) + 1, assetIds: [],
-      sourceConfirmationSha256: sha256, sourceReviewRequired: true, reusedTakePlacements: [] },
-    workflowUiSettings: { ...draft.workflowUiSettings, committedSplit: undefined, finalExport: undefined, finalExportIntent: undefined } };
-  await storeGenerationScopeBaseline(receipt);
-  await storeGenerationScopeReceipt(receipt);
-  await validateSavedGenerationScope(ownerId, { ...saved, draft: candidate });
-  return { draft: candidate, receipt, expectedRevision: saved.revision };
+  return finish(receipt, true);
 }

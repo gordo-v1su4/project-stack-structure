@@ -111,6 +111,30 @@ beforeEach(() => {
 });
 
 describe("same-project revised-story footage reuse", () => {
+  test("unchanged Story confirmation reuses the issued native baseline without adding carryover authority", async () => {
+    const previous = saved.draft.musicVideoProject!, original = structuredClone(previous.generationScope!);
+    // Native materialization enrolls a baseline without attaching a receipt to the project.
+    previous.generationScope = undefined;
+    const confirm = () => {
+      const prior = saved.draft.musicVideoProject!, story = saved.draft.storyState;
+      const prepared = prepareStoryTabPlacements({ project: createMusicVideoProject({ id: "project", analysis: prior.song,
+        duration: 4, storyDrafts: story.storyBeats }), videoSources: [], editSettings: story.editSettings },
+      story.confirmedSourceContextSignature, sourceSha(saved.draft), storySha(saved.draft));
+      saved.draft.musicVideoProject = confirmStoryProjectRevision(prior, prepared, true);
+    };
+    confirm();
+    expect(effectiveGenerationScope(saved.draft.musicVideoProject!)).toBe(original.body.scopeSignature);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const result = await rebaseline();
+      expect(result.receipt).toEqual(original);
+      expect(result.receipt.body.reuseOrigins).toBe(undefined);
+      expect(baselines.get(baselineKey(original))).toEqual(original);
+      expect(saved.draft.generatedDraft!.sourceReviewRequired).toBe(true);
+      expect(await validateSavedGenerationScope("owner", saved)).toBe(original.body.scopeSignature);
+      confirm();
+    }
+  });
+
   test("actual Story preparation retains original baseline; fresh placement, missing-only planning, consent and canonical export preserve origin bytes", async () => {
     const originalJob = structuredClone(jobs[0]), originalAsset = structuredClone(saved.draft.generatedAssets![0]);
     revise();

@@ -15,6 +15,7 @@ readonly isolated_tests=(
   "tests/unit/currentIdentityPolicyPreparation.test.ts"
   "tests/unit/generationScopeServer.test.ts"
   "tests/unit/h3ShotPlanningBaseline.test.ts"
+  "tests/unit/h3ShotPlanningEvidenceCache.test.ts"
   "tests/unit/generationScopeStore.test.ts"
   "tests/unit/generationScopeRawReferences.test.ts"
   "tests/unit/generationScopeMedia.test.ts"
