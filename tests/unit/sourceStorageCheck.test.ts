@@ -107,6 +107,33 @@ test("media SDK failure is distinct and never serializes transport details", asy
   expect(text).not.toContain("SYNTHETIC_SECRET"); expect(text).not.toContain("https"); expect(calls.map(call => call.stage)).toEqual(["project", "canonical", "raw", "media"]);
 });
 
+test("closed internal reference gate labels survive the route without exposing arbitrary messages", async () => {
+  const gates = [
+    ["The source-reference inventory exceeds its supported bound.", "REFERENCE_INVENTORY_BOUND"],
+    ["The source-reference inventory requires durable owned images.", "REFERENCE_OWNERSHIP"],
+    ["The canonical raw-reference manifest differs.", "REFERENCE_MANIFEST"],
+    ["The canonical raw-reference binding differs.", "REFERENCE_BINDING"],
+    ["The conditional source-reference response differs or exceeds its bound.", "REFERENCE_RESPONSE"],
+    ["The canonical source-reference pixels changed.", "REFERENCE_PIXELS"],
+    ["The immutable reference version is unavailable.", "REFERENCE_VERSION_UNAVAILABLE"],
+    ["The immutable reference response version changed.", "REFERENCE_RESPONSE_VERSION"],
+    ["The reference exceeds the supported image size.", "REFERENCE_SIZE"],
+    ["The immutable reference response was incomplete or exceeded its bound.", "REFERENCE_BODY_BOUND"],
+    ["Durable generation storage is not configured.", "GENERATION_STORAGE_CONFIGURATION"],
+    ["Reference metadata lookup could not reach durable storage.", "REFERENCE_TRANSPORT_UNAVAILABLE"],
+  ];
+  for (const [message, validationCode] of gates) {
+    rawFailure = new Error(message); calls.length = 0;
+    const response = await request();
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ success: false, error: "Source verification could not complete.", stage: "raw-references", diagnostic: { errorClass: "Error", validationCode } });
+    expect(calls.map(call => call.stage)).toEqual(["project", "canonical", "raw"]);
+    for (const untrusted of [message + "\n", message + " SYNTHETIC_SECRET", "SYNTHETIC_SECRET " + message]) {
+      expect(safeStorageDiagnostic(new Error(untrusted))).toEqual({ errorClass: "Error" });
+    }
+  }
+});
+
 test("safe classifier ignores malicious names, message suffixes, unknown status and accessor properties", () => {
   let getterCalls = 0;
   const hostile = Object.create({ get name() { getterCalls++; throw new Error("SYNTHETIC_SECRET"); } });

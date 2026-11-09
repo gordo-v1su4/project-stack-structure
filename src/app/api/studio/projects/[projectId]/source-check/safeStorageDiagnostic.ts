@@ -2,6 +2,22 @@ const PROVIDER_CODES = new Set(["AccessDenied", "SignatureDoesNotMatch", "Invali
   "ExpiredToken", "InvalidToken", "PermanentRedirect", "AuthorizationHeaderMalformed", "SlowDown", "InternalError", "ServiceUnavailable", "RequestTimeout"]);
 const NETWORK_CODES = new Set(["ECONNRESET", "ETIMEDOUT", "ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN"]);
 const ERROR_CLASSES = new Set(["Error", "TypeError", "RangeError", "SyntaxError", "AbortError", "TimeoutError", "S3ServiceException"]);
+// Exact, application-owned messages only. These labels identify a failed gate;
+// they never include an asset, object key, expected value or response payload.
+const VALIDATION_CODES = new Map([
+  ["The source-reference inventory exceeds its supported bound.", "REFERENCE_INVENTORY_BOUND"],
+  ["The source-reference inventory requires durable owned images.", "REFERENCE_OWNERSHIP"],
+  ["The canonical raw-reference manifest differs.", "REFERENCE_MANIFEST"],
+  ["The canonical raw-reference binding differs.", "REFERENCE_BINDING"],
+  ["The conditional source-reference response differs or exceeds its bound.", "REFERENCE_RESPONSE"],
+  ["The canonical source-reference pixels changed.", "REFERENCE_PIXELS"],
+  ["The immutable reference version is unavailable.", "REFERENCE_VERSION_UNAVAILABLE"],
+  ["The immutable reference response version changed.", "REFERENCE_RESPONSE_VERSION"],
+  ["The reference exceeds the supported image size.", "REFERENCE_SIZE"],
+  ["The immutable reference response was incomplete or exceeded its bound.", "REFERENCE_BODY_BOUND"],
+  ["Durable generation storage is not configured.", "GENERATION_STORAGE_CONFIGURATION"],
+  ["Reference metadata lookup could not reach durable storage.", "REFERENCE_TRANSPORT_UNAVAILABLE"],
+]);
 // This is precisely the closed wrapper grammar in h3JobStore.referenceLookupError.
 const WRAPPED = /^(?:Reference metadata lookup|Reference metadata full GET after ranged signature rejection) failed \(storage HTTP ([1-5][0-9]{2})(?:, (AccessDenied|SignatureDoesNotMatch|InvalidAccessKeyId|RequestTimeTooSkewed|NoSuchKey|ExpiredToken|InvalidToken|PermanentRedirect|AuthorizationHeaderMalformed))?\)\.$/;
 
@@ -12,7 +28,7 @@ function data(value: unknown, key: string): unknown {
   catch { return undefined; }
 }
 
-export function safeStorageDiagnostic(error: unknown): { errorClass: string; errorCode?: string; httpStatus?: number } {
+export function safeStorageDiagnostic(error: unknown): { errorClass: string; errorCode?: string; httpStatus?: number; validationCode?: string } {
   const name = data(error, "name"), code = data(error, "code");
   const knownProvider = typeof name === "string" && PROVIDER_CODES.has(name) ? name : undefined;
   const knownCode = typeof code === "string" && (PROVIDER_CODES.has(code) || NETWORK_CODES.has(code)) ? code : undefined;
@@ -30,5 +46,6 @@ export function safeStorageDiagnostic(error: unknown): { errorClass: string; err
     try { if (error && Object.getPrototypeOf(error) === Error.prototype) errorClass = "Error"; } catch { /* Unknown stays closed. */ }
   }
   const errorCode = knownProvider ?? knownCode ?? wrappedCode;
-  return { errorClass, ...(errorCode ? { errorCode } : {}), ...(httpStatus === undefined ? {} : { httpStatus }) };
+  const validationCode = typeof message === "string" ? VALIDATION_CODES.get(message) : undefined;
+  return { errorClass, ...(errorCode ? { errorCode } : {}), ...(httpStatus === undefined ? {} : { httpStatus }), ...(validationCode ? { validationCode } : {}) };
 }
