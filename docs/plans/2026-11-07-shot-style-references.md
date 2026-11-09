@@ -59,3 +59,54 @@ opt-in viewer, notes reload and project isolation, source/ownership cleanup and
 stale creative/style controls. It performs five mocked GETs, zero mutations,
 zero action callbacks and zero playback calls. This remains source-fixture evidence;
 no production upload, worker release, generation or final-film acceptance is claimed.
+
+### Current release source integration (held)
+
+`codex/current-workflow-integration` starts at corrected release `14cc957` and
+reapplies only the six held feature commits, in order:
+
+| Held commit | Integrated commit | Scope |
+| --- | --- | --- |
+| `74db040` | `e483b1b` | Timeline section and cut focus |
+| `a92a4ac` | `3f546a2` | Live draft take review |
+| `ac15336` | `088e940` | Explicit shot/style references |
+| `6b0aae0` | `c0aa6cc` | Reference policy validation |
+| `4071880` | `110bc30` | Timeline block and gap labels |
+| `344c6d0` | `f582a64` | Integrated reference regression coverage |
+
+The existing production leaf subscription change is retained from the release
+base, without another cherry-pick. The only merge conflict was the waveform
+ruler: the release's three cached canvas layers and memoized beat grid/ruler stay
+in place, with the fixed viewport and zoom-aware ruler dependencies added. The
+source-confirmation route, storage diagnostic implementation and waveform cache
+helper are unchanged from the release. Exact-gap imports retain their saved
+project ID and plan-drift checks. Separate current-snapshot export work is outside
+this branch.
+
+`bun run check` passes: 1,536 tests, zero failures, TypeScript clean, and ESLint
+zero errors with five existing warnings. Self-contained dependencies were
+installed from the frozen lockfile. The default build is waiting for the shared
+build window; this scheduling hold does not assert a build result.
+
+Local actual ReactDOM fixtures use synthetic samples and stubbed canvas operations.
+Across 120 clock updates, both the full-song spine and a fixed 64–96 second
+viewport retain zero static canvas redraws while producing 120 distinct played
+masks and playhead positions. Changing the fixed range to 128–160 seconds rebuilds
+geometry once; subsequent clock updates remain cached. Seeking its midpoint
+returns master-song position `144 / 256`, rather than viewport-relative `0.5`.
+Existing data, size, DPR, tempo and scrolling-zoom invalidation assertions pass.
+These are operation-count assertions, not browser latency measurements. Local
+fixtures and logs are under `.tmp/integration-proof/`.
+
+This candidate is source-ready and held for a coordinated **web and Trigger
+worker** release. The worker import closure changes through
+`h3GenerationServer.ts`, `h3Workflow.ts`, `h3JobStore.ts`,
+`issuedIdentityPolicy.ts`, `projectPersistence.ts` and the new
+`aestheticReferences.ts`: job materialization binds explicitly selected reference
+scope and guidance, compilation constrains visual transfer, policy records retain
+the restrictions, and conditional downloads verify the original byte hash.
+Historical job identities stay unchanged when no aesthetic reference is selected.
+The web source must not be released independently of a worker containing these
+changes. No production upload, provider call, job dispatch, media generation,
+browser acceptance, deploy or final-film acceptance was performed for this
+integration.
