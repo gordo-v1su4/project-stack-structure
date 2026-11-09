@@ -12,6 +12,8 @@ export type H3StillJobInput = { ownerId: string; projectId: string; descriptor: 
   shotRequest: H3GenerationRequest; template: H3GenerationJob; requestIntentId: string; attempt?: number };
 export type H3StillJob = Omit<H3StillJobInput, "attempt"> & { version: 1; id: string; attempt: number; state: H3StillState;
   createdAt: string; updatedAt: string; runId?: string; promptId?: string; workflowSha256?: string; providerSchemaSha256?: string;
+  /** Unique execution claim before POST; a same-run CAS observer cannot inherit another execution's submission permission. */
+  submissionClaimId?: string;
   cancelRequestedAt?: string; error?: string; result?: H3StillResult;
   workerRecoveries?: { previousRunId: string; runId: string; createdAt: string }[] };
 
@@ -71,13 +73,14 @@ function bounded(job: H3StillJob) {
 function validate(job: H3StillJob, ownerId: string, projectId: string, id: string) {
   bounded(job);
   const initial = frozen(job);
-  const fields = ["version", "id", "ownerId", "projectId", "descriptor", "shotRequest", "template", "requestIntentId", "attempt", "state", "createdAt", "updatedAt", "runId", "promptId", "workflowSha256", "providerSchemaSha256", "cancelRequestedAt", "error", "result", "workerRecoveries"];
+  const fields = ["version", "id", "ownerId", "projectId", "descriptor", "shotRequest", "template", "requestIntentId", "attempt", "state", "createdAt", "updatedAt", "runId", "promptId", "workflowSha256", "providerSchemaSha256", "submissionClaimId", "cancelRequestedAt", "error", "result", "workerRecoveries"];
   if (job.version !== 1 || job.ownerId !== ownerId || job.projectId !== projectId || job.id !== id || identity(initial) !== id
     || Object.keys(job).some(field => !fields.includes(field)) || !Object.hasOwn(transitions, job.state)
     || !text(job.createdAt) || !Number.isFinite(Date.parse(job.createdAt)) || !text(job.updatedAt) || !Number.isFinite(Date.parse(job.updatedAt))
     || Date.parse(job.updatedAt) < Date.parse(job.createdAt)
     || (job.runId !== undefined && !text(job.runId, 256)) || (job.promptId !== undefined && (!text(job.promptId, 256) || !job.runId || !hash(job.workflowSha256)))
     || (job.workflowSha256 !== undefined && !hash(job.workflowSha256)) || (job.providerSchemaSha256 !== undefined && !hash(job.providerSchemaSha256))
+    || (job.submissionClaimId !== undefined && (!uuid(job.submissionClaimId) || !job.runId || !hash(job.workflowSha256)))
     || (job.cancelRequestedAt !== undefined && (!text(job.cancelRequestedAt) || !Number.isFinite(Date.parse(job.cancelRequestedAt)) || Date.parse(job.cancelRequestedAt) > Date.parse(job.updatedAt)))
     || (job.error !== undefined && !text(job.error, 2048))
     || (["submitting", "submission_unknown", "rendering", "persisting", "ready"].includes(job.state) && (!job.runId || !job.workflowSha256))
@@ -189,7 +192,7 @@ async function mutate(ownerId: string, projectId: string, id: string, change: (c
       || (terminal(current.value.state)) || (next.state !== current.value.state && !transitions[current.value.state].includes(next.state))
       || (current.value.runId && next.runId !== current.value.runId && (!recovery || current.value.runId !== recovery.previousRunId || next.runId !== recovery.runId))
       || (!recovery && !same(next.workerRecoveries, current.value.workerRecoveries))
-      || (["promptId", "workflowSha256", "providerSchemaSha256", "cancelRequestedAt", "result"] as const).some(field => current.value[field] !== undefined && !same(next[field], current.value[field]))) throw new Error("H3 still frozen data, ownership, result or state transition cannot change.");
+      || (["promptId", "workflowSha256", "providerSchemaSha256", "submissionClaimId", "cancelRequestedAt", "result"] as const).some(field => current.value[field] !== undefined && !same(next[field], current.value[field]))) throw new Error("H3 still frozen data, ownership, result or state transition cannot change.");
     next.updatedAt = new Date(Math.max(Date.now(), Date.parse(current.value.updatedAt))).toISOString();
     validate(next, ownerId, projectId, id);
     try { await objects.write(objectKey, next, current.revision); return next; }

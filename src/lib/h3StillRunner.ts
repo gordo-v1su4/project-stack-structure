@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { H3GenerationJob } from "@/components/studio/h3Generation";
 import { downloadH3ReferenceImage } from "./h3JobStore";
 import { readH3StillJob, updateH3StillJob, type H3StillJob, type H3StillResult } from "./h3StillJobStore";
@@ -44,6 +45,10 @@ export async function runH3Still(reference: H3StillJobReference, runId: string, 
   wait: (seconds: number) => Promise<unknown>; stage: (label: string) => void; timeoutSeconds?: number;
 }, overrides: Partial<H3StillRunnerDependencies> = {}) {
   const d = { ...defaults, ...overrides }, seconds = options.timeoutSeconds ?? 1500;
+  // Run IDs identify Trigger ownership, not individual executions of the same run.
+  // A unique CAS value prevents a losing writer's identical lost-ACK comparison
+  // from mistaking another execution's submitting receipt for its own write.
+  const submissionClaimId = randomUUID();
   if (!Number.isSafeInteger(seconds) || seconds < 10 || seconds > 1500 || !runId.trim()) throw new Error("Invalid H3 still worker deadline or owner.");
   const hardDeadline = d.now() + seconds * 1000, deadline = hardDeadline - 5000;
   const within = async <T>(operation: Promise<T>, end = deadline): Promise<T> => {
@@ -92,8 +97,9 @@ export async function runH3Still(reference: H3StillJobReference, runId: string, 
           await mutate(current => {
             if (cancelled(current)) throw new CancelledBeforeSubmit();
             if (current.state !== "preparing" || current.workflowSha256 || current.promptId) throw new Error("The still submission boundary was already claimed; reconcile the existing attempt.");
-            return { ...current, state: "submitting", workflowSha256: receipt.workflowSha256, providerSchemaSha256: receipt.schemaSha256 };
+            return { ...current, state: "submitting", submissionClaimId, workflowSha256: receipt.workflowSha256, providerSchemaSha256: receipt.schemaSha256 };
           });
+          if (job.submissionClaimId !== submissionClaimId) throw new Error("Another execution owns the still submission claim; reconcile the existing attempt.");
           crossedSubmissionBoundary = true;
         } }));
         await mutate(current => ({ ...current, promptId: submitted.promptId, state: cancelled(current) ? "cancel_requested" : "rendering" }));

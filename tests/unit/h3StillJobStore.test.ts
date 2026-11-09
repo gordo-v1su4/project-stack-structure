@@ -89,6 +89,41 @@ describe("owned frozen H3 still jobs", () => {
     await expect(updateH3StillJob(job.ownerId, job.projectId, job.id, owned.runId === "run-a" ? "run-b" : "run-a", current => ({ ...current, state: "failed" }), f.objects)).rejects.toThrow("different worker");
     expect((await readH3StillJob(job.ownerId, job.projectId, job.id, f.objects))!.state).toBe("preparing");
   });
+  test("same-run same-timestamp submit writers have exactly one nonce winner even after a lost ACK", async () => {
+    const f = fixture(), job = await createH3StillJob(f.input, f.objects);
+    const preparing = await updateH3StillJob(job.ownerId, job.projectId, job.id, "run-1", current => ({ ...current, state: "preparing" }), f.objects);
+    const originalNow = Date.now; Date.now = () => Date.parse(preparing.updatedAt);
+    try {
+      let initialReads = 0, openGate: () => void = () => {};
+      const gate = new Promise<void>(resolve => { openGate = resolve; });
+      const racing: StudioJsonObjectStore = {
+        async read<T>(key: string) {
+          const snapshot = await f.objects.read<T>(key);
+          if (key.endsWith(`${job.id}.json`) && ++initialReads <= 2) { if (initialReads === 2) openGate(); await gate; }
+          return snapshot;
+        },
+        async write(key, value, revision) { await f.objects.write(key, value, revision); throw new Error("Accepted submit claim ACK lost"); },
+      };
+      const claims = ["00000000-0000-4000-8000-000000000011", "00000000-0000-4000-8000-000000000012"];
+      const outcomes = await Promise.allSettled(claims.map(submissionClaimId => updateH3StillJob(job.ownerId, job.projectId, job.id, "run-1",
+        current => ({ ...current, state: "submitting", workflowSha256: "f".repeat(64), submissionClaimId }), racing)));
+      const winners = outcomes.flatMap((outcome, index) => outcome.status === "fulfilled" ? [{ nonce: claims[index], job: outcome.value }] : []);
+      expect(winners).toHaveLength(1); expect(winners[0].job.updatedAt).toBe(preparing.updatedAt);
+      const restored = (await readH3StillJob(job.ownerId, job.projectId, job.id, f.objects))!;
+      expect(restored.submissionClaimId).toBe(winners[0].nonce); expect(restored.state).toBe("submitting");
+      // Two attempts at the conditional write, one accepted; no blind repeat after the lost ACK.
+      expect(f.writes()).toBe(5);
+      await expect(updateH3StillJob(job.ownerId, job.projectId, job.id, "run-1", current => ({ ...current, submissionClaimId: undefined }), f.objects)).rejects.toThrow("cannot change");
+      const recovered = await claimH3StillReconciliation(job.ownerId, job.projectId, job.id, "run-1", "run-recovery", f.objects);
+      expect(recovered.submissionClaimId).toBe(winners[0].nonce);
+    } finally { Date.now = originalNow; }
+  });
+  test("submission execution claim must be a UUID bound to a worker and frozen workflow", async () => {
+    const f = fixture(), job = await createH3StillJob(f.input, f.objects);
+    await expect(updateH3StillJob(job.ownerId, job.projectId, job.id, "run-1", current => ({ ...current, state: "preparing", submissionClaimId: "invalid", workflowSha256: "f".repeat(64) }), f.objects)).rejects.toThrow("malformed");
+    await expect(updateH3StillJob(job.ownerId, job.projectId, job.id, "run-1", current => ({ ...current, state: "preparing", submissionClaimId: "00000000-0000-4000-8000-000000000011" }), f.objects)).rejects.toThrow("malformed");
+    expect((await readH3StillJob(job.ownerId, job.projectId, job.id, f.objects))!.state).toBe("queued");
+  });
   test("update lost ACK reconciles once and cancellation prevents stale submission", async () => {
     const f = fixture(), job = await createH3StillJob(f.input, f.objects);
     const uncertain: StudioJsonObjectStore = { ...f.objects, async write(key, value, revision) { await f.objects.write(key, value, revision); throw new Error("Acknowledgment lost"); } };

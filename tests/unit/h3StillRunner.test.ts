@@ -5,7 +5,7 @@ import { H3StillSubmissionError, rebuildH3StillProvider } from "../../src/lib/h3
 import { runH3Still, type H3StillRunnerDependencies } from "../../src/lib/h3StillRunner";
 import { StudioProjectConflictError, type StudioJsonObjectStore } from "../../src/lib/studioProjectObjectStore";
 
-async function fixture() {
+async function fixture(raceOptions: { collideSubmissionWrites?: boolean } = {}) {
   const target = { timelineItemId: "arrival", sectionId: "intro", songStart: 0, songEnd: 2 };
   const descriptor = freezeH3Still({ ownerId: "github-owner", projectId: "project", planSignature: "plan", target,
     prompt: "Diego is <Picture 1>. Diego stands in CLUB_MAIN from <Picture 2>.", seed: 17,
@@ -19,11 +19,27 @@ async function fixture() {
       references: descriptor.body.references.map(({ rawSha256: _hash, ...r }) => { void _hash; return r; }),
       target: { ...target, planSignature: "plan", sectionLabel: "Intro" }, state: "queued", createdAt: "2026-11-08T00:00:00Z", updatedAt: "2026-11-08T00:00:00Z" } };
   const rows = new Map<string, { value: unknown; revision: string }>(); let writes = 0;
+  const submissionWrites: H3StillJob[] = []; let releaseSubmission: () => void = () => undefined;
+  const submissionBarrier = new Promise<void>(resolve => { releaseSubmission = resolve; });
   const objects: StudioJsonObjectStore = {
     async read<T>(key: string) { return structuredClone(rows.get(key) ?? null) as { value: T; revision: string } | null; },
-    async write<T>(key: string, value: T, revision: string | null) { if ((rows.get(key)?.revision ?? null) !== revision) throw new StudioProjectConflictError(); const next = `"${++writes}"`; rows.set(key, { value: structuredClone(value), revision: next }); return next; },
+    async write<T>(key: string, value: T, revision: string | null) {
+      if (raceOptions.collideSubmissionWrites && (value as H3StillJob)?.state === "submitting") {
+        submissionWrites.push(structuredClone(value) as H3StillJob);
+        if (submissionWrites.length === 2) releaseSubmission();
+        await submissionBarrier;
+      }
+      if ((rows.get(key)?.revision ?? null) !== revision) throw new StudioProjectConflictError();
+      const next = `"${++writes}"`; rows.set(key, { value: structuredClone(value), revision: next }); return next;
+    },
   };
   const job = await createH3StillJob(input, objects), ref = { ownerId: job.ownerId, projectId: job.projectId, jobId: job.id };
+  if (raceOptions.collideSubmissionWrites) {
+    // Store mutation uses max(Date.now(), current.updatedAt). A future pinned
+    // timestamp forces both conflicting writes to identical millisecond times
+    // without changing global timers or relying on scheduler luck.
+    for (const row of rows.values()) if ((row.value as H3StillJob)?.id === job.id) (row.value as H3StillJob).updatedAt = "2099-01-01T00:00:00.000Z";
+  }
   let now = 1000; const count = { validate: 0, prepare: 0, submit: 0, reconcile: 0, status: 0, download: 0, persist: 0 };
   const result = (j: H3StillJob): H3StillResult => {
     const prefix = `media-uploads/projects/${j.ownerId}/still-results/${j.projectId}/${j.id}/`;
@@ -54,7 +70,7 @@ async function fixture() {
     await d.update(job.ownerId, job.projectId, job.id, "run-1", j => ({ ...j, state: "submitting", workflowSha256: p.workflowSha256, providerSchemaSha256: "f".repeat(64) }));
     await d.update(job.ownerId, job.projectId, job.id, "run-1", j => ({ ...j, state, ...(state === "rendering" ? { promptId: "prompt-1" } : {}) }));
   };
-  return { job, ref, d, count, options, read, cancel, existing };
+  return { job, ref, d, count, options, read, cancel, existing, submissionWrites };
 }
 
 describe("durable H3 still runner", () => {
@@ -126,11 +142,15 @@ describe("durable H3 still runner", () => {
     expect(failed).toBe(true); expect(fresh.count.submit).toBe(0);
   });
   test("concurrent same-run execution can claim the submission boundary only once", async () => {
-    const f = await fixture(); let arrivals = 0; let release: () => void = () => undefined;
+    const f = await fixture({ collideSubmissionWrites: true }); let arrivals = 0; let release: () => void = () => undefined;
     const barrier = new Promise<void>(resolve => { release = resolve; });
     f.d.prepare = async job => { arrivals++; if (arrivals === 2) release(); await barrier; return rebuildH3StillProvider(job.descriptor, job.id); };
     const outcomes = await Promise.allSettled([runH3Still(f.ref, "run-1", f.options, f.d), runH3Still(f.ref, "run-1", f.options, f.d)]);
     expect(outcomes.some(o => o.status === "fulfilled")).toBe(true); expect(f.count.submit).toBe(1);
     expect((await f.read())!.promptId).toBe("prompt-1");
+    expect(f.submissionWrites.length).toBe(2);
+    expect(f.submissionWrites[0].updatedAt).toBe(f.submissionWrites[1].updatedAt);
+    expect(f.submissionWrites[0].submissionClaimId).not.toBe(f.submissionWrites[1].submissionClaimId);
+    expect((await f.read())!.submissionClaimId).toBe(f.submissionWrites[0].submissionClaimId);
   });
 });
