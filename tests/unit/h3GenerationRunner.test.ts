@@ -13,6 +13,8 @@ const fixture = h3ProjectFixture();
 let job: H3GenerationJob;
 const originalFetch = globalThis.fetch;
 const originalWebSocket = globalThis.WebSocket;
+const originalNow = Date.now;
+const originalAbortTimeout = AbortSignal.timeout;
 const sockets: FakeSwarmSocket[] = [];
 let registrationMode: "normal" | "error" | "close-before-post" | "delayed" = "normal";
 let failPromptIdSaveOnce = false;
@@ -43,8 +45,9 @@ mock.module("@/lib/h3JobStore", () => ({
       expect(sockets.at(-1)!.closeCalls).toBe(0); failPromptIdSaveOnce = false;
       throw new Error("Durable prompt ID save response lost");
     }
+    const newlyPinned = next.promptId && next.promptId !== job.promptId;
     job = next;
-    if (job.promptId && job.state === "rendering" && sockets.length) expect(sockets.at(-1)!.closeCalls).toBe(0);
+    if (newlyPinned && job.state === "rendering" && sockets.length) expect(sockets.at(-1)!.closeCalls).toBe(0);
     if (job.state === "submitting" && registrationMode === "close-before-post") sockets.at(-1)!.disconnect();
     return structuredClone(job);
   },
@@ -67,6 +70,8 @@ const { runH3Generation, findH3ProviderPrompt, validateH3VideoProbe, h3OutputSub
 afterEach(() => {
   globalThis.fetch = originalFetch;
   globalThis.WebSocket = originalWebSocket;
+  Date.now = originalNow;
+  AbortSignal.timeout = originalAbortTimeout;
   if (previousSwarm === undefined) delete process.env.SWARMUI_URL; else process.env.SWARMUI_URL = previousSwarm;
   if (previousLocal === undefined) delete process.env.LOCAL_SWARMUI_URL; else process.env.LOCAL_SWARMUI_URL = previousLocal;
 });
@@ -268,5 +273,123 @@ describe("durable native H3 execution", () => {
     setup(); const count = providerFetch(false, false, "diagnostics");
     await runH3Generation({ ownerId: job.ownerId, projectId: job.projectId, jobId: job.id }, "run-1", { wait: async () => {}, stage: () => {} });
     expect(job.promptId).toBe("provider-1"); expect(job.state).toBe("ready"); expect(count()).toBe(1);
+  });
+
+  test("history header/body timeouts and HTTP 503 recover with durable waits and only one prompt POST", async () => {
+    for (const failure of ["fetch-timeout", "body-timeout", "http-503"] as const) {
+      setup(); const count = providerFetch(), provider = globalThis.fetch, waits: number[] = []; let reads = 0;
+      globalThis.fetch = (async (input, init) => {
+        if (String(input).includes("history/provider-1") && ++reads === 1) {
+          if (failure === "fetch-timeout") throw new DOMException("Timed out", "TimeoutError");
+          if (failure === "body-timeout") return { ok: true, json: async () => { throw new DOMException("Timed out", "TimeoutError"); } } as unknown as Response;
+          return new Response("temporarily unavailable", { status: 503 });
+        }
+        return provider(input, init);
+      }) as typeof fetch;
+      await runH3Generation({ ownerId: job.ownerId, projectId: job.projectId, jobId: job.id }, "run-1", { wait: async seconds => { waits.push(seconds); }, stage: () => {} });
+      expect(reads).toBe(2); expect(waits).toEqual([3]); expect(count()).toBe(1); expect(job.state).toBe("ready"); expect(persisted).toBe(1);
+    }
+  });
+
+  test("persistent status transport failure is bounded and leaves the original submission unknown", async () => {
+    setup(); const count = providerFetch(), provider = globalThis.fetch, waits: number[] = []; let reads = 0;
+    globalThis.fetch = (async (input, init) => {
+      if (String(input).includes("history/provider-1")) { reads++; throw new TypeError("fetch failed"); }
+      return provider(input, init);
+    }) as typeof fetch;
+    await expect(runH3Generation({ ownerId: job.ownerId, projectId: job.projectId, jobId: job.id }, "run-1", { wait: async seconds => { waits.push(seconds); }, stage: () => {} })).rejects.toThrow("temporarily unavailable");
+    expect(reads).toBe(5); expect(waits).toEqual([3, 6, 12, 24]); expect(count()).toBe(1);
+    expect(job.promptId).toBe("provider-1"); expect(job.state).toBe("submission_unknown"); expect(persisted).toBe(0);
+  });
+
+  test("read retries retain the overall render deadline and cap each request to remaining time", async () => {
+    setup(); const count = providerFetch(), provider = globalThis.fetch, waits: number[] = [], timeouts: number[] = [], historyTimeouts: number[] = []; let reads = 0, clock = 1000;
+    Date.now = () => clock;
+    AbortSignal.timeout = milliseconds => { timeouts.push(milliseconds); return originalAbortTimeout(milliseconds); };
+    globalThis.fetch = (async (input, init) => {
+      if (String(input).includes("history/provider-1")) { reads++; historyTimeouts.push(timeouts.at(-1)!); expect(init?.signal).not.toBe(undefined); throw new DOMException("Timed out", "TimeoutError"); }
+      return provider(input, init);
+    }) as typeof fetch;
+    await expect(runH3Generation({ ownerId: job.ownerId, projectId: job.projectId, jobId: job.id }, "run-1", {
+      timeoutSeconds: 10, wait: async seconds => { waits.push(seconds); clock += seconds * 1000; }, stage: () => {},
+    })).rejects.toThrow("completion is unknown");
+    expect(reads).toBe(3); expect(waits).toEqual([3, 6, 1]); expect(count()).toBe(1); expect(job.state).toBe("submission_unknown");
+    expect(historyTimeouts).toEqual([10000, 7000, 1000]);
+  });
+
+  test("a cancellation or new run owner during a read backoff cannot accept the recovered output", async () => {
+    for (const transition of ["cancel", "new-owner"] as const) {
+      setup(); const count = providerFetch(), provider = globalThis.fetch; let reads = 0;
+      globalThis.fetch = (async (input, init) => {
+        if (String(input).includes("history/provider-1") && ++reads === 1) throw new DOMException("Timed out", "TimeoutError");
+        return provider(input, init);
+      }) as typeof fetch;
+      await expect(runH3Generation({ ownerId: job.ownerId, projectId: job.projectId, jobId: job.id }, "run-1", {
+        wait: async () => { if (transition === "cancel") { job.cancelRequestedAt = new Date().toISOString(); job.state = "cancel_requested"; } else job.runId = "new-owner"; }, stage: () => {},
+      })).rejects.toThrow(transition === "cancel" ? "cancellation finalized" : "no longer owns");
+      expect(count()).toBe(1); expect(persisted).toBe(0); expect(job.state).toBe(transition === "cancel" ? "cancelled" : "rendering");
+    }
+  });
+
+  test("HTTP 4xx status and malformed JSON fail without read retries", async () => {
+    for (const failure of ["http", "json"] as const) {
+      setup(); const count = providerFetch(), provider = globalThis.fetch; let reads = 0, waits = 0;
+      globalThis.fetch = (async (input, init) => {
+        if (String(input).includes("history/provider-1")) { reads++; return new Response(failure === "json" ? "{" : "no access", { status: failure === "json" ? 200 : 401 }); }
+        return provider(input, init);
+      }) as typeof fetch;
+      await expect(runH3Generation({ ownerId: job.ownerId, projectId: job.projectId, jobId: job.id }, "run-1", { wait: async () => { waits++; }, stage: () => {} })).rejects.toThrow();
+      expect(reads).toBe(1); expect(waits).toBe(0); expect(count()).toBe(1); expect(job.state).toBe("submission_unknown");
+    }
+  });
+
+  test("prompt POST transport timeout or HTTP 503 is never retried", async () => {
+    for (const failure of ["timeout", "http"] as const) {
+      setup(); providerFetch(); const provider = globalThis.fetch; let posts = 0, waits = 0;
+      globalThis.fetch = (async (input, init) => {
+        if (String(input).endsWith("/prompt")) { posts++; if (failure === "timeout") throw new DOMException("Timed out", "TimeoutError"); return new Response("unavailable", { status: 503 }); }
+        return provider(input, init);
+      }) as typeof fetch;
+      await expect(runH3Generation({ ownerId: job.ownerId, projectId: job.projectId, jobId: job.id }, "run-1", { wait: async () => { waits++; }, stage: () => {} })).rejects.toThrow();
+      expect(posts).toBe(1); expect(waits).toBe(0); expect(job.state).toBe("submission_unknown"); expect(persisted).toBe(0);
+    }
+  });
+
+  test("empty successful history remains unknown through the original deadline, never a failed render", async () => {
+    setup(); const count = providerFetch(), provider = globalThis.fetch; let clock = 1000, reads = 0;
+    Date.now = () => clock;
+    globalThis.fetch = (async (input, init) => {
+      if (String(input).includes("history/provider-1")) { reads++; return json({}); }
+      return provider(input, init);
+    }) as typeof fetch;
+    await expect(runH3Generation({ ownerId: job.ownerId, projectId: job.projectId, jobId: job.id }, "run-1", { timeoutSeconds: 7,
+      wait: async seconds => { clock += seconds * 1000; }, stage: () => {} })).rejects.toThrow("completion is unknown");
+    expect(reads).toBe(3); expect(job.state).toBe("submission_unknown"); expect(count()).toBe(1); expect(persisted).toBe(0);
+  });
+
+  test("empty history plus complete empty queues finalizes cancellation without accepting output", async () => {
+    setup(); const count = providerFetch(), provider = globalThis.fetch;
+    job = { ...job, promptId: "provider-1", state: "cancel_requested", cancelRequestedAt: new Date().toISOString() };
+    globalThis.fetch = (async (input, init) => String(input).includes("history/provider-1") ? json({}) : provider(input, init)) as typeof fetch;
+    await expect(runH3Generation({ ownerId: job.ownerId, projectId: job.projectId, jobId: job.id }, "cancel-run", { wait: async () => { throw new Error("Should finish cancellation"); }, stage: () => {} })).rejects.toThrow("without accepting output");
+    expect(job.state).toBe("cancelled"); expect(count()).toBe(0); expect(persisted).toBe(0);
+  });
+
+  test("cancellation read failures and present running prompt never count as provider absence", async () => {
+    for (const failure of ["history-timeout", "queue-503", "running", "malformed-queue"] as const) {
+      setup(); const count = providerFetch(), provider = globalThis.fetch; let waits = 0, clock = 1000;
+      job = { ...job, promptId: "provider-1", state: "cancel_requested", cancelRequestedAt: new Date().toISOString() }; Date.now = () => clock;
+      globalThis.fetch = (async (input, init) => {
+        if (String(input).includes("history/provider-1")) { if (failure === "history-timeout") throw new DOMException("Timed out", "TimeoutError"); return json({}); }
+        if (String(input).endsWith("/queue")) {
+          if (failure === "queue-503") return new Response("unavailable", { status: 503 });
+          return json(failure === "malformed-queue" ? {} : { queue_pending: [], queue_running: [[0, "provider-1"]] });
+        }
+        return provider(input, init);
+      }) as typeof fetch;
+      await expect(runH3Generation({ ownerId: job.ownerId, projectId: job.projectId, jobId: job.id }, "cancel-run", { timeoutSeconds: 1,
+        wait: async seconds => { waits++; clock += seconds * 1000; }, stage: () => {} })).rejects.toThrow("completion is unknown");
+      expect(waits).toBe(1); expect(job.state).toBe("cancel_requested"); expect(count()).toBe(0); expect(persisted).toBe(0);
+    }
   });
 });
