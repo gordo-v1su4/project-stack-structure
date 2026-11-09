@@ -8,6 +8,8 @@ import { markWorkCompleted, markWorkRunning } from "./workMetadata";
 
 export const h3ShotPlanningTask = task({
   id: "qwen-h3-shot-planning",
+  // Canonical reference validation reads image bytes before text planning.
+  machine: "small-2x",
   queue: vm100HeavyQueue,
   maxDuration: 1800,
   retry: { maxAttempts: 1 },

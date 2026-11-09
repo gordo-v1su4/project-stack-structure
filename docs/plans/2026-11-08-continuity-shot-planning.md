@@ -41,6 +41,11 @@ packaged module. Deadline expiry kills and reaps the local HTTP exchange child
 before releasing the gateway lock; it does not prove remote model cancellation.
 Neither gateway changes nor the new worker task have been deployed. The source
 inventory has 18 tasks; the last verified production worker still has 17.
+The new planning task explicitly requests `small-2x`: canonical reference
+validation reads image bytes before text planning, so it must not inherit the
+512 MiB default implicated in the separately diagnosed live H3 worker crash.
+The installed SDK accepts the preset name; live resource mapping and sufficient
+capacity remain release checks, not conclusions from the source setting.
 
 Validation: app check passed (1,592 tests, 24 skipped, 7,615 assertions), typecheck,
 lint (zero errors; five existing warnings), and production build passed. Independent
@@ -50,9 +55,26 @@ do not prove live model quality, integration, video or final-film acceptance.
 
 ## Remaining end-to-end slice
 
-1. Connect the browser's automatic missing-shot workflow to the canonical
-   planning task, owned run status, and stored result. Verify reload/recovery and
-   stop on changed context before preparing any video request.
+Browser integration now prepares canonical directions before new automatic
+requests, polls the owned run, and reads the durable result once. It preserves
+existing nonterminal packets and explicit retry prose/reference authority, and
+does not replan saved batches, pickups or revisions. Composed shot prose includes
+the reviewed entry and exit states. The companion gateway critic reviews that
+literal composition (homelab source `513fd48`; 79 offline tests passed).
+The integrated UI slice passed the full app check and default production build
+(38 pages; lint zero errors and five existing warnings). A synthetic DOM fixture
+verified zero video dispatch before planning and after a stale reply. A synthetic
+composed prompt passed strict H3 skill lint at 124 frames / 24 FPS. None of these
+fixtures proves actual model prose, visual continuity, identity or live acceptance.
+
+Exact window matching intentionally rejects a partial pickup whose remaining gap
+differs from the canonical full-plan subdivision. Automatic refinement for that
+case is still missing; applying an enclosing direction could repeat an action.
+This fail-closed boundary is not full partial-coverage workflow acceptance.
+
+1. Verify the connected browser workflow through the real canonical planning
+   task, owned run status, and stored result. Verify reload/recovery and changed
+   context handling, then add canonical refinement for partially covered windows.
 2. Review the concrete coordinated gateway/worker/web release before activation.
    No gateway, service, queue or infrastructure deployment is included here.
 3. Verify admitted chunks fit the actual model context and yield useful reviewed

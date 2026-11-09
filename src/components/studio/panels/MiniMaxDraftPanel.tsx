@@ -10,7 +10,10 @@ import { createNativeHandleAudition } from "../nativeHandleAudition";
 import type { GeneratedDraftReview, GeneratedDraftSelection } from "../generatedDraft";
 import { appendH3AestheticReferenceIds, createH3PickupWindow, enqueueH3DraftRequest, findH3TargetSegment, h3DraftBatchStorageKey, h3RequestWindowKey, h3WindowKey, nextH3Attempt, parseH3DraftBatch, planH3DraftWindows, readH3DraftJobs, selectH3PickupWindow, selectH3ReferenceAssetIds, prepareH3PickupRequest, type H3DraftBatch } from "../h3DraftPlan";
 import { isH3JobTerminal, type H3GenerationJob, type H3GenerationRequest } from "../h3Generation";
-import type { EditPlanPreviewSegment } from "../musicVideoProject";
+import type { EditPlanPreviewSegment, MusicVideoProject } from "../musicVideoProject";
+import { buildH3DraftPlanningInput, buildPlannedH3DraftRequests, previousH3WindowJob } from "../h3PlannedDraftRequests";
+import { generationScopeSha256 } from "../generationScope";
+import type { H3ShotPlanningResult } from "../h3ShotPlanning";
 import { aestheticReferenceApplies, type AestheticReferenceLibrary } from "../aestheticReferences";
 import { ReferenceSheetPreview } from "../ReferenceSheetPreview";
 import type { ReferenceAsset } from "../referenceAssets";
@@ -28,6 +31,7 @@ import { LiveDraftTakeViewer } from "./LiveDraftTakeViewer";
 type Props = {
   storyApproved?: boolean;
   projectId: string | null;
+  project?: MusicVideoProject | null;
   segments: EditPlanPreviewSegment[];
   assets: GeneratedStudioAsset[];
   draft: GeneratedDraftSelection | null;
@@ -85,6 +89,16 @@ export function MiniMaxDraftPanel(props: Props) {
   const checkingCurrentReferences = useRef(false);
   const continueBatch = useRef<(() => Promise<void>) | null>(null);
   const recoveryIntents = useRef(new Map<string, string>());
+  const preparingDraft = useRef(false);
+  const planning = useRef<{ controller: AbortController; projectId: string; binding: string; aesthetics: string } | null>(null);
+  function planningIsCurrent() {
+    const active = planning.current;
+    const current = latest.current;
+    if (!active || !mounted.current || active.controller.signal.aborted || current.projectId !== active.projectId || current.storyApproved === false || !current.project) return false;
+    try { return buildH3DraftPlanningInput(active.projectId, current.project, current.referenceAssets).bindingSha256 === active.binding
+      && generationScopeSha256(current.aestheticReferences ?? null) === active.aesthetics; }
+    catch { return false; }
+  }
   const mayEdit = () => latest.current.storyApproved !== false && !running.current && !preparingPickup.current
     && !checkingCurrentReferences.current && !jobs.some(job => !isH3JobTerminal(job));
   useEffect(() => {
@@ -101,7 +115,10 @@ export function MiniMaxDraftPanel(props: Props) {
   }
   useEffect(() => { latest.current = props; }, [props]);
   useEffect(() => { continueBatch.current = runBatch; });
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; planning.current?.controller.abort(); }; }, []);
+  useEffect(() => {
+    if (planning.current && !planningIsCurrent()) planning.current.controller.abort();
+  }, [props.projectId, props.project, props.referenceAssets, props.aestheticReferences, props.storyApproved]);
 
   const readJobs = useCallback(async (projectId: string) => {
     const restored = await readH3DraftJobs(projectId);
@@ -224,34 +241,42 @@ export function MiniMaxDraftPanel(props: Props) {
   }
 
   async function generateMissing() {
-    if (!mayEdit() || busy || accepting || batchRef.current?.requests.length) return;
+    if (!mayEdit() || busy || accepting || preparingDraft.current || batchRef.current?.requests.length) return;
+    preparingDraft.current = true;
     setBusy(true); setError(null); setMessage("Saving the current story and references…");
+    const startingProjectId = props.projectId;
     try {
       const projectId = await props.onEnsureSavedProject();
+      if (!mounted.current || (latest.current.projectId !== startingProjectId && latest.current.projectId !== projectId)) throw new Error("The project changed while preparing the draft.");
       // Allow the parent to publish the newly saved project ID before polling.
       latest.current = { ...latest.current, projectId };
-      const existingJobs = await readJobs(projectId);
+      let existingJobs = await readJobs(projectId);
       await new Promise(resolve => setTimeout(resolve, 50));
-      const windows = planH3DraftWindows(latest.current.segments);
-      const requests = windows.map(segment => {
-        const direction = segment.storyDirection?.trim() || segment.label;
-        const previous = existingJobs.filter(job => h3RequestWindowKey(job.request) === h3WindowKey(segment)).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
-        if (previous && !isH3JobTerminal(previous)) return previous.request;
-        const input = previous ? nextH3Attempt(previous, existingJobs, latest.current.draft?.revision ?? 0, direction) : {
-          projectId, planSignature: segment.planSignature!, requirementId: segment.requirementId, timelineItemId: segment.timelineItemId,
-          sectionId: segment.sectionId, songStart: segment.musicStart, songEnd: segment.musicEnd, prompt: direction,
-          requestIntentId: crypto.randomUUID(), attempt: 0, referenceAssetIds: [],
-        };
-        // Each request gets the current review revision just before dispatch.
-        const referenceAssetIds = appendH3AestheticReferenceIds(selectH3ReferenceAssetIds(latest.current.referenceAssets, direction, previous?.references.filter(ref => ref.role === "crowd").map(ref => ref.assetId)), latest.current.aestheticReferences, segment);
-        return { ...input, ...(!previous ? identityPolicyChoiceForReferences(latest.current.referenceAssets, referenceAssetIds) : {}),
-          draftRevision: undefined, referenceAssetIds };
-      });
+      if (!mounted.current || latest.current.projectId !== projectId || latest.current.storyApproved === false) throw new Error("The project or approved story changed.");
+      let windows = planH3DraftWindows(latest.current.segments);
+      let planningInput: ReturnType<typeof buildH3DraftPlanningInput> | undefined;
+      let planningResult: H3ShotPlanningResult | undefined;
+      if (windows.some(window => !previousH3WindowJob(projectId, window, existingJobs))) {
+        if (!latest.current.project) throw new Error("Restore the full confirmed story before planning new shots.");
+        planningInput = buildH3DraftPlanningInput(projectId, latest.current.project, latest.current.referenceAssets);
+        planning.current = { controller: new AbortController(), projectId, binding: planningInput.bindingSha256,
+          aesthetics: generationScopeSha256(latest.current.aestheticReferences ?? null) };
+        setMessage("Planning and reviewing each musical shot before video generation…");
+        const { requestH3ShotPlanning } = await import("../h3ShotPlanningClient");
+        planningResult = await requestH3ShotPlanning(planningInput, { signal: planning.current.controller.signal, isCurrent: planningIsCurrent });
+        if (!planningIsCurrent()) throw new Error("The project or shot planning context changed. No new video requests were created.");
+        existingJobs = await readJobs(projectId);
+        if (!planningIsCurrent()) throw new Error("The project or shot planning context changed. No new video requests were created.");
+        windows = planH3DraftWindows(latest.current.segments);
+      }
+      const requests = buildPlannedH3DraftRequests({ projectId, windows, jobs: existingJobs, draftRevision: latest.current.draft?.revision ?? 0,
+        referenceAssets: latest.current.referenceAssets, aestheticReferences: latest.current.aestheticReferences, planningInput, planningResult });
       if (!requests.length) { setMessage("Every current song window already has footage."); return; }
+      planning.current = null;
       persistBatch({ version: 1, projectId, planSignature: requests[0].planSignature, requests, paused: false });
       await runBatch();
-    } catch (failure) { setError(failure instanceof Error ? failure.message : "Could not create the draft."); }
-    finally { if (mounted.current && !running.current) setBusy(false); }
+    } catch (failure) { if (mounted.current && (latest.current.projectId === startingProjectId || latest.current.projectId === planning.current?.projectId)) setError(failure instanceof Error ? failure.message : "Could not create the draft."); }
+    finally { planning.current?.controller.abort(); planning.current = null; preparingDraft.current = false; if (mounted.current && !running.current) setBusy(false); }
   }
 
   async function revise(asset: GeneratedStudioAsset) {
