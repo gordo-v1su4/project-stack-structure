@@ -5,7 +5,7 @@ import { generationScopeSha256, generationSemanticSha256, effectiveGenerationSco
 import { buildStoryContentSignature } from "@/components/studio/storyTreatments";
 import { confirmStoryProjectRevision, prepareStoryTabPlacements } from "@/components/studio/panels/StoryTab";
 import { selectReusedTakePlacement, reuseOriginAssetSha256, sanitizeReusedTakePlacements } from "@/components/studio/reusedTakePlacements";
-import { applyAcceptedGeneratedDraft, applyDraftGeneratedAssets, captureGeneratedDraftReview, approveGeneratedDraft, selectGeneratedDraftAsset } from "@/components/studio/generatedDraft";
+import { applyAcceptedGeneratedDraft, applyDraftGeneratedAssets, captureGeneratedDraftReview, approveGeneratedDraft, selectGeneratedDraftAsset, rejectGeneratedDraftAsset } from "@/components/studio/generatedDraft";
 import { buildH3DraftPlanningInput } from "@/components/studio/h3PlannedDraftRequests";
 import { planH3DraftWindows } from "@/components/studio/h3DraftPlan";
 import { finalExportSnapshotSha256 } from "@/components/studio/finalExportRecovery";
@@ -111,6 +111,51 @@ beforeEach(() => {
 });
 
 describe("same-project revised-story footage reuse", () => {
+  test("a failed project save recovers its issued current-story baseline after an origin is rejected", async () => {
+    revise();
+    const first = await prepareCreativeRebaseline({ ownerId: "owner", saved, expectedRevision: saved.revision!, jobs });
+    // The response was issued, but its candidate was never saved to the project.
+    expect(saved.draft.musicVideoProject!.generationScope).toBe(undefined);
+    saved.draft.generatedAssets![0].reviewStatus = "rejected";
+    saved.revision = '"rejection-after-failed-save"';
+    const recovered = await prepareCreativeRebaseline({ ownerId: "owner", saved, expectedRevision: saved.revision, jobs });
+    expect(recovered.receipt).toEqual(first.receipt);
+    expect(baselines.get(baselineKey(first.receipt))).toEqual(first.receipt);
+    saved.draft = recovered.draft;
+    expect(await validateSavedGenerationScope("owner", saved)).toBe(first.receipt.body.scopeSignature);
+    expect(() => selectOrigin()).toThrow("cannot cover");
+    bytesIntact = false;
+    saved.draft.musicVideoProject!.generationScope = undefined;
+    await expect(prepareCreativeRebaseline({ ownerId: "owner", saved, expectedRevision: saved.revision!, jobs })).rejects.toThrow();
+  });
+
+  test("accepting visible reused footage never approves the native take hidden underneath", async () => {
+    revise(); await rebaseline(); selectOrigin(); newMissingTake();
+    const native = structuredClone(saved.draft.generatedAssets!.find(asset => asset.id === "new-take")!);
+    native.id = "hidden-native"; native.jobId = `h3-${"f".repeat(64)}`;
+    native.target = { ...native.target!, songStart: 0, songEnd: 2 };
+    native.identityVerification = { ...native.identityVerification!, assetId: native.id, jobId: native.jobId };
+    saved.draft.generatedAssets!.push(native);
+    saved.draft.generatedDraft = selectGeneratedDraftAsset({ draft: saved.draft.generatedDraft!, assets: saved.draft.generatedAssets!, asset: native, segments: base() });
+    selectOrigin();
+    expect(saved.draft.generatedDraft!.assetIds).toContain(native.id);
+    expect(applyDraftGeneratedAssets(base(), saved.draft.generatedAssets!, saved.draft.generatedDraft).some(segment => segment.generatedAssetId === native.id)).toBe(false);
+    const partialAssets = structuredClone(saved.draft.generatedAssets!), partial = partialAssets.find(asset => asset.id === native.id)!;
+    partial.target!.songEnd = 4; partial.durationSeconds = 4; partial.mediaFrameCount = 96;
+    const partialReview = captureGeneratedDraftReview(base(), partialAssets, saved.draft.generatedDraft)!;
+    expect(partialReview).not.toBeNull();
+    expect(applyDraftGeneratedAssets(base(), partialAssets, saved.draft.generatedDraft).some(segment => segment.generatedAssetId === native.id)).toBe(true);
+    expect(approveGeneratedDraft({ draft: saved.draft.generatedDraft!, assets: partialAssets, segments: base(), review: partialReview }).error).toContain("partly covered");
+    expect(partial.reviewStatus).toBe("pending");
+    accept();
+    const untouched = saved.draft.generatedAssets!.find(asset => asset.id === native.id)!;
+    expect(untouched.reviewStatus).toBe("pending"); expect(untouched.approvedAt).toBe(undefined);
+    const rejected = rejectGeneratedDraftAsset({ draft: saved.draft.generatedDraft!, assets: saved.draft.generatedAssets!, assetId: saved.draft.generatedAssets![0].id });
+    const after = applyAcceptedGeneratedDraft(base(), rejected.assets, rejected.draft);
+    expect(after.some(segment => segment.generatedAssetId === native.id)).toBe(false);
+    expect(after[0].kind).toBe("gap");
+  });
+
   test("unchanged Story confirmation reuses the issued native baseline without adding carryover authority", async () => {
     const previous = saved.draft.musicVideoProject!, original = structuredClone(previous.generationScope!);
     // Native materialization enrolls a baseline without attaching a receipt to the project.

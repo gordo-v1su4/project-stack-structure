@@ -64,8 +64,11 @@ export async function prepareCreativeRebaseline(params: { ownerId: string; saved
   };
   // Reconfirming unchanged Story inputs must not extend an already issued native
   // baseline with new carryover authority, nor re-enroll its immutable coordinate.
-  const unchanged = baselines.find(baseline => baseline.body.kind === "baseline"
-    && baseline.body.scopeSignature === scope && baseline.body.semanticSha256 === semantic);
+  // Enrollment can succeed before the caller's project CAS. Recover that exact
+  // issued authority even if the footage bank changed before the save retry.
+  const unchanged = await readGenerationScopeBaseline(ownerId, saved.project.id, scope, semantic)
+    ?? baselines.find(baseline => baseline.body.kind === "baseline"
+      && baseline.body.scopeSignature === scope && baseline.body.semanticSha256 === semantic);
   if (unchanged) {
     if (unchanged.body.storySha256 !== storySha(draft)
       || effectiveGenerationScope({ ...project, generationScope: unchanged }) !== scope) throw new SourceConfirmationError("The issued baseline differs from the confirmed story.");

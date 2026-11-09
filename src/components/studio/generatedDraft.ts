@@ -209,7 +209,14 @@ export function approveGeneratedDraft({ draft, assets, segments, review, approve
   if (preview.some(segment => segment.kind === "gap" || !segment.videoUrl)) {
     return { draft, assets, error: "Unfilled song windows remain. Complete the draft before accepting it." };
   }
-  const selected = new Set(draft.assetIds);
+  const visibleNative = new Set(preview.filter(segment => !segment.reusedTakePlacementId).map(segment => segment.generatedAssetId));
+  const selected = new Set(draft.assetIds.filter(id => visibleNative.has(id)));
+  // Asset approval authorizes its whole verified trim. A partly hidden pending
+  // take cannot gain approval for the portion covered by a reused placement.
+  if (assets.some(asset => selected.has(asset.id) && asset.reviewStatus !== "approved"
+    && preview.some(segment => segment.reusedTakePlacementId && generatedAssetMatchesPreviewSegment(asset, segment)))) {
+    return { draft, assets, error: "A selected take is partly covered by reused footage. Choose one take for that window before accepting the draft." };
+  }
   if (assets.some(asset => selected.has(asset.id) && (asset.identityVerification?.issuedPolicy || asset.identityAssessmentId || asset.currentReferenceIdentity)
     && approvalEvidenceSha256ById?.[asset.id] !== currentIdentityEvidenceSha256(asset))) {
     return { draft, assets, error: "Similarity evidence changed. Review the current draft before accepting it." };
@@ -222,7 +229,7 @@ export function approveGeneratedDraft({ draft, assets, segments, review, approve
   }, requestedApprovalTime);
   // Approval order must reproduce the explicit audition order, even when the
   // user chose an older generated take over a newer approved take.
-  const approvals = new Map(draft.assetIds.map((id, index) => [id, new Date(approvalTime + index).toISOString()]));
+  const approvals = new Map(draft.assetIds.filter(id => selected.has(id)).map((id, index) => [id, new Date(approvalTime + index).toISOString()]));
   return {
     draft: { ...draft, revision: draft.revision + 1, assetIds: [], ...(draft.sourceConfirmationSha256 ? { sourceReviewRequired: false } : {}),
       ...(draft.reusedTakePlacements ? { reusedTakePlacements: draft.reusedTakePlacements.map(row => ({ ...row,
