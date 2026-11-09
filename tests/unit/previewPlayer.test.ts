@@ -712,6 +712,33 @@ describe("BrowserPreviewPlayer musical cut clock", () => {
       expect(audio.paused).toBe(false);
     });
   });
+
+  test("resuming a paused seek stages the next decoder before the cut and swaps without reloading the current decoder", async () => {
+    await withClock(async (player, front, back, audio) => {
+      for (const video of [front, back]) {
+        let sourceTime = video.currentTime;
+        Object.defineProperty(video, "currentTime", { get: () => sourceTime, set: (value: number) => {
+          sourceTime = value; queueMicrotask(() => video.dispatch("seeked"));
+        } });
+      }
+      player.load([
+        { videoUrl: "blob:a", startTime: 0, endTime: 1, musicStart: 0, label: "Resume here" },
+        { videoUrl: "blob:b", startTime: 2, endTime: 3, musicStart: 1, label: "Prepared next" },
+      ]);
+      await player.seekToTime(.25);
+      const firstSource = front.src;
+      player.resume(); await flushAsync();
+      expect(player.getState()).toMatchObject({ status: "playing", currentIndex: 0, currentTime: .25 });
+      expect(back.src).toBe("blob:b"); expect(back.currentTime).toBe(2); expect(back.paused).toBe(true);
+      expect(front.src).toBe(firstSource); expect(audio.seeks).toEqual([.25]);
+      audio.tick(1); front.currentTime = 1; await flushAsync(10);
+      expect(player.getState().currentIndex).toBe(1);
+      expect(player.getActiveVideoElement()).toBe(back as unknown as HTMLVideoElement);
+      expect(front.src).toBe(firstSource); expect(back.playCalls).toBe(1); expect(audio.seeks).toEqual([.25]);
+      audio.tick(2); back.currentTime = 3; await flushAsync(10);
+      expect(player.getState().status).toBe("ended");
+    });
+  });
 });
 
 describe("BrowserPreviewPlayer master audio", () => {

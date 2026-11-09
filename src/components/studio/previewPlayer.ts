@@ -325,16 +325,15 @@ export class BrowserPreviewPlayer {
 
     if (this.currentSegmentEndTime !== null && this.status === "paused") {
       const token = this.invalidatePlayback();
-      const endTime = this.currentSegmentEndTime;
       const video = this.videoElement;
       void this.startMasterAudio(token).then(() => token === this.playbackToken ? video.play() : undefined)
         .then(() => {
           if (token !== this.playbackToken) return;
-          this.status = "playing";
-          this.startProgressLoop();
-          this.emit();
-          return this.waitForSegmentEnd(endTime, token)
-            .then(() => this.advanceToNext(token));
+          // Resume the same live segment continuation as a playing seek. It
+          // stages and swaps the next decoder while this cut is playing;
+          // waiting here directly would force a cold next-cut preparation.
+          this.nextSegmentIsLive = true;
+          return this.playSegment(this.currentIndex, token, true);
         })
         .catch(() => {
           if (token !== this.playbackToken) return;
