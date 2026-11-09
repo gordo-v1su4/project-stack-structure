@@ -170,4 +170,3 @@ Story Bible foundation full commit: 112859705e89544e3113e649df5f2981773e4da8. On
 SceneCraft, Shotcaller and Motiondojo downloads were reviewed but are NOT installed/integrated. Follow the controller handoff's actual skill inventory instead of assuming all proposed skills are active. Higgsfield generation remains forbidden; use local H3. Read exact workflow/model topology from the handoff rather than guessing LMS/Realism strengths.
 
 Old root's playback agents completed and all their test processes closed. Root stops source/product work at this transfer; replacement chats may continue only after the explicit ownership-release messages.
-

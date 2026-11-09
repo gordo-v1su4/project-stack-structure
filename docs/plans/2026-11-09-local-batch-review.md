@@ -2,6 +2,12 @@
 
 The full goal remains an actual dynamic full-song Love Me Tonight MP4 and the complete verified product workflow. This local batch is unfinished acceptance work toward that goal. It is not an approved film, deployed playback fix, or authorization to release.
 
+## Release authorization and current target
+
+Robert explicitly approved PR preparation and coordinated web, existing Trigger worker and matching caption-service release with "yes go ahead" on November 9. Revalidation confirms remote main and public `/health` still report `e37b5babe3117edad8404fe33ff6f8115ad10442`; PR 69 is open at `77e27dc` and is an ancestor of this batch. Expand that PR rather than creating a competing release. The default checkout's unrelated changes remain untouched.
+
+The live web target is **https://stack.v1su4.dev**, the existing App VM/Dockhand main-push CI deployment described in `docs/operations/app-vm-deployment.md`. Vercel is paused and must not be promoted as a fallback. Activate the compatible caption-service contract first, then verify the exact application worker before merging the matching web source. This does not upgrade the Trigger platform or SDK, change OAuth values or authorize interruption of another GPU owner. The paired film controller remains the sole project/GPU writer, with live generation after deployed-contract and ownership/profile preflight.
+
 ## Superseding offline continuation
 
 Source commit `59984f8` repairs the last candidate's specific resume defect: a paused resume waited for the current cut directly and bypassed the common standby preparation/swap path. The first next cut therefore cold-started about 48 ms late in the raw receipt. Resume now reuses the existing already-live segment continuation, preserving source position and warm cache. An independent read-only source review found no actionable issue in cancellation, stale ownership, duplicate chains, errors or master timing. The affected suite passes 88 tests / 558 assertions, including an actual player regression for ahead preparation, decoder swap, unchanged current source and no additional master seek.
