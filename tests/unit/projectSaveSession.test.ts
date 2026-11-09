@@ -9,7 +9,9 @@ test("one editor serializes saves and advances only its own acknowledged revisio
   const first = editor.save("film", async base => { bases.push(base); await gate; return { project: { id: "film" }, revision: "v2" }; });
   const second = editor.save("film", async base => { bases.push(base); return { project: { id: "film" }, revision: "v3" }; });
   await Promise.resolve(); expect(bases).toEqual(["v1"]);
+  expect(editor.currentRevision).toBe("v1");
   release(); await Promise.all([first, second]); expect(bases).toEqual(["v1", "v2"]);
+  expect(editor.currentRevision).toBe("v3");
 });
 
 test("an obsolete tab cannot auto-rebase or replay after a conflict", async () => {
@@ -35,6 +37,7 @@ test("a project switch rejects queued snapshots and ignores the old flight's ACK
   await Promise.resolve(); editor.restore("second", "b1"); release();
   expect((await flightResult)?.message).toContain("old acknowledgment was not applied");
   expect((await queuedResult)?.message).toContain("obsolete snapshot was not written");
+  expect(editor.currentRevision).toBe("b1");
   await editor.save("second", async base => { expect(base).toBe("b1"); return { project: { id: "second" }, revision: "b2" }; });
 });
 

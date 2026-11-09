@@ -10,5 +10,5 @@ export function prepareSceneProofSave(projectId: string | null, draft: Persisted
   if (generationScopeSha256(draft.storyState.sceneProofPlan ?? null) !== generationScopeSha256(expected ?? null)
     || next.contextSha256 !== sceneProofContextSha256({ projectId, project, treatment,
       storyBeats: draft.storyState.storyBeats, references: draft.referenceAssets ?? [] })) throw new Error("The scene direction, story or references changed before saving. Continue from the current scene.");
-  return { ...draft, storyState: { ...draft.storyState, sceneProofPlan: next } };
+  return { ...draft, storyState: { ...draft.storyState, sceneProofPlan: next, sceneProofReviewRequired: true } };
 }

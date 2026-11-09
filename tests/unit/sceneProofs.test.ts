@@ -91,6 +91,17 @@ test("corrupt records/proofs and duplicate roles cannot become durable approved 
   ]) { const corrupt = structuredClone(plan); mutate(corrupt); expect(normalizeSceneProofPlan(corrupt)).toBe(undefined); }
 });
 
+test("corrupt opted-in scene state keeps its review fence through hydration and subsequent save", () => {
+  const { saved } = fixture();
+  saved.draft.storyState.sceneProofPlan = {} as SceneProofPlan;
+  const restored = hydrateStudioProjectDraft({ draft: saved.draft });
+  expect(restored.storyState.sceneProofPlan).toBe(undefined);
+  expect(restored.storyState.sceneProofReviewRequired).toBe(true);
+  const again = createPersistableStudioProjectDraft({ ...restored, analysis: null, videoSources: [] });
+  expect(again.storyState.sceneProofPlan).toBe(undefined);
+  expect(again.storyState.sceneProofReviewRequired).toBe(true);
+});
+
 test("direction revisions reach actual image prose and rebase seeded earlier scene facts", () => {
   const { plan } = fixture(), original = plan.scenes[0];
   const revised = reviseSceneDirection(original, "Diego crosses CLUB_MAIN under violet shafts.");
@@ -98,6 +109,8 @@ test("direction revisions reach actual image prose and rebase seeded earlier sce
     expect(sceneProofPrompt(revised, moment)).toContain("violet shafts");
     expect(sceneProofPrompt(revised, moment).includes("amber doorway")).toBe(false);
   }
+  const retyped = reviseSceneDirection(reviseSceneDirection(original, ""), "Diego crosses CLUB_MAIN under violet shafts.");
+  expect(retyped.moments.every(moment => Boolean(moment.prompt.trim()))).toBe(true);
 });
 
 test("transition refs include the next named lead while single-lead moments select only mentioned identities", () => {

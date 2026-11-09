@@ -15,6 +15,8 @@ export class ProjectSaveSession {
   private tail: Promise<unknown> = Promise.resolve();
 
   get contextEpoch() { return this.epoch; }
+  /** Current acknowledged revision for request freshness; never a speculative save. */
+  get currentRevision() { return this.revision; }
 
   restore(projectId: string | null, revision?: string) {
     this.epoch++;

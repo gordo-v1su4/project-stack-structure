@@ -31,7 +31,8 @@ export function sceneProofPrompt(scene: SceneProofScene, moment: SceneProofMomen
 export function reviseSceneDirection(scene: SceneProofScene, direction: string): SceneProofScene {
   const previous = scene.direction.trim();
   return { ...scene, direction, moments: scene.moments.map(moment => ({ ...moment,
-    prompt: previous ? moment.prompt.replaceAll(previous, direction.trim()) : moment.prompt })) };
+    prompt: moment.prompt === previous || !moment.prompt.trim() ? direction.trim()
+      : previous ? moment.prompt.replaceAll(previous, direction.trim()) : moment.prompt })) };
 }
 
 /** Editorial authority only: saving/reviewing proofs must not invalidate itself. */
@@ -63,7 +64,7 @@ export function prepareSceneProofPlan(input: SceneProofContext): SceneProofPlan 
     const sceneProse = [direction, ...moments.map(m => m.prompt)].join("\n");
     return { id: section.id, sectionId: section.id, anchorId: anchor?.id ?? section.id, title: anchor?.title || section.label,
       songStart: section.start, songEnd: section.end, direction,
-      referenceAssetIds: references.filter(r => r.kind === "environment" || ((r.kind === "character" || r.role.startsWith("character")) && mentionsName(sceneProse, r.displayName))).map(r => r.id).slice(0, 9),
+      referenceAssetIds: references.filter(r => r.kind === "environment" || r.role === "environment" || ((r.kind === "character" || r.role.startsWith("character")) && mentionsName(sceneProse, r.displayName))).map(r => r.id).slice(0, 9),
       moments };
   });
   return { version: 1, projectId: input.projectId, contextSha256: sceneProofContextSha256(input), scenes };

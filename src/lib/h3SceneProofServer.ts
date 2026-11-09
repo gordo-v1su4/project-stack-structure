@@ -24,6 +24,9 @@ function currentPlan(saved: SavedStudioProject) {
     || Math.abs(plan.scenes[0].songStart) > 0.001 || Math.abs(plan.scenes.at(-1)!.songEnd - project.duration) > 0.001
     || plan.scenes.some((scene, index) => typeof scene.id !== "string" || !scene.id.trim() || scene.id.length > 200
       || /[\x00-\x1f\x7f]/.test(scene.id) || scene.songEnd > project.duration + 0.001
+      || !context.treatment.anchors?.some(anchor => anchor.id === scene.anchorId)
+      || !project.storySections.some(section => section.id === scene.sectionId && Number.isFinite(section.start) && Number.isFinite(section.end)
+        && Math.min(section.end, scene.songEnd) > Math.max(section.start, scene.songStart))
       || index > 0 && Math.abs(scene.songStart - plan.scenes[index - 1].songEnd) > 0.001)) throw conflict();
   return { plan, context };
 }
@@ -68,7 +71,7 @@ const defaults: ReviewDependencies = { read: readH3StillJob, pin: pinH3JobRefere
  */
 export async function assertH3SceneProofsApproved(ownerId: string, saved: SavedStudioProject, bucket: string,
   dependencies: ReviewDependencies = defaults) {
-  if (saved.draft.storyState.sceneProofPlan === undefined) return; // Historical projects retain their workflow.
+  if (saved.draft.storyState.sceneProofPlan === undefined && !saved.draft.storyState.sceneProofReviewRequired) return; // Historical projects retain their workflow.
   if (saved.project.ownerId !== normalizeStudioOwnerSegment(ownerId)) throw conflict();
   const { plan } = currentPlan(saved);
   for (const scene of plan.scenes) {

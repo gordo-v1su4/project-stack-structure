@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { h3ProjectFixture } from "../helpers/h3Project";
 import { h3StillResultFixture } from "../helpers/h3StillJob";
-import { attachSceneProofJob, prepareSceneProofPlan, reviewSceneProof, sceneMomentBinding, sceneProofPrompt, sceneProofShot,
+import { attachSceneProofJob, prepareSceneProofPlan, reviewSceneProof, sceneMomentBinding, sceneProofContextSha256, sceneProofPrompt, sceneProofShot,
   sceneReviewSha256, type SceneProofContext } from "@/components/studio/sceneProofs";
 import { assertH3SceneProofsApproved, savedH3SceneProofRequest } from "@/lib/h3SceneProofServer";
 import { prepareH3StillJob, validateH3StillJobContext } from "@/lib/h3StillServer";
@@ -9,6 +9,7 @@ import { createH3StillJob, type H3StillJob } from "@/lib/h3StillJobStore";
 import { parseH3StillRequest, type H3StillRequest } from "@/lib/h3StillRequest";
 import type { StudioJsonObjectStore } from "@/lib/studioProjectObjectStore";
 import { prepareApprovedPlacements } from "@/components/studio/musicVideoProject";
+import { createPersistableStudioProjectDraft, hydrateStudioProjectDraft } from "@/components/studio/projectPersistence";
 
 async function fixture(ready = false, split = false) {
   const f = h3ProjectFixture(), rows = new Map<string, unknown>(), jobs = new Map<string, H3StillJob>();
@@ -17,7 +18,8 @@ async function fixture(ready = false, split = false) {
     project.editPlan.timelineItems = [{ ...item, end: 5 }, { ...item, id: `${item.id}-second`, start: 5 }];
     f.saved.draft.musicVideoProject = prepareApprovedPlacements({ project, videoSources: [] });
   }
-  f.saved.draft.storyState.confirmedTreatmentSnapshot!.anchors = [];
+  f.saved.draft.storyState.confirmedTreatmentSnapshot!.anchors = [{ id: "arrival", title: "Arrival", description: "Diego reaches CLUB_MAIN.",
+    purpose: "Reach the doorway", generationPrompt: "Diego reaches CLUB_MAIN.", coverage: "missing", candidates: [], selectedCandidateId: null, resolution: "generate" }];
   const context: SceneProofContext = { projectId: f.saved.project.id, project: f.saved.draft.musicVideoProject!,
     treatment: f.saved.draft.storyState.confirmedTreatmentSnapshot!, storyBeats: [], references: f.saved.draft.referenceAssets! };
   const plan = prepareSceneProofPlan(context);
@@ -132,6 +134,37 @@ test("missing, overlapping, reordered or incomplete narrative windows cannot aut
     if (variant === "end") plan.scenes[1].songEnd = 9.99;
     await expect(assertH3SceneProofsApproved("github-test", f.saved, "studio", f.approval)).rejects.toThrow("scene previews");
   }
+});
+
+test("scene source links require a confirmed treatment anchor and an overlapping current musical section", async () => {
+  for (const variant of ["unknown-anchor", "unknown-section", "nonoverlapping-section"] as const) {
+    const f = await fixture(), plan = f.saved.draft.storyState.sceneProofPlan!, scene = plan.scenes[0], moment = scene.moments[0];
+    if (variant === "unknown-anchor") scene.anchorId = "invented-journey";
+    if (variant === "unknown-section") scene.sectionId = "invented-section";
+    if (variant === "nonoverlapping-section") {
+      f.saved.draft.musicVideoProject!.storySections.push({ ...f.saved.draft.musicVideoProject!.storySections[0], id: "outside-scene", start: 10, end: 11 });
+      scene.sectionId = "outside-scene";
+      plan.contextSha256 = sceneProofContextSha256({ projectId: f.saved.project.id, project: f.saved.draft.musicVideoProject!,
+        treatment: f.saved.draft.storyState.confirmedTreatmentSnapshot!, storyBeats: [], references: f.saved.draft.referenceAssets! });
+    }
+    const binding = sceneMomentBinding(plan, scene, moment);
+    moment.record!.context = binding.bindingSha256;
+    moment.record!.request.sceneProof = binding;
+    expect(() => savedH3SceneProofRequest(f.saved, binding)).toThrow("scene previews");
+  }
+});
+
+test("malformed opted-in preview state cannot become legacy video admission after hydration and save", async () => {
+  const f = await fixture(), plan = f.saved.draft.storyState.sceneProofPlan!;
+  plan.scenes = [];
+  const hydrated = hydrateStudioProjectDraft({ draft: f.saved.draft });
+  expect(hydrated.storyState.sceneProofPlan).toBe(undefined);
+  expect(hydrated.storyState.sceneProofReviewRequired).toBe(true);
+  const normalized = createPersistableStudioProjectDraft({ ...hydrated, analysis: null, videoSources: [] });
+  expect(normalized.storyState.sceneProofPlan).toBe(undefined);
+  expect(normalized.storyState.sceneProofReviewRequired).toBe(true);
+  f.saved.draft = normalized;
+  await expect(assertH3SceneProofsApproved("github-test", f.saved, "studio", f.approval)).rejects.toThrow("scene previews");
 });
 
 test("client-copied master/native/artifact or descriptor claims cannot approve video", async () => {

@@ -41,6 +41,7 @@ export type PersistedStoryState = {
   storyContentSignature?: string | null;
   confirmedSourceContextSignature?: string | null;
   sceneProofPlan?: SceneProofPlan;
+  sceneProofReviewRequired?: true;
 };
 
 export type PersistedVideoSource = Omit<UploadedVideoSource, "videoUrl"> & {
@@ -529,6 +530,7 @@ export function normalizePersistedStoryState(state: PersistedStoryState, legacy:
   return {
     ...state,
     sceneProofPlan: normalizeSceneProofPlan(state.sceneProofPlan),
+    sceneProofReviewRequired: state.sceneProofReviewRequired === true || state.sceneProofPlan !== undefined ? true : undefined,
     storyGenerated: hasConfirmedPlan,
     brief: { text: typeof state.brief?.text === "string" ? state.brief.text.slice(0, 4_000) : "" },
     treatments,
