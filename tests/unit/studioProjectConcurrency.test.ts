@@ -3,7 +3,7 @@ import type { PersistedStudioProjectDraft } from "@/components/studio/projectPer
 
 const objects = new Map<string, { body: string; etag: string }>();
 const writes: Record<string, unknown>[] = [];
-let serial = 0, loseAckFor: string | undefined;
+let serial = 0, loseAckFor: string | undefined, rejectIndexWrites = false;
 let authenticated = true;
 let rejectMigration = false;
 let migrationValidation: { ownerId: string; projectId: string; expectedRevision: string } | undefined;
@@ -28,6 +28,7 @@ class S3Client {
       return { ETag: current.etag, ContentLength: Buffer.byteLength(current.body), Body: { transformToString: async () => current.body } };
     }
     writes.push(input);
+    if (rejectIndexWrites && key.endsWith("/index.json")) throw failure(412);
     if ((input.IfNoneMatch === "*" && current) || (input.IfMatch && input.IfMatch !== current?.etag)) throw failure(412);
     expect(Boolean(input.IfMatch) !== Boolean(input.IfNoneMatch)).toBe(true);
     const etag = `"v${++serial}"`; objects.set(key, { body: String(input.Body), etag });
@@ -45,6 +46,7 @@ mock.module("@/auth", () => ({ auth: async () => authenticated ? { user: { id: "
 const { saveStudioProject, readStudioProject } = await import("@/lib/studioProjectStore");
 const { mergeStudioProjectIndex, studioProjectObjects } = await import("@/lib/studioProjectObjectStore");
 const { PUT, GET } = await import("@/app/api/studio/projects/[projectId]/route");
+const { POST } = await import("@/app/api/studio/projects/route");
 const originalFetch = globalThis.fetch;
 const names = ["NODE_ENV", "RUSTFS_S3_ENDPOINT", "RUSTFS_ACCESS_KEY", "RUSTFS_SECRET_KEY"] as const;
 const oldEnv = Object.fromEntries(names.map(name => [name, process.env[name]]));
@@ -52,7 +54,7 @@ const draft = (label: string) => ({ version: 3, savedAt: "input", videoSources: 
 const ownerId = "github-test", projectId = "film", key = `media-uploads/projects/${ownerId}/${projectId}/project.json`, indexKey = `media-uploads/projects/${ownerId}/index.json`;
 
 function setup() {
-  objects.clear(); writes.length = 0; serial = 0; loseAckFor = undefined; authenticated = true;
+  objects.clear(); writes.length = 0; serial = 0; loseAckFor = undefined; rejectIndexWrites = false; authenticated = true;
   rejectMigration = false; migrationValidation = undefined;
   Object.assign(process.env, { NODE_ENV: "production" }); process.env.RUSTFS_S3_ENDPOINT = "https://storage.example";
   process.env.RUSTFS_ACCESS_KEY = "test-only-access"; process.env.RUSTFS_SECRET_KEY = "test-only-secret";
@@ -141,6 +143,25 @@ test("lost create ACK still leaves an exact ID readable before any index exists"
   const before = objects.get(key)!.body;
   await expect(saveStudioProject({ ownerId, projectId, name: "Other", draft: draft("replay"), expectedRevision: null })).rejects.toThrow("already exists");
   expect(objects.get(key)!.body).toBe(before);
+});
+
+test("POST propagates postcommit index conflicts as uncertain failures, never rejected project writes", async () => {
+  setup(); rejectIndexWrites = true;
+  const error = await POST(new Request("https://app.example/api/studio/projects", {
+    method: "POST", body: JSON.stringify({ projectId, name: "Recovery copy", draft: draft("committed") }),
+  }))
+    .then(() => null, error => error as Error);
+  expect(error?.message).toContain("index acknowledgment could not be confirmed");
+  expect(error?.name).toBe("Error");
+  expect(error?.cause).toBeInstanceOf((await import("@/lib/studioProjectObjectStore")).StudioProjectConflictError);
+  expect(writes.filter(write => write.Key === key)).toHaveLength(1);
+  expect(writes.filter(write => write.Key === indexKey)).toHaveLength(5);
+  const response = await GET(new Request("https://app.example"), { params: Promise.resolve({ projectId }) });
+  expect(response.status).toBe(200);
+  const recovered = (await response.json()).saved;
+  expect(recovered.project.name).toBe("Recovery copy");
+  expect(recovered.draft.referenceAssets[0].id).toBe("committed");
+  expect(objects.has(indexKey)).toBe(false);
 });
 
 test("index CAS preserves different concurrent projects", async () => {

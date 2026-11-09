@@ -1,3 +1,11 @@
+/** A known rejected conditional write, distinct from an uncertain save ACK. */
+export class ProjectSaveConflictError extends Error {
+  constructor(message: string, cause?: unknown) {
+    super(message, { cause });
+    this.name = "ProjectSaveConflictError";
+  }
+}
+
 /** One instance per mounted editor, never shared through localStorage or tabs. */
 export class ProjectSaveSession {
   private epoch = 0;
@@ -25,7 +33,11 @@ export class ProjectSaveSession {
       if (expectedEpoch !== this.epoch || (projectId !== null && projectId !== this.projectId)) {
         throw new Error("The open project changed before this save. Its obsolete snapshot was not written.");
       }
-      if (this.blocked) throw this.blocked;
+      // A conflicted existing project must never be silently overwritten. An
+      // explicit Save as (null target), however, can preserve the window under a
+      // fresh ID. Unknown ACKs still block every write, including another copy.
+      const recoveryCopy = projectId === null && this.blocked?.cause instanceof ProjectSaveConflictError;
+      if (this.blocked && !recoveryCopy) throw this.blocked;
       if (isCurrent && !isCurrent()) throw new Error("The local draft changed before this save. Its prepared snapshot was not written.");
       if (projectId && !this.revision) throw new Error("Reload this saved project before saving it; this window has no saved revision.");
       let result: T;
@@ -33,7 +45,10 @@ export class ProjectSaveSession {
       catch (error) {
         if (expectedEpoch === this.epoch) {
           const detail = error instanceof Error ? error.message : "The save acknowledgment was unavailable.";
-          this.blocked = new Error(`${detail} Automatic saving is paused to preserve your changes. Reopen the saved project to reconcile it.`, { cause: error });
+          const recovery = error instanceof ProjectSaveConflictError
+            ? "Save as a new project to preserve this window, or reopen the saved project to reconcile it."
+            : "Reopen the saved project to reconcile it.";
+          this.blocked = new Error(`${detail} Automatic saving is paused to preserve your changes. ${recovery}`, { cause: error });
         }
         throw this.blocked ?? error;
       }
@@ -49,8 +64,12 @@ export class ProjectSaveSession {
           this.blocked = new Error("The save acknowledgment has no revision. Reopen the saved project before saving again.");
           throw this.blocked;
         }
+        if (!projectId && result.project.id === this.projectId) {
+          this.blocked = new Error("The recovery copy acknowledgment did not identify a new project. Reopen the saved project to reconcile it.");
+          throw this.blocked;
+        }
         this.revision = result.revision;
-        if (!projectId) { this.projectId = result.project.id; this.epoch++; }
+        if (!projectId) { this.projectId = result.project.id; this.blocked = null; this.epoch++; }
       }
       return result;
     });

@@ -13,6 +13,7 @@ import type { SourceTimelineSegment, SplitMode } from "./sourceTimeline";
 import type { SavedStudioProject, StudioProjectSummary } from "@/lib/studioProjectStore";
 import type { StoryBrief, StoryGenerationMeta, StoryTreatment } from "./storyTreatments";
 import { normalizeStoryBible } from "./storyBible";
+import { ProjectSaveConflictError } from "./projectSaveSession";
 import { encodeStudioJsonRequest, STUDIO_JSON_TRANSPORT_HEADERS } from "@/lib/studioJsonTransport";
 import { normalizeFinalExportIntent, type FinalExportIntent } from "./finalExportRecovery";
 import { normalizeSceneProofPlan, type SceneProofPlan } from "./sceneProofs";
@@ -416,6 +417,9 @@ export async function saveNamedStudioProject(params: {
     saved = payload.saved;
   } catch (error) {
     // Known precondition/auth/validation failures never rebase an obsolete tab.
+    if (responseStatus === 409 || responseStatus === 412) {
+      throw new ProjectSaveConflictError(error instanceof Error ? error.message : "The saved project changed.", error);
+    }
     if (responseStatus && responseStatus >= 400 && responseStatus < 500) throw error;
     const recovered = await loadSavedStudioProject(targetProjectId, { cache: false }).catch(() => null);
     const { isExactProjectSave } = await import("./projectSaveComparison");
