@@ -69,7 +69,7 @@ type GpuDeviceLike = {
   createBuffer: (descriptor: { size: number; usage: number }) => unknown;
   createShaderModule: (descriptor: { code: string }) => unknown;
   createRenderPipeline: (descriptor: Record<string, unknown>) => GpuRenderPipelineLike;
-  importExternalTexture: (descriptor: { source: HTMLVideoElement }) => unknown;
+  importExternalTexture: (descriptor: { source: HTMLVideoElement | VideoFrame }) => unknown;
   createBindGroup: (descriptor: Record<string, unknown>) => unknown;
   createCommandEncoder: () => GpuCommandEncoderLike;
   queue: {
@@ -256,7 +256,7 @@ export class StutterWebGpuPreviewRenderer {
     const gpu = (navigator as GpuNavigator).gpu;
     const bufferUsage = globals.GPUBufferUsage;
     const textureUsage = globals.GPUTextureUsage;
-    if (!gpu || !bufferUsage || !textureUsage) {
+    if (!gpu || !bufferUsage || !textureUsage || typeof VideoFrame === "undefined") {
       return this.enableCanvas2dFallback(canvas2dFallback);
     }
 
@@ -306,9 +306,17 @@ export class StutterWebGpuPreviewRenderer {
     return this.mode;
   }
 
-  render(video: HTMLVideoElement, plan: StutterShaderRuntimePlan | null, outputTime: number) {
+  render(video: HTMLVideoElement | HTMLCanvasElement, plan: StutterShaderRuntimePlan | null, outputTime: number) {
     if (!this.canvas || !this.initialized) return;
-    resizeCanvasToDisplaySize(this.canvas);
+    const isVideo = "readyState" in video;
+    if (isVideo || this.canvas.dataset.stutterCaptureResolution === "720p") resizeCanvasToDisplaySize(this.canvas);
+    else {
+      // Canvas CSS uses object-contain, matching the canonical preview's
+      // intrinsic aspect ratio and preserving letterboxing at any DPR.
+      if (this.canvas.width !== video.width) this.canvas.width = video.width;
+      if (this.canvas.height !== video.height) this.canvas.height = video.height;
+    }
+    const sourceReady = isVideo ? video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA : video.width > 0 && video.height > 0;
 
     if (
       this.mode === "webgpu" &&
@@ -317,11 +325,15 @@ export class StutterWebGpuPreviewRenderer {
       this.pipeline &&
       this.sampler &&
       this.uniformBuffer &&
-      video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA
+      sourceReady
     ) {
+      // The shader must consume the same approved raster as the monitor,
+      // rather than importing a decoder's excluded endpoint frame again.
+      const frame = isVideo ? null : new VideoFrame(video, { timestamp: Math.round(outputTime * 1_000_000) });
+      try {
       const uniforms = plan ? buildStutterUniforms(plan, outputTime) : buildPassthroughUniforms(outputTime);
       this.device.queue.writeBuffer(this.uniformBuffer, 0, uniforms.buffer, uniforms.byteOffset, uniforms.byteLength);
-      const externalTexture = this.device.importExternalTexture({ source: video });
+      const externalTexture = this.device.importExternalTexture({ source: frame ?? video as HTMLVideoElement });
       const bindGroup = this.device.createBindGroup({
         layout: this.pipeline.getBindGroupLayout(0),
         entries: [
@@ -346,13 +358,14 @@ export class StutterWebGpuPreviewRenderer {
       renderPass.draw(6);
       renderPass.end();
       this.device.queue.submit([commandEncoder.finish()]);
+      } finally { frame?.close(); }
       return;
     }
 
     if (
       this.mode === "canvas2d" &&
       this.context2d &&
-      video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA
+      sourceReady
     ) {
       const style = buildStutterCanvas2dStyle(plan, outputTime);
       const width = this.canvas.width;

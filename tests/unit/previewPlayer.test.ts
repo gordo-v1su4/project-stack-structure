@@ -341,11 +341,12 @@ describe("BrowserPreviewPlayer non-destructive timeline seeking", () => {
       expect(player.getState()).toMatchObject({ status: "paused", currentIndex: 2, currentTime: 5.5 });
       expect(audio.currentTime).toBe(15.5); expect([front.loadCalls, back.loadCalls]).toEqual(loads);
       player.resume();
+      await flushAsync();
       expect(player.getState().status).toBe("playing"); expect(audio.currentTime).toBeCloseTo(15.5, 1);
     });
   });
   test("bounds and exact end are stable despite native duration clamp, and ended scrubs stay paused", async () => {
-    await withSeekPlayer(async (player, front) => {
+    await withSeekPlayer(async (player, front, _back, audio) => {
       player.load([{ videoUrl: "blob:a", startTime: 0, endTime: 2, label: "A" }]); front.duration = 2;
       await player.seekToTime(99);
       expect(front.currentTime).toBe(1.999999);
@@ -353,7 +354,7 @@ describe("BrowserPreviewPlayer non-destructive timeline seeking", () => {
       player.resume(); expect(player.getState()).toMatchObject({ status: "ended", currentTime: 2 });
       expect(front.paused).toBe(true);
       await player.seekToTime(-1); expect(player.getState().currentTime).toBe(0);
-      void player.play(); await flushAsync(); front.tick(2); await flushAsync();
+      void player.play(); await flushAsync(); audio.currentTime = 2; front.tick(2); await flushAsync();
       expect(player.getState()).toMatchObject({ status: "ended", currentTime: 2 });
       await player.seekToTime(0.5); expect(player.getState()).toMatchObject({ status: "paused", currentTime: 0.5 });
     });
@@ -433,6 +434,7 @@ describe("BrowserPreviewPlayer assigned-source reuse", () => {
       const player = new BrowserPreviewPlayer({ warmSourceLimit: 0 });
       const video = new FakeVideoElement();
       let time = 0, loads = 0;
+      const audio = Object.assign(new FakeAudioElement(), { readyState: 4 });
       const seeks: number[] = [];
       Object.defineProperty(video, "currentTime", { get: () => time, set: (value: number) => {
         time = value; seeks.push(value); queueMicrotask(() => video.dispatch("seeked"));
@@ -440,6 +442,7 @@ describe("BrowserPreviewPlayer assigned-source reuse", () => {
       video.load = () => { loads++; time = 0; };
       try {
         player.attach(video as unknown as HTMLVideoElement);
+        player.attachAudioElement(audio as unknown as HTMLAudioElement);
         player.load([
           { videoUrl: scenario.first, startTime: 0, endTime: 1, label: "First" },
           { videoUrl: scenario.next, startTime: 1, endTime: 2, label: "Contiguous" },
@@ -451,14 +454,16 @@ describe("BrowserPreviewPlayer assigned-source reuse", () => {
         expect(video.src).toBe(absolute);
         expect(video.getAttribute("src")).toBe(scenario.first);
         expect(loads).toBe(1);
-        // Advance the native media clock without issuing a JavaScript seek.
+        // The song reaches the cut boundary while native decoded time can
+        // still differ slightly. Only the source seek tolerance is under test.
+        audio.currentTime = 1;
         time = scenario.boundary; video.dispatch("timeupdate");
         await flushAsync();
         expect(player.getState().currentIndex).toBe(1);
         expect(player.getState().status).toBe("playing");
         expect(loads).toBe(scenario.loads);
         expect(seeks).toEqual(scenario.seeks);
-        time = 2; video.dispatch("timeupdate");
+        audio.currentTime = 2; time = 2; video.dispatch("timeupdate");
         await playing;
         expect(player.getState().status).toBe("ended");
       } finally {
@@ -526,6 +531,13 @@ describe("getMasterAudioTimeForPosition", () => {
 class FakeAudioElement {
   currentTime = 0;
   paused = true;
+  readyState = 4;
+  duration = 60;
+  ended = false;
+  private listeners = new Map<string, Set<() => void>>();
+  addEventListener(type: string, callback: () => void) { const set = this.listeners.get(type) ?? new Set(); set.add(callback); this.listeners.set(type, set); }
+  removeEventListener(type: string, callback: () => void) { this.listeners.get(type)?.delete(callback); }
+  dispatch(type: string) { for (const callback of [...this.listeners.get(type) ?? []]) callback(); }
 
   play() {
     this.paused = false;
@@ -536,6 +548,171 @@ class FakeAudioElement {
     this.paused = true;
   }
 }
+
+class ClockAudioElement extends FakeAudioElement {
+  readyState = 4;
+  readonly seeks: number[] = [];
+  private clock = 0;
+  constructor() {
+    super();
+    Object.defineProperty(this, "currentTime", { get: () => this.clock, set: (value: number) => {
+      this.clock = value; this.seeks.push(value);
+    } });
+  }
+  tick(time: number) { this.clock = time; }
+}
+
+class PresentedVideoElement extends FakeVideoElement {
+  private nextFrame = 0;
+  private frames = new Map<number, (now: number, metadata: { mediaTime: number }) => void>();
+  playCalls = 0;
+  requestVideoFrameCallback(callback: (now: number, metadata: { mediaTime: number }) => void) {
+    const id = ++this.nextFrame; this.frames.set(id, callback); return id;
+  }
+  cancelVideoFrameCallback(id: number) { this.frames.delete(id); }
+  present(time: number) {
+    this.currentTime = time;
+    const callbacks = [...this.frames.values()]; this.frames.clear();
+    for (const callback of callbacks) callback(performance.now(), { mediaTime: time });
+  }
+  play() { this.playCalls++; return super.play(); }
+}
+
+describe("BrowserPreviewPlayer musical cut clock", () => {
+  async function withClock(run: (player: BrowserPreviewPlayer, front: PresentedVideoElement, back: PresentedVideoElement, audio: ClockAudioElement) => Promise<void>) {
+    const previousRaf = globalThis.requestAnimationFrame, previousCancel = globalThis.cancelAnimationFrame;
+    globalThis.requestAnimationFrame = (() => 0) as typeof requestAnimationFrame;
+    globalThis.cancelAnimationFrame = (() => undefined) as typeof cancelAnimationFrame;
+    (globalThis as Record<string, unknown>).HTMLMediaElement ??= { HAVE_METADATA: 1, HAVE_CURRENT_DATA: 2 };
+    const player = new BrowserPreviewPlayer({ warmSourceLimit: 0 });
+    const front = new PresentedVideoElement(), back = new PresentedVideoElement(), audio = new ClockAudioElement();
+    player.attach(front as unknown as HTMLVideoElement, back as unknown as HTMLVideoElement);
+    player.attachAudioElement(audio as unknown as HTMLAudioElement);
+    try { await run(player, front, back, audio); }
+    finally { player.detach(); globalThis.requestAnimationFrame = previousRaf; globalThis.cancelAnimationFrame = previousCancel; }
+  }
+
+  test("decoder endpoints cannot advance cuts or stop the master before its actual endpoint", async () => {
+    await withClock(async (player, front, back, audio) => {
+      player.load([
+        { videoUrl: "blob:a", startTime: 0, endTime: 1, musicStart: 10, label: "First" },
+        { videoUrl: "blob:b", startTime: 0, endTime: 1, musicStart: 11, label: "Second" },
+      ]);
+      const playing = player.play(); await flushAsync();
+      expect(audio.seeks).toEqual([10]);
+      audio.tick(10.9); front.currentTime = 1; front.dispatch("ended");
+      await flushAsync(); expect(player.getState().currentIndex).toBe(0);
+      expect(player.getState().currentTime).toBeCloseTo(.9, 8);
+      audio.tick(11); await flushAsync(10);
+      expect(player.getState().currentIndex).toBe(1); expect(audio.seeks).toEqual([10]);
+      audio.tick(11.92); back.currentTime = 1; back.dispatch("ended");
+      await flushAsync(); expect(player.getState().status).toBe("playing"); expect(audio.paused).toBe(false);
+      expect(player.getState().currentTime).toBeCloseTo(1.92, 8);
+      audio.tick(12); await playing;
+      expect(player.getState().status).toBe("ended"); expect(audio.paused).toBe(true); expect(audio.currentTime).toBe(12);
+      expect(audio.seeks).toEqual([10]);
+    });
+  });
+
+  test("rejected master playback fails explicitly instead of leaving a frozen master clock playing forever", async () => {
+    await withClock(async (player, front, _back, audio) => {
+      audio.play = () => Promise.reject(new Error("autoplay rejected"));
+      player.load([{ videoUrl: "blob:a", startTime: 0, endTime: 1, label: "Needs song" }]);
+      await player.play();
+      expect(player.getState().status).toBe("error"); expect(player.getState().errorMessage).toContain("master audio");
+      expect(front.paused).toBe(true); expect(audio.paused).toBe(true);
+    });
+  });
+
+  test("master metadata and actual playback readiness precede the playing transport", async () => {
+    await withClock(async (player, front, _back, audio) => {
+      audio.readyState = 0; let resolve = () => {};
+      audio.play = () => { audio.paused = false; return new Promise<void>(done => { resolve = done; }); };
+      player.load([{ videoUrl: "blob:a", startTime: 0, endTime: 1, label: "Needs song" }]);
+      const playing = player.play(); await flushAsync();
+      expect(player.getState().status).toBe("loading"); expect(front.paused).toBe(true);
+      audio.readyState = 4; audio.dispatch("loadedmetadata"); await flushAsync();
+      expect(player.getState().status).toBe("loading"); expect(front.paused).toBe(true);
+      resolve(); await flushAsync(); expect(player.getState().status).toBe("playing");
+      audio.tick(1); front.currentTime = 1; front.dispatch("ended"); await playing;
+      expect(player.getState().status).toBe("ended");
+    });
+  });
+
+  test("stopping a pending master start prevents a late resolution from playing video", async () => {
+    await withClock(async (player, front, _back, audio) => {
+      let resolve = () => {};
+      audio.play = () => { audio.paused = false; return new Promise<void>(done => { resolve = done; }); };
+      player.load([{ videoUrl: "blob:a", startTime: 0, endTime: 1, label: "Needs song" }]);
+      const playing = player.play(); await flushAsync(); player.stop(); resolve(); await playing;
+      expect(player.getState().status).toBe("idle"); expect(front.playCalls).toBe(0);
+      expect(front.paused).toBe(true); expect(audio.paused).toBe(true);
+    });
+  });
+
+  test("a genuinely short master fails explicitly; sub-ms natural EOF rounding completes without a seek", async () => {
+    await withClock(async (player, front, _back, audio) => {
+      audio.duration = .5;
+      const cut = [{ videoUrl: "blob:a", startTime: 0, endTime: 1, label: "One second" }];
+      player.load(cut); await player.play(); expect(player.getState().status).toBe("error");
+      expect(player.getState().errorMessage).toContain("ends before");
+      audio.duration = .9996; player.load(cut); const playing = player.play(); await flushAsync();
+      audio.tick(.9996); audio.ended = true; audio.paused = true; front.currentTime = 1; front.dispatch("ended"); await playing;
+      expect(player.getState().status).toBe("ended"); expect(audio.currentTime).toBe(.9996);
+      expect(audio.seeks).toEqual([0]);
+    });
+  });
+
+  test("source clip audio keeps playing for its full song dwell and transport pause/resume preserves the master position", async () => {
+    await withClock(async (player, front, _back, audio) => {
+      player.load([{ videoUrl: "blob:a", startTime: 0, endTime: 8 / 24, musicStart: 0, label: "Eight frames" }]);
+      const playing = player.play(); await flushAsync();
+      for (let frame = 0; frame < 8; frame++) front.present(frame / 24);
+      expect(front.currentTime).toBe(7 / 24); expect(front.paused).toBe(false);
+      expect(audio.paused).toBe(false); expect(player.getState().status).toBe("playing");
+      audio.tick(.32); player.pause(); const calls = front.playCalls;
+      expect(player.getState().currentTime).toBe(.32);
+      player.resume(); await flushAsync();
+      expect(front.playCalls).toBe(calls + 1); expect(front.paused).toBe(false); expect(audio.paused).toBe(false);
+      audio.tick(8 / 24); await flushAsync(10); await playing;
+      expect(player.getState().status).toBe("ended"); expect(front.currentTime).toBe(7 / 24);
+      expect(audio.seeks).toEqual([0]);
+    });
+  });
+
+  test("gap playback completes rounded natural EOF and fails a stopped or early-ended master", async () => {
+    await withClock(async (player, _front, _back, audio) => {
+      const callbacks = new Map<number, FrameRequestCallback>(); let next = 0;
+      globalThis.requestAnimationFrame = callback => { callbacks.set(++next, callback); return next; };
+      globalThis.cancelAnimationFrame = id => { callbacks.delete(id); };
+      const tick = () => { for (const [id, callback] of [...callbacks]) { callbacks.delete(id); callback(0); } };
+      const gap: PreviewSegment[] = [{ videoUrl: "", kind: "gap", startTime: 0, endTime: 1, musicStart: 0, label: "Gap" }];
+      audio.duration = .9996; player.load(gap); let playing = player.play(); await flushAsync();
+      audio.tick(.9996); audio.ended = true; audio.paused = true; tick(); await playing;
+      expect(player.getState().status).toBe("ended"); expect(audio.seeks).toEqual([0]);
+      for (const ended of [false, true]) {
+        audio.duration = 60; audio.ended = false; player.load(gap); playing = player.play(); await flushAsync();
+        audio.tick(.5); audio.ended = ended; audio.paused = true; tick(); await playing;
+        expect(player.getState().status).toBe("error");
+        expect(player.getState().errorMessage).toContain(ended ? "ended before" : "stopped before");
+        expect(audio.paused).toBe(true);
+      }
+    });
+  });
+
+  test("intentional discontinuous song windows seek once at the section boundary", async () => {
+    await withClock(async (player, front, _back, audio) => {
+      player.load([
+        { videoUrl: "blob:a", startTime: 0, endTime: 1, musicStart: 10, label: "First section" },
+        { videoUrl: "blob:b", startTime: 0, endTime: 1, musicStart: 25, label: "Other section" },
+      ]);
+      void player.play(); await flushAsync();
+      front.currentTime = 1; audio.tick(11); await flushAsync(10);
+      expect(player.getState().currentIndex).toBe(1); expect(audio.seeks).toEqual([10, 25]);
+      expect(audio.paused).toBe(false);
+    });
+  });
+});
 
 describe("BrowserPreviewPlayer master audio", () => {
   for (const action of ["stop", "section", "seek"]) {

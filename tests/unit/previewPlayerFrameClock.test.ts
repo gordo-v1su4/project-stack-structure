@@ -48,6 +48,7 @@ class FrameVideo {
 }
 
 class ClockAudio {
+  readyState = 4;
   time = 0;
   seeks = 0;
   paused = true;
@@ -121,6 +122,7 @@ describe("BrowserPreviewPlayer native frame clock", () => {
     ]);
     const done = player.play();
     try {
+      await flush();
       expect(audio.currentTime).toBe(10);
       expect(audio.seeks).toBe(1);
       for (const time of [500, 1000]) {
@@ -129,7 +131,7 @@ describe("BrowserPreviewPlayer native frame clock", () => {
         for (const [id, callback] of [...frames]) { frames.delete(id); callback(now); }
         await flush();
       }
-      expect(frames.size).toBe(0);
+      expect(frames.size).toBe(1); // One master-clock progress loop; the gap loop is gone.
       expect(player.getState().currentIndex).toBe(1);
       expect(player.getState().status).toBe("playing");
       expect(videos[0].currentTime).toBe(3);
@@ -166,6 +168,7 @@ describe("BrowserPreviewPlayer native frame clock", () => {
       const done = player.play();
       await flush();
       expect(videos[0].paused).toBe(false);
+      const initialSeeks = audio.seeks; // Master readiness now precedes video.play.
       player.stop();
       settle();
       await done;
@@ -173,7 +176,7 @@ describe("BrowserPreviewPlayer native frame clock", () => {
       expect(player.getState().errorMessage).toBeNull();
       expect(videos[0].paused).toBe(true);
       expect(audio.paused).toBe(true);
-      expect(audio.seeks).toBe(0);
+      expect(audio.seeks).toBe(initialSeeks);
       expect(videos.map((video) => video.frames.size)).toEqual([0, 0]);
       player.detach();
     });
