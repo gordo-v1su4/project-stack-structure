@@ -2344,12 +2344,17 @@ export default function StudioApp() {
     if (!live.projectId || epoch !== projectSaveSessionRef.current!.contextEpoch) throw new Error("Save the current project before using its Story Bible.");
     const story = generationScopeSha256(live.project.storyState);
     autosaveInFlightRef.current = true;
+    setSaveState(current => ({ ...current, kind: "saving", scope: "project" }));
     try {
       const saved = await saveVersionedProject({ projectId: live.projectId, name: live.projectName, draft: live.project }, { cache: false }, epoch);
       if (!saved.revision || epoch !== projectSaveSessionRef.current!.contextEpoch || draftReviewLiveRef.current.projectId !== live.projectId
         || generationScopeSha256(draftReviewLiveRef.current.project.storyState) !== story) throw new Error("The story changed while saving its canon. Continue from the current story.");
       setSaveState({ kind: "saved", at: Date.now(), scope: "project", detail: "Story and canon saved before planning." });
       return { projectId: saved.project.id, revision: saved.revision };
+    } catch (error) {
+      if (epoch === projectSaveSessionRef.current!.contextEpoch) setSaveState({ kind: "error", at: null, scope: "project",
+        detail: error instanceof Error ? error.message : "Story context save failed; planning was not dispatched." });
+      throw error;
     } finally { autosaveInFlightRef.current = false; }
   }
 
@@ -2849,6 +2854,7 @@ export default function StudioApp() {
               editSettings={storyState.editSettings}
             /> : null}
             {tab === "generate" ? <MiniMaxDraftPanel project={musicVideoProject} aestheticReferences={aestheticReferences} onAestheticSelection={(shotId, ids) => { referenceAutosaveRequestedRef.current = true; setAestheticReferences(library => ({ ...library, shots: { ...library.shots, [shotId]: ids } })); }} projectId={activeProjectId} segments={draftPreviewSegments}
+              confirmedTreatment={storyState.confirmedTreatmentSnapshot}
               storyApproved={storyState.storyGenerated && Boolean(storyState.confirmedTreatmentId)
                 && Boolean(storyState.storyContentSignature) && Boolean(musicVideoProject && isPlacementPlanCurrent(musicVideoProject))}
               assets={generatedAssets} draft={generatedDraft} referenceAssets={referenceAssets}
