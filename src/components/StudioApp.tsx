@@ -1,6 +1,8 @@
 "use client";
 
 import { ClipAudioSettings } from "./studio/ClipAudioSettings";
+import { PlaybackTimingDiagnostics } from "./studio/PlaybackTimingDiagnostics";
+import { markPlaybackTiming } from "./studio/playbackTiming";
 import { acquireMediaPlaybackOwnership } from "./studio/mediaPlaybackOwnership";
 import { createBlankNamedStudioProject } from "./studio/newStudioProject";
 import { clipAudioKey, normalizeClipAudioSettings, usesClipAudio } from "./studio/clipAudio";
@@ -2557,18 +2559,24 @@ export default function StudioApp() {
       : { source: "none", isPlaying: false, currentTime: 0, duration: 0, label: "No song loaded", bpm: null };
 
   function handleTransportToggle() {
-    if (transportModel.source === "preview") {
-      const status = previewPlayer.getState().status;
-      if (status === "playing" || status === "loading") previewPlayer.pause();
-      else if (status === "paused") previewPlayer.resume();
-      else void previewPlayer.play();
-      return;
-    }
-    if (transportModel.source === "song") songTransport.toggle();
+    markPlaybackTiming("handler-entry", { action: "toggle" });
+    try {
+      if (transportModel.source === "preview") {
+        const status = previewPlayer.getState().status;
+        if (status === "playing" || status === "loading") previewPlayer.pause();
+        else if (status === "paused") previewPlayer.resume();
+        else void previewPlayer.play();
+        return;
+      }
+      if (transportModel.source === "song") songTransport.toggle();
+    } finally { markPlaybackTiming("handler-return", { action: "toggle" }); }
   }
   function handleTransportStop() {
-    if (transportModel.source === "preview") previewPlayer.stop();
-    else if (transportModel.source === "song") songTransport.stop();
+    markPlaybackTiming("handler-entry", { action: "stop" });
+    try {
+      if (transportModel.source === "preview") previewPlayer.stop();
+      else if (transportModel.source === "song") songTransport.stop();
+    } finally { markPlaybackTiming("handler-return", { action: "stop" }); }
   }
   function handleTransportRewind() {
     if (transportModel.source === "preview") previewPlayer.seekToSegment(0);
@@ -3023,6 +3031,7 @@ export default function StudioApp() {
 
       {/* Master song for the beat spine when no cut is loaded. */}
       <audio ref={songTransport.audioRef} src={masterAudioUrl ?? undefined} preload="metadata" className="hidden" />
+      <PlaybackTimingDiagnostics />
 
       <CommandPalette open={isCommandPaletteOpen} onClose={() => setIsCommandPaletteOpen(false)} commands={studioCommands} />
       <ShortcutSheet open={isShortcutSheetOpen} onClose={() => setIsShortcutSheetOpen(false)} commands={studioCommands} />

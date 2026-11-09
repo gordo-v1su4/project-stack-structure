@@ -1,3 +1,5 @@
+import { markPlaybackGroupState, markPlaybackTiming, pauseWithPlaybackTiming } from "./playbackTiming";
+
 export interface PreviewSegment {
   useClipAudio?: boolean;
   kind?: "source" | "gap";
@@ -167,7 +169,7 @@ export class BrowserPreviewPlayer {
   }
 
   private pauseMasterAudio() {
-    this.audioElement?.pause();
+    if (this.audioElement) pauseWithPlaybackTiming(this.audioElement, "master-audio");
   }
 
   private correctMasterAudioDrift() {
@@ -227,14 +229,17 @@ export class BrowserPreviewPlayer {
   }
 
   pause() {
+    markPlaybackTiming("player-pause-entry");
     if (!this.videoElement) return;
     if (this.segments[this.currentIndex]?.kind === "gap") { this.gapOffset = this.currentGapOffset(); this.gapStartedAt = null; }
-    this.videoElement.pause();
+    pauseWithPlaybackTiming(this.videoElement, "active-video");
     this.pauseMasterAudio();
+    markPlaybackGroupState([...this.elements, this.audioElement]);
     this.invalidatePlayback();
     this.status = "paused";
     this.stopProgressLoop();
     this.emit();
+    markPlaybackTiming("player-pause-return");
   }
 
   resume() {
@@ -297,6 +302,7 @@ export class BrowserPreviewPlayer {
   }
 
   stop() {
+    markPlaybackTiming("player-stop-entry");
     this.gapOffset = 0;
     this.gapStartedAt = null;
     this.invalidatePlayback();
@@ -306,7 +312,7 @@ export class BrowserPreviewPlayer {
     this.nextSegmentIsLive = false;
     for (const element of this.elements) {
       if (!element) continue;
-      element.pause();
+      pauseWithPlaybackTiming(element, element === this.videoElement ? "active-video" : "standby-video");
       element.removeAttribute("src");
       element.load();
     }
@@ -314,7 +320,9 @@ export class BrowserPreviewPlayer {
     this.applyElementVisibility();
     this.status = "idle";
     this.currentIndex = 0;
+    markPlaybackGroupState([...this.elements, this.audioElement]);
     this.emit();
+    markPlaybackTiming("player-stop-return");
   }
 
   seekToSegment(index: number) {
