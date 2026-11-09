@@ -4,11 +4,15 @@ import { isStoryTreatmentConfigured } from "@/lib/storyTreatmentGateway";
 import { queueStoryTreatmentGeneration } from "@/lib/storyTreatmentServer";
 import type { SessionUser } from "@/lib/session";
 import type { StoryTreatmentGenerationResult, StoryTreatmentRequest } from "@/components/studio/storyTreatments";
+import { resolveStoryCanon, StoryCanonError, type VerifiedStoryCanon } from "./storyBibleServer";
+import type { readStudioProject } from "./studioProjectStore";
 
 export async function handleStoryTreatmentsPost(request: Request, dependencies: {
   getUser?: () => Promise<SessionUser | null>;
-  generate?: (input: StoryTreatmentRequest) => Promise<StoryTreatmentGenerationResult>;
-  queue?: (input: StoryTreatmentRequest, options: { requestIntentId: string }) => Promise<{ runId: string; model: string }>;
+  generate?: (input: StoryTreatmentRequest, options: { canon?: VerifiedStoryCanon }) => Promise<StoryTreatmentGenerationResult>;
+  queue?: (input: StoryTreatmentRequest, options: { requestIntentId: string; canon?: VerifiedStoryCanon }) => Promise<{ runId: string; model: string }>;
+  readProject?: typeof readStudioProject;
+  referenceBucket?: string;
   isConfigured?: boolean;
 } = {}) {
   const user = await (dependencies.getUser ?? getSessionUser)();
@@ -36,12 +40,13 @@ export async function handleStoryTreatmentsPost(request: Request, dependencies: 
   }
 
   try {
+    const canon = await resolveStoryCanon(user.id, input, { read: dependencies.readProject, bucket: dependencies.referenceBucket });
     if (dependencies.generate) {
-      const result = await dependencies.generate(input);
+      const result = await dependencies.generate(input, { canon });
       return Response.json({ success: true, ...result });
     }
 
-    const queued = await (dependencies.queue ?? queueStoryTreatmentGeneration)(input, { requestIntentId });
+    const queued = await (dependencies.queue ?? queueStoryTreatmentGeneration)(input, { requestIntentId, canon });
     return Response.json({
       success: true,
       queued: true,
@@ -51,6 +56,6 @@ export async function handleStoryTreatmentsPost(request: Request, dependencies: 
     }, { status: 202 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Story treatment generation failed.";
-    return Response.json({ success: false, error: message }, { status: 502 });
+    return Response.json({ success: false, error: message }, { status: error instanceof StoryCanonError ? error.status : 502 });
   }
 }

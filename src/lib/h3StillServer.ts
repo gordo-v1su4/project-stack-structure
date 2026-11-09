@@ -7,6 +7,7 @@ import { pinH3JobReferences, downloadH3ReferenceImage } from "./h3JobStore";
 import { buildH3StillDescriptor, parseH3StillRequest, type H3StillRequest } from "./h3StillRequest";
 import { createH3StillJob, rejectH3StillIntent, type H3StillJob } from "./h3StillJobStore";
 import { h3StillDigest } from "./h3StillProfile";
+import { assertH3SceneProofRequest, assertH3SceneProofJob } from "./h3SceneProofServer";
 
 type Dependencies = {
   read: typeof readStudioProject; config: typeof getMediaGatewayConfig;
@@ -43,6 +44,7 @@ export async function loadH3StillContext(ownerId: string, request: H3StillReques
   const config = dependencies.config();
   if (!saved) throw new H3RequestError("Project not found.", 404);
   if (!config) throw new H3RequestError("Generation storage is unavailable.", 503);
+  assertH3SceneProofRequest(saved, request);
   await dependencies.validate(ownerId, saved, { allowUnissuedBaseline: true });
   // Validate both the unchanged future-video direction and the still direction
   // against approved identities and their selected references.
@@ -89,7 +91,8 @@ export async function prepareH3StillJob(ownerId: string, value: unknown, depende
     throw error;
   }
   return dependencies.create({ ownerId, projectId: request.shot.projectId, descriptor: context.descriptor,
-    shotRequest: request.shot, template: context.template, requestIntentId: request.requestIntentId, attempt: request.attempt });
+    shotRequest: request.shot, template: context.template, requestIntentId: request.requestIntentId, attempt: request.attempt,
+    ...(request.sceneProof ? { sceneProof: request.sceneProof } : {}) });
 }
 
 /** Re-resolve every authority before an unsubmitted worker can touch the GPU. */
@@ -99,6 +102,7 @@ export async function validateH3StillJobContext(job: H3StillJob, dependencies: D
   if (!saved || !config) throw new H3RequestError("The saved still project is unavailable.", 409);
   await dependencies.validate(job.ownerId, saved);
   const template = await dependencies.pin(materializeH3Job(job.ownerId, saved, job.shotRequest, config.bucket));
+  assertH3SceneProofJob(saved, job, template);
   const refs = template.references.map(({ assetId, canonicalName, role, bucket, objectKey, version, etag }) =>
     ({ assetId, canonicalName, role, bucket, objectKey, version, etag }));
   const expected = job.descriptor.body.references.map(({ rawSha256: _rawSha256, ...ref }) => { void _rawSha256; return ref; });

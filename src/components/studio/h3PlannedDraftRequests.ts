@@ -10,10 +10,12 @@ import { resolveSelectedFootageEvidence, type SelectedFootageEvidence } from "./
 import { withCurrentReferenceIdentity } from "./currentReferenceIdentity";
 import type { GeneratedStudioAsset } from "./generatedAssets";
 import type { GeneratedDraftSelection } from "./generatedDraft";
+import type { StoryTreatment } from "./storyTreatments";
 
 export function buildH3DraftPlanningInput(projectId: string, project: MusicVideoProject, references: ReferenceAsset[], context: {
   assets?: GeneratedStudioAsset[]; draft?: GeneratedDraftSelection | null; jobs?: H3GenerationJob[];
   canonicalEvidenceByWindowKey?: ReadonlyMap<string, SelectedFootageEvidence>;
+  confirmedTreatment?: StoryTreatment | null;
 } = {}) {
   const assets = withCurrentReferenceIdentity(context.assets ?? [], project.currentIdentity);
   const scaffold = buildH3ResolvedPlanningScaffold({ project, generatedAssets: assets, draft: context.draft });
@@ -30,6 +32,7 @@ export function buildH3DraftPlanningInput(projectId: string, project: MusicVideo
   return buildH3ShotPlanningInput({ projectId, project,
     segments: scaffold.segments, generatedEvidenceByWindowKey: evidence, coverageBinding: scaffold.stableBindingPayload,
     subjectNames: references.filter(asset => asset.kind === "character" || asset.role.startsWith("character")).map(asset => asset.displayName),
+    ...(context.confirmedTreatment ? { storyCanonSource: { treatment: context.confirmedTreatment, references } } : {}),
   });
 }
 

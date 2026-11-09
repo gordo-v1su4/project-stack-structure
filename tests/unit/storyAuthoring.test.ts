@@ -1,8 +1,10 @@
 import { reviewedEvidence, focalSubject } from "../helpers/storyEvidence";
 import { createPersistableStudioProjectDraft, hydrateStudioProjectDraft } from "@/components/studio/projectPersistence";
 import { describe, expect, test } from "bun:test";
-import { beginStoryInspection, buildStoryDraftCommit, createStoryRequestGuard, describeStoryRevision, getStoryTimingError, markStoryEdited, mergeStoryRevision, validateStoryAuthoring } from "@/components/studio/storyAuthoring";
+import { assertStoryBibleConfirmation, beginStoryInspection, buildStoryDraftCommit, createStoryRequestGuard, describeStoryRevision, getStoryTimingError, markStoryEdited, mergeStoryRevision, validateStoryAuthoring } from "@/components/studio/storyAuthoring";
 import { hydrateTreatmentCoverage, isStoryPlanConfirmable, parseGeneratedTreatment, parseStoryTreatmentRequest, type StoryTreatment } from "@/components/studio/storyTreatments";
+import { STORY_BIBLE_ADAPTER, type StoryBible } from "@/components/studio/storyBible";
+import { storyBibleTreatmentSignature } from "@/components/studio/storyTreatments";
 
 function fixture(): StoryTreatment {
   return hydrateTreatmentCoverage([parseGeneratedTreatment({
@@ -55,6 +57,26 @@ describe("story authoring revisions", () => {
     expect(merged.anchors[2].selectedCandidateId).toBe("source-two");
     expect(merged.anchors[2].songWindow).toEqual({ start: 10, end: 20 });
     expect(describeStoryRevision(original, merged)).toContain("Revised Moment 0");
+  });
+  test("a model revision preserves source canon without rebinding or accepting model canon", () => {
+    const original = fixture();
+    const bible: StoryBible = { version: 1, adapter: STORY_BIBLE_ADAPTER,
+      binding: { projectId: "owned-project", storySignature: storyBibleTreatmentSignature(original), referenceSignature: "original-refs" },
+      characters: [], relationships: [], facts: [{ id: "source-fact", kind: "production", value: "Warm amber practical light.", state: "confirmed",
+        visibility: "public", channel: "positive", characterIds: [], referenceAssetIds: [], provenance: { kind: "user", sourceIds: ["human-edit"] } }] };
+    original.storyBible = bible;
+    const output = structuredClone(original);
+    output.anchors[0].description = "Diego crosses a new doorway.";
+    output.storyBible!.facts[0].value = "An invented model rule.";
+    const merged = mergeStoryRevision(original, { treatment: output }, []);
+    expect(merged.storyBible).toEqual(bible);
+    expect(merged.storyBible?.binding.storySignature).not.toBe(storyBibleTreatmentSignature(merged));
+    const current = { ...bible.binding, storySignature: storyBibleTreatmentSignature(merged) };
+    expect(() => assertStoryBibleConfirmation(merged, current)).toThrow(/Review the story bible/);
+    expect(() => assertStoryBibleConfirmation(merged, null)).toThrow();
+    expect(() => assertStoryBibleConfirmation({ ...merged, storyBible: { ...bible, binding: current } }, current)).not.toThrow();
+    const withoutCanon = { ...original, storyBible: undefined };
+    expect(mergeStoryRevision(withoutCanon, { treatment: output }, []).storyBible).toBe(undefined);
   });
   test("new output cannot hide missing logline elements or a one-sentence hook", () => {
     const story = fixture();
@@ -110,6 +132,15 @@ describe("story authoring revisions", () => {
 });
 
 describe("story dialog draft transaction integration", () => {
+  test("editing a confirmed snapshot missing from the options preserves its new draft", () => {
+    const treatment = fixture();
+    const state = { ...transactionState(treatment), treatments: [] };
+    const edited = { ...treatment, title: "Edited canon source" };
+    const commit = buildStoryDraftCommit(state, edited);
+    expect(commit.patch.treatments).toEqual([edited]);
+    expect(commit.invalidatesConfirmed).toBe(true);
+    expect(commit.patch.confirmedTreatmentSnapshot).toBeNull();
+  });
   test("reading, editing, then cancelling leaves the serialized project identical", () => {
     const treatment = fixture();
     const state = transactionState(treatment);

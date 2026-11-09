@@ -113,6 +113,7 @@ function reset(idForProject = "project-1", duration = 3) {
 }
 function form(projectContext = true) {
   const data = new FormData();
+  data.set("requestKey", "final-export-owned-v1-canonical-validation");
   data.set("audioRef", JSON.stringify({ bucket: "studio", objectKey: saved.draft.analysis!.storagePath }));
   data.set("videoRefs", JSON.stringify([{ bucket: "studio", objectKey: key, expectedSha256: hash("f") }]));
   const duration = saved.draft.musicVideoProject!.duration;
@@ -475,7 +476,7 @@ describe("final export canonical identity and ownership boundary", () => {
     expect((await POST(request)).status).toBe(401); expect(reads).toBe(0); expect(dispatches).toHaveLength(0);
   });
   test("shader capture rejects foreign clip-audio references without claiming pixel attestation", async () => {
-    reset(); const data = new FormData(); data.set("audio", new File(["audio"], "master.wav")); data.set("shaderCapture", new File(["video"], "capture.webm"));
+    reset(); const data = new FormData(); data.set("requestKey", "final-export-webgpu-owned-v1-canonical-validation"); data.set("audio", new File(["audio"], "master.wav")); data.set("shaderCapture", new File(["video"], "capture.webm"));
     data.set("segments", JSON.stringify([{ startTime: 0, endTime: 1 }]));
     data.set("videoRefs", JSON.stringify([{ bucket: "studio", objectKey: "media-uploads/github-other/clip.mp4" }]));
     expect((await capture(new Request("http://app.test/api/export/shader-capture", { method: "POST", body: data }))).status).toBe(403);

@@ -46,7 +46,7 @@ const { POST } = await import("@/app/api/export/final/route");
 
 function buildValidForm() {
   const form = new FormData();
-  form.set("requestKey", "route-final-export-validation-test");
+  form.set("requestKey", "final-export-owned-v1-route-validation-test");
   form.set("audio", new File([new Uint8Array([1, 2, 3])], "master.wav", { type: "audio/wav" }));
   form.set("file:0", new File([new Uint8Array([4, 5, 6])], "source0.mp4", { type: "video/mp4" }));
   form.set("segments", JSON.stringify([{ sourceIndex: 0, startTime: 0, endTime: 1, musicStart: 8, musicEnd: 9 }]));
@@ -75,7 +75,7 @@ describe("POST /api/export/final", () => {
 
   test("rejects an incomplete export before dispatching Trigger.dev", async () => {
     const form = new FormData();
-    form.set("requestKey", "route-final-export-validation-test");
+    form.set("requestKey", "final-export-owned-v1-route-validation-test");
     form.set("segments", JSON.stringify([{ sourceIndex: 0, startTime: 0, endTime: 1 }]));
 
     const response = await POST(new Request("http://localhost/api/export/final", { method: "POST", body: form }));

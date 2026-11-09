@@ -1,6 +1,17 @@
 import { hydrateTreatmentCoverage, parseGeneratedTreatment, type StoryAnchor, type StoryTreatment, type StoryTreatmentState } from "./storyTreatments";
 import { mapStoryToMusic } from "./storyMusicPlacement";
 import type { StoryPlanDraft, VideoMoment } from "./musicVideoProject";
+import { normalizeStoryBible, type StoryBibleBinding } from "./storyBible";
+
+/** A revised story cannot confirm an older canon binding by accident. */
+export function assertStoryBibleConfirmation(treatment: StoryTreatment, current: StoryBibleBinding | null) {
+  if (!treatment.storyBible) return;
+  const bible = normalizeStoryBible(treatment.storyBible);
+  if (!current || bible.binding.projectId !== current.projectId || bible.binding.storySignature !== current.storySignature
+    || bible.binding.referenceSignature !== current.referenceSignature) {
+    throw new Error("Review the story bible against this story and its current references before using the story.");
+  }
+}
 
 export function describeStoryCoverage(treatment: StoryTreatment): string {
   const missing = treatment.anchors.filter(anchor => anchor.coverage === "missing").length;
@@ -22,7 +33,9 @@ export function validateStoryAuthoring(treatment: StoryTreatment) {
 }
 
 export function markStoryEdited(original: StoryTreatment, draft: StoryTreatment): StoryTreatment {
-  const proseChanged = original.logline !== draft.logline || original.synopsis !== draft.synopsis || JSON.stringify(original.loglineElements) !== JSON.stringify(draft.loglineElements);
+  const proseChanged = original.logline !== draft.logline || original.synopsis !== draft.synopsis || JSON.stringify(original.loglineElements) !== JSON.stringify(draft.loglineElements)
+    || original.visualThesis !== draft.visualThesis || original.endingHook !== draft.endingHook
+    || original.structure !== draft.structure || JSON.stringify(original.storyBible) !== JSON.stringify(draft.storyBible);
   const momentsChanged = JSON.stringify(original.anchors.map(authoringAnchor)) !== JSON.stringify(draft.anchors.map(authoringAnchor));
   const changed = proseChanged || momentsChanged || original.title !== draft.title;
   return {
@@ -35,7 +48,7 @@ export function markStoryEdited(original: StoryTreatment, draft: StoryTreatment)
 }
 
 function authoringAnchor(anchor: StoryAnchor) {
-  return { id: anchor.id, title: anchor.title, description: anchor.description, purpose: anchor.purpose, role: anchor.role, requirements: anchor.requirements?.map(requirementAuthoring), causalDependencies: anchor.causalDependencies, optional: anchor.optional };
+  return { id: anchor.id, title: anchor.title, description: anchor.description, purpose: anchor.purpose, generationPrompt: anchor.generationPrompt, role: anchor.role, requirements: anchor.requirements?.map(requirementAuthoring), causalDependencies: anchor.causalDependencies, optional: anchor.optional };
 }
 
 function requirementAuthoring(requirement: NonNullable<StoryAnchor["requirements"]>[number]) {
@@ -61,7 +74,7 @@ export function mergeStoryRevision(original: StoryTreatment, output: unknown, mo
   });
   const ids = new Set(anchors.map(anchor => anchor.id));
   return {
-    ...revised, anchors, revision: (original.revision ?? 0) + 1,
+    ...revised, storyBible: original.storyBible, anchors, revision: (original.revision ?? 0) + 1,
     reconciliation: { status: "current", note: "Prose and story moments reconciled together; review before using." },
     sectionAnchorIds: Object.fromEntries(Object.entries(original.sectionAnchorIds ?? {}).filter(([, id]) => ids.has(id))),
   };
@@ -114,7 +127,9 @@ export function buildStoryDraftCommit(state: StoryTreatmentState, next: StoryTre
   const changed = JSON.stringify(state.treatments.find(treatment => treatment.id === next.id)) !== JSON.stringify(next);
   const invalidatesConfirmed = changed && next.id === state.confirmedTreatmentId;
   const patch: Partial<StoryTreatmentState> = {
-    treatments: state.treatments.map(treatment => treatment.id === next.id ? next : treatment),
+    treatments: state.treatments.some(treatment => treatment.id === next.id)
+      ? state.treatments.map(treatment => treatment.id === next.id ? next : treatment)
+      : [...state.treatments, next],
     ...(select ? { selectedTreatmentId: next.id } : {}),
     ...(invalidatesConfirmed ? { confirmedTreatmentId: null, confirmedTreatmentSnapshot: null, storyContentSignature: null } : {}),
   };

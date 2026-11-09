@@ -154,6 +154,22 @@ It anchors execution to its own application checkout and sources only the BWS-ge
 
 For the current MiniMax release, use an isolated detached VM100 application worktree and the [completion deployment/acceptance checklist](minimax-completion-release.md). H3 reuses `local-ai-generation`; the inventory remains 17 tasks. Confirm the newly emitted worker version/source commit and execute a reference-bound H3 job: an unchanged task inventory cannot prove the new implementation was deployed.
 
+### Owner-scoped export release
+
+Coordinate the export worker and web release: deploy and verify the exact reviewed
+worker first, then release the matching web build. A new web build with an old
+worker is unsafe because that worker ignores the owner field and writes an
+unscoped output. An old web build with the new worker fails closed because its
+payload lacks the authenticated owner. Verify the resulting object is under
+`media-uploads/<owner>/generated/exports/` and streams through the authenticated
+media route before accepting the rollout.
+
+New final and capture requests use `final-export-owned-v1-` and
+`final-export-webgpu-owned-v1-` keys. The final intent persists its key before
+dispatch. Legacy requests without an acknowledged run must recover their original
+request; never rewrite their key or redispatch them in the new namespace. Known
+run IDs and saved ready receipts remain readable without a new dispatch.
+
 ### Worker host access and failure triage
 
 Use the first working SSH path documented in the private ops runbook (VPN, LAN, or hypervisor guest exec). They reach the same worker; they are not independent service replicas.

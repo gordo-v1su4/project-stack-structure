@@ -604,7 +604,7 @@ describe("Next route Trigger.dev dispatch boundary", () => {
     const form = new FormData();
     form.set("audio", audioFile());
     form.set("file:0", videoFile());
-    form.set("requestKey", "final-route-test");
+    form.set("requestKey", "final-export-owned-v1-final-route-test");
     form.set("segments", JSON.stringify([{ sourceIndex: 0, startTime: 0, endTime: 1 }]));
 
     const response = await postFinalExport(new Request("http://localhost/api/export/final", { method: "POST", body: form }));
@@ -615,11 +615,32 @@ describe("Next route Trigger.dev dispatch boundary", () => {
     expect(uploadFileToMediaGatewayMock).toHaveBeenCalledTimes(2);
     expect(triggerMocks.triggerFinalExport).toHaveBeenCalledTimes(1);
   });
+  test("legacy or missing export dispatch protocols reject before any upload or task dispatch", async () => {
+    for (const [endpoint, post, legacyKey] of [
+      ["final", postFinalExport, "final-export-old-lost-ack"],
+      ["shader-capture", postShaderExport, "final-export-webgpu-old-lost-ack"],
+    ] as const) {
+      for (const key of [undefined, legacyKey]) {
+        resetMocks();
+        const form = new FormData();
+        if (key) form.set("requestKey", key);
+        form.set("audio", audioFile()); form.set("file:0", videoFile());
+        form.set("shaderCapture", new File([new Uint8Array([1])], "capture.webm", { type: "video/webm" }));
+        form.set("segments", JSON.stringify([{ sourceIndex: 0, startTime: 0, endTime: 1 }]));
+        const response = await post(new Request(`http://localhost/api/export/${endpoint}`, { method: "POST", body: form }));
+        expect(response.status).toBe(409);
+        expect((await jsonResponse(response)).error).toContain("The app was updated");
+        expect(uploadFileToMediaGatewayMock).not.toHaveBeenCalled();
+        expect(triggerMocks.triggerFinalExport).not.toHaveBeenCalled();
+        expect(triggerMocks.triggerShaderCaptureExport).not.toHaveBeenCalled();
+      }
+    }
+  });
 
   test("passes validated durable refs straight through without re-uploading", async () => {
     resetMocks();
     const form = new FormData();
-    form.set("requestKey", "final-route-refs-test");
+    form.set("requestKey", "final-export-owned-v1-final-route-refs-test");
     form.set("segments", JSON.stringify([{ sourceIndex: 0, startTime: 0, endTime: 1 }]));
     form.set("audioRef", JSON.stringify({ bucket: "stack-structure", objectKey: "media-uploads/github-test-user/source-audio/master.wav" }));
     form.set("videoRefs", JSON.stringify([
@@ -650,7 +671,7 @@ describe("Next route Trigger.dev dispatch boundary", () => {
   test("rejects durable refs outside the media namespace", async () => {
     resetMocks();
     const form = new FormData();
-    form.set("requestKey", "final-route-outside-test");
+    form.set("requestKey", "final-export-owned-v1-final-route-outside-test");
     form.set("segments", JSON.stringify([{ sourceIndex: 0, startTime: 0, endTime: 1 }]));
     form.set("audioRef", JSON.stringify({ bucket: "stack-structure", objectKey: "etc/passwd" }));
     form.set("videoRefs", JSON.stringify([
@@ -667,6 +688,7 @@ describe("Next route Trigger.dev dispatch boundary", () => {
   test("rejects durable refs from a foreign bucket", async () => {
     resetMocks();
     const form = new FormData();
+    form.set("requestKey", "final-export-owned-v1-foreign-bucket");
     form.set("segments", JSON.stringify([{ sourceIndex: 0, startTime: 0, endTime: 1 }]));
     form.set("audioRef", JSON.stringify({ bucket: "other-bucket", objectKey: "media-uploads/x.wav" }));
     form.set("videoRefs", JSON.stringify([{ bucket: "stack-structure", objectKey: "media-uploads/y.mp4" }]));
@@ -684,7 +706,7 @@ describe("Next route Trigger.dev dispatch boundary", () => {
     const form = new FormData();
     form.set("audio", audioFile());
     form.set("shaderCapture", new File([new Uint8Array([1, 2, 3])], "capture.webm", { type: "video/webm" }));
-    form.set("requestKey", "shader-route-test");
+    form.set("requestKey", "final-export-webgpu-owned-v1-shader-route-test");
 
     const response = await postShaderExport(new Request("http://localhost/api/export/shader-capture", { method: "POST", body: form }));
     const payload = await jsonResponse(response);

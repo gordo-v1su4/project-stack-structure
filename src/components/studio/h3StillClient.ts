@@ -4,34 +4,52 @@ import type { H3FirstFrameChoice } from "./h3FirstFrame";
 import { identityPolicySha256 } from "./issuedIdentityPolicy";
 import type { H3StillJob } from "@/lib/h3StillJobStore";
 import type { ReferenceAsset } from "./referenceAssets";
+import type { SceneProofBinding } from "./sceneProofs";
 
-export type StillClientRequest = { shot: H3GenerationRequest; creativePrompt: string; seed: number; requestIntentId: string; attempt: number };
+export type StillClientRequest = { shot: H3GenerationRequest; creativePrompt: string; seed: number; requestIntentId: string; attempt: number; sceneProof?: SceneProofBinding };
 export type StillClientRecord = { version: 1; projectId: string; context: string; request: StillClientRequest; jobId?: string };
 export class StillClientAdmissionError extends Error {}
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 const jobId = /^h3-still-[a-f0-9]{64}$/;
-export const stillClientStorageKey = (projectId: string) => `studio-minimax-still-v1:${projectId}`;
+export const stillClientStorageKey = (projectId: string, storageScope?: string) => storageScope === undefined
+  ? `studio-minimax-still-v1:${projectId}`
+  : `studio-minimax-still-v1:${projectId}:moment:${encodeURIComponent(storageScope)}`;
+export const stillClientRecordBinding = (record: StillClientRecord) => identityPolicySha256({ projectId: record.projectId, context: record.context, request: record.request });
 /** A late response may attach its job ID only to the same still intent that is
  * currently stored. It cannot roll an A→B→A project switch back to an older take.
  */
-export function acknowledgeStillClientRecord(storage: Pick<Storage, "getItem" | "setItem">, next: StillClientRecord): boolean {
+export function acknowledgeStillClientRecord(storage: Pick<Storage, "getItem" | "setItem">, next: StillClientRecord, storageScope?: string): boolean {
   const accepted = parseStillClientRecord(next, next.projectId);
   if (!accepted?.jobId) return false;
-  const key = stillClientStorageKey(next.projectId);
+  const key = stillClientStorageKey(next.projectId, storageScope);
   const current = parseStillClientRecord(JSON.parse(storage.getItem(key) ?? "null"), next.projectId);
-  const binding = (record: StillClientRecord) => identityPolicySha256({ projectId: record.projectId, context: record.context, request: record.request });
-  if (!current || binding(current) !== binding(accepted) || current.jobId !== undefined && current.jobId !== accepted.jobId) return false;
+  if (!current || stillClientRecordBinding(current) !== stillClientRecordBinding(accepted) || current.jobId !== undefined && current.jobId !== accepted.jobId) return false;
   storage.setItem(key, JSON.stringify(accepted));
   return true;
 }
 export const isStillTerminal = (state: string) => ["ready", "failed", "cancelled"].includes(state);
 /** A rejected response can release only its exact current unacknowledged intent. */
-export function releaseRejectedStillRecord(storage: Pick<Storage, "getItem" | "removeItem">, rejected: StillClientRecord): boolean {
-  const key = stillClientStorageKey(rejected.projectId);
+export function releaseRejectedStillRecord(storage: Pick<Storage, "getItem" | "removeItem">, rejected: StillClientRecord, storageScope?: string): boolean {
+  const key = stillClientStorageKey(rejected.projectId, storageScope);
   const current = parseStillClientRecord(JSON.parse(storage.getItem(key) ?? "null"), rejected.projectId);
   if (!current || current.jobId || identityPolicySha256(current) !== identityPolicySha256(rejected)) return false;
   storage.removeItem(key);
   return true;
+}
+/** Persist the intent in the owning project before the sole POST. A rejected
+ * save or changed moment leaves the provider untouched, including when the
+ * persistence callback itself changes the mounted scene. */
+export async function submitStillClientIntent(record: StillClientRecord, options: {
+  storage: Pick<Storage, "setItem">; storageScope?: string;
+  onRecord?: (record: StillClientRecord) => void | Promise<void>;
+  isCurrent: () => boolean; fetchImpl?: typeof fetch;
+}): Promise<H3StillJob> {
+  const frozen = parseStillClientRecord(record, record.projectId);
+  if (!frozen || !options.isCurrent()) throw new Error("The still moment changed before its intent was saved.");
+  await options.onRecord?.(frozen);
+  if (!options.isCurrent()) throw new Error("The still moment changed while its intent was saved. No generation was submitted.");
+  options.storage.setItem(stillClientStorageKey(frozen.projectId, options.storageScope), JSON.stringify(frozen));
+  return stillClientRequest("POST", frozen, options.fetchImpl);
 }
 /** Recovery binds canonical shot context, never transient form values or browser URLs. */
 export function stillCanonicalContext(value: { projectId: string | null; windowKey: string; references: ReferenceAsset[];
@@ -81,6 +99,11 @@ export function parseStillClientRecord(value: unknown, projectId: string): Still
       || !Number.isFinite(s.songStart) || !Number.isFinite(s.songEnd) || s.songStart < 0 || s.songEnd <= s.songStart
       || !Array.isArray(s.referenceAssetIds) || !s.referenceAssetIds.length || s.referenceAssetIds.length > 9
       || s.referenceAssetIds.some(id => typeof id !== "string") || (v.jobId !== undefined && !jobId.test(v.jobId))) return null;
+    if (r.sceneProof !== undefined && (!r.sceneProof || typeof r.sceneProof !== "object" || Array.isArray(r.sceneProof)
+      || Object.keys(r.sceneProof).some(key => !["sceneId", "momentId", "bindingSha256"].includes(key))
+      || typeof r.sceneProof.sceneId !== "string" || !r.sceneProof.sceneId.trim() || r.sceneProof.sceneId.length > 200 || /[\x00-\x1f\x7f]/.test(r.sceneProof.sceneId)
+      || !["setting", "action", "transition"].includes(r.sceneProof.momentId) || !/^[a-f0-9]{64}$/.test(r.sceneProof.bindingSha256)
+      || r.sceneProof.bindingSha256 !== v.context)) return null;
     return JSON.parse(JSON.stringify(v)) as StillClientRecord;
   } catch { return null; }
 }
@@ -89,6 +112,7 @@ export function assertStillClientJob(value: unknown, record: StillClientRecord):
   if (!job || !jobId.test(job.id) || record.jobId && job.id !== record.jobId || job.projectId !== record.projectId
     || job.requestIntentId !== record.request.requestIntentId || job.attempt !== record.request.attempt
     || identityPolicySha256(job.shotRequest) !== identityPolicySha256(record.request.shot)
+    || identityPolicySha256(job.sceneProof ?? null) !== identityPolicySha256(record.request.sceneProof ?? null)
     || job.descriptor?.body.seed !== record.request.seed || !job.descriptor.body.target
     || job.descriptor.body.target.songStart !== record.request.shot.songStart || job.descriptor.body.target.songEnd !== record.request.shot.songEnd
     || job.descriptor.body.planSignature !== record.request.shot.planSignature) throw new Error("The returned still belongs to another frozen request.");

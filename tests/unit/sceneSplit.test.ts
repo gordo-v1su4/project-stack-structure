@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { detectScenesFromStoredVideo, mergeSceneIntoPrevious, mergeShortSceneCuts, nextScenePollInterval, normalizeSplitterManifest } from "../../src/components/studio/sceneSplit";
-import type { DetectedSceneSegment } from "../../src/components/studio/types";
+import type { DetectedSceneSegment, MotionDescriptor } from "../../src/components/studio/types";
+import { createPlaceholderMotionDescriptor } from "../../src/components/studio/motionDescriptors";
+import { scoreMotionContinuity } from "../../src/components/studio/motionRanking";
+import { sceneMotionLabel } from "../../src/components/studio/panels/matchVisualEvidence";
+import type { VideoMoment } from "../../src/components/studio/musicVideoProject";
 
 function makeScene(id: number, start: number, end: number, overrides: Partial<DetectedSceneSegment> = {}): DetectedSceneSegment {
   return {
@@ -15,6 +19,90 @@ function makeScene(id: number, start: number, end: number, overrides: Partial<De
     ...overrides,
   };
 }
+
+describe("sceneSplit motion evidence normalization", () => {
+  const normalize = (motion: unknown, nested = false) => normalizeSplitterManifest({ segments: [{ start: 0, end: 3,
+    ...(nested ? { visual_analysis: { motion } } : { motion_descriptor: motion }) }] }, 0)[0];
+  const measured = (): MotionDescriptor => ({
+    id: "measured-scene", targetKind: "segment", filePath: "scene.mp4", segmentId: 0, start: 0, end: 3,
+    dominantAngleDeg: 10, dominantMagnitude: 0.4, motionCoherence: 0.8, cameraMotionType: "pan",
+    cameraMotionStrength: 0.4, residualMotionStrength: 0.08, motionEntropy: 0.2, acceleration: 0.03,
+    angleHistogram: [0.8, 0.2, 0, 0, 0, 0, 0, 0], magnitudeP50: 0.2, magnitudeP90: 0.4,
+    confidence: { overall: 0.9, camera: 0.8, residual: 0.7 },
+    provenance: { kind: "optical-flow", tool: "opencv-farneback", version: "4.10.0",
+      generatedAt: "2026-11-09T00:00:00Z", notes: "Computed from sampled frames." },
+  });
+  for (const nested of [false, true]) {
+    test(`empty motion is absent, not measured (${nested ? "visual analysis" : "manifest"})`, () => {
+      const scene = normalize({}, nested);
+      expect(scene.motionDescriptor).toBe(null);
+      if (nested) expect(scene.visualAnalysis?.motion).toBe(null);
+      expect(sceneMotionLabel(scene as unknown as VideoMoment)).toBe("Motion unavailable");
+      expect(scoreMotionContinuity({ from: scene.motionDescriptor ?? null, to: measured() })).toBe(0);
+    });
+    test(`explicit placeholder retains its source and null values without usable confidence (${nested ? "visual analysis" : "manifest"})`, () => {
+      const placeholder = createPlaceholderMotionDescriptor({ targetKind: "segment", filePath: "scene.mp4", segmentId: 0,
+        start: 0, end: 3, generatedAt: "2026-11-09T00:00:00Z", notes: "Not computed yet." });
+      const descriptor = normalize(placeholder, nested).motionDescriptor!;
+      expect(descriptor).toEqual({ ...placeholder, confidence: { overall: 0, camera: 0, residual: 0 } });
+      expect(sceneMotionLabel({ motionDescriptor: descriptor } as VideoMoment)).toBe("Motion unavailable");
+      expect(scoreMotionContinuity({ from: descriptor, to: measured() })).toBe(0);
+    });
+    test(`valid worker data, including provenance/confidence, survives normalization (${nested ? "visual analysis" : "manifest"})`, () => {
+      const input = measured();
+      const scene = normalize(input, nested);
+      expect(scene.motionDescriptor).toEqual(input);
+      if (nested) expect(scene.visualAnalysis?.motion).toEqual(input);
+      expect(sceneMotionLabel(scene as unknown as VideoMoment)).toBe("Rightward flow");
+      expect(scoreMotionContinuity({ from: scene.motionDescriptor!, to: scene.motionDescriptor! })).toBeGreaterThan(0);
+    });
+  }
+  test("missing or invalid provenance never invents optical flow or authorizes supplied metrics", () => {
+    for (const provenance of [undefined, {}, { kind: "made-up", tool: "legacy-tool", notes: "Imported metadata" }]) {
+      const scene = normalize({ ...measured(), provenance });
+      const descriptor = scene.motionDescriptor!;
+      expect(descriptor.provenance.kind).toBe("placeholder");
+      expect(descriptor.dominantMagnitude).toBe(0.4);
+      expect(descriptor.provenance.tool).toBe(provenance && "tool" in provenance ? provenance.tool : "unknown");
+      expect(descriptor.confidence).toEqual({ overall: 0, camera: 0, residual: 0 });
+      expect(sceneMotionLabel(scene as unknown as VideoMoment)).toBe("Motion unavailable");
+      expect(scoreMotionContinuity({ from: descriptor, to: descriptor })).toBe(0);
+    }
+  });
+  test("recognized provenance alone does not turn null measurements into confidence", () => {
+    const blank = createPlaceholderMotionDescriptor({ targetKind: "file", filePath: "scene.mp4" });
+    const descriptor = normalize({ ...blank, provenance: { ...blank.provenance, kind: "optical-flow" },
+      confidence: { overall: 1, camera: 1, residual: 1 } }).motionDescriptor!;
+    expect(descriptor.provenance.kind).toBe("optical-flow");
+    expect(descriptor.dominantMagnitude).toBe(null);
+    expect(descriptor.confidence).toEqual({ overall: 0, camera: 0, residual: 0 });
+  });
+  test("genuinely static zero values and null angle retain their measured authority", () => {
+    const input = { ...measured(), dominantAngleDeg: null, dominantMagnitude: 0, cameraMotionType: "static",
+      cameraMotionStrength: 0, residualMotionStrength: 0, acceleration: 0, magnitudeP50: 0, magnitudeP90: 0,
+      angleHistogram: [0, 0, 0, 0, 0, 0, 0, 0] };
+    const scene = normalize(input);
+    expect(scene.motionDescriptor).toEqual(input);
+    expect(sceneMotionLabel(scene as unknown as VideoMoment)).toBe("Little image motion");
+  });
+  test("legacy snake-case metrics and explicit manual/vector provenance are preserved", () => {
+    for (const kind of ["manual", "ffmpeg-motion-vectors"]) {
+      const descriptor = normalize({ dominant_magnitude: 0, dominant_angle_deg: null, camera_motion_type: "static",
+        confidence: { overall: 0.7 }, provenance: { kind, tool: "declared-tool", generated_at: "2026-11-09T00:00:00Z" } }).motionDescriptor!;
+      expect(descriptor.dominantMagnitude).toBe(0);
+      expect(descriptor.dominantAngleDeg).toBe(null);
+      expect(descriptor.provenance).toMatchObject({ kind, tool: "declared-tool", generatedAt: "2026-11-09T00:00:00Z" });
+      expect(descriptor.confidence).toEqual({ overall: 0.7, camera: 0, residual: 0 });
+    }
+  });
+  test("missing or non-finite confidence is zero, never an inferred .75", () => {
+    for (const confidence of [undefined, {}, { overall: Infinity, camera: NaN, residual: "0.9" }]) {
+      expect(normalize({ ...measured(), confidence }).motionDescriptor?.confidence).toEqual({ overall: 0, camera: 0, residual: 0 });
+    }
+    expect(normalize({ ...measured(), confidence: { overall: 2, camera: -1, residual: 0.3 } }).motionDescriptor?.confidence)
+      .toEqual({ overall: 1, camera: 0, residual: 0.3 });
+  });
+});
 
 describe("sceneSplit.normalizeSplitterManifest caption lanes", () => {
   test("labels worker-embedded qwen captions as smart, including snake_case caption_source", () => {

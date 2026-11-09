@@ -39,6 +39,10 @@ import { reconcileDetectedStorySongMap } from "../storySongMap";
 import type { BeatJoinAnalysis, SegmentPreview, UploadedVideoSource } from "../types";
 import type { ReferenceAsset } from "../referenceAssets";
 import { preserveReviewedStoryArrangement } from "../reconfirmStoryProject";
+import { SceneProofPanel } from "../SceneProofPanel";
+import type { SceneProofPlan } from "../sceneProofs";
+import { assertStoryBibleConfirmation } from "../storyAuthoring";
+import { buildStoryBibleBinding } from "../storyBibleBinding";
 
 export type StoryBeatDraft = StoryPlanDraft;
 
@@ -55,6 +59,8 @@ export type StoryTabState = StoryTreatmentState & {
   activeBeatId: string;
   storyGenerated: boolean;
   editSettings: StoryEditSettings;
+  sceneProofPlan?: SceneProofPlan;
+  sceneProofReviewRequired?: true;
 };
 
 type StoryTabProps = {
@@ -70,6 +76,11 @@ type StoryTabProps = {
   onProjectChange?: (project: MusicVideoProject) => void;
   onConfirmAppendedSources?: () => Promise<void>;
   sourceReviewRequired?: boolean;
+  savedProjectId?: string | null;
+  savedProjectRevision?: string | null;
+  onPrepareStoryContext?: () => Promise<{ projectId: string; revision: string }>;
+  onEnsureSavedProject?: () => Promise<string>;
+  onPersistSceneProofPlan?: (plan: SceneProofPlan, expected?: SceneProofPlan) => Promise<void>;
 };
 
 const DEFAULT_STORY_BEATS: StoryBeatDraft[] = getDefaultStorySectionDrafts().map((draft, index) => ({
@@ -103,7 +114,7 @@ export function createDefaultStoryTabState(): StoryTabState {
   };
 }
 
-export function StoryTab({ referenceRevision, referenceAssets, analysis, audioStatus, videoSources, segmentPreviews, state, existingProject, onStateChange, onProjectChange, onConfirmAppendedSources, sourceReviewRequired }: StoryTabProps) {
+export function StoryTab({ referenceRevision, referenceAssets, analysis, audioStatus, videoSources, segmentPreviews, state, existingProject, onStateChange, onProjectChange, onConfirmAppendedSources, sourceReviewRequired, savedProjectId, savedProjectRevision, onPrepareStoryContext, onEnsureSavedProject, onPersistSceneProofPlan }: StoryTabProps) {
   const { transcriptSummary, storyBeats, activeBeatId, storyGenerated } = state;
   const [confirmationError, setConfirmationError] = useState<string | null>(null);
   const [confirmationNotice, setConfirmationNotice] = useState<string | null>(null);
@@ -240,6 +251,8 @@ export function StoryTab({ referenceRevision, referenceAssets, analysis, audioSt
   function confirmStoryPlan(treatment: StoryTreatment) {
     setConfirmationError(null);
     setConfirmationNotice(null);
+    try { if (treatment.storyBible) assertStoryBibleConfirmation(treatment, savedProjectId ? buildStoryBibleBinding({ projectId: savedProjectId, treatment, referenceAssets: referenceAssets ?? [] }) : null); }
+    catch (error) { setConfirmationError(error instanceof Error ? error.message : "Review the current story canon first."); return; }
     const storyBeatsWithAnchors = applyTreatmentAnchorsToStoryBeats(plannedStoryBeats, treatment);
     const confirmedContext = buildStudioSourceContextSignature({ analysis, videoSources, referenceRevision });
     const prepared = prepareStoryTabPlacements({ videoSources, editSettings, project: applyTreatmentCoverageToProject(
@@ -282,6 +295,9 @@ export function StoryTab({ referenceRevision, referenceAssets, analysis, audioSt
         Opening landscape footage repeats for 2.026 seconds at 4:01.824–4:03.850. {sourceReviewRequired ? "Pending review: watch and accept the assembled cut before final export." : "Included in the current assembled-cut review."}
       </p> : null}
       <StoryTreatmentPlanner
+        savedProjectId={savedProjectId}
+        savedProjectRevision={savedProjectRevision}
+        onPrepareStoryContext={onPrepareStoryContext}
         referenceRevision={referenceRevision}
         referenceAssets={referenceAssets}
         analysis={analysis}
@@ -297,6 +313,13 @@ export function StoryTab({ referenceRevision, referenceAssets, analysis, audioSt
           storyContentSignature: null,
         })}
       />
+
+      {state.storyGenerated && state.confirmedTreatmentSnapshot && existingProject ? <SceneProofPanel
+        projectId={savedProjectId ?? null} project={existingProject} treatment={state.confirmedTreatmentSnapshot}
+        storyBeats={plannedStoryBeats} references={referenceAssets ?? []} plan={state.sceneProofPlan}
+        onChange={sceneProofPlan => updateState({ sceneProofPlan })}
+        onPersist={onPersistSceneProofPlan} onEnsureSavedProject={onEnsureSavedProject}
+      /> : null}
 
       <CollapsibleSection title="Review song sections · rename or adjust timing" className="rounded-[2px] border-[#1a1a1a] bg-[#090909]">
         <div className="p-2">

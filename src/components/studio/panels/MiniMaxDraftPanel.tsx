@@ -30,9 +30,11 @@ import { LiveDraftTakeViewer } from "./LiveDraftTakeViewer";
 import { MiniMaxStillPanel } from "./MiniMaxStillPanel";
 import type { H3FirstFrameChoice } from "../h3FirstFrame";
 import { buildStillVideoRequest, restoreStillShotForm, stillCanonicalContext } from "../h3StillClient";
+import type { StoryTreatment } from "../storyTreatments";
 
 type Props = {
   storyApproved?: boolean;
+  confirmedTreatment?: StoryTreatment | null;
   projectId: string | null;
   project?: MusicVideoProject | null;
   segments: EditPlanPreviewSegment[];
@@ -102,7 +104,7 @@ export function MiniMaxDraftPanel(props: Props) {
     const current = latest.current;
     if (!active || !mounted.current || active.controller.signal.aborted || current.projectId !== active.projectId || current.storyApproved === false || !current.project) return false;
     try { return buildH3DraftPlanningInput(active.projectId, current.project, current.referenceAssets,
-      { assets: current.assets, draft: current.draft, jobs: active.jobs }).bindingSha256 === active.binding
+      { assets: current.assets, draft: current.draft, jobs: active.jobs, confirmedTreatment: current.confirmedTreatment }).bindingSha256 === active.binding
       && generationScopeSha256(current.aestheticReferences ?? null) === active.aesthetics; }
     catch { return false; }
   }
@@ -125,7 +127,7 @@ export function MiniMaxDraftPanel(props: Props) {
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; planning.current?.controller.abort(); }; }, []);
   useEffect(() => {
     if (planning.current && !planningIsCurrent()) planning.current.controller.abort();
-  }, [props.projectId, props.project, props.referenceAssets, props.aestheticReferences, props.storyApproved, props.assets, props.draft]);
+  }, [props.projectId, props.project, props.referenceAssets, props.aestheticReferences, props.storyApproved, props.assets, props.draft, props.confirmedTreatment]);
 
   const readJobs = useCallback(async (projectId: string) => {
     const restored = await readH3DraftJobs(projectId);
@@ -266,7 +268,7 @@ export function MiniMaxDraftPanel(props: Props) {
       if (windows.length) {
         if (!latest.current.project) throw new Error("Restore the full confirmed story before preparing missing shots.");
         planningInput = buildH3DraftPlanningInput(projectId, latest.current.project, latest.current.referenceAssets,
-          { assets: latest.current.assets, draft: latest.current.draft, jobs: existingJobs });
+          { assets: latest.current.assets, draft: latest.current.draft, jobs: existingJobs, confirmedTreatment: latest.current.confirmedTreatment });
         const coveredKeys = new Set(planningInput.groups.flatMap(group => group.windows)
           .filter(window => window.sourceEvidence || window.generatedEvidence).map(window => window.key));
         if (windows.some(window => coveredKeys.has(h3WindowKey(window)))) throw new Error("Some apparent gaps already contain canonical footage. Restore their playback sources before generating.");

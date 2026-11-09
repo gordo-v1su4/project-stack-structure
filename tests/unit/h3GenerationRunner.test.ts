@@ -77,6 +77,7 @@ afterEach(() => {
 });
 
 function setup() {
+  delete fixture.saved.draft.storyState.sceneProofPlan;
   job = materializeH3Job("github-test", fixture.saved, structuredClone(fixture.request), "studio");
   process.env.SWARMUI_URL = "http://swarm.test:7861";
   delete process.env.LOCAL_SWARMUI_URL;
@@ -128,6 +129,24 @@ function providerFetch(failAfterSubmission = false, providerError = false, ackno
 }
 
 describe("durable native H3 execution", () => {
+  test("an unapproved whole-song plan stops before any provider call", async () => {
+    setup(); let calls = 0;
+    fixture.saved.draft.storyState.sceneProofPlan = { version: 1, projectId: "project-1", contextSha256: "0".repeat(64), scenes: [] };
+    globalThis.fetch = (async () => { calls++; throw new Error("Unexpected provider call"); }) as typeof fetch;
+    await expect(runH3Generation({ ownerId: job.ownerId, projectId: job.projectId, jobId: job.id }, "run-1", { wait: async () => {}, stage: () => {} })).rejects.toThrow("scene previews");
+    expect(calls).toBe(0); expect(sockets).toHaveLength(0); expect(job.state).toBe("failed");
+  });
+  test("scene review becoming stale during reference preparation blocks prompt submission", async () => {
+    setup(); const submissions = providerFetch(), original = globalThis.fetch;
+    globalThis.fetch = (async (input, options) => {
+      const response = await original(input, options);
+      if (String(input).endsWith("upload/image")) fixture.saved.draft.storyState.sceneProofPlan = {
+        version: 1, projectId: "project-1", contextSha256: "0".repeat(64), scenes: [] };
+      return response;
+    }) as typeof fetch;
+    await expect(runH3Generation({ ownerId: job.ownerId, projectId: job.projectId, jobId: job.id }, "run-1", { wait: async () => {}, stage: () => {} })).rejects.toThrow("scene previews");
+    expect(submissions()).toBe(0); expect(job.state).toBe("failed"); expect(sockets[0].closeCalls).toBe(1);
+  });
   function setupFirstFrame(){
     setup();job.request.identityPolicyFamily="sface-yunet-foreground-frontal-v2";
     job.firstFrame=firstFrameArtifactFixture(job);job.references=job.firstFrame.body.references;job.profile=H3_FIRST_FRAME_PROFILE;job.conditioningPreparationVersion=H3_FIRST_FRAME_PREPARATION;

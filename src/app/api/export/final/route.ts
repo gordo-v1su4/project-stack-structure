@@ -4,6 +4,7 @@ import { getSessionUser, unauthorizedResponse } from "@/lib/session";
 import { triggerFinalExport } from "@/lib/triggerOrchestration";
 import { scopeMediaUploadFolder } from "@/lib/essentiaUpload";
 import { parseProjectExportContext, ProjectExportError, reconcileProjectFinalExport } from "@/lib/projectExportValidation";
+import { EXPORT_DISPATCH_UPGRADE_MESSAGE, isOwnedExportRequestKey } from "@/components/studio/exportDispatchProtocol";
 
 export const runtime = "nodejs";
 
@@ -12,9 +13,10 @@ export async function POST(request: Request) {
   if (!user) return unauthorizedResponse("Sign in with GitHub to run final exports.");
   try {
     const formData = await request.formData();
+    const requestKey = formData.get("requestKey");
+    if (!isOwnedExportRequestKey(requestKey, "final")) return Response.json({ success: false, error: EXPORT_DISPATCH_UPGRADE_MESSAGE }, { status: 409 });
     const audioFile = formData.get("audio");
     const segmentsRaw = formData.get("segments");
-    const requestKey = String(formData.get("requestKey") || `final-export-${Date.now()}`);
     if (typeof segmentsRaw !== "string" || !segmentsRaw.trim()) return Response.json({ success: false, error: "Export segments are required." }, { status: 400 });
     let segments: Array<Record<string, unknown>>;
     try { segments = JSON.parse(segmentsRaw) as typeof segments; }

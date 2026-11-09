@@ -63,6 +63,9 @@ import { MatchTab, type MatchMode } from "./studio/panels/MatchTab";
 import { MusicCutExplorer } from "./studio/panels/MusicCutExplorer";
 import { SplitTab } from "./studio/panels/SplitTab";
 import { createDefaultStoryTabState, StoryTab } from "./studio/panels/StoryTab";
+import { prepareSceneProofSave } from "./studio/sceneProofPersistence";
+import type { SceneProofPlan } from "./studio/sceneProofs";
+import { generationScopeSha256 } from "./studio/generationScope";
 import { ActRail } from "./studio/shell/ActRail";
 import { PreviewBeatSpine, PreviewTransportBar } from "./studio/shell/PreviewPlaybackLeaves";
 import { StageGateBanner } from "./studio/shell/StageGateBanner";
@@ -86,6 +89,7 @@ import { isStoryPlanConfirmable, selectedTreatment, type StoryTreatment } from "
 import { TriggerRunTerminalError, waitForTriggerRunOutput } from "@/lib/clientTriggerRuns";
 import { currentCompletedExport, discardStaleCompletedExport } from "./studio/completedExportFreshness";
 import { assertFinalExportReplayAllowed, finalExportSnapshotSha256, isFinalExportIntentCurrent, rebindFinalExportAfterMigration, releaseStaleFinalExportPreview, waitForCurrentFinalExport, type FinalExportIntent } from "./studio/finalExportRecovery";
+import { OWNED_FINAL_EXPORT_PREFIX, OWNED_CAPTURE_EXPORT_PREFIX } from "./studio/exportDispatchProtocol";
 import {
   createSectionRecomputeState,
   failSectionRecompute,
@@ -1361,7 +1365,7 @@ export default function StudioApp() {
     };
     const requestKey = intent && ["dispatching", "running"].includes(intent.state)
       && isFinalExportIntentCurrent(intent, startingProjectId, draftReviewLiveRef.current.project)
-      ? intent.requestKey : `final-export-${crypto.randomUUID()}`;
+      ? intent.requestKey : `${OWNED_FINAL_EXPORT_PREFIX}${crypto.randomUUID()}`;
     setIsFinalExporting(true);
     // Never pair the next ready receipt with a previous render's URL.
     setFinalExportUrl(null);
@@ -1641,7 +1645,7 @@ export default function StudioApp() {
       return;
     }
 
-    const requestKey = `final-export-webgpu-${crypto.randomUUID()}`;
+    const requestKey = `${OWNED_CAPTURE_EXPORT_PREFIX}${crypto.randomUUID()}`;
     const captureIntent: FinalExportIntent = { version: 1, projectId: activeProjectId, requestKey,
       snapshotSha256: finalExportSnapshotSha256(persistableProjectDraft), createdAt: new Date().toISOString(), state: "ready" };
     const captureEpoch = exportSnapshotEpochRef.current.epoch;
@@ -2333,6 +2337,46 @@ export default function StudioApp() {
     } finally { autosaveInFlightRef.current = false; }
   }
 
+  async function prepareStoryContext() {
+    const epoch = projectSaveSessionRef.current!.contextEpoch;
+    while (autosaveInFlightRef.current) await new Promise(resolve => setTimeout(resolve, 50));
+    const live = draftReviewLiveRef.current;
+    if (!live.projectId || epoch !== projectSaveSessionRef.current!.contextEpoch) throw new Error("Save the current project before using its Story Bible.");
+    const story = generationScopeSha256(live.project.storyState);
+    autosaveInFlightRef.current = true;
+    setSaveState(current => ({ ...current, kind: "saving", scope: "project" }));
+    try {
+      const saved = await saveVersionedProject({ projectId: live.projectId, name: live.projectName, draft: live.project }, { cache: false }, epoch);
+      if (!saved.revision || epoch !== projectSaveSessionRef.current!.contextEpoch || draftReviewLiveRef.current.projectId !== live.projectId
+        || generationScopeSha256(draftReviewLiveRef.current.project.storyState) !== story) throw new Error("The story changed while saving its canon. Continue from the current story.");
+      setSaveState({ kind: "saved", at: Date.now(), scope: "project", detail: "Story and canon saved before planning." });
+      return { projectId: saved.project.id, revision: saved.revision };
+    } catch (error) {
+      if (epoch === projectSaveSessionRef.current!.contextEpoch) setSaveState({ kind: "error", at: null, scope: "project",
+        detail: error instanceof Error ? error.message : "Story context save failed; planning was not dispatched." });
+      throw error;
+    } finally { autosaveInFlightRef.current = false; }
+  }
+
+  async function persistSceneProofPlan(plan: SceneProofPlan, expected?: SceneProofPlan) {
+    const startingEpoch = projectSaveSessionRef.current!.contextEpoch;
+    while (autosaveInFlightRef.current) await new Promise(resolve => setTimeout(resolve, 50));
+    const live = draftReviewLiveRef.current;
+    if (projectSaveSessionRef.current!.contextEpoch !== startingEpoch) throw new Error("The open project changed before saving scene previews.");
+    const draft = prepareSceneProofSave(live.projectId, live.project, plan, expected);
+    autosaveInFlightRef.current = true;
+    try {
+      flushSync(() => setStoryState(current => ({ ...current, sceneProofPlan: plan, sceneProofReviewRequired: true })));
+      await saveVersionedProject({ projectId: live.projectId, name: live.projectName, draft }, { cache: false }, startingEpoch);
+      if (projectSaveSessionRef.current!.contextEpoch !== startingEpoch) throw new Error("The open project changed while saving scene previews.");
+      setSaveState({ kind: "saved", at: Date.now(), scope: "project", detail: "Scene preview state saved." });
+    } catch (error) {
+      if (projectSaveSessionRef.current!.contextEpoch === startingEpoch) setSaveState({ kind: "error", at: null, scope: "project",
+        detail: error instanceof Error ? error.message : "Scene preview save failed; generation is blocked." });
+      throw error;
+    } finally { autosaveInFlightRef.current = false; }
+  }
+
   async function ensureH3ProjectSaved() {
     const startingProjectId = draftReviewLiveRef.current.projectId;
     await flushPendingAutosaveRef.current?.();
@@ -2810,6 +2854,7 @@ export default function StudioApp() {
               editSettings={storyState.editSettings}
             /> : null}
             {tab === "generate" ? <MiniMaxDraftPanel project={musicVideoProject} aestheticReferences={aestheticReferences} onAestheticSelection={(shotId, ids) => { referenceAutosaveRequestedRef.current = true; setAestheticReferences(library => ({ ...library, shots: { ...library.shots, [shotId]: ids } })); }} projectId={activeProjectId} segments={draftPreviewSegments}
+              confirmedTreatment={storyState.confirmedTreatmentSnapshot}
               storyApproved={storyState.storyGenerated && Boolean(storyState.confirmedTreatmentId)
                 && Boolean(storyState.storyContentSignature) && Boolean(musicVideoProject && isPlacementPlanCurrent(musicVideoProject))}
               assets={generatedAssets} draft={generatedDraft} referenceAssets={referenceAssets}
@@ -2884,6 +2929,11 @@ export default function StudioApp() {
 
             {tab === "story" && (
               <StoryTab
+                savedProjectId={activeProjectId}
+                savedProjectRevision={projectSaveSessionRef.current!.currentRevision ?? null}
+                onPrepareStoryContext={prepareStoryContext}
+                onEnsureSavedProject={ensureH3ProjectSaved}
+                onPersistSceneProofPlan={persistSceneProofPlan}
                 existingProject={storedMusicVideoProject}
                 analysis={beatJoinAnalysis}
                 audioStatus={audioStatus}

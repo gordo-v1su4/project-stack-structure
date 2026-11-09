@@ -9,6 +9,7 @@ function summarize(state: PreviewPlayerState): PreviewPlayerSummary {
     status: state.status, currentIndex: state.currentIndex, segmentCount: state.segmentCount,
     totalDuration: state.totalDuration, errorMessage: state.errorMessage, engineMode: state.engineMode,
     warmedSourceCount: state.warmedSourceCount, usesFrameCallback: state.usesFrameCallback,
+    presentationMode: state.presentationMode,
   };
 }
 
@@ -16,7 +17,7 @@ function sameSummary(a: PreviewPlayerSummary, b: PreviewPlayerSummary) {
   return a.status === b.status && a.currentIndex === b.currentIndex && a.segmentCount === b.segmentCount
     && a.totalDuration === b.totalDuration && a.errorMessage === b.errorMessage
     && a.engineMode === b.engineMode && a.warmedSourceCount === b.warmedSourceCount
-    && a.usesFrameCallback === b.usesFrameCallback;
+    && a.usesFrameCallback === b.usesFrameCallback && a.presentationMode === b.presentationMode;
 }
 
 /** Cached snapshots for useSyncExternalStore; getState() itself allocates on every read. */

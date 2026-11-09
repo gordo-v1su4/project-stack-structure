@@ -215,11 +215,13 @@ function normalizePalette(value: unknown): ColorPaletteSwatch[] {
 
 function normalizeMotionDescriptor(value: unknown): MotionDescriptor | null {
   const record = asRecord(value);
-  if (!record) return null;
+  if (!record || Object.keys(record).length === 0) return null;
   const confidence = asRecord(record.confidence);
   const provenance = asRecord(record.provenance);
+  const suppliedKind = readString(provenance?.kind);
+  const measuredKind = suppliedKind === "ffmpeg-motion-vectors" || suppliedKind === "optical-flow" || suppliedKind === "manual";
   const cameraMotionType = readString(record.cameraMotionType) ?? readString(record.camera_motion_type) ?? "unknown";
-  return {
+  const descriptor: MotionDescriptor = {
     id: readString(record.id) ?? `segment-motion:${readNumber(record.segmentId, readNumber(record.segment_id, 0))}`,
     targetKind: readString(record.targetKind) === "file" || readString(record.target_kind) === "file" ? "file" : "segment",
     filePath: readString(record.filePath) ?? readString(record.file_path) ?? "",
@@ -238,18 +240,28 @@ function normalizeMotionDescriptor(value: unknown): MotionDescriptor | null {
     magnitudeP50: readNullableNumber(record.magnitudeP50 ?? record.magnitude_p50),
     magnitudeP90: readNullableNumber(record.magnitudeP90 ?? record.magnitude_p90),
     confidence: {
-      overall: clamp01(readNumber(confidence?.overall, 0.75)),
-      camera: clamp01(readNumber(confidence?.camera, 0.75)),
-      residual: clamp01(readNumber(confidence?.residual, 0.75)),
+      overall: clamp01(readNumber(confidence?.overall, 0)),
+      camera: clamp01(readNumber(confidence?.camera, 0)),
+      residual: clamp01(readNumber(confidence?.residual, 0)),
     },
     provenance: {
-      kind: readString(provenance?.kind) === "ffmpeg-motion-vectors" || readString(provenance?.kind) === "optical-flow" || readString(provenance?.kind) === "manual" ? readString(provenance?.kind) as MotionDescriptor["provenance"]["kind"] : "optical-flow",
-      tool: readString(provenance?.tool) ?? "media-worker",
+      kind: measuredKind ? suppliedKind : "placeholder",
+      tool: readString(provenance?.tool) ?? "unknown",
       version: readString(provenance?.version) ?? null,
       generatedAt: readString(provenance?.generatedAt) ?? readString(provenance?.generated_at) ?? new Date(0).toISOString(),
       notes: readString(provenance?.notes) ?? null,
     },
   };
+  // Preserve supplied values and provenance for review, but do not infer their
+  // authority from an object, a source label, or a confidence claim alone.
+  // Zero/static measurements and an explicit qualitative camera classification
+  // are valid evidence; a dominant angle need not exist for a static shot.
+  const hasMotionValues = descriptor.cameraMotionType !== "unknown" || Boolean(descriptor.angleHistogram?.length)
+    || [descriptor.dominantAngleDeg, descriptor.dominantMagnitude, descriptor.motionCoherence,
+      descriptor.cameraMotionStrength, descriptor.residualMotionStrength, descriptor.motionEntropy,
+      descriptor.acceleration, descriptor.magnitudeP50, descriptor.magnitudeP90].some(value => value != null);
+  if (!measuredKind || !hasMotionValues) descriptor.confidence = { overall: 0, camera: 0, residual: 0 };
+  return descriptor;
 }
 
 function readNullableNumber(value: unknown) {

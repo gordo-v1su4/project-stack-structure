@@ -12,8 +12,11 @@ import type { BeatJoinAnalysis, ColorGradient, SceneCaptionSettings, Tab, Upload
 import type { SourceTimelineSegment, SplitMode } from "./sourceTimeline";
 import type { SavedStudioProject, StudioProjectSummary } from "@/lib/studioProjectStore";
 import type { StoryBrief, StoryGenerationMeta, StoryTreatment } from "./storyTreatments";
+import { normalizeStoryBible } from "./storyBible";
+import { ProjectSaveConflictError } from "./projectSaveSession";
 import { encodeStudioJsonRequest, STUDIO_JSON_TRANSPORT_HEADERS } from "@/lib/studioJsonTransport";
 import { normalizeFinalExportIntent, type FinalExportIntent } from "./finalExportRecovery";
+import { normalizeSceneProofPlan, type SceneProofPlan } from "./sceneProofs";
 
 export const STUDIO_PROJECT_STORAGE_KEY = "project-stack-structure:studio-project:v1";
 export { ACTIVE_STUDIO_PROJECT_KEY } from "./projectSelection";
@@ -37,6 +40,8 @@ export type PersistedStoryState = {
   generationMeta?: StoryGenerationMeta | null;
   storyContentSignature?: string | null;
   confirmedSourceContextSignature?: string | null;
+  sceneProofPlan?: SceneProofPlan;
+  sceneProofReviewRequired?: true;
 };
 
 export type PersistedVideoSource = Omit<UploadedVideoSource, "videoUrl"> & {
@@ -413,6 +418,9 @@ export async function saveNamedStudioProject(params: {
     saved = payload.saved;
   } catch (error) {
     // Known precondition/auth/validation failures never rebase an obsolete tab.
+    if (responseStatus === 409 || responseStatus === 412) {
+      throw new ProjectSaveConflictError(error instanceof Error ? error.message : "The saved project changed.", error);
+    }
     if (responseStatus && responseStatus >= 400 && responseStatus < 500) throw error;
     const recovered = await loadSavedStudioProject(targetProjectId, { cache: false }).catch(() => null);
     const { isExactProjectSave } = await import("./projectSaveComparison");
@@ -497,10 +505,12 @@ function parsePersistedDraft(raw: string): PersistedStudioProjectDraft | null {
 }
 
 export function normalizePersistedStoryState(state: PersistedStoryState, legacy: boolean): PersistedStoryState {
-  const originalTreatments = Array.isArray(state.treatments) ? state.treatments : [];
+  const normalizeCanon = (treatment: StoryTreatment): StoryTreatment => treatment.storyBible === undefined
+    ? treatment : { ...treatment, storyBible: normalizeStoryBible(treatment.storyBible) };
+  const originalTreatments = Array.isArray(state.treatments) ? state.treatments.map(normalizeCanon) : [];
   const treatments = originalTreatments.map(treatment => legacy ? { ...treatment, reconciliation: { status: "legacy" as const, note: "Saved before story-to-edit reconstruction. Review the story moments and source evidence before using this plan." } } : treatment);
   const confirmedTreatmentSnapshot = isPersistedTreatment(state.confirmedTreatmentSnapshot)
-    ? state.confirmedTreatmentSnapshot
+    ? normalizeCanon(state.confirmedTreatmentSnapshot)
     : null;
   const confirmedTreatmentId = typeof state.confirmedTreatmentId === "string" && state.confirmedTreatmentId.trim()
     ? state.confirmedTreatmentId
@@ -519,6 +529,8 @@ export function normalizePersistedStoryState(state: PersistedStoryState, legacy:
     && confirmedTreatmentSnapshot?.reconciliation?.status !== "pending";
   return {
     ...state,
+    sceneProofPlan: normalizeSceneProofPlan(state.sceneProofPlan),
+    sceneProofReviewRequired: state.sceneProofReviewRequired === true || state.sceneProofPlan !== undefined ? true : undefined,
     storyGenerated: hasConfirmedPlan,
     brief: { text: typeof state.brief?.text === "string" ? state.brief.text.slice(0, 4_000) : "" },
     treatments,

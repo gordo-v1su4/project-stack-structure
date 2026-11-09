@@ -20,6 +20,7 @@ import type { H3ShotPlanningReference } from "./h3ShotPlanningServer";
 import type { h3StillTask } from "@/trigger/h3Still";
 import type { H3StillJob } from "./h3StillJobStore";
 import { createTriggerIdempotencyKey } from "@/lib/triggerIdempotency";
+import { EXPORT_DISPATCH_UPGRADE_MESSAGE, isOwnedExportRequestKey } from "@/components/studio/exportDispatchProtocol";
 
 export const STACK_STRUCTURE_TRIGGER_TASKS = {
   mediaVideoPipeline: "media-video-pipeline",
@@ -410,14 +411,17 @@ export async function triggerSeedanceAudioReference(payload: SeedanceAudioRefere
   });
 }
 
-export async function triggerFinalExport(payload: FinalExportPayload) {
+export async function triggerFinalExport(payload: Omit<FinalExportPayload, "ownerId">) {
   assertTriggerConfigured();
+  if (!isOwnedExportRequestKey(payload.requestKey, "final")) throw new Error(EXPORT_DISPATCH_UPGRADE_MESSAGE);
   const dispatch = await buildDispatchContext(["stack-structure", "ffmpeg", "export", "media-assembly"], {
     stageLabel: "Waiting for media assembly capacity",
     progressMode: "indeterminate",
   });
-  return tasks.trigger<typeof finalExportTask>(STACK_STRUCTURE_TRIGGER_TASKS.finalExport, payload, {
-    idempotencyKey: createTriggerIdempotencyKey("final-export", [
+  if (payload.projectSnapshot && payload.projectSnapshot.ownerId !== dispatch.userId) throw new Error("Final export belongs to another project owner.");
+  return tasks.trigger<typeof finalExportTask>(STACK_STRUCTURE_TRIGGER_TASKS.finalExport, { ...payload, ownerId: dispatch.userId }, {
+    idempotencyKey: createTriggerIdempotencyKey("final-export-owned-v1", [
+      dispatch.userId,
       payload.requestKey,
       JSON.stringify(payload.projectSnapshot ?? null),
       JSON.stringify(payload.segments),
@@ -436,14 +440,15 @@ export async function triggerFinalExport(payload: FinalExportPayload) {
   });
 }
 
-export async function triggerShaderCaptureExport(payload: ShaderCaptureExportPayload) {
+export async function triggerShaderCaptureExport(payload: Omit<ShaderCaptureExportPayload, "ownerId">) {
   assertTriggerConfigured();
+  if (!isOwnedExportRequestKey(payload.requestKey, "capture")) throw new Error(EXPORT_DISPATCH_UPGRADE_MESSAGE);
   const dispatch = await buildDispatchContext(["stack-structure", "ffmpeg", "shader-capture", "media-assembly"], {
     stageLabel: "Waiting for media assembly capacity",
     progressMode: "indeterminate",
   });
-  return tasks.trigger<typeof shaderCaptureExportTask>(STACK_STRUCTURE_TRIGGER_TASKS.shaderCaptureExport, payload, {
-    idempotencyKey: createTriggerIdempotencyKey("shader-capture-export", [payload.requestKey, payload.audio.objectKey, payload.shaderCapture.objectKey]),
+  return tasks.trigger<typeof shaderCaptureExportTask>(STACK_STRUCTURE_TRIGGER_TASKS.shaderCaptureExport, { ...payload, ownerId: dispatch.userId }, {
+    idempotencyKey: createTriggerIdempotencyKey("shader-capture-export-owned-v1", [dispatch.userId, payload.requestKey, payload.audio.objectKey, payload.shaderCapture.objectKey]),
     idempotencyKeyTTL: "24h",
     maxAttempts: 1,
     tags: dispatch.tags,

@@ -118,11 +118,18 @@ export async function saveStudioProject(params: {
   // GET can reconcile its known ID even if the subsequent index ACK is lost.
   const revision = await studioProjectObjects.write(objectKey, saved, existing ? existing.revision! : null);
   const committed = { ...saved, revision };
-  await mergeStudioProjectIndex(studioProjectObjects, ownerProjectsIndexPath(ownerId), async () => {
-    const latest = await studioProjectObjects.read<SavedStudioProject>(objectKey);
-    if (!latest || !isSavedStudioProject(latest.value, ownerId, projectId)) throw new Error("Saved project metadata could not be reconciled.");
-    return latest.value.project;
-  });
+  try {
+    await mergeStudioProjectIndex(studioProjectObjects, ownerProjectsIndexPath(ownerId), async () => {
+      const latest = await studioProjectObjects.read<SavedStudioProject>(objectKey);
+      if (!latest || !isSavedStudioProject(latest.value, ownerId, projectId)) throw new Error("Saved project metadata could not be reconciled.");
+      return latest.value.project;
+    });
+  } catch (error) {
+    // The body already committed. An exhausted index CAS is an uncertain ACK,
+    // not a rejected project write: callers must reconcile this exact ID rather
+    // than expose a recoverable409 that could create another recovery copy.
+    throw new Error("The project record was saved, but its index acknowledgment could not be confirmed.", { cause: error });
+  }
   if (studioProjectLocalCacheEnabled()) {
     await writeLocalJson(localProjectPath(ownerId, projectId), committed);
     const index = await studioProjectObjects.read<StudioProjectIndex>(ownerProjectsIndexPath(ownerId));

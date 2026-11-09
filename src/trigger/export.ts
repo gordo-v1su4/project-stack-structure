@@ -9,7 +9,8 @@ import {
   generateShaderCaptureMp4Export,
 } from "@/components/studio/exportGeneration";
 import { probeMediaFile } from "@/components/studio/mediaProbe";
-import { downloadMediaGatewayFile, getMediaGatewayConfig, type uploadFileToMediaGateway, type MediaGatewayUploadResult } from "@/lib/mediaGateway";
+import { downloadMediaGatewayFile, getMediaGatewayConfig, normalizeMediaPath, resolveMediaGatewayUploadFolder, type uploadFileToMediaGateway, type MediaGatewayUploadResult } from "@/lib/mediaGateway";
+import { mediaUploadBelongsToOwner, scopeMediaUploadFolder } from "@/lib/essentiaUpload";
 import { uploadWorkerFileToStorage } from "@/lib/workerStorageUpload";
 import { verifyExportMediaIntegrity } from "@/lib/exportMediaIntegrity";
 
@@ -27,6 +28,8 @@ export type StoredExportInput = {
 };
 
 export type FinalExportPayload = {
+  /** Set only by authenticated server dispatch, checked against the worker run tag. */
+  ownerId: string;
   projectSnapshot?: { ownerId: string; projectId: string; planSignature: string; placementRevision: number; draftRevision: number;
     currentIdentityContextSha256?:string;currentIdentityMigrationSha256?:string;
     generationScope?: { signature: string; receiptSha256: string };
@@ -53,6 +56,8 @@ export type FinalExportPayload = {
 };
 
 export type ShaderCaptureExportPayload = {
+  /** Set only by authenticated server dispatch, checked against the worker run tag. */
+  ownerId: string;
   requestKey: string;
   audio: StoredExportInput;
   shaderCapture: StoredExportInput;
@@ -83,6 +88,7 @@ export const finalExportTask = task({
   maxDuration: 1_800,
   retry: { maxAttempts: 1 },
   run: async (payload: FinalExportPayload, { ctx }): Promise<DurableExportAsset> => {
+    validateExportDispatchOwner(payload, ctx.run.tags);
     validateExportPayload(payload);
     markWorkRunning("rendering", "Rendering final music video", { progressMode: "indeterminate" });
     const workspace = await mkdtemp(path.join(os.tmpdir(), "stack-structure-export-"));
@@ -114,7 +120,7 @@ export const finalExportTask = task({
         effectCues: asset.effectCues,
         effectFilter: asset.effectFilter,
         shaderPresetId: payload.shaderPresetId,
-      });
+      }, payload.ownerId);
       logger.info("Final export persisted", { triggerRunId: ctx.run.id, requestKey: payload.requestKey, objectKey: durable.storage.objectKey });
       markWorkCompleted("Final music video persisted", { completedItems: 1, totalItems: 1 });
       return durable;
@@ -131,6 +137,7 @@ export const shaderCaptureExportTask = task({
   maxDuration: 1_200,
   retry: { maxAttempts: 1 },
   run: async (payload: ShaderCaptureExportPayload, { ctx }): Promise<DurableExportAsset> => {
+    validateExportDispatchOwner(payload, ctx.run.tags);
     if (!payload.requestKey?.trim()) throw new AbortTaskRunError("Shader export requestKey is required.");
     markWorkRunning("rendering", "Muxing WebGPU shader capture", { progressMode: "indeterminate" });
     const workspace = await mkdtemp(path.join(os.tmpdir(), "stack-structure-shader-export-"));
@@ -154,7 +161,7 @@ export const shaderCaptureExportTask = task({
         hasAudio: result.hasAudio,
         hasVideo: result.hasVideo,
         shaderRenderSource: "browser-webgpu-capture",
-      });
+      }, payload.ownerId);
       logger.info("Shader capture export persisted", { triggerRunId: ctx.run.id, requestKey: payload.requestKey, objectKey: durable.storage.objectKey });
       markWorkCompleted("Shader capture export persisted", { completedItems: 1, totalItems: 1 });
       return durable;
@@ -197,23 +204,35 @@ export async function persistExport(
   requestKey: string,
   fileName: string,
   metadata: Pick<DurableExportAsset, "duration" | "hasAudio" | "hasVideo" | "effectCues" | "effectFilter" | "shaderPresetId" | "shaderRenderSource">,
+  ownerId: string,
   upload?: typeof uploadFileToMediaGateway,
   env: Record<string, string | undefined> = process.env,
 ): Promise<DurableExportAsset> {
   // Worker-local files are not a downloadable final product. Upload failures
   // must remain failed jobs so the project can retry persistence explicitly.
-  const folder = `media-uploads/generated/exports/${sanitize(requestKey)}`;
+  assertExportOwnerId(ownerId);
+  const folder = scopeMediaUploadFolder(`media-uploads/generated/exports/${sanitize(requestKey)}`, ownerId);
+  const config = getMediaGatewayConfig(env);
+  // The authenticated media reader recognizes this canonical namespace. A
+  // custom gateway prefix must not silently move the output outside it.
+  if (!config || resolveMediaGatewayUploadFolder(config, folder) !== folder) {
+    throw new Error("Final export requires durable storage with its canonical owner-scoped upload prefix.");
+  }
   const storage = upload
     ? await upload({ file: new File([await readFile(outputPath)], fileName, { type: "video/mp4" }), folder, env })
     : await uploadWorkerFileToStorage({ filePath: outputPath, fileName, folder, env });
   const videoUrl = storage.mediaUrl || storage.publicUrl;
-  const configuredBucket = getMediaGatewayConfig(env)?.bucket;
+  const configuredBucket = config.bucket;
   let downloadable = false;
   try {
     const parsedUrl = new URL(videoUrl);
     downloadable = parsedUrl.protocol === "https:" && Boolean(parsedUrl.hostname) && !parsedUrl.username && !parsedUrl.password;
   } catch { /* An invalid URL is not a downloadable export. */ }
-  if (!configuredBucket || storage.bucket !== configuredBucket || !storage.objectKey?.trim() || !downloadable) {
+  const key = storage.objectKey;
+  const canonicalKey = typeof key === "string" && key === normalizeMediaPath(key)
+    && !/[\\\u0000-\u001f\u007f%?#]/.test(key) && key.split("/").every(part => part !== "." && part !== "..");
+  if (!configuredBucket || storage.bucket !== configuredBucket || !canonicalKey || !key.startsWith(`${folder}/`)
+    || !mediaUploadBelongsToOwner(key, ownerId) || (storage.storagePath !== undefined && storage.storagePath !== key) || !downloadable) {
     throw new Error("Final export was rendered but durable storage did not return a downloadable HTTPS asset.");
   }
 
@@ -232,6 +251,22 @@ export async function persistExport(
     shaderRenderSource: metadata.shaderRenderSource,
     storage,
   };
+}
+
+function assertExportOwnerId(ownerId: unknown): asserts ownerId is string {
+  if (typeof ownerId !== "string" || !ownerId.trim() || ownerId !== ownerId.trim() || ownerId.length > 200 || /[\u0000-\u001f\u007f]/.test(ownerId)) {
+    throw new AbortTaskRunError("Export requires its authenticated dispatch owner.");
+  }
+}
+
+/** Validate before downloading inputs, creating a workspace, or rendering. */
+export function validateExportDispatchOwner(payload: { ownerId: string; projectSnapshot?: FinalExportPayload["projectSnapshot"] }, tags: string[]) {
+  assertExportOwnerId(payload.ownerId);
+  const owners = tags.filter(tag => tag.startsWith("user:"));
+  if (owners.length !== 1 || owners[0] !== `user:${payload.ownerId}`
+    || (payload.projectSnapshot && payload.projectSnapshot.ownerId !== payload.ownerId)) {
+    throw new AbortTaskRunError("Export requires one matching authenticated owner and project snapshot.");
+  }
 }
 
 function validateExportPayload(payload: FinalExportPayload) {
@@ -253,5 +288,6 @@ export function resolveExportSegments(payloadSegments: FinalExportPayload["segme
 }
 
 function sanitize(value: string) {
-  return value.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "export";
+  const segment = value.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 128);
+  return !segment || segment === "." || segment === ".." ? "export" : segment;
 }

@@ -60,6 +60,7 @@ const { POST, GET, PATCH } = await import("@/app/api/generate/h3/route");
 const { H3RequestError, h3GenerationJobId, materializeH3Job, parseH3Request } = await import("@/lib/h3GenerationServer");
 function post(body: unknown) { return new Request("http://app.test/api/generate/h3", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }); }
 function reset() { signedIn = true; stored = null; dispatches = 0; workerTerminal = true; firstFrameArtifact=null; fixture.saved.draft.generatedAssets = [];
+  delete fixture.saved.draft.storyState.sceneProofPlan;
   dispatchFailure = undefined; dispatchHook = undefined; failNextJobUpdate = false; beforeNextJobUpdate = undefined; generationHandles.clear(); dispatchKeys.length = 0;
 }
 const recoveryIntent = "44556677-1234-4123-8123-123456789abc";
@@ -67,6 +68,19 @@ const anotherRecoveryIntent = "55667788-1234-4123-8123-123456789abc";
 const resumeBody = (intent = recoveryIntent) => ({ projectId: "project-1", jobId: stored!.id, action: "resume", requestIntentId: intent });
 
 describe("authenticated H3 dispatch and recovery route", () => {
+  test("unapproved scene plans create no video job while submitted history remains recoverable", async () => {
+    reset();
+    fixture.saved.draft.storyState.sceneProofPlan = { version: 1, projectId: "project-1", contextSha256: "0".repeat(64), scenes: [] };
+    expect((await POST(post(fixture.request))).status).toBe(409);
+    expect(stored).toBeNull(); expect(dispatches).toBe(0);
+    reset();
+    await POST(post(fixture.request));
+    stored = { ...stored!, state: "rendering", promptId: "already-submitted" };
+    fixture.saved.draft.storyState.sceneProofPlan = { version: 1, projectId: "project-1", contextSha256: "0".repeat(64), scenes: [] };
+    expect((await POST(post(fixture.request))).status).toBe(202);
+    expect(stored.promptId).toBe("already-submitted"); expect(dispatches).toBe(1);
+    delete fixture.saved.draft.storyState.sceneProofPlan;
+  });
   test("explicit first-frame requests resolve an owned immutable artifact and never silently dispatch Ref2VA",async()=>{
     reset();const shot={...fixture.request,identityPolicyFamily:"sface-yunet-foreground-frontal-v2" as const};
     firstFrameArtifact=firstFrameArtifactFixture(materializeH3Job("github-test",fixture.saved,shot,"studio"));
