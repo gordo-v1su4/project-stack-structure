@@ -34,6 +34,8 @@ ONE SHOT and SceneCraft are alternative preparation methods for a small controll
 
 ChatGPT planning, optional Nano Banana prose and executable local H3 prompts retain distinct versions and conversion provenance. Higgsfield generation remains forbidden. Current still/video execution is local MiniMax H3 through SwarmUI's managed backend and the authenticated app/Trigger boundary. These descriptors are model-neutral planning data, not executable H3 prompts.
 
+Model readiness remains a separate gate. The inherited source-only `src/lib/h3StillProfile.ts` fixes an original Ref2VA checkpoint and a two-pass still graph; it does not certify deployed worker availability or an approved Singularity2 still recipe. The saved Singularity2 comparison is a video graph, with rejected downstream ReGen2K branches. Do not requeue rejected Raw/ReGen2K attempts, silently promote a source profile, or adapt a video graph into a still executor without preserving and verifying the actual supported contract and user restrictions. At this chat's read-only preflight SwarmUI frontend/managed queue were unavailable; no startup or model load was performed.
+
 ## Canon reconciliation
 
 Confirmed by latest human direction: Diego and Valentina begin separately, move through distinct connected spaces/routes, and act rather than pose. Environment, haze/fog, motivated varied light, crossing/passing, recognition and subsequent connection drive the edit. Preserve contest -> connection -> fracture/panic -> escape -> together. The established routes become useful escape geography. Avoid repeating completed arrivals, discovery, clasping, turns or dance finishes to occupy song time.
