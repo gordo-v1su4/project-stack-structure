@@ -51,6 +51,7 @@ export type LocalGenerationOutput = {
 
 export const localGenerationTask = task({
   id: "local-ai-generation",
+  machine: "small-2x",
   queue: vm100HeavyQueue,
   maxDuration: 1_800,
   // Provider requests have side effects. A replay must be an explicit user
