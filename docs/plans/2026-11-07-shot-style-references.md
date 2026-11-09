@@ -74,19 +74,21 @@ reapplies only the six held feature commits, in order:
 | `4071880` | `110bc30` | Timeline block and gap labels |
 | `344c6d0` | `f582a64` | Integrated reference regression coverage |
 
-The existing production leaf subscription change is retained from the release
-base, without another cherry-pick. The only merge conflict was the waveform
+The existing production leaf subscription change (`3907fbd`, equivalent to held
+`ce10213`) is retained from the release base, without another cherry-pick. The
+only merge conflict among these six commits was the waveform
 ruler: the release's three cached canvas layers and memoized beat grid/ruler stay
 in place, with the fixed viewport and zoom-aware ruler dependencies added. The
 source-confirmation route, storage diagnostic implementation and waveform cache
 helper are unchanged from the release. Exact-gap imports retain their saved
-project ID and plan-drift checks. Separate current-snapshot export work is outside
-this branch.
+project ID and plan-drift checks. At this baseline checkpoint, separate
+current-snapshot export work was not yet included; see the follow-up below.
 
 `bun run check` passes: 1,536 tests, zero failures, TypeScript clean, and ESLint
 zero errors with five existing warnings. Self-contained dependencies were
-installed from the frozen lockfile. The default build is waiting for the shared
-build window; this scheduling hold does not assert a build result.
+installed from the frozen lockfile. At this baseline checkpoint, the default
+build was waiting for the shared build window; the final combined build result
+is recorded below.
 
 Local actual ReactDOM fixtures use synthetic samples and stubbed canvas operations.
 Across 120 clock updates, both the full-song spine and a fixed 64–96 second
@@ -110,3 +112,18 @@ The web source must not be released independently of a worker containing these
 changes. No production upload, provider call, job dispatch, media generation,
 browser acceptance, deploy or final-film acceptance was performed for this
 integration.
+
+The baseline evidence was committed separately as `276fe3e`. The verified export
+freshness change `8adf74f` is subsequently included as `16e0c9e`. Its one
+`StudioApp.tsx` conflict retains both the current aesthetic library dependency and
+the incoming exact-snapshot completed-export filter, in-flight snapshot epoch
+guard and filtered pipeline readiness. No worker schema or worker implementation
+changes come from this follow-up. After the controller's live performance
+measurement ended, the combined source at `16e0c9e` passed a new full
+`bun run check`: 1,542 tests, zero failures, clean TypeScript and zero ESLint
+errors with the same five existing warnings. Its one default `bun run build`
+also passed using Turbopack and self-contained dependencies, generating all 37
+pages. Proof logs are `.tmp/integration-proof/check-with-export.log` and
+`.tmp/integration-proof/build-with-export.log`. The earlier interrupted check
+is superseded by this complete run. This remains a held source candidate;
+these results do not claim a coordinated release or live acceptance.
