@@ -1,6 +1,7 @@
 import { sha256 } from "@noble/hashes/sha2.js";
 import type { PersistedStudioProjectDraft } from "./projectPersistence";
 import { failSectionRecompute, type SectionRecomputeState } from "./sectionRecompute";
+import { EXPORT_DISPATCH_UPGRADE_MESSAGE, isOwnedExportRequestKey } from "./exportDispatchProtocol";
 
 export type FinalExportIntent = {
   version: 1;
@@ -47,6 +48,9 @@ export function isFinalExportIntentCurrent(intent: FinalExportIntent, projectId:
 }
 
 export function assertFinalExportReplayAllowed(intent: FinalExportIntent, now = Date.now()): void {
+  if (!intent.runId && ["dispatching", "running"].includes(intent.state) && !isOwnedExportRequestKey(intent.requestKey, "final")) {
+    throw new Error(EXPORT_DISPATCH_UPGRADE_MESSAGE);
+  }
   if (!intent.runId && intent.replayable === false) throw new Error("The upload-based export acknowledgement is unresolved. Reconcile its original run before uploading or dispatching again.");
   // Trigger's replay key expires after 24 hours. Never guess that a lost ACK means no render.
   if (!intent.runId && now - Date.parse(intent.createdAt) >= 23 * 60 * 60 * 1_000) {

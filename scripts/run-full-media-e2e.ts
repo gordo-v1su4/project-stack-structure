@@ -576,7 +576,7 @@ if (includeExport) {
     exportForm.set("audioRef", JSON.stringify({ bucket: essentiaSourceStorage.bucket, objectKey: essentiaSourceStorage.objectKey }));
     exportForm.set("videoRefs", JSON.stringify(durableVideoRefs));
     exportForm.set("segments", JSON.stringify(exportSegments));
-    exportForm.set("requestKey", `${runKey}-final`);
+    exportForm.set("requestKey", `final-export-owned-v1-${crypto.randomUUID()}`);
     exportForm.set("beats", JSON.stringify(analysis.beats));
     exportForm.set("lyricChunks", JSON.stringify(project.lyricChunks));
     exportForm.set("shaderPresetId", "balanced-music-video");

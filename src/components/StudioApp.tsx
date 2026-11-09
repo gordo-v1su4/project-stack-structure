@@ -86,6 +86,7 @@ import { isStoryPlanConfirmable, selectedTreatment, type StoryTreatment } from "
 import { TriggerRunTerminalError, waitForTriggerRunOutput } from "@/lib/clientTriggerRuns";
 import { currentCompletedExport, discardStaleCompletedExport } from "./studio/completedExportFreshness";
 import { assertFinalExportReplayAllowed, finalExportSnapshotSha256, isFinalExportIntentCurrent, rebindFinalExportAfterMigration, releaseStaleFinalExportPreview, waitForCurrentFinalExport, type FinalExportIntent } from "./studio/finalExportRecovery";
+import { OWNED_FINAL_EXPORT_PREFIX, OWNED_CAPTURE_EXPORT_PREFIX } from "./studio/exportDispatchProtocol";
 import {
   createSectionRecomputeState,
   failSectionRecompute,
@@ -1361,7 +1362,7 @@ export default function StudioApp() {
     };
     const requestKey = intent && ["dispatching", "running"].includes(intent.state)
       && isFinalExportIntentCurrent(intent, startingProjectId, draftReviewLiveRef.current.project)
-      ? intent.requestKey : `final-export-${crypto.randomUUID()}`;
+      ? intent.requestKey : `${OWNED_FINAL_EXPORT_PREFIX}${crypto.randomUUID()}`;
     setIsFinalExporting(true);
     // Never pair the next ready receipt with a previous render's URL.
     setFinalExportUrl(null);
@@ -1641,7 +1642,7 @@ export default function StudioApp() {
       return;
     }
 
-    const requestKey = `final-export-webgpu-${crypto.randomUUID()}`;
+    const requestKey = `${OWNED_CAPTURE_EXPORT_PREFIX}${crypto.randomUUID()}`;
     const captureIntent: FinalExportIntent = { version: 1, projectId: activeProjectId, requestKey,
       snapshotSha256: finalExportSnapshotSha256(persistableProjectDraft), createdAt: new Date().toISOString(), state: "ready" };
     const captureEpoch = exportSnapshotEpochRef.current.epoch;

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { assertFinalExportReplayAllowed, finalExportSnapshotSha256, isFinalExportIntentCurrent, normalizeFinalExportIntent, rebindFinalExportAfterMigration, releaseStaleFinalExportPreview, waitForCurrentFinalExport, type FinalExportIntent } from "@/components/studio/finalExportRecovery";
 import { createPersistableStudioProjectDraft, hydrateStudioProjectDraft } from "@/components/studio/projectPersistence";
 import { createSectionRecomputeState, startSectionRecompute } from "@/components/studio/sectionRecompute";
+import { OWNED_FINAL_EXPORT_PREFIX, OWNED_CAPTURE_EXPORT_PREFIX, isOwnedExportRequestKey } from "@/components/studio/exportDispatchProtocol";
 
 function fixture() {
   const draft = createPersistableStudioProjectDraft({ analysis: null, videoSources: [], musicVideoProject: null,
@@ -63,7 +64,7 @@ describe("durable final export recovery", () => {
 
   test("an unknown ACK replays the saved key only inside the provider deduplication window", () => {
     const { draft, intent } = fixture();
-    const prepared = { ...intent, runId: undefined, state: "dispatching" as const };
+    const prepared = { ...intent, requestKey: `${OWNED_FINAL_EXPORT_PREFIX}new-intent`, runId: undefined, state: "dispatching" as const };
     draft.workflowUiSettings!.finalExportIntent = prepared;
     const restored = hydrateStudioProjectDraft({ draft: JSON.parse(JSON.stringify(draft)) }).workflowUiSettings!.finalExportIntent!;
     expect(restored.requestKey).toBe(prepared.requestKey);
@@ -79,6 +80,41 @@ describe("durable final export recovery", () => {
     expect(normalizeFinalExportIntent({ ...intent, runId: "https://foreign.test" })).toBe(undefined);
     await expect(waitForCurrentFinalExport(intent, { isCurrent: () => true,
       waitForOutput: async () => ({ requestKey: "another-export" }) })).rejects.toThrow("does not match");
+  });
+  test("release migration preserves unresolved legacy ACKs but cannot redispatch or silently version their keys", () => {
+    const { draft, intent } = fixture();
+    const legacy = { ...intent, runId: undefined, state: "dispatching" as const };
+    draft.workflowUiSettings!.finalExportIntent = legacy;
+    const restored = hydrateStudioProjectDraft({ draft: JSON.parse(JSON.stringify(draft)) });
+    const receipt = restored.workflowUiSettings!.finalExportIntent!;
+    expect(receipt.requestKey).toBe(legacy.requestKey);
+    for (let click = 0; click < 2; click++) {
+      expect(() => assertFinalExportReplayAllowed(receipt, Date.parse(intent.createdAt) + 60_000)).toThrow("The app was updated");
+      try { assertFinalExportReplayAllowed(receipt); } catch (error) { expect((error as Error).constructor).toBe(Error); }
+      expect(receipt.state).toBe("dispatching");
+      expect(createPersistableStudioProjectDraft(restored).workflowUiSettings!.finalExportIntent).toEqual(receipt);
+    }
+    expect(() => assertFinalExportReplayAllowed(intent)).not.toThrow();
+  });
+  test("protocol keys remain bounded and cannot be confused with another export kind", () => {
+    const final = `${OWNED_FINAL_EXPORT_PREFIX}new-intent`;
+    const capture = `${OWNED_CAPTURE_EXPORT_PREFIX}new-intent`;
+    expect(isOwnedExportRequestKey(final, "final")).toBe(true);
+    expect(isOwnedExportRequestKey(capture, "capture")).toBe(true);
+    for (const key of [capture, `${OWNED_FINAL_EXPORT_PREFIX}`, `${final}/suffix`, `${final}.suffix`, `${final}${"a".repeat(114)}`]) {
+      expect(isOwnedExportRequestKey(key, "final")).toBe(false);
+    }
+    expect(isOwnedExportRequestKey(final, "capture")).toBe(false);
+  });
+  test("both versioned final and capture keys survive saved ready receipts and legacy known runs remain readable", async () => {
+    const { intent } = fixture();
+    for (const prefix of [OWNED_FINAL_EXPORT_PREFIX, OWNED_CAPTURE_EXPORT_PREFIX, "final-export-webgpu-"]) {
+      const receipt = normalizeFinalExportIntent({ ...intent, requestKey: `${prefix}saved-intent`, state: "ready" })!;
+      expect(receipt.requestKey).toBe(`${prefix}saved-intent`);
+      expect(() => assertFinalExportReplayAllowed(receipt)).not.toThrow();
+      expect(await waitForCurrentFinalExport(receipt, { isCurrent: () => true,
+        waitForOutput: async () => ({ requestKey: receipt.requestKey }) })).toEqual({ requestKey: receipt.requestKey });
+    }
   });
 
   test("a rejected legacy request can migrate storage refs and retry its same unsubmitted intent", () => {
@@ -116,7 +152,7 @@ describe("durable final export recovery", () => {
 
   test("ambiguous byte-upload acknowledgement cannot launch another upload or inference", () => {
     const { draft, intent } = fixture();
-    const prepared = { ...intent, runId: undefined, state: "dispatching" as const, replayable: false };
+    const prepared = { ...intent, requestKey: `${OWNED_FINAL_EXPORT_PREFIX}new-intent`, runId: undefined, state: "dispatching" as const, replayable: false };
     draft.workflowUiSettings!.finalExportIntent = prepared;
     const restored = hydrateStudioProjectDraft({ draft: JSON.parse(JSON.stringify(draft)) }).workflowUiSettings!.finalExportIntent!;
     expect(() => assertFinalExportReplayAllowed(restored, Date.parse(intent.createdAt) + 60_000)).toThrow("upload-based export acknowledgement is unresolved");

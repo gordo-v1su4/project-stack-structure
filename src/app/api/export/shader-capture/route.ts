@@ -4,6 +4,7 @@ import { uploadFileToMediaGateway } from "@/lib/mediaGateway";
 import { getSessionUser, unauthorizedResponse } from "@/lib/session";
 import { triggerShaderCaptureExport } from "@/lib/triggerOrchestration";
 import { scopeMediaUploadFolder } from "@/lib/essentiaUpload";
+import { EXPORT_DISPATCH_UPGRADE_MESSAGE, isOwnedExportRequestKey } from "@/components/studio/exportDispatchProtocol";
 
 export const runtime = "nodejs";
 
@@ -12,9 +13,10 @@ export async function POST(request: Request) {
   if (!user) return unauthorizedResponse("Sign in with GitHub to run shader exports.");
   try {
     const formData = await request.formData();
+    const requestKey = formData.get("requestKey");
+    if (!isOwnedExportRequestKey(requestKey, "capture")) return Response.json({ success: false, error: EXPORT_DISPATCH_UPGRADE_MESSAGE }, { status: 409 });
     const audioFile = formData.get("audio");
     const shaderCaptureFile = formData.get("shaderCapture");
-    const requestKey = String(formData.get("requestKey") || `webgpu-final-export-${Date.now()}`);
     if (!(audioFile instanceof File)) return Response.json({ success: false, error: "Master audio file is required." }, { status: 400 });
     if (!(shaderCaptureFile instanceof File)) return Response.json({ success: false, error: "Shader capture video file is required." }, { status: 400 });
 
