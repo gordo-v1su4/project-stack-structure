@@ -673,16 +673,28 @@ export function prepareApprovedPlacements(params: {
   const placements: ApprovedPlacement[] = [];
   for (const item of project.editPlan.timelineItems) {
     let cursor = item.start;
+    // Missing footage still needs an editorial cut map. Otherwise an empty
+    // library discards the musical cues and the provider's duration cap ends up
+    // choosing the cuts. Keep these boundaries in the saved placements so the
+    // generation planner and later candidate overlays preserve them.
+    const gapCutTimes = buildMusicCueWindows({ item, analysis: project.song,
+      section: project.storySections.find(section => section.id === item.sectionId) ?? null, editSettings })
+      .slice(0, -1).map(window => window.end);
     // Musical cues are rounded to milliseconds; model windows may retain float
     // precision. Identity keeps a 56.900 cut in its 56.9000015 story window.
     const cuts = segments.filter((segment) => segment.timelineItemId === item.id);
     const addGap = (end: number) => {
       if (end <= cursor) return;
       const manualGap = manualGaps.find(gap => gap.songStart < end && gap.songEnd > cursor);
-      placements.push({ id: `${item.id}:gap:${cursor.toFixed(3)}`, timelineItemId: item.id, sectionId: item.sectionId, momentId: null,
-        sourceStart: 0, sourceEnd: roundTime(end - cursor), songStart: cursor, songEnd: end, label: item.label,
-        kind: "gap", reason: manualGap?.reason ?? (item.videoMomentId ? `Insufficient usable footage for a ${minimumCutSeconds === 1 ? "one" : "four"}-second cut in this story moment` : "No source selected for this story moment"), origin: manualGap ? "manual-match" : params.origin ?? "story-match" });
-      cursor = end;
+      for (const gapEnd of [...gapCutTimes.filter(time => time > cursor + 0.001 && time < end - 0.001), end]) {
+        // A source trim or manually opened hole may begin between cues. Do not
+        // turn that boundary into a flash merely to hit the next musical cue.
+        if (gapEnd !== end && (gapEnd - cursor < minimumCutSeconds - 0.001 || end - gapEnd < minimumCutSeconds - 0.001)) continue;
+        placements.push({ id: `${item.id}:gap:${cursor.toFixed(3)}`, timelineItemId: item.id, sectionId: item.sectionId, momentId: null,
+          sourceStart: 0, sourceEnd: roundTime(gapEnd - cursor), songStart: cursor, songEnd: gapEnd, label: item.label,
+          kind: "gap", reason: manualGap?.reason ?? (item.videoMomentId ? `Insufficient usable footage for a ${minimumCutSeconds === 1 ? "one" : "four"}-second cut in this story moment` : "No source selected for this story moment"), origin: manualGap ? "manual-match" : params.origin ?? "story-match" });
+        cursor = gapEnd;
+      }
     };
     for (const cut of cuts) {
       addGap(cut.musicStart);
