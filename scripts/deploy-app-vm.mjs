@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, realpathSync, statfsSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { resolve } from "node:path";
+import { assertProductionTriggerKey } from "./app-vm-trigger-key.mjs";
 
 const revision = process.argv[2];
 assert(/^[a-f0-9]{40}$/.test(revision ?? ""), "Expected a full committed revision");
@@ -12,6 +13,7 @@ const parseEnv = text => Object.fromEntries(text.split(/\r?\n/).filter(line => /
   .map(line => [line.slice(0, line.indexOf("=")), line.slice(line.indexOf("=") + 1)]));
 const config = parseEnv(readFileSync("/opt/project-stack-structure/deploy.env", "utf8"));
 const runtime = parseEnv(readFileSync("/opt/project-stack-structure/private.env", "utf8"));
+assertProductionTriggerKey(runtime.TRIGGER_SECRET_KEY);
 assert(config.DOCKHAND_URL === "http://100.105.199.93:13000" && config.DOCKHAND_ENV_ID === "3", "Unexpected Dockhand target");
 assert(runtime.AUTH_URL === "https://stack.v1su4.dev" && runtime.AUTH_TRUST_HOST === "true", "Unexpected public auth origin");
 for (const name of ["AUTH_GITHUB_ID", "AUTH_GITHUB_SECRET", "AUTH_SECRET", "MEDIA_GATEWAY_URL", "MEDIA_GATEWAY_TOKEN", "TRIGGER_API_URL", "TRIGGER_SECRET_KEY", "RUSTFS_ACCESS_KEY", "RUSTFS_SECRET_KEY"]) {
