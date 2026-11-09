@@ -22,7 +22,9 @@ export function validateStoryAuthoring(treatment: StoryTreatment) {
 }
 
 export function markStoryEdited(original: StoryTreatment, draft: StoryTreatment): StoryTreatment {
-  const proseChanged = original.logline !== draft.logline || original.synopsis !== draft.synopsis || JSON.stringify(original.loglineElements) !== JSON.stringify(draft.loglineElements);
+  const proseChanged = original.logline !== draft.logline || original.synopsis !== draft.synopsis || JSON.stringify(original.loglineElements) !== JSON.stringify(draft.loglineElements)
+    || original.visualThesis !== draft.visualThesis || original.endingHook !== draft.endingHook
+    || original.structure !== draft.structure || JSON.stringify(original.storyBible) !== JSON.stringify(draft.storyBible);
   const momentsChanged = JSON.stringify(original.anchors.map(authoringAnchor)) !== JSON.stringify(draft.anchors.map(authoringAnchor));
   const changed = proseChanged || momentsChanged || original.title !== draft.title;
   return {
@@ -35,7 +37,7 @@ export function markStoryEdited(original: StoryTreatment, draft: StoryTreatment)
 }
 
 function authoringAnchor(anchor: StoryAnchor) {
-  return { id: anchor.id, title: anchor.title, description: anchor.description, purpose: anchor.purpose, role: anchor.role, requirements: anchor.requirements?.map(requirementAuthoring), causalDependencies: anchor.causalDependencies, optional: anchor.optional };
+  return { id: anchor.id, title: anchor.title, description: anchor.description, purpose: anchor.purpose, generationPrompt: anchor.generationPrompt, role: anchor.role, requirements: anchor.requirements?.map(requirementAuthoring), causalDependencies: anchor.causalDependencies, optional: anchor.optional };
 }
 
 function requirementAuthoring(requirement: NonNullable<StoryAnchor["requirements"]>[number]) {

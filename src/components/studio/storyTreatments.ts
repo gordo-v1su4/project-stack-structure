@@ -1,6 +1,8 @@
 import { assessStoryMatch, isUsableStoryMatch, type MatchAssessment } from "./storyMatchAssessment";
 import { STORY_DUPLICATE_PITCH_REVIEW_FAILED, storyReviewCorrection } from "@/lib/storyLoglineReview";
 import type { StoryPlanDraft, VideoMoment } from "./musicVideoProject";
+import { normalizeStoryBible, type StoryBible } from "./storyBible";
+import { identityPolicySha256 } from "./issuedIdentityPolicy";
 
 export const STORY_TREATMENT_MODEL = "Qwen/Qwen3-VL-4B-Instruct-GGUF:Q4_K_M";
 export const STORY_TREATMENT_KINDS = ["faithful", "bold", "wildcard"] as const;
@@ -66,6 +68,7 @@ export type StoryAnchor = {
 };
 
 export type StoryTreatment = {
+  storyBible?: StoryBible;
   id: string;
   kind: StoryTreatmentKind;
   title: string;
@@ -330,6 +333,16 @@ export function isStoryPlanConfirmable(treatment: StoryTreatment | null | undefi
 }
 
 export function buildStoryContentSignature(treatment: StoryTreatment, storyBeats: StoryPlanDraft[]) {
+  if (treatment.storyBible !== undefined) {
+    return `story-v3-${identityPolicySha256({
+      version: 3, authoringSignature: storyBibleTreatmentSignature(treatment),
+      bible: normalizeStoryBible(treatment.storyBible),
+      revision: treatment.revision, reconciliation: treatment.reconciliation, sectionAnchorIds: treatment.sectionAnchorIds,
+      decisions: treatment.anchors.map(anchor => ({ id: anchor.id, requirements: anchor.requirements,
+        resolution: anchor.resolution, selectedCandidateId: anchor.selectedCandidateId })),
+      timing: storyBeats.map(beat => [beat.id, beat.label, beat.start, beat.end]),
+    })}`;
+  }
   const payload = JSON.stringify({
     treatment: {
       id: treatment.id,
@@ -361,6 +374,24 @@ export function buildStoryContentSignature(treatment: StoryTreatment, storyBeats
     hash = Math.imul(hash, 0x01000193);
   }
   return `story-v2-${(hash >>> 0).toString(16).padStart(8, "0")}`;
+}
+
+/** Canonical authored-story binding. Excludes the bible itself (and its binding),
+ * matching evidence, editorial decisions, revisions and clocks; safe to compute
+ * before attaching a bible without introducing a self-referential signature. */
+export function storyBibleTreatmentSignature(treatment: StoryTreatment): string {
+  return `story-authoring-v1-${identityPolicySha256({ version: 1,
+    id: treatment.id, kind: treatment.kind, title: treatment.title, logline: treatment.logline,
+    loglineElements: treatment.loglineElements, synopsis: treatment.synopsis, visualThesis: treatment.visualThesis,
+    endingHook: treatment.endingHook, structure: treatment.structure, sectionAnchorIds: treatment.sectionAnchorIds,
+    anchors: treatment.anchors.map(anchor => ({ id: anchor.id, title: anchor.title, description: anchor.description,
+      purpose: anchor.purpose, generationPrompt: anchor.generationPrompt, role: anchor.role,
+      causalDependencies: anchor.causalDependencies, optional: anchor.optional, songWindow: anchor.songWindow,
+      requirements: anchor.requirements?.map(requirement => ({ id: requirement.id, momentId: requirement.momentId,
+        description: requirement.description, optional: requirement.optional, durationSeconds: requirement.durationSeconds,
+        constraints: requirement.constraints })),
+    })),
+  })}`;
 }
 
 export function anchorForStorySection(treatment: StoryTreatment, sectionId: string, index: number, sectionCount: number): StoryAnchor | undefined {
@@ -401,6 +432,7 @@ function parseTreatment(value: unknown, index: number, loglineLimit: number): Ge
     synopsis: requiredString(record.synopsis, 900, `Treatment ${index + 1} synopsis`),
     visualThesis: requiredString(record.visualThesis, 400, `Treatment ${index + 1} visual thesis`),
     endingHook: requiredString(record.endingHook, 320, `Treatment ${index + 1} ending hook`),
+    ...(record.storyBible !== undefined ? { storyBible: normalizeStoryBible(record.storyBible) } : {}),
     expectedReusePercent,
     expectedGenerationPercent,
     revision: Math.max(1, Math.round(finiteNumber(record.revision, 1))),

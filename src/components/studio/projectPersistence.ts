@@ -12,6 +12,7 @@ import type { BeatJoinAnalysis, ColorGradient, SceneCaptionSettings, Tab, Upload
 import type { SourceTimelineSegment, SplitMode } from "./sourceTimeline";
 import type { SavedStudioProject, StudioProjectSummary } from "@/lib/studioProjectStore";
 import type { StoryBrief, StoryGenerationMeta, StoryTreatment } from "./storyTreatments";
+import { normalizeStoryBible } from "./storyBible";
 import { encodeStudioJsonRequest, STUDIO_JSON_TRANSPORT_HEADERS } from "@/lib/studioJsonTransport";
 import { normalizeFinalExportIntent, type FinalExportIntent } from "./finalExportRecovery";
 import { normalizeSceneProofPlan, type SceneProofPlan } from "./sceneProofs";
@@ -499,10 +500,12 @@ function parsePersistedDraft(raw: string): PersistedStudioProjectDraft | null {
 }
 
 export function normalizePersistedStoryState(state: PersistedStoryState, legacy: boolean): PersistedStoryState {
-  const originalTreatments = Array.isArray(state.treatments) ? state.treatments : [];
+  const normalizeCanon = (treatment: StoryTreatment): StoryTreatment => treatment.storyBible === undefined
+    ? treatment : { ...treatment, storyBible: normalizeStoryBible(treatment.storyBible) };
+  const originalTreatments = Array.isArray(state.treatments) ? state.treatments.map(normalizeCanon) : [];
   const treatments = originalTreatments.map(treatment => legacy ? { ...treatment, reconciliation: { status: "legacy" as const, note: "Saved before story-to-edit reconstruction. Review the story moments and source evidence before using this plan." } } : treatment);
   const confirmedTreatmentSnapshot = isPersistedTreatment(state.confirmedTreatmentSnapshot)
-    ? state.confirmedTreatmentSnapshot
+    ? normalizeCanon(state.confirmedTreatmentSnapshot)
     : null;
   const confirmedTreatmentId = typeof state.confirmedTreatmentId === "string" && state.confirmedTreatmentId.trim()
     ? state.confirmedTreatmentId
