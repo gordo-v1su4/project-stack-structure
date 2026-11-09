@@ -8,6 +8,8 @@ import { H3_FIRST_FRAME_PROFILE, H3_FIRST_FRAME_PREPARATION, h3FirstFrameBinding
 import { firstFrameArtifactFixture, firstFrameAssessmentFixture } from "../helpers/h3FirstFrame";
 import { issuedPolicyFixture } from "../helpers/issuedIdentityPolicy";
 import { identityPolicySha256 } from "@/components/studio/issuedIdentityPolicy";
+import { reviewedScenePlanningFixture } from "../helpers/sceneProofPlanning";
+import { sceneProofScopeSha256 } from "@/components/studio/sceneProofPlanning";
 
 const fixture = h3ProjectFixture();
 let job: H3GenerationJob;
@@ -129,6 +131,19 @@ function providerFetch(failAfterSubmission = false, providerError = false, ackno
 }
 
 describe("durable native H3 execution", () => {
+  test("queued production from an earlier reviewed direction fails before uploads or provider work after re-approval", async () => {
+    setup(); const before = structuredClone(fixture.saved), reviewed = reviewedScenePlanningFixture();
+    Object.assign(fixture.saved, reviewed.saved);
+    try {
+      const request = { ...fixture.request, sceneProofScopeSha256: sceneProofScopeSha256(reviewed.source(), fixture.request) };
+      job = materializeH3Job("github-test", fixture.saved, request, "studio");
+      reviewed.plan.scenes[0].direction += " Diego changes to the upper doorway."; reviewed.prove(0);
+      fixture.saved.draft.storyState.sceneProofPlan = reviewed.plan;
+      let calls = 0; globalThis.fetch = (async () => { calls++; throw new Error("Unexpected provider request"); }) as typeof fetch;
+      await expect(runH3Generation({ ownerId: job.ownerId, projectId: job.projectId, jobId: job.id }, "run-1", { wait: async () => {}, stage: () => {} })).rejects.toThrow("scene previews");
+      expect(calls).toBe(0); expect(uploads).toHaveLength(0); expect(sockets).toHaveLength(0); expect(job.state).toBe("failed");
+    } finally { Object.assign(fixture.saved, before); }
+  });
   test("an unapproved whole-song plan stops before any provider call", async () => {
     setup(); let calls = 0;
     fixture.saved.draft.storyState.sceneProofPlan = { version: 1, projectId: "project-1", contextSha256: "0".repeat(64), scenes: [] };

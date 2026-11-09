@@ -1,5 +1,6 @@
 import { scoreMotionContinuity } from "./motionRanking";
 import { effectiveGenerationScope } from "./generationScope";
+import { retainReuseSourceBaselines } from "./reusedTakePlacements";
 import { assessStoryMatch, isUsableStoryMatch } from "./storyMatchAssessment";
 import { promoteReservedMoment, rankMomentsForSection, reserveSectionMoments, type SemanticEditAssignment, type SemanticSectionInput, type SemanticVideoMomentInput } from "./semanticEditPlanner";
 import type { SrtChunk } from "./srtUtils";
@@ -78,6 +79,7 @@ export interface SemanticClipMatch {
 }
 
 export interface EditPlanPreviewSegment {
+  reusedTakePlacementId?: string;
   /** Exact applied overlay provenance; never inferred from a playback URL. */
   generatedAssetId?: string;
   useClipAudio?: boolean;
@@ -179,6 +181,7 @@ export interface ReviewFinding {
 }
 
 export interface MusicVideoProject {
+  reuseSourceBaselines?: import("./reusedTakePlacements").ReuseSourceBaseline[];
   currentIdentity?: import("./currentReferenceIdentity").CurrentIdentityContext;
   id: string;
   generationScope?: import("./generationScope").GenerationScopeReceipt;
@@ -657,7 +660,7 @@ export function prepareApprovedPlacements(params: {
   const faithfulPlacementPlan = project.placementPlan?.policy === "faithful" && project.placementPlan.inputSignature === inputSignature
     ? project.placementPlan
     : project.faithfulPlacementPlan?.inputSignature === inputSignature ? project.faithfulPlacementPlan : undefined;
-  if (policy === "faithful" && faithfulPlacementPlan) return { ...project, generationScope: undefined, placementPlan: faithfulPlacementPlan, faithfulPlacementPlan };
+  if (policy === "faithful" && faithfulPlacementPlan) return retainReuseSourceBaselines(project, { ...project, generationScope: undefined, placementPlan: faithfulPlacementPlan, faithfulPlacementPlan });
   const manualGaps = project.placementPlan?.inputSignature === inputSignature
     ? project.placementPlan.placements.filter(placement => placement.kind === "gap" && placement.origin === "manual-match") : [];
   // Enabling reuse is not permission to refill windows the user deliberately cleared.
@@ -707,7 +710,7 @@ export function prepareApprovedPlacements(params: {
     }
     addGap(item.end);
   }
-  return { ...project, generationScope: undefined, faithfulPlacementPlan, placementPlan: { version: 1, revision: (project.placementPlan?.revision ?? 0) + 1, inputSignature, settings: editSettings, policy, placements } };
+  return retainReuseSourceBaselines(project, { ...project, generationScope: undefined, faithfulPlacementPlan, placementPlan: { version: 1, revision: (project.placementPlan?.revision ?? 0) + 1, inputSignature, settings: editSettings, policy, placements } });
 }
 
 export function buildEditPlanPreviewSegments(params: {

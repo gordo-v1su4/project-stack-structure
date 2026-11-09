@@ -1,10 +1,52 @@
 import { describe, expect, test } from "bun:test";
-import { resolveCanonicalSelectedFootageEvidence } from "@/lib/selectedFootageEvidenceServer";
+import { createCanonicalSelectedFootageEvidenceResolver, resolveCanonicalSelectedFootageEvidence } from "@/lib/selectedFootageEvidenceServer";
 import { selectedFootageFixture } from "../helpers/selectedFootageEvidence";
 import { h3IdentityAssessmentFixture } from "../helpers/h3IdentityAssessment";
 import { resolveSelectedFootageEvidence } from "@/components/studio/selectedFootageEvidence";
 
 describe("canonical selected-footage evidence", () => {
+  test("one context shares exact job/first-frame proof but still checks each window and fresh job binding", async () => {
+    const fixture = selectedFootageFixture();
+    let checks = 0, reads = 0;
+    const dependencies = { readJob: async () => { reads++; return fixture.job!; }, firstFrame: async () => { checks++; } };
+    const resolve = createCanonicalSelectedFootageEvidenceResolver(dependencies);
+    const input = { ...fixture, ownerId: "owner" };
+    expect(await resolve(input)).not.toBe(undefined);
+    const next = { ...input, window: { songStart: 11, songEnd: 12, sourceStart: 2, sourceEnd: 3 } };
+    expect((await resolve(next))!.evidence.sourceStart).toBe(2);
+    expect(checks).toBe(1); expect(reads).toBe(2);
+    expect(await resolve({ ...next, window: { ...next.window, sourceEnd: 4 } })).toBe(undefined);
+    expect(checks).toBe(1);
+    fixture.job!.updatedAt = "2026-11-09T00:00:00Z";
+    expect(await resolve(input)).not.toBe(undefined); expect(checks).toBe(2);
+    const fresh = createCanonicalSelectedFootageEvidenceResolver(dependencies);
+    expect(await fresh(input)).not.toBe(undefined); expect(checks).toBe(3);
+  });
+
+  test("failed first-frame proof stays rejected within its context and is read again in a fresh context", async () => {
+    const fixture = selectedFootageFixture(); let checks = 0;
+    const dependencies = { readJob: async () => fixture.job!, firstFrame: async () => { checks++; throw new Error("PNG changed"); } };
+    const resolve = createCanonicalSelectedFootageEvidenceResolver(dependencies), input = { ...fixture, ownerId: "owner" };
+    await expect(resolve(input)).rejects.toThrow("PNG changed");
+    await expect(resolve(input)).rejects.toThrow("PNG changed"); expect(checks).toBe(1);
+    await expect(createCanonicalSelectedFootageEvidenceResolver(dependencies)(input)).rejects.toThrow("PNG changed");
+    expect(checks).toBe(2);
+  });
+  test("cached PNG validation never bypasses changed asset receipt or per-window current-reference validation", async () => {
+    const fixture = selectedFootageFixture(); let checks = 0, currentChecks = 0, rejectCurrent = false;
+    const resolve = createCanonicalSelectedFootageEvidenceResolver({ readJob: async () => fixture.job!,
+      firstFrame: async (_owner, _project, _job, asset) => { checks++; if (asset.firstFrame) throw new Error("First-frame receipt differs"); },
+      currentIdentity: async (_owner, _project, _job, asset) => { currentChecks++; if (rejectCurrent) throw new Error("Current evidence changed"); return asset; } });
+    const input = { ...fixture, ownerId: "owner", currentIdentity: { migrationSha256: "a".repeat(64), contextSha256: "b".repeat(64), replacements: [], assessments: {}, activeAssessments: {} } };
+    expect(await resolve(input)).not.toBe(undefined);
+    const tampered = structuredClone(input);
+    tampered.asset.firstFrame = {} as NonNullable<typeof tampered.asset.firstFrame>;
+    await expect(resolve(tampered)).rejects.toThrow("First-frame receipt differs");
+    expect(checks).toBe(2);
+    rejectCurrent = true;
+    await expect(resolve(input)).rejects.toThrow("Current evidence changed");
+    expect(currentChecks).toBe(3); expect(checks).toBe(2);
+  });
   test("reads only the selected owned job and uses immutable request intent", async () => {
     const fixture = selectedFootageFixture(), calls: string[][] = [];
     const result = await resolveCanonicalSelectedFootageEvidence({ ...fixture, ownerId: "owner" }, {

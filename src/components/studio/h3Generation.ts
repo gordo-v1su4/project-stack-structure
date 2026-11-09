@@ -21,6 +21,8 @@ export type H3GenerationRequest = {
   /** Explicit new-job opt-in; historical missing-field requests remain immutable. */
   identityPolicyFamily?: H3IdentityPolicyFamilyId;
   conditioning?: H3FirstFrameChoice;
+  /** Exact reviewed scene intersections for new scene-proof production. Omitted on immutable legacy jobs. */
+  sceneProofScopeSha256?: string;
 };
 
 export type H3ReferenceSnapshot = {

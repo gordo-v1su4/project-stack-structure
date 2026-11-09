@@ -6,6 +6,7 @@ import { isPlacementPlanCurrent } from "./musicVideoProject";
 import type { ShotRequirementConstraints } from "./storyMatchAssessment";
 import type { GeneratedFootageEvidence, SelectedFootageEvidence } from "./selectedFootageEvidence";
 import { buildH3StoryCanonScope, type H3ShotCanonScope, type H3StoryCanonSource } from "./h3StoryCanon";
+import { sceneProofPlanningDirection, type SceneProofWindowScope } from "./sceneProofPlanning";
 
 export const H3_SHOT_PLANNING_LIMITS = {
   windows: 512, groups: 64, windowsPerGroup: 64, subjectNames: 32,
@@ -18,6 +19,8 @@ export type H3ShotPlanningWindow = {
   sourceEvidence?: { momentId: string; caption: string; sourceStart: number; sourceEnd: number };
   generatedEvidence?: GeneratedFootageEvidence;
   generatedEvidenceBindingSha256?: string;
+  sceneProofScope?: { sha256: string; referenceAssetIds: string[];
+    intersections: { sceneId: string; songStart: number; songEnd: number }[] };
 };
 export type H3ShotPlanningGroup = {
   id: string; timelineItemId: string; requirementId?: string; narrativeMomentId?: string; sectionId: string;
@@ -69,6 +72,7 @@ export function buildH3ShotPlanningInput(params: {
   generatedEvidenceByWindowKey?: ReadonlyMap<string, SelectedFootageEvidence>;
   coverageBinding?: unknown;
   storyCanonSource?: H3StoryCanonSource;
+  sceneProofScopesByWindowKey?: ReadonlyMap<string, SceneProofWindowScope>;
 }): H3ShotPlanningInput {
   const { project, segments } = params;
   const planSignature = effectiveGenerationScope(project);
@@ -135,8 +139,12 @@ export function buildH3ShotPlanningInput(params: {
     const sourceEnd = sourceStart + segment.musicEnd - segment.musicStart;
     if (moment && (!Number.isFinite(sourceStart) || !Number.isFinite(sourceEnd) || sourceStart < 0
       || sourceEnd > placement.sourceEnd + 0.001)) throw new Error("Source planning evidence exceeds its confirmed trim.");
+    const sceneScope = params.sceneProofScopesByWindowKey?.get(key);
     group.windows.push({ key, placementId: placement.id, songStart: segment.musicStart, songEnd: segment.musicEnd,
       inference: { fps: H3_FPS, frames, durationSeconds: frames / H3_FPS },
+      ...(sceneScope ? { sceneProofScope: { sha256: generationScopeSha256(sceneScope),
+        referenceAssetIds: [...new Set(sceneScope.scenes.flatMap(scene => scene.referenceAssetIds))],
+        intersections: sceneScope.scenes.map(scene => ({ sceneId: scene.sceneId, songStart: scene.intersectionStart, songEnd: scene.intersectionEnd })) } } : {}),
       ...(moment ? { sourceEvidence: { momentId: moment.id, caption: text(moment.caption || moment.label, 1800, "source evidence"), sourceStart, sourceEnd } } : {}),
       ...(generatedEvidence ? { generatedEvidence, generatedEvidenceBindingSha256 } : {}) });
     if (groups.length > H3_SHOT_PLANNING_LIMITS.groups || group.windows.length > H3_SHOT_PLANNING_LIMITS.windowsPerGroup) throw new Error("Shot planning group count exceeds its bound.");
@@ -146,6 +154,12 @@ export function buildH3ShotPlanningInput(params: {
     const item = project.editPlan.timelineItems.find(item => item.id === group.timelineItemId)!;
     if (group.windows[0].songStart !== item.start
       || group.windows.at(-1)!.songEnd !== item.end) throw new Error("Plan the full ordered requirement, not only its remaining holes.");
+    if (params.sceneProofScopesByWindowKey) {
+      if (group.windows.some(window => !window.sceneProofScope)) throw new Error("The current shot has no approved scene direction.");
+      const direction = sceneProofPlanningDirection(group.windows.map(window => params.sceneProofScopesByWindowKey!.get(window.key)!));
+      if (direction.length > 4000) throw new Error("Approved scene directions exceed the shot planner's 4000-character limit. Shorten the scene direction and setting/action/transition prose before planning shots.");
+      group.approvedDirection = text(direction, 4000, "approved scene directions");
+    }
     if (params.storyCanonSource) {
       const canon = buildH3StoryCanonScope(params.projectId ?? project.id, params.storyCanonSource, group);
       if (canon) group.storyCanon = canon;

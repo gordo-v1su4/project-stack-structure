@@ -6,6 +6,7 @@ import { buildStudioSourceContextSignature, studioSourceContextInput } from "@/c
 import { generationScopeSha256, generationSemanticSha256, sourceReferenceManifest, type GenerationScopeReceipt } from "@/components/studio/generationScope";
 import { buildStoryContentSignature, type StoryTreatment } from "@/components/studio/storyTreatments";
 import type { GeneratedAssetIdentityVerification, GeneratedStudioAsset } from "@/components/studio/generatedAssets";
+import { generatedAssetDraftIdentityBlockReason } from "@/components/studio/generatedAssets";
 import type { H3GenerationJob } from "@/components/studio/h3Generation";
 import type { BeatJoinAnalysis } from "@/components/studio/types";
 import type { ReferenceAsset } from "@/components/studio/referenceAssets";
@@ -19,6 +20,9 @@ import { H3_FIRST_FRAME_PROFILE, H3_FIRST_FRAME_PREPARATION, h3FirstFrameBinding
 import { firstFrameArtifactFixture, firstFrameAssessmentFixture } from "../helpers/h3FirstFrame";
 import {CURRENT_IDENTITY_PURPOSE,buildCurrentIdentityScope,currentIdentityOrigin,currentIdentityProofOrigin,currentIdentityReviewSha256,currentReferenceIdentityApprovalSha256,withCurrentReferenceIdentity,type CurrentIdentityAssessment,type CurrentIdentityPolicy,type CurrentIdentityProof} from "@/components/studio/currentReferenceIdentity";
 import {issuedGalleryProfileSha256} from "@/components/studio/issuedIdentityPolicy";
+import { reuseOriginAssetSha256, reusedTakeReviewSha256, type ReusedTakePlacement } from "@/components/studio/reusedTakePlacements";
+import { applyDraftGeneratedAssets, captureGeneratedDraftReview, approveGeneratedDraft } from "@/components/studio/generatedDraft";
+import { buildEditPlanPreviewSegments } from "@/components/studio/musicVideoProject";
 
 let signedIn = true, dispatches: Array<Record<string, unknown>> = [], reads = 0;
 let saved: SavedStudioProject, job: H3GenerationJob, projectId = "project-1";
@@ -268,6 +272,54 @@ describe("final export canonical identity and ownership boundary", () => {
     currentReferenceSetup();const before=JSON.stringify(job);const response=await post(form());if(response.status!==202)throw new Error(String((await response.json()).error));expect(response.status).toBe(202);expect(dispatches).toHaveLength(1);expect(JSON.stringify(job)).toBe(before);
     const snapshot=(dispatches[0] as {projectSnapshot:{currentIdentityContextSha256:string;h3:Array<{currentIdentityAssessmentId:string}>}}).projectSnapshot;
     expect(snapshot.currentIdentityContextSha256).toBe(hash("f"));expect(snapshot.h3[0].currentIdentityAssessmentId).toBe(currentRecord!.scope.id);
+  });
+  test("reused consent binds per-take current-reference evidence; unchanged migration/context and media need fresh cut review", async () => {
+    currentReferenceSetup();
+    const project = saved.draft.musicVideoProject!, oldReceipt = project.generationScope!, bankAsset = saved.draft.generatedAssets![0];
+    const immutableJob = JSON.stringify(job), immutableAsset = JSON.stringify(bankAsset), oldContext = project.currentIdentity!;
+    project.editPlan.timelineItems[0].prompt += " A revised narrative placement.";
+    project.placementPlan!.inputSignature = placementInputSignature(project);
+    const scope = `generation-v2-${generationScopeSha256(["revised-story", project.placementPlan!.inputSignature])}`;
+    const { referenceMigration: _migration, ...historicalBody } = oldReceipt.body; void _migration;
+    const body: GenerationScopeReceipt["body"] = { ...historicalBody, kind: "baseline", appendedReferenceIds: [],
+      fromSourceContext: project.sourceContextSignature!, toSourceContext: project.sourceContextSignature!,
+      fromInputSignature: project.placementPlan!.inputSignature, toInputSignature: project.placementPlan!.inputSignature,
+      scopeSignature: scope, semanticSha256: generationSemanticSha256(project), currentIdentityMigrationSha256: oldReceipt.sha256,
+      reuseOrigins: [{ assetId: bankAsset.id, jobId: job.id, scopeSignature: job.target.planSignature!, assetSha256: reuseOriginAssetSha256(bankAsset) }] };
+    const sha256 = generationScopeSha256(body), receipt: GenerationScopeReceipt = { version: 1, id: `generation-scope-${sha256}`, sha256, body };
+    project.generationScope = receipt; sourceReceipts.set(receipt.id, structuredClone(receipt));
+    const item = project.editPlan.timelineItems[0];
+    const row: ReusedTakePlacement = { version: 1, id: "current-reuse", assetId: bankAsset.id, jobId: job.id, originSha256: reuseOriginAssetSha256(bankAsset),
+      target: { ...bankAsset.target!, planSignature: scope, timelineItemId: item.id, sectionId: item.sectionId,
+        requirementId: item.requirementId, narrativeMomentId: item.narrativeMomentId }, sourceStart: 0, sourceEnd: 3 };
+    const projected = withCurrentReferenceIdentity([bankAsset], oldContext)[0];
+    row.approvedReviewSha256 = reusedTakeReviewSha256(row, projected);
+    saved.draft.generatedDraft = { ...saved.draft.generatedDraft!, planSignature: scope, sourceConfirmationSha256: receipt.sha256, reusedTakePlacements: [row] };
+    expect((await post(form())).status).toBe(202); dispatches = [];
+    const sameContextBinding = JSON.stringify({ migration: oldContext.migrationSha256, context: oldContext.contextSha256, media: bankAsset.mediaSha256, placement: row });
+    // A new eligible assessment for the same context/range/media is a distinct per-take receipt.
+    currentRecord = structuredClone(currentRecord!);
+    if (currentRecord.status !== "ready") throw new Error("Expected ready synthetic current-reference assessment");
+    currentRecord.proof.draftSimilarityFilter!.samples[0].scores[0].score = .95;
+    currentRecord.proof.draftSimilarityFilter!.samples[0].foreground!.detections[0].score = .95;
+    currentRecord.proofSha256 = identityPolicySha256(currentRecord.proof);
+    const changedProjection = { ...projected, currentReferenceIdentity: { ...projected.currentReferenceIdentity!, assessment: currentRecord } };
+    expect(generatedAssetDraftIdentityBlockReason(changedProjection)).toBe(null);
+    expect(reusedTakeReviewSha256(row, changedProjection)).not.toBe(row.approvedReviewSha256);
+    expect(JSON.stringify({ migration: oldContext.migrationSha256, context: oldContext.contextSha256, media: bankAsset.mediaSha256, placement: row })).toBe(sameContextBinding);
+    oldContext.assessments[currentRecord.scope.id] = currentRecord;
+    saved.draft.generatedDraft.currentIdentityApprovalSha256 = currentIdentityReviewSha256(oldContext);
+    const stale = await post(form()); expect(stale.status).toBe(409); expect(dispatches).toHaveLength(0);
+    const assets = withCurrentReferenceIdentity(saved.draft.generatedAssets!, oldContext), base = buildEditPlanPreviewSegments({ project, videoSources: [] });
+    const review = captureGeneratedDraftReview(base, assets, saved.draft.generatedDraft);
+    expect(Boolean(review)).toBe(true);
+    const accepted = approveGeneratedDraft({ draft: saved.draft.generatedDraft, assets, segments: base, review: review! });
+    expect(accepted.error).toBe(null); saved.draft.generatedDraft = accepted.draft;
+    expect(applyDraftGeneratedAssets(base, assets, accepted.draft)[0].reusedTakePlacementId).toBe(row.id);
+    const fresh = form(); fresh.set("draftRevision", String(accepted.draft.revision));
+    const response = await post(fresh); if (response.status !== 202) throw new Error(String((await response.json()).error));
+    expect(response.status).toBe(202); expect(dispatches).toHaveLength(1);
+    expect(JSON.stringify(job)).toBe(immutableJob); expect(JSON.stringify(bankAsset)).toBe(immutableAsset);
   });
   for(const failure of ["missing current record","current filter failed","stale current consent"])test(`refuses ${failure} before export dispatch`,async()=>{
     currentReferenceSetup();if(failure==="missing current record")currentRecordMissing=true;

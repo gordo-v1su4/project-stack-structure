@@ -1,6 +1,6 @@
 import { withCurrentReferenceIdentity } from "./currentReferenceIdentity";
-import { applyGeneratedAssetOverlays, type GeneratedStudioAsset } from "./generatedAssets";
-import { orderedDraftGeneratedAssets, type GeneratedDraftSelection } from "./generatedDraft";
+import type { GeneratedStudioAsset } from "./generatedAssets";
+import { applyDraftGeneratedAssets, orderedDraftGeneratedAssets, type GeneratedDraftSelection } from "./generatedDraft";
 import { h3WindowKey, planH3DraftWindows } from "./h3DraftPlan";
 import { buildEditPlanPreviewSegments, isPlacementPlanCurrent, type EditPlanPreviewSegment, type MusicVideoProject } from "./musicVideoProject";
 import type { UploadedVideoSource } from "./types";
@@ -10,6 +10,7 @@ export type H3PlanningCoverage = {
   kind: "missing" | "source" | "generated";
   sourceStart?: number; sourceEnd?: number; momentId?: string; sourceClipId?: number;
   generatedAssetId?: string;
+  reusedTakePlacementId?: string;
   media?: { sha256?: string; frameCount?: number; frameRate?: number; bucket?: string; objectKey?: string };
   target?: GeneratedStudioAsset["target"];
   identity?: { assessmentId?: string; approvedEvidenceSha256?: string; approvedCurrentEvidenceSha256?: string };
@@ -33,9 +34,9 @@ export function buildH3ResolvedPlanningScaffold({ project, generatedAssets, draf
   if (!base.length || base.length > 512) throw new Error("Shot planning scaffold exceeds its placement bound.");
   const normalized = withCurrentReferenceIdentity(generatedAssets, project.currentIdentity);
   const eligible = orderedDraftGeneratedAssets(base, normalized, draft);
-  const resolved = applyGeneratedAssetOverlays(base, eligible);
+  const resolved = applyDraftGeneratedAssets(base, normalized, draft);
   if (resolved.length > 512) throw new Error("Shot planning scaffold exceeds its fragment bound.");
-  const byId = new Map(eligible.map(asset => [asset.id, asset]));
+  const byId = new Map([...eligible, ...normalized.filter(asset => draft?.reusedTakePlacements?.some(row => row.assetId === asset.id))].map(asset => [asset.id, asset]));
   const segments: EditPlanPreviewSegment[] = [];
   const coverageLedger: H3PlanningCoverage[] = [];
   for (const fragment of resolved) {
@@ -60,7 +61,7 @@ export function buildH3ResolvedPlanningScaffold({ project, generatedAssets, draf
         songStart: window.musicStart, songEnd: window.musicEnd,
         kind: !covered ? "missing" : asset ? "generated" : "source",
         ...(covered ? { sourceStart, sourceEnd } : {}),
-        ...(asset ? { generatedAssetId: asset.id, target: structuredClone(asset.target),
+        ...(asset ? { generatedAssetId: asset.id, ...(fragment.reusedTakePlacementId ? { reusedTakePlacementId: fragment.reusedTakePlacementId } : {}), target: structuredClone(asset.target),
           media: { sha256: asset.mediaSha256, frameCount: asset.mediaFrameCount, frameRate: asset.mediaFrameRate,
             bucket: asset.fullStorage?.bucket, objectKey: asset.fullStorage?.objectKey ?? asset.fullStorage?.storagePath },
           identity: { assessmentId: asset.identityAssessmentId, approvedEvidenceSha256: asset.approvedIdentityEvidenceSha256,

@@ -9,9 +9,11 @@ import {
 } from "./generatedAssets";
 import type { EditPlanPreviewSegment } from "./musicVideoProject";
 import { approvedIdentityEvidenceSha256, currentIdentityEvidenceSha256 } from "./issuedIdentityPolicy";
+import { applyReusedTakePlacements, reusedTakeReviewSha256, sanitizeReusedTakePlacements, type ReusedTakePlacement } from "./reusedTakePlacements";
 
 /** Candidate selection for an audition. It does not grant approval for export. */
 export type GeneratedDraftSelection = {
+  reusedTakePlacements?: ReusedTakePlacement[];
   currentIdentityApprovalSha256?: string;
   planSignature: string;
   revision: number;
@@ -40,7 +42,10 @@ export function sanitizeGeneratedDraftSelection(value: unknown): GeneratedDraftS
   if (draft.sourceConfirmationSha256 !== undefined && !/^[a-f0-9]{64}$/.test(draft.sourceConfirmationSha256)) return null;
   if (draft.sourceReviewRequired !== undefined && typeof draft.sourceReviewRequired !== "boolean") return null;
   if(draft.currentIdentityApprovalSha256!==undefined&&!/^[a-f0-9]{64}$/.test(draft.currentIdentityApprovalSha256))return null;
+  let reusedTakePlacements: ReusedTakePlacement[] | undefined;
+  try { reusedTakePlacements = sanitizeReusedTakePlacements(draft.reusedTakePlacements); } catch { return null; }
   return { planSignature: draft.planSignature, revision: draft.revision!, assetIds: [...new Set(draft.assetIds)],
+    ...(reusedTakePlacements ? { reusedTakePlacements } : {}),
     ...(draft.currentIdentityApprovalSha256?{currentIdentityApprovalSha256:draft.currentIdentityApprovalSha256}:{}),
     ...(draft.sourceConfirmationSha256 ? { sourceConfirmationSha256: draft.sourceConfirmationSha256, sourceReviewRequired: draft.sourceReviewRequired !== false } : {}) };
 }
@@ -78,8 +83,12 @@ export function selectGeneratedDraftAsset({ draft, assets, asset, segments, expe
   const byId = new Map(assets.map(candidate => [candidate.id, candidate]));
   const remaining = draft.assetIds.filter(id => id !== asset.id && (!byId.has(id) || !sameTarget(byId.get(id)!, asset)));
   const assetIds = [...remaining, asset.id];
-  if (assetIds.length === draft.assetIds.length && assetIds.every((id, index) => id === draft.assetIds[index])) return draft;
-  return { ...draft, revision: draft.revision + 1, assetIds };
+  const reusedTakePlacements = draft.reusedTakePlacements?.filter(row => !asset.target
+    || row.target.songEnd <= asset.target.songStart || row.target.songStart >= asset.target.songEnd);
+  if (assetIds.length === draft.assetIds.length && assetIds.every((id, index) => id === draft.assetIds[index])
+    && reusedTakePlacements?.length === draft.reusedTakePlacements?.length) return draft;
+  return { ...draft, revision: draft.revision + 1, assetIds,
+    ...(reusedTakePlacements ? { reusedTakePlacements } : {}) };
 }
 
 function selectedAssets(segments: EditPlanPreviewSegment[], assets: GeneratedStudioAsset[], draft: GeneratedDraftSelection) {
@@ -104,7 +113,14 @@ export function applyDraftGeneratedAssets(
   assets: GeneratedStudioAsset[],
   draft: GeneratedDraftSelection | null | undefined,
 ): EditPlanPreviewSegment[] {
-  return applyGeneratedAssetOverlays(segments, orderedDraftGeneratedAssets(segments, assets, draft));
+  const native = applyGeneratedAssetOverlays(segments, orderedDraftGeneratedAssets(segments, assets, draft));
+  return isGeneratedDraftCurrent(segments, draft) ? applyReusedTakePlacements(native, assets, draft.reusedTakePlacements) : native;
+}
+
+export function applyAcceptedGeneratedDraft(segments: EditPlanPreviewSegment[], assets: GeneratedStudioAsset[], draft: GeneratedDraftSelection | null | undefined) {
+  const approved = applyGeneratedAssetOverlays(segments, listApprovedGeneratedVideoAssets(assets).sort((left, right) =>
+    Date.parse(left.approvedAt ?? left.createdAt) - Date.parse(right.approvedAt ?? right.createdAt)));
+  return isGeneratedDraftCurrent(segments, draft) ? applyReusedTakePlacements(approved, assets, draft.reusedTakePlacements, true) : approved;
 }
 
 export function captureGeneratedDraftReview(
@@ -115,6 +131,9 @@ export function captureGeneratedDraftReview(
   if (!isGeneratedDraftCurrent(segments, draft)) return null;
   const selected = selectedAssets(segments, assets, draft);
   if (selected.length !== draft.assetIds.length) return null;
+  const reused = draft.reusedTakePlacements ?? [];
+  const applied = applyDraftGeneratedAssets(segments, assets, draft);
+  if (reused.some(row => !applied.some(segment => segment.reusedTakePlacementId === row.id))) return null;
   // Keep the canonical payload itself: unlike a short hash it cannot collide.
   // The token stays local to the prepared player and is never an approval credential.
   const fingerprint = JSON.stringify({
@@ -125,6 +144,8 @@ export function captureGeneratedDraftReview(
     currentIdentityReviewSha256:assets.find(asset=>asset.currentReferenceIdentity)?.currentReferenceIdentity
       ?currentIdentityReviewSha256(assets.find(asset=>asset.currentReferenceIdentity)!.currentReferenceIdentity!.context):undefined,
     assetIds: draft.assetIds,
+    ...(reused.length ? { reusedTakePlacements: reused.map(row => ({ placement: row,
+      evidenceSha256: reusedTakeReviewSha256(row, assets.find(asset => asset.id === row.assetId)!) })) } : {}),
     candidates: selected.map(asset => ({
       id: asset.id, status: asset.status, reviewStatus: asset.reviewStatus, prompt: asset.prompt,
       model: asset.model, target: asset.target, trimStart: asset.trimStart ?? 0,
@@ -159,7 +180,8 @@ export function rejectGeneratedDraftAsset({ draft, assets, assetId, expectedRevi
   if ((expectedRevision !== undefined && expectedRevision !== draft.revision) || !assets.some(asset => asset.id === assetId)) return { draft, assets };
   const assetIds = draft.assetIds.filter(id => id !== assetId);
   return {
-    draft: { ...draft, revision: draft.revision + 1, assetIds },
+    draft: { ...draft, revision: draft.revision + 1, assetIds,
+      ...(draft.reusedTakePlacements ? { reusedTakePlacements: draft.reusedTakePlacements.filter(row => row.assetId !== assetId) } : {}) },
     assets: assets.map(asset => asset.id === assetId ? { ...asset, reviewStatus: "rejected", approvedAt: undefined, approvedIdentityEvidenceSha256: undefined } : asset),
   };
 }
@@ -187,7 +209,14 @@ export function approveGeneratedDraft({ draft, assets, segments, review, approve
   if (preview.some(segment => segment.kind === "gap" || !segment.videoUrl)) {
     return { draft, assets, error: "Unfilled song windows remain. Complete the draft before accepting it." };
   }
-  const selected = new Set(draft.assetIds);
+  const visibleNative = new Set(preview.filter(segment => !segment.reusedTakePlacementId).map(segment => segment.generatedAssetId));
+  const selected = new Set(draft.assetIds.filter(id => visibleNative.has(id)));
+  // Asset approval authorizes its whole verified trim. A partly hidden pending
+  // take cannot gain approval for the portion covered by a reused placement.
+  if (assets.some(asset => selected.has(asset.id) && asset.reviewStatus !== "approved"
+    && preview.some(segment => segment.reusedTakePlacementId && generatedAssetMatchesPreviewSegment(asset, segment)))) {
+    return { draft, assets, error: "A selected take is partly covered by reused footage. Choose one take for that window before accepting the draft." };
+  }
   if (assets.some(asset => selected.has(asset.id) && (asset.identityVerification?.issuedPolicy || asset.identityAssessmentId || asset.currentReferenceIdentity)
     && approvalEvidenceSha256ById?.[asset.id] !== currentIdentityEvidenceSha256(asset))) {
     return { draft, assets, error: "Similarity evidence changed. Review the current draft before accepting it." };
@@ -200,9 +229,11 @@ export function approveGeneratedDraft({ draft, assets, segments, review, approve
   }, requestedApprovalTime);
   // Approval order must reproduce the explicit audition order, even when the
   // user chose an older generated take over a newer approved take.
-  const approvals = new Map(draft.assetIds.map((id, index) => [id, new Date(approvalTime + index).toISOString()]));
+  const approvals = new Map(draft.assetIds.filter(id => selected.has(id)).map((id, index) => [id, new Date(approvalTime + index).toISOString()]));
   return {
     draft: { ...draft, revision: draft.revision + 1, assetIds: [], ...(draft.sourceConfirmationSha256 ? { sourceReviewRequired: false } : {}),
+      ...(draft.reusedTakePlacements ? { reusedTakePlacements: draft.reusedTakePlacements.map(row => ({ ...row,
+        approvedReviewSha256: reusedTakeReviewSha256(row, assets.find(asset => asset.id === row.assetId)!) })) } : {}),
       ...(assets.find(asset=>asset.currentReferenceIdentity)?.currentReferenceIdentity?{currentIdentityApprovalSha256:currentIdentityReviewSha256(assets.find(asset=>asset.currentReferenceIdentity)!.currentReferenceIdentity!.context)}:{}) },
     assets: assets.map(asset => selected.has(asset.id) ? { ...asset, reviewStatus: "approved", approvedAt: approvals.get(asset.id),
       ...(asset.currentReferenceIdentity?{approvedCurrentReferenceEvidenceSha256:currentReferenceIdentityApprovalSha256(asset)}:{}),

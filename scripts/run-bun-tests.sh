@@ -3,6 +3,8 @@
 set -euo pipefail
 
 readonly isolated_tests=(
+  "tests/unit/storagePrivacyRoutes.test.ts"
+  "tests/unit/studioMetadataReaders.test.ts"
   "tests/unit/nativeFirstFrameSource.test.ts"
   "tests/unit/nativeFirstFrameRoute.test.ts"
   "tests/unit/currentIdentityStore.test.ts"
@@ -13,6 +15,7 @@ readonly isolated_tests=(
   "tests/unit/currentIdentityPolicyPreparation.test.ts"
   "tests/unit/generationScopeServer.test.ts"
   "tests/unit/h3ShotPlanningBaseline.test.ts"
+  "tests/unit/h3ShotPlanningEvidenceCache.test.ts"
   "tests/unit/generationScopeStore.test.ts"
   "tests/unit/generationScopeRawReferences.test.ts"
   "tests/unit/generationScopeMedia.test.ts"
@@ -35,6 +38,7 @@ readonly isolated_tests=(
   "tests/unit/studioJsonTransportRoute.test.ts"
   "tests/unit/studioProjectConcurrency.test.ts"
   "tests/unit/projectExportValidation.test.ts"
+  "tests/unit/revisedStoryReuse.test.ts"
   "tests/unit/h3IdentityRecheckDispatch.test.ts"
   "tests/unit/storyTreatmentTask.test.ts"
   "tests/unit/sceneCaptionServer.test.ts"

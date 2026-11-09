@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "bucket": "stack-structure",
+  "patterns": [
+    "media-uploads/studio-drafts/*",
+    "media-uploads/projects/*/index.json",
+    "media-uploads/projects/*/*/project.json",
+    "media-uploads/projects/*/generation-jobs/*",
+    "media-uploads/projects/*/still-jobs/*",
+    "media-uploads/projects/*/still-results/*.json",
+    "media-uploads/projects/*/shot-plans/*",
+    "media-uploads/projects/*/identity-policies/*",
+    "media-uploads/projects/*/identity-assessments/*",
+    "media-uploads/projects/*/current-identity/*",
+    "media-uploads/projects/*/generation-scopes/*",
+    "media-uploads/projects/*/generation-conditioning/*.json",
+    "media-uploads/projects/*/native-first-frame-sources/*"
+  ],
+  "protectedExamples": [
+    "media-uploads/studio-drafts/u.json",
+    "media-uploads/studio-drafts/1787989852482-u.json",
+    "media-uploads/projects/u/index.json",
+    "media-uploads/projects/u/id/project.json",
+    "media-uploads/projects/u/legacy-name/project.json",
+    "media-uploads/projects/u/generation-jobs/id/job.json",
+    "media-uploads/projects/u/still-jobs/id/job.json",
+    "media-uploads/projects/u/still-results/id/h3-still-hash/preparation.json",
+    "media-uploads/projects/u/shot-plans/id/plan.json",
+    "media-uploads/projects/u/identity-policies/id/policy.json",
+    "media-uploads/projects/u/identity-assessments/id/assessment.json",
+    "media-uploads/projects/u/current-identity/id/current.json",
+    "media-uploads/projects/u/generation-scopes/id/receipt.json.enrollment",
+    "media-uploads/projects/u/generation-conditioning/id/descriptor.json",
+    "media-uploads/projects/u/native-first-frame-sources/id/source.json"
+  ],
+  "publicExamples": [
+    "media-uploads/projects/u/generated/id/shot.mp4",
+    "media-uploads/projects/u/still-results/id/frame.png",
+    "media-uploads/projects/u/generation-conditioning/id/reference.png",
+    "media-uploads/u/references/ref.png",
+    "media-uploads/u/source-audio/master.wav",
+    "media-uploads/analysis/id/result.json"
+  ]
+}

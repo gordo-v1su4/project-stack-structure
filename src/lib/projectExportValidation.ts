@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { validateSavedGenerationScope } from "./generationScopeServer";
-import { applyApprovedGeneratedAssets, buildGeneratedAssetPlaybackUrl, generatedAssetDraftIdentityBlockReason, type GeneratedStudioAsset } from "@/components/studio/generatedAssets";
+import { buildGeneratedAssetPlaybackUrl, generatedAssetDraftIdentityBlockReason, type GeneratedStudioAsset } from "@/components/studio/generatedAssets";
 import { buildEditPlanPreviewSegments, isPlacementPlanCurrent } from "@/components/studio/musicVideoProject";
 import { hydrateStudioProjectDraft } from "@/components/studio/projectPersistence";
 import { finalExportSnapshotSha256 } from "@/components/studio/finalExportRecovery";
@@ -16,9 +16,11 @@ import { canonicalIdentityPolicyJson, currentIdentityEvidenceSha256, normalizeH3
 import { assertIssuedH3DraftPolicyMatchesJob, readIssuedH3DraftPolicy } from "./h3DraftPolicyStore";
 import { readH3IdentityAssessment } from "./h3IdentityAssessmentStore";
 import { identityAssessmentAsset } from "@/components/studio/h3IdentityAssessment";
-import { H3_FIRST_FRAME_PROFILE, h3FirstFrameDigest, normalizeH3FirstFrameReceipt } from "@/components/studio/h3FirstFrame";
-import { assertH3FirstFrameMatchesJob, downloadH3FirstFrame, readH3FirstFrame, readH3FirstFrameAssessment } from "./h3FirstFrameStore";
+import { assertCanonicalH3FirstFrame } from "./canonicalH3FirstFrame";
 import {currentIdentityReviewSha256,currentReferenceIdentityApprovalSha256} from "@/components/studio/currentReferenceIdentity";
+import { applyAcceptedGeneratedDraft } from "@/components/studio/generatedDraft";
+import { reusedTakeReviewSha256 } from "@/components/studio/reusedTakePlacements";
+import { resolveCanonicalSelectedFootageEvidence } from "./selectedFootageEvidenceServer";
 
 export class ProjectExportError extends Error { constructor(message: string, readonly status: 400 | 403 | 409 = 409) { super(message); } }
 export type ProjectExportContext = { projectId: string; planSignature: string; placementRevision: number; draftRevision: number };
@@ -81,16 +83,25 @@ export async function reconcileProjectFinalExport(params: {
   }
   if(project.currentIdentity&&draft.generatedDraft?.currentIdentityApprovalSha256!==currentIdentityReviewSha256(project.currentIdentity))throw new ProjectExportError("Review and accept the current-reference assessment context before exporting.");
   const assets: GeneratedStudioAsset[] = [];
-  const currentUsedUrls=project.currentIdentity?new Set(applyApprovedGeneratedAssets(buildEditPlanPreviewSegments({project:runtime.musicVideoProject,videoSources:runtime.videoSources,editSettings:draft.storyState.editSettings}),runtime.generatedAssets).map(segment=>segment.videoUrl)):undefined;
+  const currentUsedUrls=project.currentIdentity?new Set(applyAcceptedGeneratedDraft(buildEditPlanPreviewSegments({project:runtime.musicVideoProject,videoSources:runtime.videoSources,editSettings:draft.storyState.editSettings}),runtime.generatedAssets,draft.generatedDraft).map(segment=>segment.videoUrl)):undefined;
   const canonicalByKey = new Map<string, GeneratedStudioAsset>();
   const environmentOnlyNativeBounds = new Set<string>();
   const receipts: NonNullable<FinalExportPayload["projectSnapshot"]>["h3"] = [];
+  if (draft.generatedDraft?.reusedTakePlacements?.some(row => !runtime.generatedAssets.some(asset => asset.id === row.assetId))) throw new ProjectExportError("Reused footage is missing from the current saved bank.");
   for (const asset of runtime.generatedAssets) {
-    if (asset.reviewStatus !== "approved") { assets.push(asset); continue; }
+    const reuseRows = draft.generatedDraft?.reusedTakePlacements?.filter(row => row.assetId === asset.id) ?? [];
+    for (const row of reuseRows) {
+      if (row.approvedReviewSha256 !== reusedTakeReviewSha256(row, asset)
+        || !await resolveCanonicalSelectedFootageEvidence({ selected: true, ownerId, projectId: context.projectId,
+          generationScope, asset, reusedTakePlacement: row, reuseOrigins: project.generationScope?.body.reuseOrigins,
+          currentIdentity: project.currentIdentity, window: { songStart: row.target.songStart, songEnd: row.target.songEnd,
+            sourceStart: row.sourceStart, sourceEnd: row.sourceEnd } })) throw new ProjectExportError("Reused footage provenance, placement or fresh creative review changed.");
+    }
+    if (asset.reviewStatus !== "approved" && !reuseRows.length) { assets.push(asset); continue; }
     // Retained superseded approvals are history. Only actual current overlays need new-context consent/evidence.
     if(currentUsedUrls&&!currentUsedUrls.has(buildGeneratedAssetPlaybackUrl(asset)??""))continue;
     // Approved history from another plan is retained in the project but cannot overlay this cut.
-    if (asset.target?.planSignature && asset.target.planSignature !== generationScope) continue;
+    if (asset.target?.planSignature && asset.target.planSignature !== generationScope && !reuseRows.length) continue;
     const objectKey = asset.fullStorage?.objectKey ?? asset.fullStorage?.storagePath ?? "";
     const identity = h3ExportMediaIdentity(objectKey);
     const h3 = identity || asset.jobId?.startsWith("h3-") || /^h3-ref2va-/.test(asset.model);
@@ -102,7 +113,7 @@ export async function reconcileProjectFinalExport(params: {
     const job = await readH3Job(ownerId, context.projectId, jobId);
     let canonical = job?.result?.asset;
     if (!job || job.state !== "ready" || !canonical || canonical.id !== asset.id || canonical.reviewStatus === "rejected"
-      || job.target.planSignature !== generationScope || canonical.target?.planSignature !== generationScope) {
+      || (!reuseRows.length && (job.target.planSignature !== generationScope || canonical.target?.planSignature !== generationScope))) {
       throw new ProjectExportError("An approved generated take no longer matches its canonical ready job.");
     }
     if (asset.identityAssessmentId) {
@@ -123,21 +134,9 @@ export async function reconcileProjectFinalExport(params: {
       approvedIdentityEvidenceSha256: asset.approvedIdentityEvidenceSha256,approvedCurrentReferenceEvidenceSha256:asset.approvedCurrentReferenceEvidenceSha256 };
     try{if(project.currentIdentity)authoritative=await(await import("./currentIdentityValidation")).canonicalCurrentIdentityAsset(ownerId,context.projectId,job,authoritative,project.currentIdentity);}
     catch{throw new ProjectExportError("Current-reference canonical evidence changed. Review this exact take again.");}
-    if(job.profile===H3_FIRST_FRAME_PROFILE){
-      try{
-        const receipt=normalizeH3FirstFrameReceipt(canonical.firstFrame);
-        if(!receipt||!job.firstFrame||!job.firstFrameAssessment||!job.identityPolicy||h3FirstFrameDigest(receipt)!==h3FirstFrameDigest({artifact:job.firstFrame,assessment:job.firstFrameAssessment})
-          ||h3FirstFrameDigest(job.conditioningReferenceHashes??null)!==h3FirstFrameDigest([job.firstFrame.body.pngSha256])
-          ||h3FirstFrameDigest(asset.firstFrame??null)!==h3FirstFrameDigest(receipt))throw new Error("Receipt differs");
-        const artifact=await readH3FirstFrame(ownerId,context.projectId,job.firstFrame.id);
-        if(!artifact||h3FirstFrameDigest(artifact)!==h3FirstFrameDigest(job.firstFrame))throw new Error("Artifact differs");
-        assertH3FirstFrameMatchesJob(artifact,job);
-        const still=await readH3FirstFrameAssessment(artifact,job.identityPolicy.sha256);
-        if(!still||still.status!=="eligible"||h3FirstFrameDigest(still)!==h3FirstFrameDigest(job.firstFrameAssessment))throw new Error("Still evidence differs");
-        await downloadH3FirstFrame(artifact);
-      }catch{throw new ProjectExportError("The approved first-frame artifact or its canonical still screen changed. This take cannot enter export.");}
-    }
-    if (asset.identityAssessmentId && asset.approvedIdentityEvidenceSha256 !== currentIdentityEvidenceSha256(authoritative)) {
+    try { await assertCanonicalH3FirstFrame(ownerId, context.projectId, job, asset); }
+    catch { throw new ProjectExportError("The approved first-frame artifact or its canonical still screen changed. This take cannot enter export."); }
+    if (!reuseRows.length && asset.identityAssessmentId && asset.approvedIdentityEvidenceSha256 !== currentIdentityEvidenceSha256(authoritative)) {
       throw new ProjectExportError("The range evidence changed after approval. Review and accept the exact assembled draft again.");
     }
     if (job.request.identityPolicyFamily) {
@@ -148,11 +147,11 @@ export async function reconcileProjectFinalExport(params: {
       const publicPolicy = normalizeH3PublicIssuedDraftPolicy(policy);
       if (!publicPolicy || !canonical.identityVerification?.issuedPolicy || canonical.identityVerification.status !== "unverifiable"
         || canonicalIdentityPolicyJson(canonical.identityVerification.issuedPolicy) !== canonicalIdentityPolicyJson(publicPolicy)
-        || asset.approvedIdentityEvidenceSha256 !== currentIdentityEvidenceSha256(authoritative)) {
+        || (!reuseRows.length && asset.approvedIdentityEvidenceSha256 !== currentIdentityEvidenceSha256(authoritative))) {
         throw new ProjectExportError("The issued identity evidence changed after approval. View and approve this exact draft again.");
       }
     }
-    if(project.currentIdentity&&asset.approvedCurrentReferenceEvidenceSha256!==currentReferenceIdentityApprovalSha256(authoritative))throw new ProjectExportError("Current-reference evidence changed after approval. Review this exact draft again.");
+    if(!reuseRows.length&&project.currentIdentity&&asset.approvedCurrentReferenceEvidenceSha256!==currentReferenceIdentityApprovalSha256(authoritative))throw new ProjectExportError("Current-reference evidence changed after approval. Review this exact draft again.");
     // Owner approval is consent to this snapshot; eligibility comes only from worker evidence.
     const reason = generatedAssetDraftIdentityBlockReason(authoritative);
     if (reason) throw new ProjectExportError(`${reason}. This take cannot enter final export.`);
@@ -189,7 +188,8 @@ export async function reconcileProjectFinalExport(params: {
       const source = runtime.videoSources.find(source => source.videoUrl === segment.videoUrl);
       return { ...segment, useClipAudio: segment.kind !== "gap" && usesClipAudio(normalizeClipAudioSettings(runtime.clipAudioSettings), source ? clipAudioKey(source) : undefined) };
     });
-  const preview = applyApprovedGeneratedAssets(base, assets);
+  const preview = applyAcceptedGeneratedDraft(base, assets, draft.generatedDraft);
+  if (draft.generatedDraft?.reusedTakePlacements?.some(row => !preview.some(segment => segment.reusedTakePlacementId === row.id))) throw new ProjectExportError("A reused placement no longer belongs to the accepted cut.");
   if (preview.length !== params.segments.length || preview.some(segment => segment.kind === "gap" || !segment.videoUrl)) {
     throw new ProjectExportError("The submitted export does not match a complete accepted project cut.");
   }

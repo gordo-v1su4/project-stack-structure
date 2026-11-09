@@ -84,7 +84,8 @@ export async function storeGenerationScopeBaseline(receipt: GenerationScopeRecei
     if (!prior || prior.body.sourceInventorySha256 !== b.sourceInventorySha256 || prior.body.storySha256 !== b.storySha256
       || generationScopeSha256(prior.body.rawReferences) !== generationScopeSha256(b.rawReferences)
       || generationScopeSha256(prior.body.sourceMediaVersions) !== generationScopeSha256(b.sourceMediaVersions)
-      || generationScopeSha256(prior.body.references) !== generationScopeSha256(b.references)) throw new Error("The issued generation baseline is missing or changed. Its scope cannot be re-enrolled.");
+      || generationScopeSha256(prior.body.references) !== generationScopeSha256(b.references)
+      || generationScopeSha256(prior.body.reuseOrigins ?? null) !== generationScopeSha256(b.reuseOrigins ?? null)) throw new Error("The issued generation baseline is missing or changed. Its scope cannot be re-enrolled.");
     return;
   }
   try {
@@ -96,6 +97,7 @@ export async function storeGenerationScopeBaseline(receipt: GenerationScopeRecei
     if (!prior || prior.body.sourceInventorySha256 !== b.sourceInventorySha256 || prior.body.storySha256 !== b.storySha256
       || generationScopeSha256(prior.body.rawReferences) !== generationScopeSha256(b.rawReferences)
       || generationScopeSha256(prior.body.sourceMediaVersions) !== generationScopeSha256(b.sourceMediaVersions)
-      || generationScopeSha256(prior.body.references) !== generationScopeSha256(b.references)) throw new Error("An immutable generation baseline differs.");
+      || generationScopeSha256(prior.body.references) !== generationScopeSha256(b.references)
+      || generationScopeSha256(prior.body.reuseOrigins ?? null) !== generationScopeSha256(b.reuseOrigins ?? null)) throw new Error("An immutable generation baseline differs.");
   }
 }

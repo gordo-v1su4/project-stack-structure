@@ -127,6 +127,74 @@ an H3 video, the worker verifies the downloaded bytes against its canonical SHA2
 WebGPU capture remains owner-uploaded captured pixels with
 `browser-webgpu-capture` provenance; this path does not attest to pixel identity.
 
+## Canonical metadata privacy (V1S-450, local implementation; release pending)
+
+The 2026-11-09 read-only audit observed anonymous direct-S3 HEAD 200 for an
+operator-owned canonical project JSON. The existing stack bucket policy allowed
+public GetObject over every key; the Media API also redirected metadata GET/HEAD
+to unsigned S3. This bypassed the application's ownership checks. Existing
+bucket/object ACL observations were owner-only; ACL authorization alone is not
+the enforcement boundary in pinned RustFS 1.0.1.
+
+The exact bounded prefix contract is [studio-metadata-privacy.json](../../config/studio-metadata-privacy.json).
+It is byte-identical to the Media API source fixture (SHA256
+`0e4a2240717d48448f1a45589cec20c0f4158f2993c60580bb56c923d5950b86`).
+It protects default/timestamp legacy drafts, project indexes and project JSON,
+H3 video/still jobs and intents, shot plans, identity policies/assessments,
+current identity records, generation scope receipts/baselines/enrollment markers,
+conditioning JSON, still preparation JSON and native frame source receipts. Conditioning PNGs, references,
+audio, video, still results and analysis manifests remain public under this scope.
+This change does not claim confidentiality for all stored JSON or media.
+
+The paired ops artifact `infra/rustfs/stack-structure-metadata-policy.json`
+retains the current public allow and adds GetObject deny for those resources
+only in `stack-structure`, conditioned on the storage server's derived
+`aws:PrincipalType=Anonymous`. Signed S3 reads used by canonical stores and
+workers remain authenticated. Project-index, legacy-draft, ownership-discovery
+and analysis-manifest Media API readers already send the existing server bearer.
+No credential, env name, bucket or object migration is added.
+
+Media API GET/HEAD for protected metadata requires that bearer and streams a
+signed SDK GET, capped at 64 MiB, without a public redirect. HEAD closes the SDK
+body unread (signed S3 HEAD is incompatible with this pinned deployment).
+Uploads of matched metadata use private ACL and private/no-store caching.
+First-touch bucket setup reapplies the deny rather than restoring blanket access.
+Other buckets and public media retain anonymous redirects, CORS and byte ranges.
+
+The app's download-url route returns an owned-session `/api/storage/media` URL
+for matched metadata. Its proxy sends only the configured server bearer
+upstream, retains ranges and returns safe headers. Foreign metadata cannot gain
+ownership through a copied media reference. Dot segments, backslashes and
+control characters are rejected. Metadata redirects fail closed with 502,
+including when the app is ahead of an old gateway.
+
+Release order and rollback are recorded in the canonical ops
+`hostinger-ops/docs/rustfs-vm-runbook.md` under V1S-450: stage and verify the
+authenticated Media API first, release the app proxy next, then apply/verify
+the exact policy after fresh backup/guards. Gateway first-touch can apply the
+deny as soon as it receives a write, so coordinate this interval. Live mutation
+requires separate approval. Historical gateway JSON uploads used a one-year
+public immutable cache header. The proposal therefore includes persistent
+metadata-only Cloudflare cache bypass plus four Stack namespace root purges
+(S3/gateway × projects/studio-drafts), covering old deleted/renamed paths and
+query variants. This temporarily makes public media under projects a cold
+cache. Existing DNS token presence/verify does not prove purge or rule-edit
+permission: rules/normalization reads returned 403, and a harmless canary purge
+is the first capability test only after approval. Rule ordering, normalized
+aliases, and unchanged original URLs must pass actual edge verification; cached
+or previously downloaded browser copies cannot be revoked by origin policy.
+The release uses an overlay on the exact running Media API image, preserving
+base/dependencies, and pauses metadata writes for the coordinated cutover.
+Full rollback to the old blanket policy deliberately
+reopens the observed exposure; prefer retaining the deny and fixing transport.
+
+Acceptance: an owned canonical GET/HEAD through anonymous S3 fails with 403;
+anonymous Media API returns 401; signed SDK and bearer gateway reads succeed
+without Location; an owned app session reads metadata, anonymous/foreign
+sessions fail; public reference/audio/video/conditioning PNG range reads still
+work; a fresh Media API first write preserves the deny. Use only operator-owned
+objects and an approved disposable fixture for write verification.
+
 ## Known follow-ups (non-blocking)
 
 - Complete ownership coverage across remaining legacy media routes.

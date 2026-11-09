@@ -78,7 +78,7 @@ export async function POST(request: Request) {
     try { compileH3Prompt(proposed); } catch (error) { throw new H3RequestError((error as Error).message, 422); }
     const existing = await readH3Job(user.id, input.projectId, proposed.id);
     if (!existing?.promptId && !["submitting", "submission_unknown", "rendering", "persisting", "ready", "cancel_requested", "cancelled"].includes(existing?.state ?? "")) {
-      await assertH3SceneProofsApproved(user.id, project, config.bucket);
+      await assertH3SceneProofsApproved(user.id, project, config.bucket, undefined, input);
     }
     await recordGenerationScopeBaseline(user.id, project);
     await claimH3GenerationIntent(proposed);
