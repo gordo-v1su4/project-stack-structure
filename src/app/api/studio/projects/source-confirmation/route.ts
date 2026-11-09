@@ -26,7 +26,10 @@ export async function POST(request: Request) {
     const config = getMediaGatewayConfig();
     if (!config) throw new SourceConfirmationError("Source confirmation storage is unavailable.", 503);
     const jobs = await listH3Jobs(user.id, input.projectId);
-    const candidate = await prepareAdditiveSourceConfirmation({ ownerId: user.id, saved, expectedRevision: input.expectedRevision, jobs, bucket: config.bucket });
+    if (input.mode !== undefined && input.mode !== "creative-rebaseline") throw new SourceConfirmationError("Unknown source confirmation mode.", 400);
+    const candidate = input.mode === "creative-rebaseline"
+      ? await (await import("@/lib/creativeRebaselineServer")).prepareCreativeRebaseline({ ownerId: user.id, saved, expectedRevision: input.expectedRevision, jobs })
+      : await prepareAdditiveSourceConfirmation({ ownerId: user.id, saved, expectedRevision: input.expectedRevision, jobs, bucket: config.bucket });
     return studioJsonResponse(request, { success: true, ...candidate });
   } catch (error) {
     return Response.json({ success: false, error: error instanceof SourceConfirmationError ? error.message : "Source confirmation could not be prepared." },

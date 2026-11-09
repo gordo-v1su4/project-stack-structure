@@ -35,6 +35,7 @@ export type ReferenceVersionMigration = { version: 1; authority: "r31-approved-d
   requeuedApprovedAssetIds?:string[];
   origins: { jobId: string; originalJobSha256: string; originalTargetSha256: string; originalProofSha256: string }[] };
 export type GenerationScopeReceiptBody = { version: 1; kind: "baseline" | "additive-reference" | "reference-version-migration"; ownerId: string; projectId: string; baselineRevision: string;
+  reuseOrigins?: import("./reusedTakePlacements").ReuseOrigin[];
   fromSourceContext: string; toSourceContext: string; fromInputSignature: string; toInputSignature: string; scopeSignature: string;
   semanticSha256: string; references: SourceReferenceManifest; rawReferences: ScopeRawReference[]; sourceMediaVersions: ScopeSourceMediaVersion[];
   appendedReferenceIds: string[]; previousReceiptSha256?: string;
@@ -70,6 +71,10 @@ export function normalizeGenerationScopeReceipt(value: unknown): GenerationScope
       || !Array.isArray(body.referenceMigration.origins) || !body.referenceMigration.origins.length || body.referenceMigration.origins.length > 128
       || new Set(body.referenceMigration.origins.map(origin=>origin.jobId)).size!==body.referenceMigration.origins.length
       || body.referenceMigration.origins.some(origin=>!/^h3-[a-f0-9]{64}$/.test(origin.jobId)||![origin.originalJobSha256,origin.originalProofSha256,origin.originalTargetSha256].every(hash=>/^[a-f0-9]{64}$/.test(hash)))))
+    || (body.reuseOrigins !== undefined && (!Array.isArray(body.reuseOrigins) || body.reuseOrigins.length > 128
+      || new Set(body.reuseOrigins.map(origin => origin?.assetId)).size !== body.reuseOrigins.length
+      || body.reuseOrigins.some(origin => !origin || !origin.assetId || !/^h3-[a-f0-9]{64}$/.test(origin.jobId)
+        || !/^(?:placements-v1-[a-f0-9]+|generation-v2-[a-f0-9]{64})$/.test(origin.scopeSignature) || !/^[a-f0-9]{64}$/.test(origin.assetSha256))))
     || ![body.semanticSha256, body.storySha256, body.sourceInventorySha256].every(hash => /^[a-f0-9]{64}$/.test(hash))) return undefined;
   return receipt;
 }

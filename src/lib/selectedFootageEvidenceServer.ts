@@ -4,6 +4,7 @@ import { readH3Job } from "./h3JobStore";
 import { readH3IdentityAssessment } from "./h3IdentityAssessmentStore";
 import { canonicalCurrentIdentityAsset } from "./currentIdentityValidation";
 import { assertIssuedH3DraftPolicyMatchesJob, readIssuedH3DraftPolicy } from "./h3DraftPolicyStore";
+import { assertCanonicalH3FirstFrame } from "./canonicalH3FirstFrame";
 
 type Input = Omit<SelectedFootageEvidenceInput, "ownerId" | "job" | "rangeAssessment" | "advisoryCachedRange"> & { ownerId: string };
 type Dependencies = { readJob: typeof readH3Job; readRange: typeof readH3IdentityAssessment;
@@ -25,6 +26,7 @@ export async function resolveCanonicalSelectedFootageEvidence(input: Input, depe
   let canonical = rangeAssessment ? identityAssessmentAsset(rangeAssessment, job, input.asset.trimStart ?? 0) : job.result.asset;
   canonical = { ...canonical, jobId: job.id, model: job.profile, target: job.target, trimStart: input.asset.trimStart ?? 0 };
   if (input.currentIdentity) await (dependencies.currentIdentity ?? canonicalCurrentIdentityAsset)(input.ownerId, input.projectId, job, canonical, input.currentIdentity);
+  await assertCanonicalH3FirstFrame(input.ownerId, input.projectId, job, input.asset);
   if (job.request.identityPolicyFamily) {
     if (!job.identityPolicy || !job.referenceHashes) return undefined;
     const policy = await (dependencies.readPolicy ?? readIssuedH3DraftPolicy)(input.ownerId, input.projectId, job.identityPolicy);

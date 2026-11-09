@@ -13,6 +13,7 @@ import { mediaUploadBelongsToOwner } from "./essentiaUpload";
 import { readGenerationScopeBaseline, storeGenerationScopeBaseline, readGenerationScopeReceipt, storeGenerationScopeReceipt } from "./generationScopeStore";
 import { pinGenerationScopeRawReferences, verifyGenerationScopeRawReferences, type ExpectedScopeRawReference } from "./generationScopeRawReferences";
 import { bootstrapR31SourceMedia, pinGenerationScopeMedia, verifyGenerationScopeMedia } from "./generationScopeMedia";
+import { assertCurrentReusedTakePlacements } from "@/components/studio/reusedTakePlacements";
 
 export class SourceConfirmationError extends Error { constructor(message: string, readonly status = 409) { super(message); } }
 function contextInput(draft: PersistedStudioProjectDraft, references = draft.referenceAssets ?? []) {
@@ -29,6 +30,12 @@ const authorized = new WeakMap<SavedStudioProject, string>();
 export async function validateSavedGenerationScope(ownerId: string, saved: SavedStudioProject, options: { allowUnissuedBaseline?: boolean } = {}): Promise<string | undefined> {
   const project = saved.draft.musicVideoProject;
   if (!project) return undefined;
+  if (!project.generationScope && project.reuseSourceBaselines?.some(origin => saved.draft.generatedAssets?.some(asset =>
+    asset.provider === "swarmui" && asset.status === "completed" && asset.jobId && asset.target?.planSignature === origin.scopeSignature))) {
+    throw new SourceConfirmationError("Confirm the revised story's existing footage before planning or generating its missing shots.");
+  }
+  try { assertCurrentReusedTakePlacements(project, saved.draft.generatedDraft?.reusedTakePlacements); }
+  catch { throw new SourceConfirmationError("A reused placement is stale or outside its canonical story/source scope."); }
   if(project.currentIdentity&&!project.generationScope)throw new SourceConfirmationError("The current-reference migration receipt is unavailable.");
   const scope = effectiveGenerationScope(project);
   if (!project.generationScope) {

@@ -25,6 +25,8 @@ export function buildH3DraftPlanningInput(projectId: string, project: MusicVideo
     if (!asset || row.sourceStart === undefined || row.sourceEnd === undefined) throw new Error("Applied footage planning evidence is unavailable.");
     const resolved = resolveSelectedFootageEvidence({ selected: true, projectId, generationScope: scaffold.stableBindingPayload.planSignature,
       asset, window: { songStart: row.songStart, songEnd: row.songEnd, sourceStart: row.sourceStart, sourceEnd: row.sourceEnd },
+      ...(row.reusedTakePlacementId ? { reusedTakePlacement: context.draft?.reusedTakePlacements?.find(placement => placement.id === row.reusedTakePlacementId),
+        reuseOrigins: project.generationScope?.body.reuseOrigins } : {}),
       job: context.jobs?.find(job => job.id === asset.jobId), currentIdentity: project.currentIdentity, advisoryCachedRange: true });
     if (!resolved) throw new Error("The selected footage no longer matches its canonical planning context.");
     return [[row.windowKey, resolved] as const];

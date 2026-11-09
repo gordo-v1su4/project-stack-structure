@@ -43,6 +43,7 @@ import { SceneProofPanel } from "../SceneProofPanel";
 import type { SceneProofPlan } from "../sceneProofs";
 import { assertStoryBibleConfirmation } from "../storyAuthoring";
 import { buildStoryBibleBinding } from "../storyBibleBinding";
+import { retainReuseSourceBaselines } from "../reusedTakePlacements";
 
 export type StoryBeatDraft = StoryPlanDraft;
 
@@ -50,6 +51,13 @@ export type StoryBeatDraft = StoryPlanDraft;
 export function prepareStoryTabPlacements(params: Parameters<typeof prepareApprovedPlacements>[0], sourceContextSignature?: string | null, sourceInventorySha256?: string, storySha256?: string) {
   return prepareApprovedPlacements({ ...params, project: { ...params.project, generationScopeVersion: 2,
     generationSourceContextSha256: sourceInventorySha256, generationStorySha256: storySha256, sourceContextSignature: sourceContextSignature ?? undefined } });
+}
+
+/** Called only by explicit Story confirmation; ordinary source append retains its stricter equivalence path. */
+export function confirmStoryProjectRevision(previous: MusicVideoProject | null | undefined, prepared: MusicVideoProject, hasExistingGeneratedFootage = false) {
+  const unchangedWindows = !previous || JSON.stringify(previous.editPlan.timelineItems) === JSON.stringify(prepared.editPlan.timelineItems);
+  return retainReuseSourceBaselines(previous, unchangedWindows
+    ? preserveReviewedStoryArrangement(previous, prepared, previous?.generationScope?.body.reprise) : prepared, hasExistingGeneratedFootage);
 }
 
 export type StoryTabState = StoryTreatmentState & {
@@ -72,6 +80,7 @@ type StoryTabProps = {
   segmentPreviews: SegmentPreview[];
   state: StoryTabState;
   existingProject?: MusicVideoProject | null;
+  hasExistingGeneratedFootage?: boolean;
   onStateChange: Dispatch<SetStateAction<StoryTabState>>;
   onProjectChange?: (project: MusicVideoProject) => void;
   onConfirmAppendedSources?: () => Promise<void>;
@@ -114,7 +123,7 @@ export function createDefaultStoryTabState(): StoryTabState {
   };
 }
 
-export function StoryTab({ referenceRevision, referenceAssets, analysis, audioStatus, videoSources, segmentPreviews, state, existingProject, onStateChange, onProjectChange, onConfirmAppendedSources, sourceReviewRequired, savedProjectId, savedProjectRevision, onPrepareStoryContext, onEnsureSavedProject, onPersistSceneProofPlan }: StoryTabProps) {
+export function StoryTab({ referenceRevision, referenceAssets, analysis, audioStatus, videoSources, segmentPreviews, state, existingProject, hasExistingGeneratedFootage, onStateChange, onProjectChange, onConfirmAppendedSources, sourceReviewRequired, savedProjectId, savedProjectRevision, onPrepareStoryContext, onEnsureSavedProject, onPersistSceneProofPlan }: StoryTabProps) {
   const { transcriptSummary, storyBeats, activeBeatId, storyGenerated } = state;
   const [confirmationError, setConfirmationError] = useState<string | null>(null);
   const [confirmationNotice, setConfirmationNotice] = useState<string | null>(null);
@@ -262,7 +271,9 @@ export function StoryTab({ referenceRevision, referenceAssets, analysis, audioSt
     generationScopeSha256({ storyBeats: storyBeatsWithAnchors, confirmedTreatmentSnapshot: treatment,
       storyContentSignature: buildStoryContentSignature(treatment, storyBeatsWithAnchors), editSettings }));
     let confirmedProject: MusicVideoProject;
-    try { confirmedProject = preserveReviewedStoryArrangement(existingProject, prepared); }
+    try {
+      confirmedProject = confirmStoryProjectRevision(existingProject, prepared, hasExistingGeneratedFootage);
+    }
     catch (error) { setConfirmationError(error instanceof Error ? error.message : "Existing accepted cuts could not be preserved."); return; }
     // Only an explicit confirmation may publish an arrangement. Opening Story or
     // deriving a preview after an append must never replace accepted placements.

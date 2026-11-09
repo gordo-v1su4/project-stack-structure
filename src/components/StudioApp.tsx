@@ -42,8 +42,10 @@ import { loadStudioProjectSelection, readStudioProjectSelection, rememberStudioP
 import { ProjectSaveSession } from "./studio/projectSaveSession";
 import { saveVersionedStudioProject } from "./studio/preparedProjectSave";
 import type { StudioProjectSummary } from "@/lib/studioProjectStore";
-import { applyApprovedGeneratedAssets, buildGeneratedAssetContextPreview, buildGeneratedAssetPlaybackUrl, mergeGeneratedAssetDelivery, type GeneratedStudioAsset } from "./studio/generatedAssets";
-import { applyDraftGeneratedAssets, approveGeneratedDraft, captureGeneratedDraftReview, createGeneratedDraftSelection, prepareGeneratedDraftApprovalEvidence, rejectGeneratedDraftAsset, selectGeneratedDraftAsset, type GeneratedDraftReview, type GeneratedDraftSelection } from "./studio/generatedDraft";
+import { buildGeneratedAssetContextPreview, buildGeneratedAssetPlaybackUrl, mergeGeneratedAssetDelivery, type GeneratedStudioAsset } from "./studio/generatedAssets";
+import { applyAcceptedGeneratedDraft, applyDraftGeneratedAssets, approveGeneratedDraft, captureGeneratedDraftReview, createGeneratedDraftSelection, prepareGeneratedDraftApprovalEvidence, rejectGeneratedDraftAsset, selectGeneratedDraftAsset, type GeneratedDraftReview, type GeneratedDraftSelection } from "./studio/generatedDraft";
+import { selectReusedTakePlacement } from "./studio/reusedTakePlacements";
+import { ReusedFootagePanel } from "./studio/panels/ReusedFootagePanel";
 import { MiniMaxDraftPanel } from "./studio/panels/MiniMaxDraftPanel";
 import { attachCurrentIdentityAssessments, stripCurrentReferenceIdentity, withCurrentReferenceIdentity } from "./studio/currentReferenceIdentity";
 import { checkCurrentReferenceRange, prepareReferenceMigration } from "./studio/currentReferenceClient";
@@ -744,7 +746,7 @@ export default function StudioApp() {
     });
   }, [clipAudioSettings, musicVideoProject, storyState.editSettings, storyState.storyGenerated, videoSources]);
 
-  const storyPreviewSegments = useMemo(() => applyApprovedGeneratedAssets(baseStoryPreviewSegments, generatedAssets), [baseStoryPreviewSegments, generatedAssets]);
+  const storyPreviewSegments = useMemo(() => applyAcceptedGeneratedDraft(baseStoryPreviewSegments, generatedAssets, generatedDraft), [baseStoryPreviewSegments, generatedAssets, generatedDraft]);
   const draftPreviewSegments = useMemo(() => applyDraftGeneratedAssets(baseStoryPreviewSegments, generatedAssets, generatedDraft), [baseStoryPreviewSegments, generatedAssets, generatedDraft]);
   const currentReferenceReviewAssets = useMemo(() => assetsForCurrentReferenceReview(generatedAssets, generatedDraft, baseStoryPreviewSegments),
     [generatedAssets, generatedDraft, baseStoryPreviewSegments]);
@@ -2228,7 +2230,7 @@ export default function StudioApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftRestored, activeProjectId, finalExportIntent?.requestKey, finalExportIntent?.runId]);
 
-  async function confirmAppendedSources() {
+  async function confirmAppendedSources(mode?: "creative-rebaseline") {
     if (!activeProjectId || autosaveInFlightRef.current || finalExportFlightRef.current || previewState.activeRequestKey) {
       throw new Error("Save this project and wait for the current operation before confirming its sources.");
     }
@@ -2246,7 +2248,7 @@ export default function StudioApp() {
     // This lock serializes only this editor. The remote expected revision protects other tabs.
     autosaveInFlightRef.current = true;
     try {
-      const candidate = await prepareAppendedSourceConfirmation({ projectId: activeProjectId, baseline: starting.project, isCurrent });
+      const candidate = await prepareAppendedSourceConfirmation({ projectId: activeProjectId, baseline: starting.project, isCurrent, mode });
       if (!isCurrent()) throw new Error("The open project changed. The confirmation candidate was not saved.");
       const update = { projectId: activeProjectId, name: starting.projectName, draft: candidate.draft, expectedRevision: candidate.expectedRevision };
       const saved = await saveVersionedProject(update, { cache: false }, contextEpoch);
@@ -2254,7 +2256,7 @@ export default function StudioApp() {
       flushSync(() => {
         invalidateArrangementOutput();
         handleProjectSelected(saved.project, hydrateStudioProjectDraft({ draft: saved.draft }), saved.revision);
-        setSaveState({ kind: "saved", at: Date.now(), scope: "project", detail: "Appended sheets confirmed; review the assembled cut before export." });
+        setSaveState({ kind: "saved", at: Date.now(), scope: "project", detail: mode ? "Revised story confirmed; place existing footage and review the assembled cut." : "Appended sheets confirmed; review the assembled cut before export." });
       });
     } finally { autosaveInFlightRef.current = false; }
   }
@@ -2853,6 +2855,15 @@ export default function StudioApp() {
               onOpenMatch={() => handleSelectTab("shuffle")} matchReady={storyState.storyGenerated}
               editSettings={storyState.editSettings}
             /> : null}
+            {tab === "generate" && musicVideoProject ? <ReusedFootagePanel key={activeProjectId ?? "unsaved"} project={musicVideoProject} assets={generatedAssets}
+              segments={baseStoryPreviewSegments} draft={generatedDraft} onConfirm={() => confirmAppendedSources("creative-rebaseline")}
+              onSelect={(asset, segment) => {
+                if (!generatedDraft) throw new Error("Confirm the revised story first.");
+                const nextDraft = selectReusedTakePlacement(generatedDraft, musicVideoProject, asset, segment);
+                invalidateArrangementOutput();
+                setGeneratedReviewState(current => current.draft?.revision === generatedDraft.revision
+                  ? { ...current, draft: nextDraft } : current);
+              }} /> : null}
             {tab === "generate" ? <MiniMaxDraftPanel project={musicVideoProject} aestheticReferences={aestheticReferences} onAestheticSelection={(shotId, ids) => { referenceAutosaveRequestedRef.current = true; setAestheticReferences(library => ({ ...library, shots: { ...library.shots, [shotId]: ids } })); }} projectId={activeProjectId} segments={draftPreviewSegments}
               confirmedTreatment={storyState.confirmedTreatmentSnapshot}
               storyApproved={storyState.storyGenerated && Boolean(storyState.confirmedTreatmentId)
@@ -2944,7 +2955,8 @@ export default function StudioApp() {
                 state={storyState}
                 onStateChange={setStoryState}
                 onProjectChange={handleStoryProjectChange}
-                onConfirmAppendedSources={confirmAppendedSources}
+                hasExistingGeneratedFootage={generatedAssets.some(asset => asset.provider === "swarmui" && asset.status === "completed" && Boolean(asset.jobId))}
+                onConfirmAppendedSources={() => confirmAppendedSources()}
                 sourceReviewRequired={generatedDraft?.sourceReviewRequired}
               />
             )}

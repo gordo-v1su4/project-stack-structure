@@ -3,6 +3,7 @@ import type { H3GenerationJob } from "./h3Generation";
 import { identityAssessmentAsset, type H3IdentityAssessment } from "./h3IdentityAssessment";
 import { currentReferenceIdentityApprovalSha256, withCurrentReferenceIdentity, type CurrentIdentityContext } from "./currentReferenceIdentity";
 import { currentIdentityEvidenceSha256, identityPolicySha256 } from "./issuedIdentityPolicy";
+import { reusedTakePlacementMatches, reuseOriginAssetSha256, type ReuseOrigin, type ReusedTakePlacement } from "./reusedTakePlacements";
 
 export type GeneratedFootageEvidence = {
   assetId: string; jobId?: string; mediaSha256?: string;
@@ -19,12 +20,15 @@ export type SelectedFootageEvidenceInput = {
   job?: H3GenerationJob; rangeAssessment?: H3IdentityAssessment; currentIdentity?: CurrentIdentityContext;
   /** Browser-only advisory cache. The server adapter always overrides this to false. */
   advisoryCachedRange?: boolean;
+  reusedTakePlacement?: ReusedTakePlacement;
+  reuseOrigins?: ReuseOrigin[];
 };
 export type SelectedFootageEvidence = {
   evidence: GeneratedFootageEvidence;
   /** Included in planning's binding, never interpreted as observed action. */
   canonicalBinding: { bucket: string; objectKey: string; songStart: number; songEnd: number; targetSha256: string; requestSha256?: string; mediaSha256?: string;
-    rangeAssessmentId?: string; identityEvidenceSha256?: string; currentReferenceEvidenceSha256?: string };
+    rangeAssessmentId?: string; identityEvidenceSha256?: string; currentReferenceEvidenceSha256?: string;
+    reusePlacementSha256?: string; originScope?: string };
 };
 const near = (a: number, b: number) => Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) < 1e-6;
 const hash = (value: unknown): value is string => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
@@ -33,6 +37,26 @@ const storage = (asset: GeneratedStudioAsset) => ({ bucket: asset.fullStorage?.b
 /** Intent and exact selected media only. A prompt cannot certify an observed/completed action. */
 export function resolveSelectedFootageEvidence(input: SelectedFootageEvidenceInput): SelectedFootageEvidence | undefined {
   try {
+    if (input.reusedTakePlacement) {
+      const row = input.reusedTakePlacement, asset = input.asset, window = input.window;
+      const origin = input.reuseOrigins?.find(origin => origin.assetId === row.assetId && origin.jobId === row.jobId);
+      if (!origin || origin.assetSha256 !== row.originSha256 || origin.assetSha256 !== reuseOriginAssetSha256(asset)
+        || origin.scopeSignature !== asset.target?.planSignature || row.target.planSignature !== input.generationScope
+        || !reusedTakePlacementMatches(row, asset, { ...row.target, planSignature: input.generationScope, videoUrl: "",
+          musicStart: window.songStart, musicEnd: window.songEnd, startTime: window.sourceStart, endTime: window.sourceEnd, label: "" })
+        || window.songStart < row.target.songStart - 1e-6 || window.songEnd > row.target.songEnd + 1e-6
+        || !near(window.sourceStart, row.sourceStart + window.songStart - row.target.songStart)
+        || !near(window.sourceEnd, row.sourceStart + window.songEnd - row.target.songStart)) return undefined;
+      const songStart = asset.target!.songStart + window.sourceStart - (asset.trimStart ?? 0);
+      const songEnd = songStart + window.sourceEnd - window.sourceStart;
+      // Historical approvals do not grant or veto new creative consent. The caller still
+      // validates canonical eligibility, and fresh reuse consent binds the actual evidence.
+      const canonical = resolveSelectedFootageEvidence({ ...input, asset: { ...asset, reviewStatus: "pending" }, generationScope: origin.scopeSignature, reusedTakePlacement: undefined,
+        window: { ...window, songStart, songEnd } });
+      return canonical ? { ...canonical, canonicalBinding: { ...canonical.canonicalBinding,
+        songStart: window.songStart, songEnd: window.songEnd, originScope: origin.scopeSignature,
+        reusePlacementSha256: identityPolicySha256(row) } } : undefined;
+    }
     const { asset, window, job } = input, media = storage(asset), target = asset.target;
     if (input.selected !== true || asset.status !== "completed" || asset.mediaKind !== "video" || asset.reviewStatus === "rejected" || !target
       || !media.bucket || !media.objectKey || media.bucket.length > 256 || media.objectKey.length > 2048 || asset.id.length > 256 || target.planSignature !== input.generationScope

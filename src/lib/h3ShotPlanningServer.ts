@@ -71,6 +71,8 @@ export async function loadH3ShotPlanningContext(ownerId: string, projectId: stri
       const asset = assets.find(asset => asset.id === row.generatedAssetId);
       if (!asset || row.sourceStart === undefined || row.sourceEnd === undefined) throw new Error("Selected footage is unavailable.");
       const resolved = await (dependencies.selectedEvidence ?? resolveCanonicalSelectedFootageEvidence)({ selected: true, ownerId, projectId,
+        ...(row.reusedTakePlacementId ? { reusedTakePlacement: saved.draft.generatedDraft?.reusedTakePlacements?.find(placement => placement.id === row.reusedTakePlacementId),
+          reuseOrigins: project.generationScope?.body.reuseOrigins } : {}),
         generationScope: scope, asset, window: { songStart: row.songStart, songEnd: row.songEnd, sourceStart: row.sourceStart, sourceEnd: row.sourceEnd }, currentIdentity: project.currentIdentity });
       if (!resolved) throw new Error("Selected footage canonical evidence changed.");
       evidence.set(row.windowKey, resolved);

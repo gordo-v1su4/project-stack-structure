@@ -14,7 +14,7 @@ export function sourceConfirmationBaselineSha256(draft: PersistedStudioProjectDr
 }
 
 export async function prepareAppendedSourceConfirmation(params: { projectId: string; baseline: PersistedStudioProjectDraft;
-  isCurrent: () => boolean; fetchImpl?: typeof fetch }): Promise<{ draft: PersistedStudioProjectDraft; receipt: GenerationScopeReceipt; expectedRevision: string }> {
+  isCurrent: () => boolean; fetchImpl?: typeof fetch; mode?: "creative-rebaseline" }): Promise<{ draft: PersistedStudioProjectDraft; receipt: GenerationScopeReceipt; expectedRevision: string }> {
   const fetchImpl = params.fetchImpl ?? fetch;
   const fresh = await fetchImpl(`/api/studio/projects/${encodeURIComponent(params.projectId)}`, { cache: "no-store", headers: STUDIO_JSON_TRANSPORT_HEADERS });
   const payload = await fresh.json() as { saved?: SavedStudioProject & { revision?: string }; error?: string };
@@ -24,7 +24,7 @@ export async function prepareAppendedSourceConfirmation(params: { projectId: str
     throw new Error("The saved project or open draft changed. Reload and review its sources before confirming.");
   }
   const response = await fetchImpl("/api/studio/projects/source-confirmation", { method: "POST", headers: { ...STUDIO_JSON_TRANSPORT_HEADERS, "content-type": "application/json" },
-    body: JSON.stringify({ projectId: params.projectId, expectedRevision: value.revision }) });
+    body: JSON.stringify({ projectId: params.projectId, expectedRevision: value.revision, ...(params.mode ? { mode: params.mode } : {}) }) });
   const result = await response.json() as { draft?: PersistedStudioProjectDraft; receipt?: GenerationScopeReceipt; expectedRevision?: string; error?: string };
   if (!response.ok || !result.draft || !normalizeGenerationScopeReceipt(result.receipt) || result.expectedRevision !== value.revision
     || result.draft.musicVideoProject?.generationScope?.sha256 !== result.receipt?.sha256) throw new Error(result.error || "The appended sources could not be confirmed.");

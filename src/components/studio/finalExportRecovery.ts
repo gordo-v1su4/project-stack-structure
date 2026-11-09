@@ -19,7 +19,8 @@ export function finalExportSnapshotSha256(draft: PersistedStudioProjectDraft): s
   const snapshot = {
     analysis: draft.analysis, videoSources: draft.videoSources, storyState: draft.storyState,
     musicVideoProject: draft.musicVideoProject, referenceAssets: draft.referenceAssets,
-    generatedAssets: draft.generatedAssets?.filter(asset => asset.reviewStatus === "approved" || draft.generatedDraft?.assetIds.includes(asset.id)), generatedDraft: draft.generatedDraft,
+    generatedAssets: draft.generatedAssets?.filter(asset => asset.reviewStatus === "approved" || draft.generatedDraft?.assetIds.includes(asset.id)
+      || draft.generatedDraft?.reusedTakePlacements?.some(row => row.assetId === asset.id)), generatedDraft: draft.generatedDraft,
     clipAudioSettings: draft.clipAudioSettings,
     shaderPresetId: draft.workflowUiSettings?.shaderPresetId,
     shaderAccentKinds: draft.workflowUiSettings?.shaderAccentKinds,

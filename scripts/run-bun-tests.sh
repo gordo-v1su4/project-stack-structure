@@ -35,6 +35,7 @@ readonly isolated_tests=(
   "tests/unit/studioJsonTransportRoute.test.ts"
   "tests/unit/studioProjectConcurrency.test.ts"
   "tests/unit/projectExportValidation.test.ts"
+  "tests/unit/revisedStoryReuse.test.ts"
   "tests/unit/h3IdentityRecheckDispatch.test.ts"
   "tests/unit/storyTreatmentTask.test.ts"
   "tests/unit/sceneCaptionServer.test.ts"

@@ -7,7 +7,7 @@ import { findH3TargetSegment } from "./h3DraftPlan";
 
 /** Inventory only. Blocked approved cuts remain visible here; these segments never reach playback. */
 export function assetsForCurrentReferenceReview(assets: GeneratedStudioAsset[], draft: GeneratedDraftSelection | null, base: EditPlanPreviewSegment[]) {
-  const selected = new Set(draft?.assetIds ?? []);
+  const selected = new Set([...(draft?.assetIds ?? []), ...(draft?.reusedTakePlacements?.map(row => row.assetId) ?? [])]);
   const selectedAssets = (draft?.assetIds ?? []).map(id => assets.find(asset => asset.id === id)).filter((asset): asset is GeneratedStudioAsset => Boolean(asset));
   const approved = assets.filter(asset => asset.reviewStatus === "approved").sort((left, right) =>
     Date.parse(left.approvedAt ?? left.createdAt) - Date.parse(right.approvedAt ?? right.createdAt));
