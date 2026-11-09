@@ -21,6 +21,7 @@ import type { h3StillTask } from "@/trigger/h3Still";
 import type { H3StillJob } from "./h3StillJobStore";
 import { createTriggerIdempotencyKey } from "@/lib/triggerIdempotency";
 import { EXPORT_DISPATCH_UPGRADE_MESSAGE, isOwnedExportRequestKey } from "@/components/studio/exportDispatchProtocol";
+import { retrieveOwnedTriggerRun } from "@/lib/triggerRunAccess";
 
 export const STACK_STRUCTURE_TRIGGER_TASKS = {
   mediaVideoPipeline: "media-video-pipeline",
@@ -501,11 +502,7 @@ export async function triggerImageSplitter(payload: ImageSplitterPayload) {
 export async function retrieveTriggerRun(runId: string) {
   assertTriggerConfigured();
   const userId = await currentApplicationUserId();
-  const run = await runs.retrieve(runId);
-  if (!run.tags.includes(`user:${userId}`)) {
-    throw new Error("Trigger run is not visible to the current application user.");
-  }
-  return run;
+  return retrieveOwnedTriggerRun(runId, userId, (id) => runs.retrieve(id));
 }
 
 export function assertTriggerConfigured(
