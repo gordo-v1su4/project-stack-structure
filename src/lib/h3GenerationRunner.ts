@@ -255,6 +255,8 @@ export async function runH3Generation(reference: H3JobReference, runId: string,
         client.assertOpen();
         const latest = await readStudioProject(ownerId, projectId, { fresh: true });
         if (!latest) throw new Error("The saved project is unavailable before video submission.");
+        // Source authorization belongs to the exact saved object, including this fresh reread.
+        await validateSavedGenerationScope(ownerId, latest);
         await assertH3SceneProofsApproved(ownerId, latest, config.bucket, undefined, job.request);
         await update({ state: "submitting", compiledPrompt: built.prompt, frames: built.frames, referenceHashes: hashes,
           conditioningReferenceHashes: conditioningHashes, ...(firstFrameBytes?{}:{conditioningPreparations: preparations}) });
