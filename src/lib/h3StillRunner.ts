@@ -4,7 +4,7 @@ import { downloadH3ReferenceImage } from "./h3JobStore";
 import { readH3StillJob, updateH3StillJob, type H3StillJob, type H3StillResult } from "./h3StillJobStore";
 import { prepareH3StillImage } from "./h3StillImagePreparation";
 import { validateH3StillJobContext } from "./h3StillServer";
-import { downloadH3StillMaster, H3StillSubmissionError, prepareH3StillProvider, readH3StillStatus, rebuildH3StillProvider,
+import { downloadH3StillMaster, H3StillSubmissionError, H3StillUploadError, prepareH3StillProvider, readH3StillStatus, rebuildH3StillProvider,
   reconcileH3StillPrompt, submitH3StillOnce, type PreparedH3StillProvider, type H3StillSubmissionReceipt, type H3StillTransport } from "./h3StillProvider";
 
 export type H3StillJobReference = { ownerId: string; projectId: string; jobId: string; mode?: "reconcile"; previousRunId?: string };
@@ -175,7 +175,8 @@ export async function runH3Still(reference: H3StillJobReference, runId: string, 
       crossedSubmissionBoundary ||= !!job.promptId || !!job.workflowSha256 || ["submitting", "submission_unknown", "rendering", "persisting"].includes(job.state);
       if (!terminal(job)) await mutate(value => ({ ...value,
         state: crossedSubmissionBoundary ? cancelled(value) ? "cancel_requested" : "submission_unknown" : cancelled(value) || error instanceof CancelledBeforeSubmit ? "cancelled" : "failed",
-        error: crossedSubmissionBoundary ? "The existing still attempt needs reconciliation; no replacement was submitted." : "The still could not be prepared; no GPU submission was made." }), true);
+        error: crossedSubmissionBoundary ? "The existing still attempt needs reconciliation; no replacement was submitted."
+          : error instanceof H3StillUploadError ? error.message : "The still could not be prepared; no GPU submission was made." }), true);
     }
     if (crossedSubmissionBoundary || job.state === "cancelled" || job.state === "failed") return { jobId: job.id, state: job.state };
     throw error;

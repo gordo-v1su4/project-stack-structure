@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import fixture from "../fixtures/h3-still-provider-node-inputs.json";
 import { freezeH3Still, type H3StillDescriptor } from "../../src/lib/h3StillProfile";
-import { downloadH3StillMaster, findH3StillPrompt, H3StillSubmissionError, prepareH3StillProvider, readH3StillStatus,
+import { downloadH3StillMaster, findH3StillPrompt, H3StillSubmissionError, H3StillUploadError, prepareH3StillProvider, readH3StillStatus,
   reconcileH3StillPrompt, submitH3StillOnce, type H3StillTransport, type PreparedH3StillProvider } from "../../src/lib/h3StillProvider";
 
 const jobId = `h3-still-${"d".repeat(64)}`, baseUrl = "http://swarm.test:7861";
@@ -73,6 +73,18 @@ describe("H3 still managed provider adapter", () => {
     const h = harness(); let failed = false;
     try { await prepareH3StillProvider(descriptor(), { ...h.options, jobId, fetchImpl: (async () => reply({ name: "other.png", subfolder: "stack-stills", type: "input" })) as typeof fetch, readReference: reference }); } catch { failed = true; }
     expect(failed).toBe(true);
+  });
+
+  test("reports an upload HTTP failure without exposing its body or submitting a prompt", async () => {
+    const routes: string[] = [];
+    const failure = await prepareH3StillProvider(descriptor(), { baseUrl, jobId, readReference: reference,
+      fetchImpl: (async url => { routes.push(new URL(String(url)).pathname); return new Response("private backend details", { status: 500 }); }) as typeof fetch,
+    }).catch(error => error);
+    expect(failure).toBeInstanceOf(H3StillUploadError);
+    expect(failure.message).toContain("HTTP 500");
+    expect(failure.message).toContain("available disk space");
+    expect(failure.message).not.toContain("private backend details");
+    expect(routes).toEqual(["/ComfyBackendDirect/upload/image"]);
   });
 
   test("checks all actual node schemas and models, durably records submitting, then posts once", async () => {

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { claimH3StillReconciliation, createH3StillJob, readH3StillJob, requestH3StillCancellation, updateH3StillJob, type H3StillJobInput, type H3StillJob, type H3StillResult } from "../../src/lib/h3StillJobStore";
 import { freezeH3Still } from "../../src/lib/h3StillProfile";
-import { H3StillSubmissionError, rebuildH3StillProvider } from "../../src/lib/h3StillProvider";
+import { H3StillSubmissionError, H3StillUploadError, rebuildH3StillProvider } from "../../src/lib/h3StillProvider";
 import { runH3Still, type H3StillRunnerDependencies } from "../../src/lib/h3StillRunner";
 import { StudioProjectConflictError, type StudioJsonObjectStore } from "../../src/lib/studioProjectObjectStore";
 
@@ -137,6 +137,15 @@ describe("durable H3 still runner", () => {
     const g = await fixture(); await g.existing(); let rejected = false;
     try { await runH3Still(g.ref, "run-other", g.options, g.d); } catch { rejected = true; }
     expect(rejected).toBe(true); expect(g.count.submit).toBe(0); expect((await g.read())!.runId).toBe("run-1");
+  });
+  test("persists safe upload diagnostics and keeps the failed attempt terminal without GPU submission", async () => {
+    const f = await fixture();
+    f.d.prepare = async () => { f.count.prepare++; throw new H3StillUploadError(500); };
+    expect((await runH3Still(f.ref, "run-1", f.options, f.d)).state).toBe("failed");
+    const saved = (await f.read())!;
+    expect(saved.error).toContain("HTTP 500"); expect(saved.error).toContain("No GPU submission was made");
+    expect(saved.promptId).toBe(undefined); expect(saved.workflowSha256).toBe(undefined); expect(f.count.submit).toBe(0);
+    expect((await runH3Still(f.ref, "run-1", f.options, f.d)).state).toBe("failed"); expect(f.count.prepare).toBe(1);
   });
   test("only explicit reconciliation with the exact previous run can claim an existing submission", async () => {
     const f = await fixture(); await f.existing("submission_unknown");
