@@ -47,7 +47,7 @@ export function AnimaticPreviewPage({ projectId }: { projectId: string }) {
         const response = await fetch(`/api/studio/projects/${encodeURIComponent(projectId)}/preview`, {
           cache: "no-store", headers: revision ? { "if-none-match": revision } : {}, signal: AbortSignal.any([controller.signal, AbortSignal.timeout(20_000)]) });
         if (response.status !== 304) {
-          if (!response.ok) { if (response.status === 401 && active) setSnapshot(null); throw new Error(response.status === 401 ? "Sign in to view this project's preview." : "Preview updates could not be read. Retrying automatically."); }
+          if (!response.ok) { if (response.status === 401 && active) { revision = ""; setSnapshot(null); } throw new Error(response.status === 401 ? "Sign in to view this project's preview." : "Preview updates could not be read. Retrying automatically."); }
           const next = await response.json() as AnimaticPreviewSnapshot;
           if (next.projectId !== projectId) throw new Error("The preview response belongs to another project.");
           if (active) { revision = next.revision; setSnapshot(next); }
