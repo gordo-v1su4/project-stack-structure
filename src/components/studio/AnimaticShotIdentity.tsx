@@ -4,7 +4,9 @@ import type { AnimaticShot } from "./stillAnimatic";
 export function animaticShotColor(id: string) {
   const number = /^A(\d+)$/.exec(id)?.[1];
   const value = number ? Number(number) : [...id].reduce((sum, char) => (sum * 31 + char.charCodeAt(0)) % 360, 0);
-  return `hsl(${value * 31 % 360} 45% 20%)`;
+  // Jump around the color wheel so neighboring cards span warm and cool hues.
+  const hue = Math.round((18 + value * 137.508) % 360 * 10) / 10;
+  return `hsl(${hue} 58% 24%)`;
 }
 
 export function AnimaticTimingCard({ shot, fps, compact = false }: { shot: AnimaticShot; fps: number; compact?: boolean }) {

@@ -10,6 +10,6 @@ test("footage labels map a mid-song selection's local clock back to original son
   expect(animaticFootageSongTime([{ ...segments[0], musicStart: undefined }], 0, 1)).toBeNull();
 });
 test("shot colors are stable when other shots complete or order changes", () => {
-  expect(animaticShotColor("A001")).toBe("hsl(31 45% 20%)");
+  expect(animaticShotColor("A001")).toBe("hsl(155.5 58% 24%)");
   expect(animaticShotColor("A002")).not.toBe(animaticShotColor("A001"));
 });
