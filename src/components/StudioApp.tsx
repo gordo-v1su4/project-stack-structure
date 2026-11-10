@@ -66,7 +66,7 @@ import { MusicCutExplorer } from "./studio/panels/MusicCutExplorer";
 import { SplitTab } from "./studio/panels/SplitTab";
 import { createDefaultStoryTabState, StoryTab } from "./studio/panels/StoryTab";
 import { prepareSceneProofSave } from "./studio/sceneProofPersistence";
-import { prepareAnimaticSave, type StillAnimaticPlan } from "./studio/stillAnimatic";
+import { animaticContextSha256, prepareAnimaticSave, type StillAnimaticPlan } from "./studio/stillAnimatic";
 import type { SceneProofPlan } from "./studio/sceneProofs";
 import { generationScopeSha256 } from "./studio/generationScope";
 import { ActRail } from "./studio/shell/ActRail";
@@ -2860,6 +2860,10 @@ export default function StudioApp() {
                 masterAudioUrl={masterAudioUrl}
                 previewAssetKey={previewState.currentAssetKey}
                 previewAssetUrl={previewAssetUrl}
+                animaticPlan={storyState.stillAnimaticPlan}
+                animaticContext={activeProjectId && musicVideoProject && storyState.confirmedTreatmentSnapshot && storyState.sceneProofPlan
+                  ? animaticContextSha256({ projectId: activeProjectId, project: musicVideoProject, treatment: storyState.confirmedTreatmentSnapshot,
+                    storyBeats: storyState.storyBeats, references: referenceAssets, sceneProofPlan: storyState.sceneProofPlan }) : undefined}
                 empty={monitorEmpty}
                 focused={monitorFocused}
                 onToggleFocused={() => setIsPreviewExpanded((current) => !current)}
