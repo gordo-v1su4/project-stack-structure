@@ -40,6 +40,8 @@ import type { BeatJoinAnalysis, SegmentPreview, UploadedVideoSource } from "../t
 import type { ReferenceAsset } from "../referenceAssets";
 import { preserveReviewedStoryArrangement } from "../reconfirmStoryProject";
 import { SceneProofPanel } from "../SceneProofPanel";
+import { StillAnimaticPanel } from "../StillAnimaticPanel";
+import type { StillAnimaticPlan } from "../stillAnimatic";
 import type { SceneProofPlan } from "../sceneProofs";
 import { assertStoryBibleConfirmation } from "../storyAuthoring";
 import { buildStoryBibleBinding } from "../storyBibleBinding";
@@ -68,6 +70,7 @@ export type StoryTabState = StoryTreatmentState & {
   storyGenerated: boolean;
   editSettings: StoryEditSettings;
   sceneProofPlan?: SceneProofPlan;
+  stillAnimaticPlan?: StillAnimaticPlan;
   sceneProofReviewRequired?: true;
 };
 
@@ -90,6 +93,7 @@ type StoryTabProps = {
   onPrepareStoryContext?: () => Promise<{ projectId: string; revision: string }>;
   onEnsureSavedProject?: () => Promise<string>;
   onPersistSceneProofPlan?: (plan: SceneProofPlan, expected?: SceneProofPlan) => Promise<void>;
+  onPersistStillAnimatic?: (plan: StillAnimaticPlan, expected?: StillAnimaticPlan) => Promise<void>;
 };
 
 const DEFAULT_STORY_BEATS: StoryBeatDraft[] = getDefaultStorySectionDrafts().map((draft, index) => ({
@@ -123,7 +127,7 @@ export function createDefaultStoryTabState(): StoryTabState {
   };
 }
 
-export function StoryTab({ referenceRevision, referenceAssets, analysis, audioStatus, videoSources, segmentPreviews, state, existingProject, hasExistingGeneratedFootage, onStateChange, onProjectChange, onConfirmAppendedSources, sourceReviewRequired, savedProjectId, savedProjectRevision, onPrepareStoryContext, onEnsureSavedProject, onPersistSceneProofPlan }: StoryTabProps) {
+export function StoryTab({ referenceRevision, referenceAssets, analysis, audioStatus, videoSources, segmentPreviews, state, existingProject, hasExistingGeneratedFootage, onStateChange, onProjectChange, onConfirmAppendedSources, sourceReviewRequired, savedProjectId, savedProjectRevision, onPrepareStoryContext, onEnsureSavedProject, onPersistSceneProofPlan, onPersistStillAnimatic }: StoryTabProps) {
   const { transcriptSummary, storyBeats, activeBeatId, storyGenerated } = state;
   const [confirmationError, setConfirmationError] = useState<string | null>(null);
   const [confirmationNotice, setConfirmationNotice] = useState<string | null>(null);
@@ -325,6 +329,10 @@ export function StoryTab({ referenceRevision, referenceAssets, analysis, audioSt
         })}
       />
 
+      {state.storyGenerated && state.confirmedTreatmentSnapshot && existingProject && savedProjectId && state.sceneProofPlan ? <StillAnimaticPanel
+        projectId={savedProjectId} project={existingProject} treatment={state.confirmedTreatmentSnapshot} storyBeats={plannedStoryBeats}
+        references={referenceAssets ?? []} sceneProofPlan={state.sceneProofPlan} plan={state.stillAnimaticPlan}
+        audioUrl={analysis?.audioUrl ?? ""} onPersist={onPersistStillAnimatic} onChange={stillAnimaticPlan => updateState({ stillAnimaticPlan })} /> : null}
       {state.storyGenerated && state.confirmedTreatmentSnapshot && existingProject ? <SceneProofPanel
         projectId={savedProjectId ?? null} project={existingProject} treatment={state.confirmedTreatmentSnapshot}
         storyBeats={plannedStoryBeats} references={referenceAssets ?? []} plan={state.sceneProofPlan}

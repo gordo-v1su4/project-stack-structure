@@ -15,6 +15,7 @@ export type MiniMaxStillPanelProps = {
   /** Omit for backwards-compatible one-shot storage. Use a stable scene/moment ID for proofs. */
   storageScope?: string;
   sceneProof?: SceneProofBinding;
+  animaticShot?: import("../stillAnimatic").AnimaticShotBinding;
   /** Supplied durable authority, including null for an explicitly empty moment. */
   suppliedRecord?: StillClientRecord | null;
   creativePrompt?: string; initialCreativePrompt?: string;
@@ -133,6 +134,7 @@ export function MiniMaxStillPanel(props: MiniMaxStillPanelProps) {
       const next: StillClientRecord = { version: 1, projectId: shot.projectId, context: start.context,
         request: { shot, creativePrompt, seed: crypto.getRandomValues(new Uint32Array(1))[0],
           ...(start.sceneProof ? { sceneProof: start.sceneProof } : {}),
+          ...(start.animaticShot ? { animaticShot: start.animaticShot } : {}),
           requestIntentId: retry ? record.request.requestIntentId : crypto.randomUUID(), attempt: retry ? record.request.attempt + 1 : 0 } };
       pending = next; pendingPersistence.current = next;
       // Invalidate the ready preview before the durable write. Uncertain save/POST cannot enable a second attempt.

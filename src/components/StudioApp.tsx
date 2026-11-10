@@ -66,6 +66,7 @@ import { MusicCutExplorer } from "./studio/panels/MusicCutExplorer";
 import { SplitTab } from "./studio/panels/SplitTab";
 import { createDefaultStoryTabState, StoryTab } from "./studio/panels/StoryTab";
 import { prepareSceneProofSave } from "./studio/sceneProofPersistence";
+import { prepareAnimaticSave, type StillAnimaticPlan } from "./studio/stillAnimatic";
 import type { SceneProofPlan } from "./studio/sceneProofs";
 import { generationScopeSha256 } from "./studio/generationScope";
 import { ActRail } from "./studio/shell/ActRail";
@@ -2379,6 +2380,24 @@ export default function StudioApp() {
     } finally { autosaveInFlightRef.current = false; }
   }
 
+  async function persistStillAnimatic(plan: StillAnimaticPlan, expected?: StillAnimaticPlan) {
+    const epoch = projectSaveSessionRef.current!.contextEpoch;
+    while (autosaveInFlightRef.current) await new Promise(resolve => setTimeout(resolve, 50));
+    const live = draftReviewLiveRef.current;
+    if (!live.projectId || projectSaveSessionRef.current!.contextEpoch !== epoch) throw new Error("The open project changed before saving its animatic.");
+    const draft = prepareAnimaticSave(live.projectId, live.project, plan, expected);
+    autosaveInFlightRef.current = true;
+    try {
+      flushSync(() => setStoryState(current => ({ ...current, stillAnimaticPlan: plan })));
+      await saveVersionedProject({ projectId: live.projectId, name: live.projectName, draft }, { cache: false }, epoch);
+      if (projectSaveSessionRef.current!.contextEpoch !== epoch) throw new Error("The open project changed while saving its animatic.");
+      setSaveState({ kind: "saved", at: Date.now(), scope: "project", detail: "Timed still animatic saved." });
+    } catch (error) {
+      if (projectSaveSessionRef.current!.contextEpoch === epoch) setSaveState({ kind: "error", at: null, scope: "project", detail: error instanceof Error ? error.message : "Animatic save failed; generation is blocked." });
+      throw error;
+    } finally { autosaveInFlightRef.current = false; }
+  }
+
   async function ensureH3ProjectSaved() {
     const startingProjectId = draftReviewLiveRef.current.projectId;
     await flushPendingAutosaveRef.current?.();
@@ -2946,6 +2965,7 @@ export default function StudioApp() {
                 onPrepareStoryContext={prepareStoryContext}
                 onEnsureSavedProject={ensureH3ProjectSaved}
                 onPersistSceneProofPlan={persistSceneProofPlan}
+                onPersistStillAnimatic={persistStillAnimatic}
                 existingProject={storedMusicVideoProject}
                 analysis={beatJoinAnalysis}
                 audioStatus={audioStatus}

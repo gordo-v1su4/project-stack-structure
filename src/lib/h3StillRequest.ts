@@ -5,7 +5,7 @@ import { assertH3ShotProfile, compileH3Prompt } from "./h3Workflow";
 import { freezeH3Still, h3StillDigest, type H3StillDescriptor } from "./h3StillProfile";
 import type { SceneProofBinding } from "@/components/studio/sceneProofs";
 
-export type H3StillRequest = { shot: H3GenerationRequest; creativePrompt: string; seed: number; requestIntentId: string; attempt: number; sceneProof?: SceneProofBinding };
+export type H3StillRequest = { shot: H3GenerationRequest; creativePrompt: string; seed: number; requestIntentId: string; attempt: number; sceneProof?: SceneProofBinding; animaticShot?: import("@/components/studio/stillAnimatic").AnimaticShotBinding };
 export type H3StillReferenceReceipt = { assetId: string; etag: string; rawSha256: string };
 const SHOT_FIELDS = ["projectId", "planSignature", "requirementId", "timelineItemId", "sectionId", "songStart", "songEnd", "prompt",
   "referenceAssetIds", "requestIntentId", "attempt", "seed", "draftRevision", "identityPolicyFamily"];
@@ -23,10 +23,19 @@ export function parseH3SceneProofBinding(value: unknown): SceneProofBinding {
 }
 
 /** Browser input contains creative intent and project identities, never a workflow or backend path. */
+export function parseAnimaticShotBinding(value: unknown): NonNullable<H3StillRequest["animaticShot"]> {
+  const binding = value as NonNullable<H3StillRequest["animaticShot"]>;
+  if (!binding || typeof binding !== "object" || Array.isArray(binding)
+    || Object.keys(binding).some(key => !["shotId", "bindingSha256"].includes(key))
+    || typeof binding.shotId !== "string" || !/^[A-Za-z0-9_-]{1,96}$/.test(binding.shotId) || !hash(binding.bindingSha256)) throw new H3RequestError("Use the exact saved animatic shot binding.");
+  return { shotId: binding.shotId, bindingSha256: binding.bindingSha256 };
+}
+
 export function parseH3StillRequest(value: unknown): H3StillRequest {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new H3RequestError("A still request is required.");
   const root = value as Record<string, unknown>;
-  if (Object.keys(root).some(key => !["shot", "creativePrompt", "seed", "requestIntentId", "attempt", "sceneProof"].includes(key))) throw new H3RequestError("Unknown still request field.");
+  if (Object.keys(root).some(key => !["shot", "creativePrompt", "seed", "requestIntentId", "attempt", "sceneProof", "animaticShot"].includes(key))) throw new H3RequestError("Unknown still request field.");
+  if (root.sceneProof !== undefined && root.animaticShot !== undefined) throw new H3RequestError("Choose a scene proof or an animatic shot.");
   if (!root.shot || typeof root.shot !== "object" || Array.isArray(root.shot)
     || Object.keys(root.shot).some(key => !SHOT_FIELDS.includes(key))) throw new H3RequestError("Use an unconditioned future video shot without workflow fields.");
   if (typeof root.creativePrompt !== "string" || !root.creativePrompt.trim() || root.creativePrompt !== root.creativePrompt.trim()
@@ -43,7 +52,8 @@ export function parseH3StillRequest(value: unknown): H3StillRequest {
   parseH3Request({ ...shot, prompt: root.creativePrompt });
   return { shot: detached(shot), creativePrompt: root.creativePrompt, seed: root.seed as number,
     requestIntentId: root.requestIntentId, attempt: root.attempt as number,
-    ...(root.sceneProof === undefined ? {} : { sceneProof: parseH3SceneProofBinding(root.sceneProof) }) };
+    ...(root.sceneProof === undefined ? {} : { sceneProof: parseH3SceneProofBinding(root.sceneProof) }),
+    ...(root.animaticShot === undefined ? {} : { animaticShot: parseAnimaticShotBinding(root.animaticShot) }) };
 }
 
 /** The caller must materialize against the fresh owned project and conditionally

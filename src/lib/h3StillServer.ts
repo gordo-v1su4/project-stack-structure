@@ -8,6 +8,7 @@ import { buildH3StillDescriptor, parseH3StillRequest, type H3StillRequest } from
 import { createH3StillJob, rejectH3StillIntent, type H3StillJob } from "./h3StillJobStore";
 import { h3StillDigest } from "./h3StillProfile";
 import { assertH3SceneProofRequest, assertH3SceneProofJob } from "./h3SceneProofServer";
+import { materializeAnimaticStill, savedAnimaticStillRequest, assertAnimaticStillJob } from "./h3AnimaticServer";
 
 type Dependencies = {
   read: typeof readStudioProject; config: typeof getMediaGatewayConfig;
@@ -48,11 +49,11 @@ export async function loadH3StillContext(ownerId: string, request: H3StillReques
   await dependencies.validate(ownerId, saved, { allowUnissuedBaseline: true });
   // Validate both the unchanged future-video direction and the still direction
   // against approved identities and their selected references.
-  const template = await dependencies.pin(materializeH3Job(ownerId, saved, request.shot, config.bucket));
+  const template = await dependencies.pin(materializeAnimaticStill(ownerId, saved, request, config.bucket));
   if (template.references.some(ref => ref.aesthetic)) {
     throw new H3RequestError("Still-to-video continuation with shot and style refs needs a separate frozen continuation request. Choose the named subject and environment sheets for this still.", 422);
   }
-  materializeH3Job(ownerId, saved, { ...request.shot, prompt: request.creativePrompt }, config.bucket);
+  if (!request.animaticShot) materializeH3Job(ownerId, saved, { ...request.shot, prompt: request.creativePrompt }, config.bucket);
   const receipts = []; let total = 0;
   for (const ref of template.references) {
     const raw = await dependencies.download(ref);
@@ -92,7 +93,8 @@ export async function prepareH3StillJob(ownerId: string, value: unknown, depende
   }
   return dependencies.create({ ownerId, projectId: request.shot.projectId, descriptor: context.descriptor,
     shotRequest: request.shot, template: context.template, requestIntentId: request.requestIntentId, attempt: request.attempt,
-    ...(request.sceneProof ? { sceneProof: request.sceneProof } : {}) });
+    ...(request.sceneProof ? { sceneProof: request.sceneProof } : {}),
+    ...(request.animaticShot ? { animaticShot: request.animaticShot } : {}) });
 }
 
 /** Re-resolve every authority before an unsubmitted worker can touch the GPU. */
@@ -101,8 +103,11 @@ export async function validateH3StillJobContext(job: H3StillJob, dependencies: D
   const config = dependencies.config();
   if (!saved || !config) throw new H3RequestError("The saved still project is unavailable.", 409);
   await dependencies.validate(job.ownerId, saved);
-  const template = await dependencies.pin(materializeH3Job(job.ownerId, saved, job.shotRequest, config.bucket));
+  const request = job.animaticShot ? savedAnimaticStillRequest(saved, job.animaticShot).request : undefined;
+  const template = await dependencies.pin(request ? materializeAnimaticStill(job.ownerId, saved, request, config.bucket)
+    : materializeH3Job(job.ownerId, saved, job.shotRequest, config.bucket));
   assertH3SceneProofJob(saved, job, template);
+  assertAnimaticStillJob(saved, job, template);
   const refs = template.references.map(({ assetId, canonicalName, role, bucket, objectKey, version, etag }) =>
     ({ assetId, canonicalName, role, bucket, objectKey, version, etag }));
   const expected = job.descriptor.body.references.map(({ rawSha256: _rawSha256, ...ref }) => { void _rawSha256; return ref; });

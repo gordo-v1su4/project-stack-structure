@@ -6,7 +6,7 @@ import type { H3StillJob } from "@/lib/h3StillJobStore";
 import type { ReferenceAsset } from "./referenceAssets";
 import type { SceneProofBinding } from "./sceneProofs";
 
-export type StillClientRequest = { shot: H3GenerationRequest; creativePrompt: string; seed: number; requestIntentId: string; attempt: number; sceneProof?: SceneProofBinding };
+export type StillClientRequest = { shot: H3GenerationRequest; creativePrompt: string; seed: number; requestIntentId: string; attempt: number; sceneProof?: SceneProofBinding; animaticShot?: import("./stillAnimatic").AnimaticShotBinding };
 export type StillClientRecord = { version: 1; projectId: string; context: string; request: StillClientRequest; jobId?: string };
 export class StillClientAdmissionError extends Error {}
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
@@ -104,6 +104,10 @@ export function parseStillClientRecord(value: unknown, projectId: string): Still
       || typeof r.sceneProof.sceneId !== "string" || !r.sceneProof.sceneId.trim() || r.sceneProof.sceneId.length > 200 || /[\x00-\x1f\x7f]/.test(r.sceneProof.sceneId)
       || !["setting", "action", "transition"].includes(r.sceneProof.momentId) || !/^[a-f0-9]{64}$/.test(r.sceneProof.bindingSha256)
       || r.sceneProof.bindingSha256 !== v.context)) return null;
+    if (r.animaticShot !== undefined && (r.sceneProof !== undefined || !r.animaticShot
+      || Object.keys(r.animaticShot).some(key => !["shotId", "bindingSha256"].includes(key))
+      || !/^[A-Za-z0-9_-]{1,96}$/.test(r.animaticShot.shotId) || !/^[a-f0-9]{64}$/.test(r.animaticShot.bindingSha256)
+      || r.animaticShot.bindingSha256 !== v.context)) return null;
     return JSON.parse(JSON.stringify(v)) as StillClientRecord;
   } catch { return null; }
 }
@@ -113,6 +117,7 @@ export function assertStillClientJob(value: unknown, record: StillClientRecord):
     || job.requestIntentId !== record.request.requestIntentId || job.attempt !== record.request.attempt
     || identityPolicySha256(job.shotRequest) !== identityPolicySha256(record.request.shot)
     || identityPolicySha256(job.sceneProof ?? null) !== identityPolicySha256(record.request.sceneProof ?? null)
+    || identityPolicySha256(job.animaticShot ?? null) !== identityPolicySha256(record.request.animaticShot ?? null)
     || job.descriptor?.body.seed !== record.request.seed || !job.descriptor.body.target
     || job.descriptor.body.target.songStart !== record.request.shot.songStart || job.descriptor.body.target.songEnd !== record.request.shot.songEnd
     || job.descriptor.body.planSignature !== record.request.shot.planSignature) throw new Error("The returned still belongs to another frozen request.");

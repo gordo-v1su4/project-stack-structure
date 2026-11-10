@@ -1,6 +1,6 @@
 import type { H3GenerationJob, H3GenerationRequest } from "@/components/studio/h3Generation";
 import { parseH3Request } from "./h3GenerationServer";
-import { parseH3SceneProofBinding } from "./h3StillRequest";
+import { parseH3SceneProofBinding, parseAnimaticShotBinding } from "./h3StillRequest";
 import type { SceneProofBinding } from "@/components/studio/sceneProofs";
 import { freezeH3Still, h3StillDigest, type H3StillDescriptor } from "./h3StillProfile";
 import { normalizeStudioOwnerSegment, normalizeStudioProjectId } from "./studioStoragePaths";
@@ -11,7 +11,7 @@ export type H3StillImage = { bucket: string; objectKey: string; sha256: string; 
 export type H3StillResult = { master: H3StillImage; native: H3StillImage; artifactId: string; artifactSha256: string };
 export type H3StillJobInput = { ownerId: string; projectId: string; descriptor: H3StillDescriptor;
   /** Future video request stays frozen, with its own independent video intent/attempt. */
-  shotRequest: H3GenerationRequest; template: H3GenerationJob; requestIntentId: string; attempt?: number; sceneProof?: SceneProofBinding };
+  shotRequest: H3GenerationRequest; template: H3GenerationJob; requestIntentId: string; attempt?: number; sceneProof?: SceneProofBinding; animaticShot?: import("@/components/studio/stillAnimatic").AnimaticShotBinding };
 export type H3StillJob = Omit<H3StillJobInput, "attempt"> & { version: 1; id: string; attempt: number; state: H3StillState;
   createdAt: string; updatedAt: string; runId?: string; promptId?: string; workflowSha256?: string; providerSchemaSha256?: string;
   /** Unique execution claim before POST; a same-run CAS observer cannot inherit another execution's submission permission. */
@@ -101,8 +101,10 @@ function frozen(input: H3StillJobInput) {
       ...(template.target.requirementId === undefined ? {} : { requirementId: template.target.requirementId }), songStart: template.target.songStart, songEnd: template.target.songEnd }, descriptor.body.target)
     || !same(template.references.map(ref => ({ assetId: ref.assetId, canonicalName: ref.canonicalName, role: ref.role, bucket: ref.bucket, objectKey: ref.objectKey, version: ref.version, etag: ref.etag })), descriptor.body.references.map(({ rawSha256: _hash, ...ref }) => { void _hash; return ref; }))
     || (template.referenceHashes !== undefined && !same(template.referenceHashes, descriptor.body.references.map(ref => ref.rawSha256)))) throw new Error("H3 still template differs from its frozen owned shot and raw references.");
+  if (detached.sceneProof && detached.animaticShot) throw new Error("A still cannot target both a scene proof and an animatic shot.");
   return { ownerId, projectId, descriptor, shotRequest, template, requestIntentId: detached.requestIntentId, attempt,
-    ...(detached.sceneProof === undefined ? {} : { sceneProof: parseH3SceneProofBinding(detached.sceneProof) }) };
+    ...(detached.sceneProof === undefined ? {} : { sceneProof: parseH3SceneProofBinding(detached.sceneProof) }),
+    ...(detached.animaticShot === undefined ? {} : { animaticShot: parseAnimaticShotBinding(detached.animaticShot) }) };
 }
 function identity(input: ReturnType<typeof frozen>) {
   // Materialization stamps fresh metadata on every lookup. Those two clocks do
@@ -116,7 +118,7 @@ function bounded(job: H3StillJob) {
 function validate(job: H3StillJob, ownerId: string, projectId: string, id: string) {
   bounded(job);
   const initial = frozen(job);
-  const fields = ["version", "id", "ownerId", "projectId", "descriptor", "shotRequest", "template", "requestIntentId", "attempt", "state", "createdAt", "updatedAt", "runId", "promptId", "workflowSha256", "providerSchemaSha256", "submissionClaimId", "cancelRequestedAt", "error", "result", "workerRecoveries", "sceneProof"];
+  const fields = ["version", "id", "ownerId", "projectId", "descriptor", "shotRequest", "template", "requestIntentId", "attempt", "state", "createdAt", "updatedAt", "runId", "promptId", "workflowSha256", "providerSchemaSha256", "submissionClaimId", "cancelRequestedAt", "error", "result", "workerRecoveries", "sceneProof", "animaticShot"];
   if (job.version !== 1 || job.ownerId !== ownerId || job.projectId !== projectId || job.id !== id || identity(initial) !== id
     || Object.keys(job).some(field => !fields.includes(field)) || !Object.hasOwn(transitions, job.state)
     || !text(job.createdAt) || !Number.isFinite(Date.parse(job.createdAt)) || !text(job.updatedAt) || !Number.isFinite(Date.parse(job.updatedAt))
