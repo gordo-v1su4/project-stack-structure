@@ -24,6 +24,20 @@ function fixture() {
   return { assets, draft, resolved };
 }
 
+test("an imported clip retains the exact reviewed animatic binding and stale selected history does not reserve it", () => {
+  const motion = { shotId: "A001", bindingSha256: "a".repeat(64), reviewBindingSha256: "b".repeat(64), imageSha256: "c".repeat(64) };
+  const segment = { ...cut, animaticShotId: "A001", animaticMotion: motion };
+  const range = { songStart: segment.musicStart, songEnd: segment.musicEnd };
+  const old = candidate(range.songStart, range.songEnd, "old.mp4");
+  expect(externalImportWindows(segment, [segment], [old]).reserved).toEqual([]);
+  const target = externalImportTarget(segment, range, [], "fallback"); expect(target.animaticMotion).toEqual(motion);
+  const asset = createImportedVideoAsset({ kind: "original-footage", fileName: "reviewed-edit.mp4", durationSeconds: 7, storage, target });
+  const draft = selectGeneratedDraftAsset({ draft: { planSignature: "current", revision: 0, assetIds: [] }, assets: [asset], asset, segments: [segment] });
+  expect(applyDraftGeneratedAssets([segment], [asset], draft)[0].kind).toBe("source");
+  expect(() => externalImportTarget(segment, { ...range, songEnd: range.songEnd - 1 }, [], "fallback")).toThrow("complete reviewed");
+  expect(() => externalImportTarget({ ...segment, animaticMotion: undefined }, range, [], "fallback")).toThrow("complete reviewed");
+});
+
 test("the P26 import defaults to the actual uncovered 2.305s and retains P27/P28 lineage", () => {
   const { assets, draft, resolved } = fixture(), before = JSON.stringify({ cut, assets, draft });
   const windows = externalImportWindows(cut, resolved, assets);

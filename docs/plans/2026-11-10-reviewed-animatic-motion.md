@@ -62,6 +62,11 @@ the complete prepared draft is explicitly accepted; export revalidates canonical
 origin evidence and current placement consent. Short trims do not silently
 leave a partial animatic shot behind.
 
+The existing completed-file import path also preserves animatic target bindings
+and requires a whole reviewed shot. Stale selected history with a different
+image/review binding does not reserve the new import interval. Imported original
+footage remains a pending editorial candidate, with no H3 verification claim.
+
 Ordinary uploaded-source placement into animatic windows and automatic directed
 motion planning remain unfinished. Retained still-image provenance alone never
 authorizes a source trim. No project data, production deployment or GPU dispatch
