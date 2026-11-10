@@ -2815,6 +2815,7 @@ export default function StudioApp() {
               headline={monitorEmpty.headline}
               meta={monitorEmpty.meta}
               next={monitorEmpty.next}
+              previewProjectId={activeProjectId}
             />
 
             {beatJoinAnalysis && !monitorFocused ? (
