@@ -23,6 +23,11 @@ import {issuedGalleryProfileSha256} from "@/components/studio/issuedIdentityPoli
 import { reuseOriginAssetSha256, reusedTakeReviewSha256, type ReusedTakePlacement } from "@/components/studio/reusedTakePlacements";
 import { applyDraftGeneratedAssets, captureGeneratedDraftReview, approveGeneratedDraft } from "@/components/studio/generatedDraft";
 import { buildEditPlanPreviewSegments } from "@/components/studio/musicVideoProject";
+import { buildStoryDraftSegments } from "@/components/studio/animaticDraft";
+import { prepareSceneProofPlan } from "@/components/studio/sceneProofs";
+import { animaticShotBinding, importStillAnimatic, stillAnimaticShotRequest } from "@/components/studio/stillAnimatic";
+import { animaticReviewBinding, reviewAnimatic } from "@/components/studio/animaticReview";
+import { parseH3StillRequest } from "@/lib/h3StillRequest";
 
 let signedIn = true, dispatches: Array<Record<string, unknown>> = [], reads = 0;
 let saved: SavedStudioProject, job: H3GenerationJob, projectId = "project-1";
@@ -127,6 +132,39 @@ function form(projectContext = true) {
   return data;
 }
 function post(data: FormData) { return POST(new Request("http://app.test/api/export/final", { method: "POST", body: data })); }
+
+test("export reconstructs the reviewed animatic target instead of the legacy edit window", async () => {
+  reset();
+  const d = saved.draft, project = d.musicVideoProject!, story = d.storyState;
+  const context = { projectId, project, treatment: story.confirmedTreatmentSnapshot!, storyBeats: story.storyBeats, references: d.referenceAssets! };
+  const sceneProofPlan = prepareSceneProofPlan(context); story.sceneProofPlan = sceneProofPlan;
+  const input = { ...context, sceneProofPlan };
+  let plan = importStillAnimatic(input, { projectId, fps: 24, masterDuration: 3, totalFrames: 72, slots: [{ id: "A001",
+    sceneId: sceneProofPlan.scenes[0].id, sceneTitle: "Club", timelineItemId: project.editPlan.timelineItems[0].id,
+    startFrame: 0, endFrame: 72, prompt: "[Static] Medium shot. Diego waits inside dark Club.", referenceAssetIds: ["diego", "club"] }] });
+  const shot = plan.shots[0], binding = animaticShotBinding(plan, shot), stillId = `h3-still-${hash("b")}`;
+  const request = parseH3StillRequest({ shot: stillAnimaticShotRequest(input, plan, shot), creativePrompt: shot.prompt,
+    animaticShot: binding, seed: 42, requestIntentId: crypto.randomUUID(), attempt: 0 });
+  shot.record = { version: 1, projectId, context: binding.bindingSha256, request, jobId: stillId };
+  const image = { bucket: "studio", objectKey: `media-uploads/projects/github-test/still-results/${projectId}/${stillId}/master.png`,
+    sha256: hash("c"), byteLength: 100, width: 2048, height: 1152 };
+  shot.proof = { jobId: stillId, descriptorSha256: hash("d"), result: { master: image, native: { ...image, width: 1344, height: 768 },
+    artifactId: `h3-frame-${hash("e")}`, artifactSha256: hash("e") } };
+  const audioUrl = `/api/storage/media?${new URLSearchParams({ bucket: d.analysis!.storageBucket!, objectKey: d.analysis!.storagePath! })}`;
+  plan = reviewAnimatic(plan, plan.contextSha256, audioUrl, animaticReviewBinding(plan, plan.contextSha256, audioUrl)!, "approved", "Reviewed");
+  story.stillAnimaticPlan = plan;
+  const [segment] = buildStoryDraftSegments({ projectId, project, storyState: story, videoSources: [], referenceAssets: d.referenceAssets!, audio: d.analysis });
+  expect(segment.timelineItemId).toBe("animatic:A001");
+  job.target = { ...job.target, timelineItemId: segment.timelineItemId!, animaticMotion: segment.animaticMotion };
+  job.request = { ...job.request, timelineItemId: segment.timelineItemId, animaticMotion: segment.animaticMotion };
+  job.result!.asset.target = structuredClone(job.target);
+  d.generatedAssets![0].target = structuredClone(job.target);
+  const result = await post(form()); expect(result.status).toBe(202); expect(dispatches).toHaveLength(1);
+  dispatches = [];
+  // Same time and shot number do not authorize another reviewed image.
+  d.generatedAssets![0].target!.animaticMotion!.imageSha256 = hash("f");
+  expect((await post(form())).status).toBe(409); expect(dispatches).toHaveLength(0);
+});
 
 function confirmFixtureSourceAppend() {
   const draft = saved.draft, project = draft.musicVideoProject!, story = draft.storyState;

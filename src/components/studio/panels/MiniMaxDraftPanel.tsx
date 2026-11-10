@@ -259,6 +259,7 @@ export function MiniMaxDraftPanel(props: Props) {
 
   async function generateMissing() {
     if (!mayEdit() || busy || accepting || preparingDraft.current || batchRef.current?.requests.length) return;
+    if (props.segments.some(segment => segment.animaticShotId)) { setError("Prepare motion for the reviewed animatic shots individually; the legacy batch uses different edit windows."); return; }
     preparingDraft.current = true;
     setBusy(true); setError(null); setMessage("Saving the current story and references…");
     const startingProjectId = props.projectId;
@@ -337,6 +338,8 @@ export function MiniMaxDraftPanel(props: Props) {
    * and queued POSTs keep their original binding and must fail if it changed. */
   function bindPreparedSceneRequest(request: H3GenerationRequest): H3GenerationRequest {
     const current = latest.current;
+    if (request.animaticMotion) return request;
+    if (current.segments.some(segment => segment.animaticShotId)) throw new Error("Choose the current reviewed animatic shot before preparing motion.");
     if (current.sceneProofPlan === undefined && !current.sceneProofReviewRequired) return request;
     if (!current.project || !current.confirmedTreatment) throw new Error("Restore the confirmed scene plan before preparing this shot.");
     const binding = sceneProofScopeSha256({ projectId: request.projectId, project: current.project,
@@ -350,10 +353,11 @@ export function MiniMaxDraftPanel(props: Props) {
     preparingPickup.current = true;
     const chosenKey = h3WindowKey(pickupWindow);
     const direction = pickupDirection.trim();
-    const duration = Number(pickupDuration);
+    const duration = pickupWindow.animaticShotId ? pickupWindow.musicEnd - pickupWindow.musicStart : Number(pickupDuration);
     setBusy(true); setError(null); setMessage("Saving this shot's story and references…");
     try {
       if (!direction) throw new Error("Describe the visible shot before creating it.");
+      if (pickupWindow.animaticRetainedSource) throw new Error("Review and place the existing footage for this retained source shot.");
       // Validate before saving, then bind again to the latest current hole after the await.
       createH3PickupWindow(pickupWindow, duration);
       const projectId = await props.onEnsureSavedProject();
@@ -373,15 +377,21 @@ export function MiniMaxDraftPanel(props: Props) {
       const previous = existingJobs.filter(job => h3RequestWindowKey(job.request) === h3WindowKey(segment)).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
       if (previous && !isH3JobTerminal(previous)) throw new Error("This exact shot already has a submission. Check its existing render in Generation progress.");
       const authorities = selectH3ReferenceAssetIds(latest.current.referenceAssets, direction, pickupMode === "references" ? pickupCrowdIds : []);
-      const referenceAssetIds = pickupMode === "references" ? appendH3AestheticReferenceIds(authorities, latest.current.aestheticReferences, segment) : authorities;
+      const referenceAssetIds = segment.animaticReferenceAssetIds ?? (pickupMode === "references" ? appendH3AestheticReferenceIds(authorities, latest.current.aestheticReferences, segment) : authorities);
       const input: H3GenerationRequest = {
         projectId, planSignature: segment.planSignature!, requirementId: segment.requirementId, timelineItemId: segment.timelineItemId,
         sectionId: segment.sectionId, songStart: segment.musicStart, songEnd: segment.musicEnd, prompt: direction,
         requestIntentId: crypto.randomUUID(), attempt: 0, referenceAssetIds, draftRevision: latest.current.draft?.revision ?? 0,
         ...identityPolicyChoiceForReferences(latest.current.referenceAssets, referenceAssetIds),
+        ...(segment.animaticMotion ? { animaticMotion: segment.animaticMotion } : {}),
       };
       const request = bindPreparedSceneRequest(prepareH3PickupRequest(input, previous, existingJobs, pickupMode));
       if(pickupMode==="first-frame"){
+        if (segment.animaticFirstFrame) {
+          request.conditioning = segment.animaticFirstFrame;
+          persistBatch({ version: 1, projectId, planSignature: request.planSignature, requests: [request], paused: false });
+          setReview(null); await runBatch(); return;
+        }
         if(!firstFrameFile)throw new Error("Choose a prepared native-size first-frame PNG. It will receive a CPU similarity screen before rendering.");
         const prepared=preparedFirstFrame;
         if(!prepared||preparedFirstFrameRef.current!==prepared||prepared.context!==firstFrameContext)throw new Error("The prepared native frame changed. Choose it again before submitting.");
@@ -481,7 +491,7 @@ export function MiniMaxDraftPanel(props: Props) {
   const pickupEditKey = `${props.projectId ?? "unsaved"}:${pickupWindow ? h3WindowKey(pickupWindow) : ""}`;
   const pickupDirection = pickupEdits[pickupEditKey]?.direction ?? pickupWindow?.storyDirection?.trim() ?? pickupWindow?.label ?? "";
   const pickupMaximum = pickupWindow ? Math.min(12, pickupWindow.musicEnd - pickupWindow.musicStart) : 0;
-  const pickupDuration = pickupEdits[pickupEditKey]?.duration ?? String(Math.min(3, pickupMaximum));
+  const pickupDuration = pickupWindow?.animaticShotId ? String(pickupMaximum) : pickupEdits[pickupEditKey]?.duration ?? String(Math.min(3, pickupMaximum));
   const pickupDurationValid = pickupMaximum > 0 && pickupDuration.trim() !== "" && Number.isFinite(Number(pickupDuration))
     && Number(pickupDuration) >= Math.min(1, pickupMaximum) && Number(pickupDuration) <= pickupMaximum;
   const pickupPrevious = pickupWindow && pickupDurationValid ? jobs.filter(job => !job.request.conditioning
@@ -491,7 +501,7 @@ export function MiniMaxDraftPanel(props: Props) {
   const crowdAssets = props.referenceAssets.filter(ref => ref.kind === "crowd" || ref.role === "crowd");
   let pickupReferenceIds: string[] = [];
   let pickupReferenceError: string | null = null;
-  try { const authorities = selectH3ReferenceAssetIds(props.referenceAssets, pickupDirection, pickupMode === "references" ? pickupCrowdIds : []); pickupReferenceIds = pickupMode === "references" && pickupWindow ? appendH3AestheticReferenceIds(authorities, props.aestheticReferences, pickupWindow) : authorities; }
+  try { const authorities = selectH3ReferenceAssetIds(props.referenceAssets, pickupDirection, pickupMode === "references" ? pickupCrowdIds : []); pickupReferenceIds = pickupWindow?.animaticReferenceAssetIds ?? (pickupMode === "references" && pickupWindow ? appendH3AestheticReferenceIds(authorities, props.aestheticReferences, pickupWindow) : authorities); }
   catch (failure) { pickupReferenceError = failure instanceof Error ? failure.message : "Check this shot's references."; }
   const pickupIdentityIds=props.referenceAssets.filter(ref=>pickupReferenceIds.includes(ref.id)&&(ref.kind==="character"||ref.role.startsWith("character"))).map(ref=>ref.id);
   const earlierFrame=pickupWindow?earlierH3FirstFrameSource(props.assets,props.projectId,pickupWindow.planSignature,pickupWindow.musicStart,pickupIdentityIds):undefined;
@@ -509,6 +519,7 @@ export function MiniMaxDraftPanel(props: Props) {
   const stillFormGuard = identityPolicySha256({ context: stillContext, direction: pickupDirection, duration: pickupDuration });
   stillFormGuardRef.current = stillFormGuard;
   async function prepareStillShot(): Promise<H3GenerationRequest> {
+    if (pickupWindow?.animaticShotId) throw new Error("Use the saved reviewed animatic image for this motion shot.");
     if (!pickupWindow || !pickupDurationValid || !pickupDirection.trim() || !mayEdit()) throw new Error("Choose a current missing window, duration and named video direction first.");
     const guard = stillFormGuard, key = h3WindowKey(pickupWindow), direction = pickupDirection, duration = Number(pickupDuration);
     const projectId = await props.onEnsureSavedProject();
@@ -573,9 +584,10 @@ export function MiniMaxDraftPanel(props: Props) {
           <h2 className="text-lg font-semibold text-fg-0">Bring the story to life</h2>
           <p className="text-sm text-fg-2">MiniMax creates the missing shots from your references and assembles them with the footage you already have.</p>
           <p className="text-xs text-fg-3">New character shots receive a provisional similarity screen. Identity remains unverified; review the assembled cut.</p>
-          <p className="text-xs text-fg-3">{missing.length ? `${missing.length} unfilled window${missing.length === 1 ? "" : "s"}` : "Every song window has footage"}{activeJobs.length ? ` · ${activeJobs.length} renders in progress` : ""}. Review the cut before accepting it for Finish.</p>
+          <p className="text-xs text-fg-3">{missing.length ? `${missing.length} unfilled window${missing.length === 1 ? "" : "s"}` : props.segments.some(segment => segment.kind === "gap" || !segment.videoUrl) ? "Review the current plan to prepare its motion windows" : "Every song window has footage"}{activeJobs.length ? ` · ${activeJobs.length} renders in progress` : ""}. Review the cut before accepting it for Finish.</p>
         </div>
-        <Button variant="primary" disabled={editingBlocked || Boolean(unavailable) || Boolean(batch?.requests.length) || !missing.length || activeJobs.length > 0} reason={unavailable}
+        <Button variant="primary" disabled={editingBlocked || props.segments.some(segment => segment.animaticShotId) || Boolean(unavailable) || Boolean(batch?.requests.length) || !missing.length || activeJobs.length > 0}
+          reason={props.segments.some(segment => segment.animaticShotId) ? "Prepare each reviewed animatic shot below." : unavailable}
           onClick={() => void generateMissing()}>{busy ? "Creating draft…" : activeJobs.length ? "Generation in progress" : "Create missing shots"}</Button>
       </div>
       {unavailable ? <p className="mt-3 text-sm text-fg-3">{unavailable}</p> : null}
@@ -593,7 +605,7 @@ export function MiniMaxDraftPanel(props: Props) {
               onChange={event=>{setPickupMode(event.target.value as "references"|"first-frame");setGeneratedStillChoice(null);}} className="mt-1 block w-full rounded-md border border-line bg-ink-1 p-2 text-sm text-fg-1">
               <option value="references">Named reference images</option><option value="first-frame">Continue from a first frame</option>
             </select></label>
-            {pickupMode==="first-frame"?<div className="space-y-2">
+            {pickupMode==="first-frame" ? pickupWindow.animaticFirstFrame ? <p className="text-xs text-fg-3">Uses the saved reviewed native image for this shot. Its identity screen runs before video generation.</p> : <div className="space-y-2">
               {earlierFrame?<label className="block text-xs text-fg-3">Native first-frame index
                 <input aria-label="Native first-frame index" type="number" step={1} min={Math.floor((earlierFrame.asset.trimStart??0)*24+1e-6)} max={earlierFrame.frameIndex} value={nativeFrameIndex??""} disabled={editingBlocked}
                   onChange={event=>{const index=Number(event.target.value);prepareFrame(null);if(event.target.value==="")setNativeFrameChoice({sourceKey:nativeSourceKey,frameIndex:null});else if(Number.isSafeInteger(index))setNativeFrameChoice({sourceKey:nativeSourceKey,frameIndex:index});}}
@@ -610,7 +622,7 @@ export function MiniMaxDraftPanel(props: Props) {
               <label className="block text-xs text-fg-3">Or use a separately prepared first-frame PNG · 1344×768 opaque<input key={firstFrameContext} aria-label="Prepared first-frame PNG" type="file" accept="image/png" disabled={editingBlocked}
               onChange={event=>{const file=event.target.files?.[0];prepareFrame(file?{file,context:firstFrameContext}:null);}} className="mt-1 block w-full text-sm text-fg-1" />
               <span className="mt-1 block">{firstFrameFile?`Prepared: ${firstFrameFile.name}. `:""}Separate uploads do not claim a verified frame from the earlier take. The actual image receives a provisional one-image numerical screen before GPU video generation. Every intended video frame must then pass separately. Switching input type starts a new take and keeps earlier results.</span></label></div>:null}
-            <fieldset className="space-y-2 rounded-md border border-line p-3" disabled={editingBlocked || pickupMode === "first-frame"}>
+            <fieldset className="space-y-2 rounded-md border border-line p-3" disabled={editingBlocked || pickupMode === "first-frame" || Boolean(pickupWindow.animaticShotId)}>
               <legend className="px-1 text-xs text-fg-2">Crowd / extras for this shot</legend>
               <p className="text-xs text-fg-3">Choose only the sheets this shot needs. Extras guide variety and wardrobe range; named characters and location keep their own authorities. New batch windows use no crowd sheets.</p>
               {crowdAssets.map(ref => <label key={ref.id} className="flex items-center gap-2 text-sm text-fg-2">
@@ -628,7 +640,7 @@ export function MiniMaxDraftPanel(props: Props) {
               {pickupMode === "first-frame" ? <p className="text-xs text-fg-3">First-frame video uses only the frozen PNG for visual conditioning. Crowd sheets selected here are reference-mode inputs.</p> : <p className="text-xs text-fg-3">{pickupReferenceIds.length}/9 total references for this shot.</p>}
             </fieldset>
             {pickupReferenceError ? <p role="alert" className="text-xs text-danger">{pickupReferenceError}</p> : null}
-            <fieldset className="space-y-2 rounded-md border border-line p-3" disabled={editingBlocked || pickupMode !== "references"}>
+            <fieldset className="space-y-2 rounded-md border border-line p-3" disabled={editingBlocked || pickupMode !== "references" || Boolean(pickupWindow.animaticShotId)}>
               <legend className="px-1 text-xs text-fg-2">Shot and style refs · choose up to three for this shot</legend>
               <p className="text-xs text-fg-3">Character sheets remain identity and wardrobe authorities. First-frame video uses its screened PNG only.</p>
               {(props.aestheticReferences?.assets ?? []).filter(asset => aestheticReferenceApplies(asset, pickupWindow)).map(asset => {
@@ -645,7 +657,7 @@ export function MiniMaxDraftPanel(props: Props) {
               {!props.aestheticReferences?.assets.length ? <p className="text-xs text-fg-3">Add originals in Setup.</p> : null}
             </fieldset>
             <label className="block text-xs text-fg-3">Edit duration (seconds)<input aria-label="One shot edit duration" type="number" step="any"
-              min={Math.min(1, pickupMaximum)} max={pickupMaximum} value={pickupDuration} disabled={editingBlocked}
+              min={Math.min(1, pickupMaximum)} max={pickupMaximum} value={pickupDuration} disabled={editingBlocked || Boolean(pickupWindow.animaticShotId)}
               onChange={event => { setGeneratedStillChoice(null); setPickupEdits(current => ({ ...current, [pickupEditKey]: { ...current[pickupEditKey], duration: event.target.value } })); }}
               className="mt-1 block w-32 rounded-md border border-line bg-ink-1 p-2 text-sm text-fg-1" /></label>
             <p className="text-xs text-fg-3">{pickupDurationValid ? `This shot fills ${preciseClock(pickupWindow.musicStart)}–${preciseClock(pickupWindow.musicStart + Number(pickupDuration))}.` : `Choose ${Math.min(1, pickupMaximum)}–${pickupMaximum.toFixed(3)} seconds.`} The rest of the draft stays in place.{pickupMaximum < 1 ? " This explicitly selected boundary sliver uses its full duration." : ""}</p>
@@ -653,12 +665,12 @@ export function MiniMaxDraftPanel(props: Props) {
               value={pickupDirection} disabled={editingBlocked}
               onChange={event => { setGeneratedStillChoice(null); setPickupEdits(current => ({ ...current, [pickupEditKey]: { ...current[pickupEditKey], direction: event.target.value } })); }}
               className="mt-1 block w-full rounded-md border border-line bg-ink-1 p-2 text-sm text-fg-1" /></label>
-            <MiniMaxStillPanel projectId={props.projectId} context={stillContext} disabled={editingBlocked || !pickupDurationValid || activeJobs.length > 0 || Boolean(batch?.requests.length)}
-              prepareShot={prepareStillShot} onUse={selection => { setPickupEdits(current => ({ ...current, [pickupEditKey]: { ...current[pickupEditKey], ...restoreStillShotForm(selection.shot) } })); setGeneratedStillChoice({ ...selection, context: stillContext }); setMessage("The reviewed MiniMax frame is prepared with its frozen video direction. Create this shot to start identity screening and video generation."); }} />
+            {pickupWindow.animaticShotId ? <p className="text-xs text-fg-3">Motion uses the reviewed image, reference packet and frame window for this shot. Revise those in Story when needed.</p> : <MiniMaxStillPanel projectId={props.projectId} context={stillContext} disabled={editingBlocked || !pickupDurationValid || activeJobs.length > 0 || Boolean(batch?.requests.length)}
+              prepareShot={prepareStillShot} onUse={selection => { setPickupEdits(current => ({ ...current, [pickupEditKey]: { ...current[pickupEditKey], ...restoreStillShotForm(selection.shot) } })); setGeneratedStillChoice({ ...selection, context: stillContext }); setMessage("The reviewed MiniMax frame is prepared with its frozen video direction. Create this shot to start identity screening and video generation."); }} />}
             {generatedStillChoice?.context === stillContext ? <p role="status" className="text-xs text-fg-2">Generated frame prepared. The video direction and named references are frozen for this take. <button type="button" className="underline" onClick={() => setGeneratedStillChoice(null)}>Clear generated frame</button></p> : null}
           </> : <p className="text-xs text-fg-3">Select a short boundary sliver explicitly, or prepare a missing story window.</p>}
           {batch?.requests.length ? <p className="text-xs text-fg-3">Continue or clear the saved requests before creating one shot.</p> : null}
-          <Button disabled={editingBlocked || Boolean(unavailable) || !pickupWindow || !pickupDurationValid || !pickupDirection.trim() || Boolean(pickupReferenceError) || activeJobs.length > 0 || Boolean(batch?.requests.length)}
+          <Button disabled={editingBlocked || Boolean(pickupWindow?.animaticRetainedSource) || Boolean(unavailable) || !pickupWindow || !pickupDurationValid || !pickupDirection.trim() || Boolean(pickupReferenceError) || activeJobs.length > 0 || Boolean(batch?.requests.length)}
             reason={unavailable} onClick={() => void generateOneShot()}>Create this shot</Button>
         </div>
       </details>

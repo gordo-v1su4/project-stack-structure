@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
 import { validateSavedGenerationScope } from "./generationScopeServer";
 import { buildGeneratedAssetPlaybackUrl, generatedAssetDraftIdentityBlockReason, type GeneratedStudioAsset } from "@/components/studio/generatedAssets";
-import { buildEditPlanPreviewSegments, isPlacementPlanCurrent } from "@/components/studio/musicVideoProject";
+import { isPlacementPlanCurrent } from "@/components/studio/musicVideoProject";
+import { buildStoryDraftSegments } from "@/components/studio/animaticDraft";
+import { findH3TargetSegment } from "@/components/studio/h3DraftPlan";
 import { hydrateStudioProjectDraft } from "@/components/studio/projectPersistence";
 import { finalExportSnapshotSha256 } from "@/components/studio/finalExportRecovery";
 import { buildStudioSourceContextSignature } from "@/components/studio/studioSourceContext";
@@ -74,6 +76,11 @@ export async function reconcileProjectFinalExport(params: {
     throw new ProjectExportError("The accepted project snapshot changed. Save and review the current draft before exporting.");
   }
   const runtime = hydrateStudioProjectDraft({ draft });
+  const base = buildStoryDraftSegments({ projectId: context.projectId, project: runtime.musicVideoProject, videoSources: runtime.videoSources,
+    storyState: runtime.storyState, referenceAssets: runtime.referenceAssets, audio: runtime.analysis ?? project.song }).map(segment => {
+      const source = runtime.videoSources.find(source => source.videoUrl === segment.videoUrl);
+      return { ...segment, useClipAudio: segment.kind !== "gap" && usesClipAudio(normalizeClipAudioSettings(runtime.clipAudioSettings), source ? clipAudioKey(source) : undefined) };
+    });
   let generationScope: string | undefined;
   try { generationScope = await validateSavedGenerationScope(ownerId, saved); }
   catch { throw new ProjectExportError("The canonical source confirmation changed. Review and confirm the current sources before exporting."); }
@@ -83,7 +90,7 @@ export async function reconcileProjectFinalExport(params: {
   }
   if(project.currentIdentity&&draft.generatedDraft?.currentIdentityApprovalSha256!==currentIdentityReviewSha256(project.currentIdentity))throw new ProjectExportError("Review and accept the current-reference assessment context before exporting.");
   const assets: GeneratedStudioAsset[] = [];
-  const currentUsedUrls=project.currentIdentity?new Set(applyAcceptedGeneratedDraft(buildEditPlanPreviewSegments({project:runtime.musicVideoProject,videoSources:runtime.videoSources,editSettings:draft.storyState.editSettings}),runtime.generatedAssets,draft.generatedDraft).map(segment=>segment.videoUrl)):undefined;
+  const currentUsedUrls = project.currentIdentity ? new Set(applyAcceptedGeneratedDraft(base, runtime.generatedAssets, draft.generatedDraft).map(segment => segment.videoUrl)) : undefined;
   const canonicalByKey = new Map<string, GeneratedStudioAsset>();
   const environmentOnlyNativeBounds = new Set<string>();
   const receipts: NonNullable<FinalExportPayload["projectSnapshot"]>["h3"] = [];
@@ -100,6 +107,9 @@ export async function reconcileProjectFinalExport(params: {
     if (asset.reviewStatus !== "approved" && !reuseRows.length) { assets.push(asset); continue; }
     // Retained superseded approvals are history. Only actual current overlays need new-context consent/evidence.
     if(currentUsedUrls&&!currentUsedUrls.has(buildGeneratedAssetPlaybackUrl(asset)??""))continue;
+    // Match only target coordinates here; never use client identity/hash claims
+    // to decide which canonical media evidence must be read below.
+    if (base.some(segment => segment.animaticShotId) && !reuseRows.length && (!asset.target || !findH3TargetSegment(base, asset.target))) continue;
     // Approved history from another plan is retained in the project but cannot overlay this cut.
     if (asset.target?.planSignature && asset.target.planSignature !== generationScope && !reuseRows.length) continue;
     const objectKey = asset.fullStorage?.objectKey ?? asset.fullStorage?.storagePath ?? "";
@@ -183,11 +193,6 @@ export async function reconcileProjectFinalExport(params: {
       throw new ProjectExportError("The song, references or story changed after generated-shot approval.");
     }
   }
-  const base = buildEditPlanPreviewSegments({ project: runtime.musicVideoProject, videoSources: runtime.videoSources, editSettings: runtime.storyState.editSettings })
-    .map(segment => {
-      const source = runtime.videoSources.find(source => source.videoUrl === segment.videoUrl);
-      return { ...segment, useClipAudio: segment.kind !== "gap" && usesClipAudio(normalizeClipAudioSettings(runtime.clipAudioSettings), source ? clipAudioKey(source) : undefined) };
-    });
   const preview = applyAcceptedGeneratedDraft(base, assets, draft.generatedDraft);
   if (draft.generatedDraft?.reusedTakePlacements?.some(row => !preview.some(segment => segment.reusedTakePlacementId === row.id))) throw new ProjectExportError("A reused placement no longer belongs to the accepted cut.");
   if (preview.length !== params.segments.length || preview.some(segment => segment.kind === "gap" || !segment.videoUrl)) {

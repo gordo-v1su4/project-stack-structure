@@ -39,13 +39,24 @@ takes remain intact and can enter a new cut only through explicit current
 target/trim review with the existing immutable reuse-origin evidence; a changed
 review is not a reason to regenerate all otherwise useful footage.
 
-Remaining end-to-end integration must project these exact targets into candidate
-selection, preview and the export validator without changing their generation
-context. Retained still frames identify existing source footage candidates, not
+Draft playback and server export now share the exact animatic target projection.
+The original generation scope remains intact for native first-frame artifact
+compatibility. Candidate selection, overlays and request recovery additionally
+match the reviewed shot, image and full-song review binding; identical timestamps
+alone cannot make an old take current. Unreviewed or stale plans retain their
+visible cuts as gaps, with no generation eligibility. Stills never count as
+footage. Legacy automatic batching is unavailable for this projection; independent
+motion requests preserve the whole reviewed window and reference packet.
+
+Retained still frames identify existing source footage candidates, not
 an automatic choice of source trim. Use actual decoded clip duration, exact
 musical windows and continuity review before adoption. Named-lead rear views
 cannot claim a frontal screen; identity-free cuts use truthful no-named-identity
 evidence. Motion, draft selection and final export retain separate human review.
+Existing-footage placement into animatic windows and automatic directed motion
+planning remain unfinished. Reuse selection is blocked for these windows until
+the canonical source-trim review path supports them. No project data, production
+deployment or GPU dispatch is part of this local implementation.
 
 Acceptance: cross-old-cut video targets retain exact frame windows; legacy jobs
 remain byte compatible; no-review/changed-master/changed-image/foreign or

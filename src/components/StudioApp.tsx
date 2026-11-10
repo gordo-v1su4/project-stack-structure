@@ -22,7 +22,8 @@ import { applySceneEvidenceReview, type SceneEvidenceReview } from "./studio/sce
 import { buildStudioSourceContextSignature } from "./studio/studioSourceContext";
 import { prepareAppendedSourceConfirmation, sourceConfirmationBaselineSha256 } from "./studio/sourceConfirmationClient";
 import { buildSongSectionReview, selectReviewRange, type ReviewSelection } from "./studio/songSectionReview";
-import { isPlacementPlanCurrent, storyProjectInputSignature, prepareApprovedPlacements, buildEditPlanPreviewSegments, normalizeStoryEditSettings, type EditPlanPreviewSegment, type MusicVideoProject } from "./studio/musicVideoProject";
+import { isPlacementPlanCurrent, storyProjectInputSignature, prepareApprovedPlacements, normalizeStoryEditSettings, type EditPlanPreviewSegment, type MusicVideoProject } from "./studio/musicVideoProject";
+import { buildStoryDraftSegments } from "./studio/animaticDraft";
 import { clearRoughCutPlacement, applyRoughCutSwap, proposeRoughCutSwap, proposeRoughCutReplacement, type RoughCutSwapProposal } from "./studio/roughCutArrangement";
 import { selectStorySectionCandidate } from "./studio/musicVideoProjectSelection";
 import { buildAutoShaderCues, describeMusicVideoShaderPreset, MUSIC_VIDEO_SHADER_PRESETS, type ShaderAccentKinds } from "./studio/shaderEffectPlan";
@@ -736,16 +737,16 @@ export default function StudioApp() {
 
   const baseStoryPreviewSegments = useMemo<EditPlanPreviewSegment[]>(() => {
     if (!storyState.storyGenerated) return [];
-    const resolved = buildEditPlanPreviewSegments({
+    const resolved = buildStoryDraftSegments({
+      projectId: activeProjectId ?? "", storyState, referenceAssets, audio: beatJoinAnalysis ?? musicVideoProject?.song,
       project: musicVideoProject,
       videoSources,
-      editSettings: storyState.editSettings,
     });
     return resolved.map(segment => {
       const source = videoSources.find(source => source.videoUrl === segment.videoUrl);
       return { ...segment, useClipAudio: segment.kind !== "gap" && usesClipAudio(clipAudioSettings, source ? clipAudioKey(source) : undefined) };
     });
-  }, [clipAudioSettings, musicVideoProject, storyState.editSettings, storyState.storyGenerated, videoSources]);
+  }, [activeProjectId, beatJoinAnalysis, clipAudioSettings, musicVideoProject, referenceAssets, storyState, videoSources]);
 
   const storyPreviewSegments = useMemo(() => applyAcceptedGeneratedDraft(baseStoryPreviewSegments, generatedAssets, generatedDraft), [baseStoryPreviewSegments, generatedAssets, generatedDraft]);
   const draftPreviewSegments = useMemo(() => applyDraftGeneratedAssets(baseStoryPreviewSegments, generatedAssets, generatedDraft), [baseStoryPreviewSegments, generatedAssets, generatedDraft]);

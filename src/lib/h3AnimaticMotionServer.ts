@@ -58,6 +58,6 @@ export function materializeAnimaticMotion(ownerId: string, saved: SavedStudioPro
   }
   return { ...base, request, references, id: h3GenerationJobId(ownerId, request, references, options),
     target: { planSignature: request.planSignature, timelineItemId: request.timelineItemId!, sectionId: request.sectionId,
-      sectionLabel: shot.title, songStart: request.songStart, songEnd: request.songEnd } };
+      sectionLabel: shot.title, songStart: request.songStart, songEnd: request.songEnd, animaticMotion: request.animaticMotion } };
 }
 

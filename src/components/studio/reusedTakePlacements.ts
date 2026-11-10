@@ -3,6 +3,7 @@ import { effectiveGenerationScope, generationScopeSha256, generationSemanticSha2
 import { currentIdentityReviewSha256, currentReferenceIdentityApprovalSha256 } from "./currentReferenceIdentity";
 import { currentIdentityEvidenceSha256 } from "./issuedIdentityPolicy";
 import { placementInputSignature, type EditPlanPreviewSegment, type MusicVideoProject } from "./musicVideoProject";
+import { sameAnimaticMotionBinding } from "./animaticMotionBinding";
 
 /** A lookup coordinate, never authority. Server readers retrieve the canonical same-project record. */
 export type ReuseSourceBaseline = { scopeSignature: string; semanticSha256: string; receiptId?: string };
@@ -83,6 +84,7 @@ function reusedTakeOriginMatches(row: ReusedTakePlacement, asset: GeneratedStudi
 function reusedTakeWindowMatches(row: ReusedTakePlacement, segment: EditPlanPreviewSegment): boolean {
   const target = row.target;
   return target.planSignature === segment.planSignature && target.sectionId === segment.sectionId && target.timelineItemId === segment.timelineItemId
+    && sameAnimaticMotionBinding(target.animaticMotion, segment.animaticMotion)
     && target.requirementId === segment.requirementId && target.narrativeMomentId === segment.narrativeMomentId
     && target.songStart < segment.musicEnd - 1e-6 && target.songEnd > segment.musicStart + 1e-6;
 }
@@ -110,10 +112,12 @@ export function assertCurrentReusedTakePlacements(project: MusicVideoProject, ro
 /** Explicit owner selection for the current target. The canonical baseline names eligible origins. */
 export function selectReusedTakePlacement<T extends { planSignature: string; revision: number; assetIds: string[]; reusedTakePlacements?: ReusedTakePlacement[] }>(
   draft: T, project: MusicVideoProject, asset: GeneratedStudioAsset, segment: EditPlanPreviewSegment, sourceStart = asset.trimStart ?? 0): T {
+  if (segment.animaticShotId) throw new Error("Existing-footage placement into the animatic still needs source-trim review support.");
   const scope = effectiveGenerationScope(project), origin = project.generationScope?.body.reuseOrigins?.find(origin => origin.assetId === asset.id && origin.jobId === asset.jobId);
   if (!scope || draft.planSignature !== scope || segment.planSignature !== scope || !segment.timelineItemId || !origin
     || origin.assetSha256 !== reuseOriginAssetSha256(asset) || origin.scopeSignature !== asset.target?.planSignature) throw new Error("Confirm the revised story and its canonical origin footage before reusing this take.");
   const target: GeneratedStudioAssetTarget = { planSignature: scope, timelineItemId: segment.timelineItemId, sectionId: segment.sectionId,
+    ...(segment.animaticMotion ? { animaticMotion: segment.animaticMotion } : {}),
     sectionLabel: project.storySections.find(section => section.id === segment.sectionId)?.label ?? segment.sectionId,
     ...(segment.requirementId ? { requirementId: segment.requirementId } : {}),
     ...(segment.narrativeMomentId ? { narrativeMomentId: segment.narrativeMomentId } : {}), songStart: segment.musicStart,

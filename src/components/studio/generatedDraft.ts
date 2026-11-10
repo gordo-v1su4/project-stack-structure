@@ -1,4 +1,5 @@
 import {currentIdentityReviewSha256,currentReferenceIdentityApprovalSha256} from "./currentReferenceIdentity";
+import { sameAnimaticMotionBinding } from "./animaticMotionBinding";
 import {
   listApprovedGeneratedVideoAssets,
   applyGeneratedAssetOverlays,
@@ -65,6 +66,7 @@ function sameTarget(left: GeneratedStudioAsset, right: GeneratedStudioAsset) {
   const a = left.target;
   const b = right.target;
   return Boolean(a && b && a.planSignature === b.planSignature && a.sectionId === b.sectionId
+    && sameAnimaticMotionBinding(a.animaticMotion, b.animaticMotion)
     && (a.requirementId || a.timelineItemId) === (b.requirementId || b.timelineItemId)
     && a.songStart === b.songStart && a.songEnd === b.songEnd);
 }
