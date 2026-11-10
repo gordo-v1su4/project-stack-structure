@@ -22,6 +22,7 @@ import type { H3StillJob } from "./h3StillJobStore";
 import { createTriggerIdempotencyKey } from "@/lib/triggerIdempotency";
 import { EXPORT_DISPATCH_UPGRADE_MESSAGE, isOwnedExportRequestKey } from "@/components/studio/exportDispatchProtocol";
 import { retrieveOwnedTriggerRun } from "@/lib/triggerRunAccess";
+import { normalizeTriggerRunStatus } from "@/lib/triggerRunStatus";
 
 export const STACK_STRUCTURE_TRIGGER_TASKS = {
   mediaVideoPipeline: "media-video-pipeline",
@@ -502,7 +503,8 @@ export async function triggerImageSplitter(payload: ImageSplitterPayload) {
 export async function retrieveTriggerRun(runId: string) {
   assertTriggerConfigured();
   const userId = await currentApplicationUserId();
-  return retrieveOwnedTriggerRun(runId, userId, (id) => runs.retrieve(id));
+  const run = await retrieveOwnedTriggerRun(runId, userId, (id) => runs.retrieve(id));
+  return normalizeTriggerRunStatus(run);
 }
 
 export function assertTriggerConfigured(

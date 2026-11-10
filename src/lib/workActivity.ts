@@ -94,10 +94,13 @@ export function groupActivityRuns(runs: ActivityRunInput[], now = Date.now()) {
   return roots.sort((a, b) => b.timestamp - a.timestamp);
 }
 
-/** Keep live work visible even when many newer completed runs arrive. */
+/** Show running work before waiting work, even when a whole batch was admitted later. */
 export function recentActivityRuns(items: WorkActivityItem[], settledLimit = 3) {
   const pending = (item: WorkActivityItem): boolean => item.active || item.children.some(pending);
-  const ordered = [...items].sort((a, b) => b.timestamp - a.timestamp);
+  const running = (item: WorkActivityItem): boolean => (item.active && !queuedStatuses.has(item.status)) || item.children.some(running);
+  const priority = (item: WorkActivityItem) => running(item) ? 0 : pending(item) ? 1 : 2;
+  const ordered = [...items].sort((a, b) => priority(a) - priority(b) ||
+    (priority(a) === 1 ? a.timestamp - b.timestamp : b.timestamp - a.timestamp));
   const visible = [...ordered.filter(pending), ...ordered.filter((item) => !pending(item)).slice(0, settledLimit)];
   return { visible, hiddenCount: items.length - visible.length };
 }
