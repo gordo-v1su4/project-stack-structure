@@ -10,6 +10,7 @@ import { stillMediaUrl } from "./h3StillClient";
 import { AnimaticTimingCard, animaticShotColor } from "./AnimaticShotIdentity";
 import { StillAnimaticPreview } from "./StillAnimaticPreview";
 import { AnimaticImageViewer } from "./AnimaticImageViewer";
+import { AnimaticReviewPanel } from "./AnimaticReviewPanel";
 import { Button, Surface } from "./ui";
 
 /** Images are mounted only near the scroll viewport, including after live updates. */
@@ -92,6 +93,8 @@ export function AnimaticPreviewPage({ projectId }: { projectId: string }) {
       <div className="flex flex-wrap items-center gap-3"><Button variant="primary" disabled={!snapshot.audioUrl} onClick={() => setPreview("timing")}>Play timing</Button>
         <Button disabled={!snapshot.audioUrl} onClick={() => setPreview("images")}>Watch images</Button>
         <span className="text-xs text-fg-3">{snapshot.songLabel}</span></div>
+      <AnimaticReviewPanel snapshot={snapshot} onSaved={(revision, review, expectedRevision) => setSnapshot(current =>
+        current?.revision === expectedRevision && current.plan ? { ...current, revision, plan: { ...current.plan, review } } : current)} />
       <Surface className="min-w-0 space-y-3" aria-label="Shot preview board"><h2 className="text-sm font-medium text-fg-0">Full-song still animatic</h2>
         <ol aria-label="Timed still shots" className="grid max-h-[55vh] grid-cols-2 gap-2 overflow-y-auto pr-1 sm:grid-cols-4 lg:grid-cols-6">
           {plan.shots.map(s => <ShotThumbnail key={s.id} shot={s} fps={plan.fps} image={animaticImage(plan, s, context)} selected={s.id === shot?.id} onSelect={() => { setSelected(s.id); setImageOpen(true); }} />)}

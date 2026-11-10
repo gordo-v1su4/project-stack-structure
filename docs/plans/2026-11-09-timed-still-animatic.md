@@ -1,5 +1,28 @@
 # Full-song timed still animatic
 
+## Exact human review of completed still direction
+
+The public Preview page needs an explicit review action before the still plan
+can authorize future motion preparation. Bind a decision to every current shot's
+creative binding and immutable image identity, including retained source frames,
+plus the current story/master/reference context. Missing or stale pictures cannot
+produce an approval binding. Receipt-only saves and the decision itself do not
+change that binding; replacing an image, changing a hold or creative input does.
+
+The user confirms that they reviewed every shot with the full song, then records
+approval or revision notes. Save only this existing `StillAnimaticPlan.review`
+field through an authenticated owner-scoped action, with the exact project
+revision and image binding checked again before conditional storage. Background
+observation never approves or saves. Preserve all other draft content and prior
+versions, reject conflicting saves, and never retry an uncertain review POST
+automatically. This review concerns still direction; motion, the selected cut
+and final export retain their own decisions.
+
+Verify binding invalidation, incomplete/stale rejection, owner/session and CAS
+boundaries, persisted readback, and explicit UI confirmation. Public release and
+real full-song review remain separate evidence gates; local checks cannot claim
+human acceptance or motion readiness.
+
 Robert's next test is every planned image followed by watching the complete
 animatic in Preview mode with the original master song. The creative controller
 owns film writes and serial local H3 generation. The engineering owner adds the
