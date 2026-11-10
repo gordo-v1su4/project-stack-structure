@@ -20,6 +20,7 @@ readonly isolated_tests=(
   "tests/unit/generationScopeRawReferences.test.ts"
   "tests/unit/generationScopeMedia.test.ts"
   "tests/unit/sourceConfirmationRoute.test.ts"
+  "tests/unit/animaticPreviewRoute.test.ts"
   "tests/unit/sourceStorageCheck.test.ts"
   # Next's experimental server test helpers patch global console methods.
   "tests/unit/authRequest.test.ts"

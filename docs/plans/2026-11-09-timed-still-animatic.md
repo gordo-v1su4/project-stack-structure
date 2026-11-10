@@ -83,3 +83,36 @@ and the actual complete full-song Preview requested by Robert. The original
 project and conflicted window remain untouched. Robert approved the self-hosted
 web and matching Trigger release; the 105-image local batch and full-song
 Preview are explicitly requested. No paid provider or extra GPU test is needed.
+
+## Preview page and timing cards
+
+Robert approved the test board's dark surfaces, colored numbered cards,
+thumbnail grid and collapsible details for the app itself. The dedicated
+`/preview/[projectId]` page opens from the Story animatic panel. An authenticated,
+owner-scoped read-only projection supplies the saved plan, current creative
+context and original master. Visible pages poll every ten seconds, use revision
+ETags, and stop observing on unmount. Observation never autosaves or generates.
+
+Colored timing cards play before images are ready. The same deterministic shot
+color and identifier appear in thumbnails and optional labels over imagery.
+Missing images retain timing cards; completed images replace them as saved
+results arrive. Labels are a view preference and never alter exports. The full
+master remains the playback clock. Changed creative bindings pause an open
+preview; receipt-only updates can appear during playback without restarting it.
+Thumbnails mount images only in the scroll viewport, and full-screen playback
+retains current/next images. Orange stays limited to actions and selections.
+
+Acceptance includes partial readiness playback, real incremental observation,
+owner isolation/401/404 and revision behavior, hidden-tab/unmount cleanup,
+label toggling, collapse/expand, final-frame/audio behavior, and narrow layout.
+The running local image batch keeps its released c8d contract. This UI change
+must not activate during it without explicit compatibility coordination.
+
+Local verification: `bun run check` passed 2,011 tests, 27 fixture skips and
+zero failures; the webpack production build passed with the new page and
+authenticated API route. The browser played all 108 timing cards with zero
+images ready, observed 0→3→4 saved-image updates, stopped at the original master
+end, sought to A055 at the midpoint, and toggled labels without changing time.
+The board/details and full-screen controls fit a 390×740 viewport. An existing
+local MP4 verified the same labels over real video and paused seeks; labels sit
+above its playback controls. No new GPU/provider jobs were used for UI checks.

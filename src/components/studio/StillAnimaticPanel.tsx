@@ -37,7 +37,8 @@ export function StillAnimaticPanel(props: Props) {
   return <Surface className="min-w-0 space-y-3" aria-label="Full-song still animatic">
     <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-sm font-medium text-fg-0">Full-song still animatic</h3>
       <p className="mt-1 text-sm text-fg-3">Every shot has its own image and musical hold. Watch the original song before generating motion.</p></div>
-      {plan ? <span role="status" className="font-mono text-xs text-fg-3">{ready}/{plan.shots.length} current images</span> : null}</div>
+      <div className="flex flex-wrap items-center gap-3">{plan ? <span role="status" className="font-mono text-xs text-fg-3">{ready}/{plan.shots.length} current images</span> : null}
+        <a href={`/preview/${encodeURIComponent(props.projectId)}`} target="_blank" rel="noreferrer" className="text-sm text-accent hover:underline">Open Preview page</a></div></div>
     {error ? <p role="alert" className="text-sm text-danger">{error}</p> : null}
     {stale ? <p role="status" className="text-sm text-warn">The story, scene direction or references changed. Image history is retained; current work needs new bindings.</p> : null}
     {stale && plan ? <Button type="button" disabled={busy || !props.onPersist} className="rounded-md border border-accent px-3 py-2 text-sm text-accent" onClick={() => {

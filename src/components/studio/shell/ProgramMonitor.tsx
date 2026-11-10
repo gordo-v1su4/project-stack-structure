@@ -9,6 +9,8 @@ import type { ShaderEffectCue } from "../shaderEffectPlan";
 import { getPreviewAssetFileName } from "../studioUiState";
 import type { BeatJoinAnalysis } from "../types";
 import { Button, Kicker } from "../ui";
+import type { StillAnimaticPlan } from "../stillAnimatic";
+import { AnimaticFootageLabels } from "./AnimaticFootageLabels";
 
 export type MonitorEmptyState = {
   /** Editorial headline: the song title, or what to do first. */
@@ -46,6 +48,8 @@ type ProgramMonitorProps = {
   gate?: MonitorGate | null;
   /** Ingest renders its drop zone inside the monitor. */
   children?: React.ReactNode;
+  animaticPlan?: StillAnimaticPlan;
+  animaticContext?: string;
 };
 
 /**
@@ -67,14 +71,18 @@ export function ProgramMonitor({
   onToggleFocused,
   gate = null,
   children,
+  animaticPlan,
+  animaticContext,
 }: ProgramMonitorProps) {
   const [expanded, setExpanded] = useState(false);
+  const [shotLabels, setShotLabels] = useState(false);
   const contentId = useId();
   const collapsed = !expanded && !focused;
   const showBrowserPreview = browserPreviewSegments.length > 0;
   const showFfmpegPreview = !showBrowserPreview && !isBrowserPreviewActive && Boolean(previewAssetUrl);
   const assetFileName = getPreviewAssetFileName(previewAssetKey);
   const current = browserPreviewSegments[browserPreviewState.currentIndex] ?? null;
+  const canLabelShots = Boolean(showBrowserPreview && animaticPlan && animaticContext === animaticPlan.contextSha256);
 
   const hud = showBrowserPreview
     ? `${describePreviewBlocks(browserPreviewSegments)} · ${browserPreviewState.totalDuration.toFixed(1)}s${masterAudioUrl ? " · master audio" : ""}`
@@ -105,6 +113,7 @@ export function ProgramMonitor({
         ) : (
           <EmptyState empty={empty} gate={gate}>{children}</EmptyState>
         )}
+        {shotLabels && canLabelShots && animaticPlan ? <AnimaticFootageLabels player={previewPlayer} segments={browserPreviewSegments} plan={animaticPlan} /> : null}
       </div>
 
       <div className={`absolute inset-x-0 top-0 z-20 flex h-10 items-center gap-2 px-3 ${collapsed ? "bg-ink-2" : ""}`}>
@@ -124,6 +133,8 @@ export function ProgramMonitor({
             {focused ? "Return to editor" : "Enlarge preview"}
           </button>
         ) : null}
+        {!collapsed && canLabelShots ? <button type="button" aria-pressed={shotLabels} onClick={() => setShotLabels(value => !value)}
+          className="studio-hud shrink-0 rounded-md px-2 py-1 text-[11px] text-fg-1 hover:text-fg-0 focus-visible:outline-accent">Shot labels</button> : null}
         <button
           type="button"
           aria-expanded={!collapsed}
