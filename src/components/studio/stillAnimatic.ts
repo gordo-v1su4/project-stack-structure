@@ -17,6 +17,8 @@ export type StillAnimaticPlan = {
   version: 1; projectId: string; contextSha256: string; fps: number;
   masterDuration: number; totalFrames: number; shots: AnimaticShot[];
   review?: { status: "approved" | "revise"; bindingSha256: string; reviewedAt: string; note: string };
+  priorVersions?: Array<{ contextSha256: string; fps: number; masterDuration: number; totalFrames: number;
+    shots: AnimaticShot[]; archivedAt: string }>;
 };
 export type AnimaticContext = SceneProofContext & { sceneProofPlan: SceneProofPlan };
 const hash = (value: unknown): value is string => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
@@ -58,7 +60,7 @@ export function normalizeStillAnimaticPlan(value: unknown): StillAnimaticPlan | 
       if (!shot || !id(shot.id) || !id(shot.sceneId) || typeof shot.title !== "string" || shot.title.length > 200
         || typeof shot.sourceTimelineItemId !== "string" || !shot.sourceTimelineItemId || shot.sourceTimelineItemId.length > 500
         || shot.startFrame !== frame || !Number.isSafeInteger(shot.endFrame) || shot.endFrame <= frame || shot.endFrame > plan.totalFrames
-        || shot.endFrame - frame > plan.fps * 12 || typeof shot.prompt !== "string" || !shot.prompt.trim() || shot.prompt.length > 6000
+        || shot.endFrame - frame > plan.fps * 12 || typeof shot.prompt !== "string" || shot.prompt.length > 6000
         || !Array.isArray(shot.referenceAssetIds) || shot.referenceAssetIds.length > 9
         || shot.referenceAssetIds.some(r => typeof r !== "string" || !r || r.length > 200)
         || new Set(shot.referenceAssetIds).size !== shot.referenceAssetIds.length) return undefined;
@@ -76,6 +78,10 @@ export function normalizeStillAnimaticPlan(value: unknown): StillAnimaticPlan | 
         || !hash(shot.proof.result?.artifactSha256) || shot.proof.result.artifactId !== `h3-frame-${shot.proof.result.artifactSha256}`)) return undefined;
     }
     if (frame !== plan.totalFrames) return undefined;
+    if (plan.priorVersions && (!Array.isArray(plan.priorVersions) || plan.priorVersions.length > 32
+      || plan.priorVersions.some(p => !p || !Number.isFinite(Date.parse(p.archivedAt))
+        || !normalizeStillAnimaticPlan({ version: 1, projectId: plan.projectId, contextSha256: p.contextSha256,
+          fps: p.fps, masterDuration: p.masterDuration, totalFrames: p.totalFrames, shots: p.shots })))) return undefined;
     if (plan.review && (!["approved", "revise"].includes(plan.review.status) || !hash(plan.review.bindingSha256)
       || typeof plan.review.note !== "string" || plan.review.note.length > 2000 || !Number.isFinite(Date.parse(plan.review.reviewedAt)))) return undefined;
     return clone(plan);
@@ -101,16 +107,32 @@ export function importStillAnimatic(input: AnimaticContext, value: unknown): Sti
   for (const shot of plan.shots) {
     const scene = input.sceneProofPlan.scenes.find(s => s.id === shot.sceneId);
     const target = input.project.editPlan.timelineItems.find(t => t.id === shot.sourceTimelineItemId);
-    if (!scene || !target || shot.startFrame / plan.fps < scene.songStart - 1 / plan.fps
+    if (!scene || !target || !shot.prompt.trim() || shot.startFrame / plan.fps < scene.songStart - 1 / plan.fps
       || shot.endFrame / plan.fps > scene.songEnd + 1 / plan.fps
       || shot.referenceAssetIds.some(r => !input.references.some(ref => ref.id === r && ref.storageStatus === "uploaded"))) throw new Error("A still shot differs from the current scene, provenance or named references.");
   }
   return plan;
 }
 
+/** Explicit adoption keeps previous immutable receipts outside the active cut. */
+export function replaceStillAnimatic(input: AnimaticContext, previous: StillAnimaticPlan, manifest: unknown): StillAnimaticPlan {
+  if (input.sceneProofPlan.contextSha256 !== sceneProofContextSha256(input) || !normalizeStillAnimaticPlan(previous)) throw new Error("Prepare the current scene directions before refreshing the animatic.");
+  const next = importStillAnimatic(input, manifest);
+  next.priorVersions = [...(previous.priorVersions ?? []), { contextSha256: previous.contextSha256, fps: previous.fps,
+    masterDuration: previous.masterDuration, totalFrames: previous.totalFrames, shots: clone(previous.shots), archivedAt: new Date().toISOString() }];
+  if (!normalizeStillAnimaticPlan(next)) throw new Error("The retained animatic history exceeds its safe save bound. No previous image history was removed.");
+  return next;
+}
+
+export function refreshStillAnimaticContext(input: AnimaticContext, previous: StillAnimaticPlan): StillAnimaticPlan {
+  return replaceStillAnimatic(input, previous, { projectId: previous.projectId, fps: previous.fps,
+    totalFrames: previous.totalFrames, masterDuration: previous.masterDuration,
+    slots: previous.shots.map(s => ({ ...s, timelineItemId: s.sourceTimelineItemId, sceneTitle: s.title })) });
+}
+
 export function stillAnimaticShotRequest(input: AnimaticContext, plan: StillAnimaticPlan, shot: AnimaticShot): H3GenerationRequest {
   const scope = effectiveGenerationScope(input.project), scene = input.sceneProofPlan.scenes.find(s => s.id === shot.sceneId);
-  if (plan.projectId !== input.projectId || plan.contextSha256 !== animaticContextSha256(input) || !scope || !scene || shot.sourceFrame
+  if (plan.projectId !== input.projectId || plan.contextSha256 !== animaticContextSha256(input) || !scope || !scene || shot.sourceFrame || !shot.prompt.trim()
     || !plan.shots.some(s => s.id === shot.id && same(animaticShotBinding(plan, s), animaticShotBinding(plan, shot)))) throw new Error("Save the current timed still shot before generating it.");
   return { projectId: plan.projectId, planSignature: scope, timelineItemId: `animatic:${shot.id}`, sectionId: scene.sectionId,
     songStart: shot.startFrame / plan.fps, songEnd: Math.min(shot.endFrame / plan.fps, plan.masterDuration),

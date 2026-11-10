@@ -507,6 +507,8 @@ function parsePersistedDraft(raw: string): PersistedStudioProjectDraft | null {
 }
 
 export function normalizePersistedStoryState(state: PersistedStoryState, legacy: boolean): PersistedStoryState {
+  const stillAnimaticPlan = normalizeStillAnimaticPlan(state.stillAnimaticPlan);
+  if (state.stillAnimaticPlan !== undefined && !stillAnimaticPlan) throw new Error("The animatic is malformed. Correct its saved timing or image records before saving; existing history has not been removed.");
   const normalizeCanon = (treatment: StoryTreatment): StoryTreatment => treatment.storyBible === undefined
     ? treatment : { ...treatment, storyBible: normalizeStoryBible(treatment.storyBible) };
   const originalTreatments = Array.isArray(state.treatments) ? state.treatments.map(normalizeCanon) : [];
@@ -532,7 +534,7 @@ export function normalizePersistedStoryState(state: PersistedStoryState, legacy:
   return {
     ...state,
     sceneProofPlan: normalizeSceneProofPlan(state.sceneProofPlan),
-    stillAnimaticPlan: normalizeStillAnimaticPlan(state.stillAnimaticPlan),
+    stillAnimaticPlan,
     sceneProofReviewRequired: state.sceneProofReviewRequired === true || state.sceneProofPlan !== undefined ? true : undefined,
     storyGenerated: hasConfirmedPlan,
     brief: { text: typeof state.brief?.text === "string" ? state.brief.text.slice(0, 4_000) : "" },

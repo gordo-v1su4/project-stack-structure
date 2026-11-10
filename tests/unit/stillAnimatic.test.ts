@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test";
 import { reviewedScenePlanningFixture } from "../helpers/sceneProofPlanning";
 import { animaticContextSha256, animaticImage, animaticShotAtTime, animaticShotBinding, attachAnimaticJob,
-  importStillAnimatic, normalizeStillAnimaticPlan, prepareAnimaticSave, stillAnimaticShotRequest } from "@/components/studio/stillAnimatic";
+  importStillAnimatic, normalizeStillAnimaticPlan, prepareAnimaticSave, refreshStillAnimaticContext, replaceStillAnimatic, stillAnimaticShotRequest } from "@/components/studio/stillAnimatic";
+import { sceneProofContextSha256 } from "@/components/studio/sceneProofs";
 import { parseH3StillRequest, buildH3StillDescriptor } from "@/lib/h3StillRequest";
 import { materializeAnimaticStill, savedAnimaticStillRequest, assertAnimaticStillJob } from "@/lib/h3AnimaticServer";
 import { createPersistableStudioProjectDraft, hydrateStudioProjectDraft } from "@/components/studio/projectPersistence";
@@ -79,6 +80,39 @@ test("CAS preparation and normal project save/reload preserve every frame and re
   expect(() => prepareAnimaticSave(f.saved.project.id, f.saved.draft, next)).toThrow("changed before saving");
   f.input.sceneProofPlan.scenes[0].direction += " Revised lighting.";
   expect(() => prepareAnimaticSave(f.saved.project.id, f.saved.draft, next, expected)).toThrow();
+});
+
+test("unfinished prompt edits preserve all saved shot history through autosave and reload", () => {
+  const f = fixture(), originalRecord = structuredClone(f.shot.record);
+  f.shot.prompt = "";
+  const stored = createPersistableStudioProjectDraft({ ...f.saved.draft, analysis: null, videoSources: [] });
+  const restored = hydrateStudioProjectDraft({ draft: stored }).storyState.stillAnimaticPlan!;
+  expect(restored.shots.length).toBe(f.plan.shots.length);
+  expect(restored.shots[1].record).toEqual(originalRecord);
+  expect(restored.shots[1].prompt).toBe("");
+  expect(() => stillAnimaticShotRequest(f.input, restored, restored.shots[1])).toThrow("Save the current timed still shot");
+  f.plan.shots[1].startFrame++;
+  expect(() => createPersistableStudioProjectDraft({ ...f.saved.draft, analysis: null, videoSources: [] })).toThrow("existing history has not been removed");
+  expect(f.saved.draft.storyState.stillAnimaticPlan).toBe(f.plan);
+});
+
+test("explicit context refresh archives every receipt and admits new work without replaying old intents", () => {
+  const f = fixture(), previous = structuredClone(f.plan), previousRecord = structuredClone(f.record);
+  f.input.references[0].createdAt = "2026-11-10T00:00:00Z";
+  f.input.sceneProofPlan.contextSha256 = sceneProofContextSha256(f.input);
+  const next = refreshStillAnimaticContext(f.input, previous);
+  expect(next.contextSha256).not.toBe(previous.contextSha256);
+  expect(next.priorVersions?.[0].shots[1].record).toEqual(previousRecord);
+  expect(next.shots.every(s => !s.record && !s.proof && !s.sourceFrame?.image)).toBe(true);
+  const stored = prepareAnimaticSave(f.saved.project.id, f.saved.draft, next, f.plan);
+  expect(hydrateStudioProjectDraft({ draft: { ...stored, version: 3 } }).storyState.stillAnimaticPlan?.priorVersions).toEqual(next.priorVersions);
+  const shot = stillAnimaticShotRequest(f.input, next, next.shots[1]);
+  expect(shot.requestIntentId).not.toBe(previousRecord.request.shot.requestIntentId);
+  expect(previous.shots[1].record).toEqual(previousRecord);
+  const changedTiming = structuredClone(f.manifest); changedTiming.slots[0].endFrame = 60; changedTiming.slots[1].startFrame = 60;
+  const replaced = replaceStillAnimatic(f.input, previous, changedTiming);
+  expect(replaced.shots[1].startFrame).toBe(60);
+  expect(replaced.priorVersions?.[0].shots[1].startFrame).toBe(72);
 });
 
 test("song position selects exact containing frames including reverse seek and final rounding hold", () => {

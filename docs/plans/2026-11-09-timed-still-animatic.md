@@ -43,7 +43,7 @@ validation and derives an exact saved animatic target independently of the
 overlapping old placement. API admission, worker revalidation, frozen job store
 and browser recovery carry the same shot binding. Video admission is unchanged.
 
-`bun run check` passed: 2,004 tests, 27 fixture skips, zero failures and five
+`bun run check` passed: 2,006 tests, 27 fixture skips, zero failures and five
 existing lint warnings. The production webpack build passed. The 83 affected
 tests include per-shot frame coverage, cross-placement admission, altered/foreign
 requests, immutable bindings, same-intent replay, stale image hiding and ordinary
@@ -60,6 +60,14 @@ mount full-resolution thumbnail elements. These are UI/transport checks, not
 actual film, real-song smoothness, production persistence or creative approval.
 Local evidence: `.tmp/animatic-ui/`.
 
+Review corrections retain unfinished prompt edits through autosave, reject
+malformed plans instead of silently dropping history, and offer an explicit
+context refresh or timing reimport that archives prior images and receipts.
+Eight focused tests pass with 289 assertions. Browser checks verified saved
+empty prompts, archived context recovery, and seeking away from a failed image
+without regenerating it. The shot strip now stacks each thumbnail and its
+labels; Preview controls fit a 390×740 viewport without horizontal overflow.
+
 The creative controller independently validated the actual saved canonical
 source receipt once, then materialized all 105 proposed v6 requests against that
 same authorized in-memory project. Exact frame windows and the six substantial
@@ -72,6 +80,6 @@ or the relevant source changes.
 The remaining live gate is the matching self-hosted web/Trigger release followed
 by additive plan/source-frame adoption, serial generation with durable recovery,
 and the actual complete full-song Preview requested by Robert. The original
-project and conflicted window remain untouched. Production activation remains
-subject to the carried concrete-batch release approval; the image batch itself
-has been explicitly requested.
+project and conflicted window remain untouched. Robert approved the self-hosted
+web and matching Trigger release; the 105-image local batch and full-song
+Preview are explicitly requested. No paid provider or extra GPU test is needed.
