@@ -9,6 +9,7 @@ import type { H3StillImage } from "@/lib/h3StillJobStore";
 import { stillMediaUrl } from "./h3StillClient";
 import { AnimaticTimingCard, animaticShotColor } from "./AnimaticShotIdentity";
 import { StillAnimaticPreview } from "./StillAnimaticPreview";
+import { AnimaticImageViewer } from "./AnimaticImageViewer";
 import { Button, Surface } from "./ui";
 
 /** Images are mounted only near the scroll viewport, including after live updates. */
@@ -37,6 +38,9 @@ function ShotThumbnail({ shot, fps, image, selected, onSelect }: { shot: Animati
 export function AnimaticPreviewPage({ projectId }: { projectId: string }) {
   const [snapshot, setSnapshot] = useState<AnimaticPreviewSnapshot | null>(null), [error, setError] = useState("");
   const [selected, setSelected] = useState(""), [preview, setPreview] = useState<"images" | "timing" | null>(null);
+  const [imageOpen, setImageOpen] = useState(false), [arrivals, setArrivals] = useState<string[]>([]);
+  const [checked, setChecked] = useState("");
+  const knownImages = useRef<Map<string, string> | null>(null);
   useEffect(() => {
     let active = true, timer: ReturnType<typeof setTimeout>, revision = "", busy = false;
     const controller = new AbortController();
@@ -50,9 +54,20 @@ export function AnimaticPreviewPage({ projectId }: { projectId: string }) {
           if (!response.ok) { if (response.status === 401 && active) { revision = ""; setSnapshot(null); } throw new Error(response.status === 401 ? "Sign in to view this project's preview." : "Preview updates could not be read. Retrying automatically."); }
           const next = await response.json() as AnimaticPreviewSnapshot;
           if (next.projectId !== projectId) throw new Error("The preview response belongs to another project.");
-          if (active) { revision = next.revision; setSnapshot(next); }
+          if (active) {
+            const images = new Map<string, string>();
+            for (const shot of next.plan?.shots ?? []) {
+              const image = animaticImage(next.plan!, shot, next.contextSha256);
+              if (image) images.set(shot.id, image.sha256);
+            }
+            if (knownImages.current) {
+              const arrived = [...images].filter(([id, sha]) => knownImages.current!.get(id) !== sha).map(([id]) => id);
+              if (arrived.length) setArrivals(arrived);
+            }
+            knownImages.current = images; revision = next.revision; setSnapshot(next);
+          }
         }
-        if (active) setError("");
+        if (active) { setError(""); setChecked(new Date().toLocaleTimeString()); }
       } catch (failure) { if (active) setError((failure as Error).message); }
       finally { busy = false; if (active) timer = setTimeout(() => void refresh(), 10_000); }
     }
@@ -63,11 +78,15 @@ export function AnimaticPreviewPage({ projectId }: { projectId: string }) {
   const plan = snapshot?.plan, context = snapshot?.contextSha256 ?? "";
   const shot = plan?.shots.find(s => s.id === selected) ?? plan?.shots[0];
   const ready = plan?.shots.filter(s => animaticImage(plan, s, context)).length ?? 0;
+  const position = shot && plan ? plan.shots.indexOf(shot) : 0;
+  const requested = plan?.shots.filter(s => s.record && !animaticImage(plan, s, context)).map(s => s.id) ?? [];
   return <main className="min-h-screen bg-ink-0 px-3 py-6 text-fg-1 sm:px-6"><div className="mx-auto max-w-6xl space-y-5">
     <header className="flex flex-wrap items-start justify-between gap-3"><div><Link href="/" className="text-xs text-fg-3 hover:text-accent">Back to studio</Link>
       <h1 className="mt-3 font-display text-3xl text-fg-0">Preview</h1><p className="mt-1 text-sm text-fg-2">{snapshot?.name ?? "Loading project…"}</p></div>
       <p role="status" className="pt-3 font-mono text-xs text-fg-3">{plan ? `${ready}/${plan.shots.length} images` : "Waiting for the shot plan"}</p></header>
     <p className="max-w-2xl text-sm text-fg-3">Play the colored cards to feel the cuts. Images appear here as they finish, with the same shot numbers and labels.</p>
+    {checked ? <p className="text-xs text-fg-3">Live · Checked {checked}{requested.length ? ` · Requested: ${requested.join(", ")}` : ""}</p> : null}
+    {arrivals.length ? <p role="status" className="text-sm text-accent">New images: {arrivals.join(", ")}</p> : null}
     {error ? <p role="alert" className="text-sm text-warn">{error}</p> : null}
     {plan && snapshot ? <>
       <div className="flex flex-wrap items-center gap-3"><Button variant="primary" disabled={!snapshot.audioUrl} onClick={() => setPreview("timing")}>Play timing</Button>
@@ -75,7 +94,7 @@ export function AnimaticPreviewPage({ projectId }: { projectId: string }) {
         <span className="text-xs text-fg-3">{snapshot.songLabel}</span></div>
       <Surface className="min-w-0 space-y-3" aria-label="Shot preview board"><h2 className="text-sm font-medium text-fg-0">Full-song still animatic</h2>
         <ol aria-label="Timed still shots" className="grid max-h-[55vh] grid-cols-2 gap-2 overflow-y-auto pr-1 sm:grid-cols-4 lg:grid-cols-6">
-          {plan.shots.map(s => <ShotThumbnail key={s.id} shot={s} fps={plan.fps} image={animaticImage(plan, s, context)} selected={s.id === shot?.id} onSelect={() => setSelected(s.id)} />)}
+          {plan.shots.map(s => <ShotThumbnail key={s.id} shot={s} fps={plan.fps} image={animaticImage(plan, s, context)} selected={s.id === shot?.id} onSelect={() => { setSelected(s.id); setImageOpen(true); }} />)}
         </ol>
       </Surface>
       {shot ? <details key={shot.id} className="rounded-md border border-line bg-ink-2 p-4"><summary className="cursor-pointer text-sm text-fg-1">{shot.id} · {shot.title} · shot details</summary>
@@ -84,6 +103,8 @@ export function AnimaticPreviewPage({ projectId }: { projectId: string }) {
         <p className="mt-3 text-xs text-fg-3">{shot.referenceAssetIds.length} named references · {shot.sourceFrame ? "Retained source frame" : shot.proof ? "Image ready for review" : shot.record ? "Image requested" : "Timing planned"}</p>
       </details> : null}
       {preview ? <StillAnimaticPreview plan={plan} context={context} audioUrl={snapshot.audioUrl} initialView={preview} onClose={() => setPreview(null)} /> : null}
+      {imageOpen && shot ? <AnimaticImageViewer shot={shot} image={animaticImage(plan, shot, context)} fps={plan.fps} position={position} count={plan.shots.length}
+        onPrevious={() => setSelected(plan.shots[Math.max(0, position - 1)].id)} onNext={() => setSelected(plan.shots[Math.min(plan.shots.length - 1, position + 1)].id)} onClose={() => setImageOpen(false)} /> : null}
     </> : snapshot ? <Surface><p className="text-sm text-fg-2">Prepare a timed shot plan in Story. Its colored cards and images will appear here.</p></Surface> : null}
   </div></main>;
 }
