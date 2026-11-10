@@ -152,6 +152,7 @@ export function captureGeneratedDraftReview(
       id: asset.id, status: asset.status, reviewStatus: asset.reviewStatus, prompt: asset.prompt,
       model: asset.model, target: asset.target, trimStart: asset.trimStart ?? 0,
       durationSeconds: asset.durationSeconds, videoUrl: buildGeneratedAssetPlaybackUrl(asset),
+      ...(asset.sourceClip ? { sourceClip: asset.sourceClip } : {}),
       mediaSha256: asset.mediaSha256, mediaFrameCount: asset.mediaFrameCount, mediaFrameRate: asset.mediaFrameRate,
       generationReferenceHashes: asset.generationReferenceHashes,
       identityReferenceHashes: asset.identityReferenceHashes, identityVerification: asset.identityVerification, identityAssessmentId: asset.identityAssessmentId, identityAssessmentTrimStart: asset.identityAssessmentTrimStart,
@@ -161,6 +162,7 @@ export function captureGeneratedDraftReview(
       generationReferenceHashes: asset.generationReferenceHashes, identityReferenceHashes: asset.identityReferenceHashes,
       identityVerification: asset.identityVerification, identityAssessmentId: asset.identityAssessmentId, identityAssessmentTrimStart: asset.identityAssessmentTrimStart,
       target: asset.target, trimStart: asset.trimStart ?? 0, approvedIdentityEvidenceSha256: asset.approvedIdentityEvidenceSha256,approvedCurrentReferenceEvidenceSha256:asset.approvedCurrentReferenceEvidenceSha256,
+      ...(asset.sourceClip ? { sourceClip: asset.sourceClip } : {}),
     })),
     // Planning provenance is bound by its own coverage snapshot. Keep existing
     // prepared-review fingerprints byte-identical when playback is unchanged.

@@ -7,6 +7,7 @@ import { currentIdentityEvidenceSha256, isIdentityPolicySha256 } from "./issuedI
 import { normalizeH3FirstFrameReceipt, type H3FirstFrameReceipt } from "./h3FirstFrame";
 import {currentReferenceIdentityApprovalSha256} from "./currentReferenceIdentity";
 import { sameAnimaticMotionBinding } from "./animaticMotionBinding";
+import { normalizeSourceClipSelection, type SourceClipSelection } from "./sourceClipSelection";
 export { generatedAssetIdentityBlockReason, generatedAssetDraftIdentityBlockReason } from "./generatedAssetIdentity";
 export type { GeneratedAssetIdentityVerification } from "./generatedAssetIdentity";
 
@@ -27,6 +28,7 @@ export type GeneratedStudioAssetTarget = {
 };
 
 export type GeneratedStudioAsset = {
+  sourceClip?: SourceClipSelection;
   /** Derived from the project current-reference context; deliberately never stored in the bank. */
   currentReferenceIdentity?: import("./currentReferenceIdentity").CurrentIdentityRuntimeBinding;
   id: string;
@@ -203,6 +205,7 @@ export function sanitizeGeneratedStudioAssetForStorage(asset: GeneratedStudioAss
     mediaKind: asset.mediaKind,
     durationSeconds: asset.durationSeconds,
     trimStart: asset.trimStart,
+    ...(asset.sourceClip ? { sourceClip: normalizeSourceClipSelection(asset.sourceClip) } : {}),
     reviewStatus: rejected ? "rejected" : !currentApproval && asset.reviewStatus === "approved" ? "pending" : asset.reviewStatus,
     reviewNotes: asset.reviewNotes,
     target: asset.target,

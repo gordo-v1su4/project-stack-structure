@@ -67,10 +67,22 @@ and requires a whole reviewed shot. Stale selected history with a different
 image/review binding does not reserve the new import interval. Imported original
 footage remains a pending editorial candidate, with no H3 verification claim.
 
-Ordinary uploaded-source placement into animatic windows and automatic directed
-motion planning remain unfinished. Retained still-image provenance alone never
-authorizes a source trim. No project data, production deployment or GPU dispatch
-is part of this local implementation.
+Already-uploaded single-file sources can enter an animatic shot through an
+explicit source preview and in point. The browser reads media duration instead
+of relying on stale inventory duration, then creates a pending editorial
+candidate referencing the existing durable object. It performs no upload or
+generation. The descriptor binding survives save/reload and participates in
+assembled-draft review. Server export checks it against the current saved source
+inventory after canonical scope validation and forwards the canonical media SHA
+when one exists. The worker's actual decoded-duration/EOF check remains the
+authority for render bounds; browser metadata is not a byte or identity proof.
+Chunked sources remain explicitly unavailable in this inspector, rather than
+silently treating their first part as a complete video. Retained still-image
+provenance alone never authorizes a source trim.
+
+Automatic directed motion planning and production/browser acceptance remain
+unfinished. No project data, production deployment or GPU dispatch is part of
+this local implementation.
 
 Acceptance: cross-old-cut video targets retain exact frame windows; legacy jobs
 remain byte compatible; no-review/changed-master/changed-image/foreign or

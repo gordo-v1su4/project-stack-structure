@@ -24,6 +24,7 @@ import { prepareAppendedSourceConfirmation, sourceConfirmationBaselineSha256 } f
 import { buildSongSectionReview, selectReviewRange, type ReviewSelection } from "./studio/songSectionReview";
 import { isPlacementPlanCurrent, storyProjectInputSignature, prepareApprovedPlacements, normalizeStoryEditSettings, type EditPlanPreviewSegment, type MusicVideoProject } from "./studio/musicVideoProject";
 import { buildStoryDraftSegments } from "./studio/animaticDraft";
+import { AnimaticSourceFootagePanel } from "./studio/panels/AnimaticSourceFootagePanel";
 import { clearRoughCutPlacement, applyRoughCutSwap, proposeRoughCutSwap, proposeRoughCutReplacement, type RoughCutSwapProposal } from "./studio/roughCutArrangement";
 import { selectStorySectionCandidate } from "./studio/musicVideoProjectSelection";
 import { buildAutoShaderCues, describeMusicVideoShaderPreset, MUSIC_VIDEO_SHADER_PRESETS, type ShaderAccentKinds } from "./studio/shaderEffectPlan";
@@ -2880,6 +2881,8 @@ export default function StudioApp() {
               onOpenMatch={() => handleSelectTab("shuffle")} matchReady={storyState.storyGenerated}
               editSettings={storyState.editSettings}
             /> : null}
+            {tab === "generate" ? <AnimaticSourceFootagePanel key={activeProjectId ?? "unsaved"} sources={videoSources} segments={baseStoryPreviewSegments}
+              plan={storyState.stillAnimaticPlan} onSelect={asset => { invalidateArrangementOutput(); receiveGeneratedAsset(asset, generatedDraft?.revision ?? 0); }} /> : null}
             {tab === "generate" && musicVideoProject ? <ReusedFootagePanel key={activeProjectId ?? "unsaved"} project={musicVideoProject} assets={generatedAssets}
               segments={baseStoryPreviewSegments} draft={generatedDraft} onConfirm={() => confirmAppendedSources("creative-rebaseline")}
               onSelect={(asset, segment, sourceStart) => {

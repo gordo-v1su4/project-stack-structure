@@ -4,6 +4,7 @@ import { buildGeneratedAssetPlaybackUrl, generatedAssetDraftIdentityBlockReason,
 import { isPlacementPlanCurrent } from "@/components/studio/musicVideoProject";
 import { buildStoryDraftSegments } from "@/components/studio/animaticDraft";
 import { findH3TargetSegment } from "@/components/studio/h3DraftPlan";
+import { assertCurrentSourceClipCandidate } from "@/components/studio/sourceClipSelection";
 import { hydrateStudioProjectDraft } from "@/components/studio/projectPersistence";
 import { finalExportSnapshotSha256 } from "@/components/studio/finalExportRecovery";
 import { buildStudioSourceContextSignature } from "@/components/studio/studioSourceContext";
@@ -92,6 +93,7 @@ export async function reconcileProjectFinalExport(params: {
   const assets: GeneratedStudioAsset[] = [];
   const currentUsedUrls = project.currentIdentity ? new Set(applyAcceptedGeneratedDraft(base, runtime.generatedAssets, draft.generatedDraft).map(segment => segment.videoUrl)) : undefined;
   const canonicalByKey = new Map<string, GeneratedStudioAsset>();
+  const canonicalSourceByAssetId = new Map<string, (typeof runtime.videoSources)[number]>();
   const environmentOnlyNativeBounds = new Set<string>();
   const receipts: NonNullable<FinalExportPayload["projectSnapshot"]>["h3"] = [];
   if (draft.generatedDraft?.reusedTakePlacements?.some(row => !runtime.generatedAssets.some(asset => asset.id === row.assetId))) throw new ProjectExportError("Reused footage is missing from the current saved bank.");
@@ -115,7 +117,13 @@ export async function reconcileProjectFinalExport(params: {
     const objectKey = asset.fullStorage?.objectKey ?? asset.fullStorage?.storagePath ?? "";
     const identity = h3ExportMediaIdentity(objectKey);
     const h3 = identity || asset.jobId?.startsWith("h3-") || /^h3-ref2va-/.test(asset.model);
-    if (!h3) { assets.push(asset); continue; }
+    if (!h3) {
+      if (asset.sourceClip || asset.model === "original-source-selection") {
+        try { canonicalSourceByAssetId.set(asset.id, assertCurrentSourceClipCandidate(asset, runtime.videoSources)); }
+        catch { throw new ProjectExportError("The accepted source clip or trim no longer matches the project source inventory."); }
+      }
+      assets.push(asset); continue;
+    }
     const jobId = identity?.jobId ?? asset.jobId;
     if (!jobId || !/^h3-[a-f0-9]{64}$/.test(jobId) || (identity && (identity.owner !== normalizeStudioOwnerSegment(ownerId) || identity.projectId !== context.projectId))) {
       throw new ProjectExportError("An approved generated take has no canonical project job.");
@@ -204,8 +212,9 @@ export async function reconcileProjectFinalExport(params: {
   const segments: FinalExportPayload["segments"] = [];
   let songCursor = 0;
   for (const [index, segment] of preview.entries()) {
-    const source = runtime.videoSources.find(source => source.videoUrl === segment.videoUrl);
-    const generated = assets.find(asset => buildGeneratedAssetPlaybackUrl(asset) === segment.videoUrl);
+    const generated = assets.find(asset => asset.id === segment.generatedAssetId)
+      ?? assets.find(asset => buildGeneratedAssetPlaybackUrl(asset) === segment.videoUrl);
+    const source = (generated && canonicalSourceByAssetId.get(generated.id)) ?? runtime.videoSources.find(source => source.videoUrl === segment.videoUrl);
     const key = generated?.fullStorage?.objectKey ?? generated?.fullStorage?.storagePath ?? source?.storagePath;
     const bucket = generated?.fullStorage?.bucket ?? source?.storageBucket;
     const expected = resolveDurableInput({ bucket, objectKey: key, ...(source?.uploadChunks?.chunks?.length ? { chunks: source.uploadChunks.chunks } : {}) }, "video/mp4");
@@ -221,7 +230,13 @@ export async function reconcileProjectFinalExport(params: {
       throw new ProjectExportError("Export media or trim timing changed after draft acceptance.");
     }
     let sourceIndex = videos.findIndex(video => mediaKey(video) === mediaKey(expected));
-    if (sourceIndex < 0) { sourceIndex = videos.length; videos.push({ ...expected, ...(canonical ? { expectedSha256: canonical.mediaSha256 } : {}) }); }
+    if (sourceIndex < 0) {
+      sourceIndex = videos.length;
+      const sourceSha = source && project.generationScope?.body.sourceMediaVersions.find(version => version.id === `video:${source.id}`
+        && version.bucket === expected.bucket && version.objectKey === expected.objectKey)?.sha256;
+      const expectedSha256 = canonical?.mediaSha256 ?? sourceSha;
+      videos.push({ ...expected, ...(expectedSha256 ? { expectedSha256 } : {}) });
+    }
     let sourceFrameWindow: FinalExportPayload["segments"][number]["sourceFrameWindow"];
     if (canonical) {
       const proof = canonical.identityVerification;

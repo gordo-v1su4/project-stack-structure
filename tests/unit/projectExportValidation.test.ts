@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { createMusicVideoProject, placementInputSignature, prepareApprovedPlacements } from "@/components/studio/musicVideoProject";
-import { createPersistableStudioProjectDraft } from "@/components/studio/projectPersistence";
+import { createPersistableStudioProjectDraft, hydrateStudioProjectDraft } from "@/components/studio/projectPersistence";
 import { buildStudioSourceContextSignature, studioSourceContextInput } from "@/components/studio/studioSourceContext";
 import { generationScopeSha256, generationSemanticSha256, sourceReferenceManifest, type GenerationScopeReceipt } from "@/components/studio/generationScope";
 import { buildStoryContentSignature, type StoryTreatment } from "@/components/studio/storyTreatments";
@@ -21,13 +21,14 @@ import { firstFrameArtifactFixture, firstFrameAssessmentFixture } from "../helpe
 import {CURRENT_IDENTITY_PURPOSE,buildCurrentIdentityScope,currentIdentityOrigin,currentIdentityProofOrigin,currentIdentityReviewSha256,currentReferenceIdentityApprovalSha256,withCurrentReferenceIdentity,type CurrentIdentityAssessment,type CurrentIdentityPolicy,type CurrentIdentityProof} from "@/components/studio/currentReferenceIdentity";
 import {issuedGalleryProfileSha256} from "@/components/studio/issuedIdentityPolicy";
 import { reuseOriginAssetSha256, reusedTakeReviewSha256, type ReusedTakePlacement } from "@/components/studio/reusedTakePlacements";
-import { applyDraftGeneratedAssets, captureGeneratedDraftReview, approveGeneratedDraft } from "@/components/studio/generatedDraft";
+import { applyDraftGeneratedAssets, captureGeneratedDraftReview, approveGeneratedDraft, selectGeneratedDraftAsset } from "@/components/studio/generatedDraft";
 import { buildEditPlanPreviewSegments } from "@/components/studio/musicVideoProject";
 import { buildStoryDraftSegments } from "@/components/studio/animaticDraft";
 import { prepareSceneProofPlan } from "@/components/studio/sceneProofs";
 import { animaticShotBinding, importStillAnimatic, stillAnimaticShotRequest } from "@/components/studio/stillAnimatic";
 import { animaticReviewBinding, reviewAnimatic } from "@/components/studio/animaticReview";
 import { parseH3StillRequest } from "@/lib/h3StillRequest";
+import { createSourceClipCandidate } from "@/components/studio/sourceClipSelection";
 
 let signedIn = true, dispatches: Array<Record<string, unknown>> = [], reads = 0;
 let saved: SavedStudioProject, job: H3GenerationJob, projectId = "project-1";
@@ -133,8 +134,7 @@ function form(projectContext = true) {
 }
 function post(data: FormData) { return POST(new Request("http://app.test/api/export/final", { method: "POST", body: data })); }
 
-test("export reconstructs the reviewed animatic target instead of the legacy edit window", async () => {
-  reset();
+function prepareReviewedAnimaticProjection() {
   const d = saved.draft, project = d.musicVideoProject!, story = d.storyState;
   const context = { projectId, project, treatment: story.confirmedTreatmentSnapshot!, storyBeats: story.storyBeats, references: d.referenceAssets! };
   const sceneProofPlan = prepareSceneProofPlan(context); story.sceneProofPlan = sceneProofPlan;
@@ -155,6 +155,11 @@ test("export reconstructs the reviewed animatic target instead of the legacy edi
   story.stillAnimaticPlan = plan;
   const [segment] = buildStoryDraftSegments({ projectId, project, storyState: story, videoSources: [], referenceAssets: d.referenceAssets!, audio: d.analysis });
   expect(segment.timelineItemId).toBe("animatic:A001");
+  return segment;
+}
+
+test("export reconstructs the reviewed animatic target instead of the legacy edit window", async () => {
+  reset(); const segment = prepareReviewedAnimaticProjection(), d = saved.draft;
   job.target = { ...job.target, timelineItemId: segment.timelineItemId!, animaticMotion: segment.animaticMotion };
   job.request = { ...job.request, timelineItemId: segment.timelineItemId, animaticMotion: segment.animaticMotion };
   job.result!.asset.target = structuredClone(job.target);
@@ -164,6 +169,47 @@ test("export reconstructs the reviewed animatic target instead of the legacy edi
   // Same time and shot number do not authorize another reviewed image.
   d.generatedAssets![0].target!.animaticMotion!.imageSha256 = hash("f");
   expect((await post(form())).status).toBe(409); expect(dispatches).toHaveLength(0);
+});
+
+function acceptedSourceClipFixture() {
+  reset(); const d = saved.draft;
+  d.videoSources = [{ id: 10, name: "escape.mp4", duration: 7.458, size: 200, thumbnailUrl: "", mediaKey: "video-10",
+    storageStatus: "uploaded", storageBucket: "studio", storagePath: "media-uploads/github-test/source/escape.mp4", storageUrl: "https://media.test/legacy-resolved-source.mp4" }];
+  // Synthetic canonical media receipt, not a claim about real source bytes.
+  const receipt = confirmFixtureSourceAppend();
+  receipt.body.sourceMediaVersions.push({ id: "video:10", bucket: "studio", objectKey: d.videoSources[0].storagePath!, etag: '"source"', byteLength: 200, sha256: hash("9") });
+  receipt.sha256 = generationScopeSha256(receipt.body); receipt.id = `generation-scope-${receipt.sha256}`;
+  d.musicVideoProject!.generationScope = receipt; d.generatedDraft!.sourceConfirmationSha256 = receipt.sha256;
+  sourceReceipts.set(receipt.id, structuredClone(receipt));
+  const segment = prepareReviewedAnimaticProjection(), runtime = hydrateStudioProjectDraft({ draft: d });
+  const candidate = createSourceClipCandidate(runtime.videoSources[0], segment, 2.5, 6.708333);
+  const draft = selectGeneratedDraftAsset({ draft: d.generatedDraft!, assets: [candidate], asset: candidate, segments: [segment] });
+  const review = captureGeneratedDraftReview([segment], [candidate], draft)!;
+  const accepted = approveGeneratedDraft({ draft, assets: [candidate], segments: [segment], review }); expect(accepted.error).toBe(null);
+  d.generatedAssets = accepted.assets; d.generatedDraft = accepted.draft;
+  const formData = form(); formData.set("draftRevision", String(accepted.draft.revision));
+  formData.set("videoRefs", JSON.stringify([{ bucket: "studio", objectKey: d.videoSources[0].storagePath }]));
+  formData.set("segments", JSON.stringify([{ sourceIndex: 0, startTime: 2.5, endTime: 5.5, musicStart: 0, musicEnd: 3 }]));
+  return { data: formData, asset: d.generatedAssets[0] };
+}
+
+test("accepted source selection exports the exact owned stored trim with canonical media SHA and no upload or H3 proof claim", async () => {
+  const { data } = acceptedSourceClipFixture();
+  expect((await post(data)).status).toBe(202); expect(dispatches).toHaveLength(1);
+  expect((dispatches[0].videos as Array<Record<string, unknown>>)[0]).toMatchObject({ objectKey: saved.draft.videoSources[0].storagePath, expectedSha256: hash("9") });
+  expect((dispatches[0].segments as Array<Record<string, unknown>>)[0]).toMatchObject({ startTime: 2.5, endTime: 5.5, musicStart: 0, musicEnd: 3 });
+  expect((dispatches[0].projectSnapshot as { h3: unknown[] }).h3).toEqual([]);
+});
+
+for (const mutation of ["missing binding", "source descriptor", "media", "duration", "trim", "review"] as const) test(`source selection export rejects changed ${mutation}`, async () => {
+  const { data, asset } = acceptedSourceClipFixture();
+  if (mutation === "missing binding") delete asset.sourceClip;
+  if (mutation === "source descriptor") asset.sourceClip!.sourceBindingSha256 = hash("f");
+  if (mutation === "media") asset.fullStorage!.objectKey += ".changed";
+  if (mutation === "duration") asset.sourceClip!.browserDuration = 20;
+  if (mutation === "trim") asset.trimStart = 6;
+  if (mutation === "review") saved.draft.storyState.stillAnimaticPlan!.review!.status = "revise";
+  expect((await post(data)).status).toBe(409); expect(dispatches).toHaveLength(0);
 });
 
 function confirmFixtureSourceAppend() {
