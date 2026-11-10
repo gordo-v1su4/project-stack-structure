@@ -8,8 +8,8 @@ import type { StillAnimaticPlan } from "./stillAnimatic";
 
 export function AnimaticReviewPanel({ snapshot, onSaved }: { snapshot: AnimaticPreviewSnapshot;
   onSaved: (revision: string, review: NonNullable<StillAnimaticPlan["review"]>, expectedRevision: string) => void }) {
-  const binding = useMemo(() => snapshot.plan ? animaticReviewBinding(snapshot.plan, snapshot.contextSha256) : null,
-    [snapshot.plan, snapshot.contextSha256]);
+  const binding = useMemo(() => snapshot.plan ? animaticReviewBinding(snapshot.plan, snapshot.contextSha256, snapshot.audioUrl) : null,
+    [snapshot.plan, snapshot.contextSha256, snapshot.audioUrl]);
   return <Review key={binding ?? "incomplete"} snapshot={snapshot} binding={binding} onSaved={onSaved} />;
 }
 

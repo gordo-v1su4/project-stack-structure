@@ -26,14 +26,15 @@ const request = (body: unknown, revision: string | null = '"old"') => new Reques
   method: "POST", headers: { "content-type": "application/json", ...(revision ? { "if-match": revision } : {}) }, body: JSON.stringify(body) });
 function setup() {
   const f = reviewedScenePlanningFixture();
-  f.saved.draft.analysis = { ...f.saved.draft.analysis!, storageBucket: "studio", storagePath: "media-uploads/github-test/master.wav" };
+  f.saved.draft.analysis = { ...f.saved.draft.analysis!, duration: 10, storageBucket: "studio", storagePath: "media-uploads/github-test/master.wav" };
   const input = f.source(), plan = { version: 1 as const, projectId: "project-1", contextSha256: animaticContextSha256(input), fps: 24,
     masterDuration: 10, totalFrames: 240, shots: [{ id: "A001", sceneId: "S01", title: "Opening", sourceTimelineItemId: "old-item",
       startFrame: 0, endFrame: 240, prompt: "", referenceAssetIds: [], sourceFrame: { sourceId: 1, sourceSecond: 0,
         sourceSha256: "a".repeat(64), image: { bucket: "studio", objectKey: "media-uploads/github-test/source.png", sha256: "b".repeat(64), byteLength: 100, width: 2048, height: 1152 } } }] };
   f.saved.draft.storyState.stillAnimaticPlan = plan;
   saved = { ...f.saved, revision: '"old"' };
-  return { bindingSha256: animaticReviewBinding(plan, plan.contextSha256)!, status: "approved", note: "Reviewed whole song" };
+  const audioUrl = "/api/storage/media?bucket=studio&objectKey=media-uploads%2Fgithub-test%2Fmaster.wav";
+  return { bindingSha256: animaticReviewBinding(plan, plan.contextSha256, audioUrl)!, status: "approved", note: "Reviewed whole song" };
 }
 afterEach(() => { signedIn = true; saved = null; writes = 0; conflict = false; });
 
@@ -62,4 +63,14 @@ test("replaced or missing image and storage CAS race reject approval without aut
   setup(); delete saved!.draft.storyState.stillAnimaticPlan!.shots[0].sourceFrame!.image;
   expect((await POST(request(body), context)).status).toBe(409); expect(writes).toBe(0);
   setup(); conflict = true; expect((await POST(request(body), context)).status).toBe(409); expect(writes).toBe(1);
+});
+
+test("Preview master override and duration changes cannot reuse another track's review", async () => {
+  const body = setup();
+  saved!.draft.analysis!.storagePath = "media-uploads/github-test/replacement-master.wav";
+  expect((await POST(request(body), context)).status).toBe(409); expect(writes).toBe(0);
+  setup(); saved!.draft.analysis!.duration = 9;
+  expect((await POST(request(body), context)).status).toBe(409); expect(writes).toBe(0);
+  setup(); saved!.draft.analysis!.storagePath = undefined;
+  expect((await POST(request(body), context)).status).toBe(409); expect(writes).toBe(0);
 });

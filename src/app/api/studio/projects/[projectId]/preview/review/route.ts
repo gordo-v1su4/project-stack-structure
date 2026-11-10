@@ -31,14 +31,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
   if (saved.revision !== expectedRevision) return Response.json({ error: "The project changed. Review the current animatic." }, { status: 409 });
   const d = saved.draft, story = d.storyState, project = d.musicVideoProject;
   const plan = normalizeStillAnimaticPlan(story.stillAnimaticPlan), audio = d.analysis ?? project?.song;
-  if (!plan || !project || !story.confirmedTreatmentSnapshot || !story.sceneProofPlan || !audio?.storageBucket || !audio.storagePath) {
+  if (!plan || !project || !story.confirmedTreatmentSnapshot || !story.sceneProofPlan || !audio?.storageBucket || !audio.storagePath
+    || !Number.isFinite(audio.duration) || Math.abs(audio.duration - plan.masterDuration) > 0.001) {
     return Response.json({ error: "Prepare the complete animatic and original master before review." }, { status: 409 });
   }
   let draft: typeof d;
   try {
     const context = animaticContextSha256({ projectId, project, treatment: story.confirmedTreatmentSnapshot,
       storyBeats: story.storyBeats, references: d.referenceAssets ?? [], sceneProofPlan: story.sceneProofPlan });
-    const next = reviewAnimatic(plan, context, body.bindingSha256 as string, body.status as "approved" | "revise", body.note as string);
+    const audioUrl = `/api/storage/media?${new URLSearchParams({ bucket: audio.storageBucket, objectKey: audio.storagePath })}`;
+    const next = reviewAnimatic(plan, context, audioUrl, body.bindingSha256 as string, body.status as "approved" | "revise", body.note as string);
     draft = prepareAnimaticSave(projectId, d, next, plan);
   } catch { return Response.json({ error: "The animatic changed or still has missing images. Review the current complete animatic." }, { status: 409 }); }
   try {

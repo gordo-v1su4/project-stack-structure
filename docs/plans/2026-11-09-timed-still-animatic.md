@@ -5,7 +5,9 @@
 The public Preview page needs an explicit review action before the still plan
 can authorize future motion preparation. Bind a decision to every current shot's
 creative binding and immutable image identity, including retained source frames,
-plus the current story/master/reference context. Missing or stale pictures cannot
+plus the current story/master/reference context and the actual durable master
+URL selected by Preview: the saved analysis can override the project's song
+field. Missing or stale pictures, a missing master or a duration mismatch cannot
 produce an approval binding. Receipt-only saves and the decision itself do not
 change that binding; replacing an image, changing a hold or creative input does.
 

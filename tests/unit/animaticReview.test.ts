@@ -4,6 +4,7 @@ import type { StillAnimaticPlan } from "@/components/studio/stillAnimatic";
 import { animaticShotBinding, importStillAnimatic, stillAnimaticShotRequest } from "@/components/studio/stillAnimatic";
 import { reviewedScenePlanningFixture } from "../helpers/sceneProofPlanning";
 import { parseH3StillRequest } from "@/lib/h3StillRequest";
+const master = "/api/storage/media?bucket=studio&objectKey=media-uploads%2Fgithub-test%2Fmaster.wav";
 
 function fixture(): StillAnimaticPlan {
   return { version: 1, projectId: "project-1", contextSha256: "a".repeat(64), fps: 24, masterDuration: 10, totalFrames: 240,
@@ -15,35 +16,43 @@ function fixture(): StillAnimaticPlan {
 
 test("review binds every exact current image and timing, not the review or archive bookkeeping", () => {
   const plan = fixture(), before = JSON.stringify(plan), context = plan.contextSha256;
-  const binding = animaticReviewBinding(plan, context)!;
+  const binding = animaticReviewBinding(plan, context, master)!;
   expect(binding).toMatch(/^[a-f0-9]{64}$/);
-  const next = reviewAnimatic(plan, context, binding, "approved", " Good direction ", "2026-11-10T07:00:00Z");
+  const next = reviewAnimatic(plan, context, master, binding, "approved", " Good direction ", "2026-11-10T07:00:00Z");
   expect(next.review?.note).toBe("Good direction"); expect(JSON.stringify(plan)).toBe(before);
-  expect(animaticReviewBinding(next, context)).toBe(binding);
+  expect(animaticReviewBinding(next, context, master)).toBe(binding);
   next.priorVersions = [{ ...plan, archivedAt: new Date().toISOString() }];
-  expect(animaticReviewBinding(next, context)).toBe(binding);
-  const revised = reviewAnimatic(next, context, binding, "revise", "Fix the crowd");
+  expect(animaticReviewBinding(next, context, master)).toBe(binding);
+  const revised = reviewAnimatic(next, context, master, binding, "revise", "Fix the crowd");
   expect(revised.review?.status).toBe("revise");
   for (const mutate of [(p: StillAnimaticPlan) => { p.shots[0].sourceFrame!.image!.sha256 = "d".repeat(64); },
     (p: StillAnimaticPlan) => { p.shots[1].sourceFrame!.image!.objectKey += ".new"; },
     (p: StillAnimaticPlan) => { p.shots[0].endFrame++; p.shots[1].startFrame++; },
     (p: StillAnimaticPlan) => { p.shots[0].prompt = "Revised direction"; }]) {
     const changed = structuredClone(plan); mutate(changed);
-    expect(animaticReviewBinding(changed, context)).not.toBe(binding);
-    expect(() => reviewAnimatic(changed, context, binding, "approved", "")).toThrow("changed");
+    expect(animaticReviewBinding(changed, context, master)).not.toBe(binding);
+    expect(() => reviewAnimatic(changed, context, master, binding, "approved", "")).toThrow("changed");
   }
 });
 
 test("missing pictures, stale context, malformed partition and invalid review input cannot approve", () => {
-  const plan = fixture(), context = plan.contextSha256, binding = animaticReviewBinding(plan, context)!;
-  expect(animaticReviewBinding(plan, "d".repeat(64))).toBeNull();
+  const plan = fixture(), context = plan.contextSha256, binding = animaticReviewBinding(plan, context, master)!;
+  expect(animaticReviewBinding(plan, "d".repeat(64), master)).toBeNull();
   delete plan.shots[1].sourceFrame!.image;
-  expect(animaticReviewBinding(plan, context)).toBeNull();
-  expect(() => reviewAnimatic(plan, context, binding, "approved", "")).toThrow();
+  expect(animaticReviewBinding(plan, context, master)).toBeNull();
+  expect(() => reviewAnimatic(plan, context, master, binding, "approved", "")).toThrow();
   const complete = fixture(); complete.shots[1].startFrame++;
-  expect(animaticReviewBinding(complete, context)).toBeNull();
-  expect(() => reviewAnimatic(fixture(), context, binding, "approved", "x".repeat(2001))).toThrow();
-  expect(() => reviewAnimatic(fixture(), context, binding, "approved", "", "bad-date")).toThrow();
+  expect(animaticReviewBinding(complete, context, master)).toBeNull();
+  expect(() => reviewAnimatic(fixture(), context, master, binding, "approved", "x".repeat(2001))).toThrow();
+  expect(() => reviewAnimatic(fixture(), context, master, binding, "approved", "", "bad-date")).toThrow();
+});
+
+test("review invalidates when the actually played master changes independently of shot context", () => {
+  const plan = fixture(), context = plan.contextSha256, binding = animaticReviewBinding(plan, context, master)!;
+  const replacement = master.replace("master.wav", "different-master.wav");
+  expect(animaticReviewBinding(plan, context, replacement)).not.toBe(binding);
+  expect(animaticReviewBinding(plan, context, "")).toBeNull();
+  expect(() => reviewAnimatic(plan, context, replacement, binding, "approved", "")).toThrow("changed");
 });
 
 test("generated images require current saved bindings and a replacement invalidates the viewed decision", () => {
@@ -61,14 +70,14 @@ test("generated images require current saved bindings and a replacement invalida
     shot.proof = { jobId, descriptorSha256: "c".repeat(64), result: { master: image, native: image,
       artifactId: `h3-frame-${"d".repeat(64)}`, artifactSha256: "d".repeat(64) } };
   }
-  const context = plan.contextSha256, binding = animaticReviewBinding(plan, context)!;
+  const context = plan.contextSha256, binding = animaticReviewBinding(plan, context, master)!;
   expect(binding).toMatch(/^[a-f0-9]{64}$/);
-  const next = reviewAnimatic(plan, context, binding, "approved", "");
-  expect(animaticReviewBinding(next, context)).toBe(binding);
+  const next = reviewAnimatic(plan, context, master, binding, "approved", "");
+  expect(animaticReviewBinding(next, context, master)).toBe(binding);
   next.shots[1].record!.request.attempt = 1;
-  expect(animaticReviewBinding(next, context)).toBe(binding);
+  expect(animaticReviewBinding(next, context, master)).toBe(binding);
   next.shots[0].proof!.descriptorSha256 = "e".repeat(64);
-  expect(animaticReviewBinding(next, context)).not.toBe(binding);
+  expect(animaticReviewBinding(next, context, master)).not.toBe(binding);
   next.shots[0].record!.context = "f".repeat(64);
-  expect(animaticReviewBinding(next, context)).toBeNull();
+  expect(animaticReviewBinding(next, context, master)).toBeNull();
 });
