@@ -53,10 +53,19 @@ an automatic choice of source trim. Use actual decoded clip duration, exact
 musical windows and continuity review before adoption. Named-lead rear views
 cannot claim a frontal screen; identity-free cuts use truthful no-named-identity
 evidence. Motion, draft selection and final export retain separate human review.
-Existing-footage placement into animatic windows and automatic directed motion
-planning remain unfinished. Reuse selection is blocked for these windows until
-the canonical source-trim review path supports them. No project data, production
-deployment or GPU dispatch is part of this local implementation.
+The existing generated-footage bank can now place a verified source trim into
+a whole reviewed animatic shot. The source-in control is explicit, and the
+canonical validator reconstructs current shot windows and review bindings from
+the saved project before admitting reuse. This retains immutable origin media,
+identity evidence and original targets. Pending reuse is audition-only until
+the complete prepared draft is explicitly accepted; export revalidates canonical
+origin evidence and current placement consent. Short trims do not silently
+leave a partial animatic shot behind.
+
+Ordinary uploaded-source placement into animatic windows and automatic directed
+motion planning remain unfinished. Retained still-image provenance alone never
+authorizes a source trim. No project data, production deployment or GPU dispatch
+is part of this local implementation.
 
 Acceptance: cross-old-cut video targets retain exact frame windows; legacy jobs
 remain byte compatible; no-review/changed-master/changed-image/foreign or

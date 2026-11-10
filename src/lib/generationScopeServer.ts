@@ -14,6 +14,8 @@ import { readGenerationScopeBaseline, storeGenerationScopeBaseline, readGenerati
 import { pinGenerationScopeRawReferences, verifyGenerationScopeRawReferences, type ExpectedScopeRawReference } from "./generationScopeRawReferences";
 import { bootstrapR31SourceMedia, pinGenerationScopeMedia, verifyGenerationScopeMedia } from "./generationScopeMedia";
 import { assertCurrentReusedTakePlacements } from "@/components/studio/reusedTakePlacements";
+import { hydrateStudioProjectDraft } from "@/components/studio/projectPersistence";
+import { buildStoryDraftSegments } from "@/components/studio/animaticDraft";
 
 export class SourceConfirmationError extends Error { constructor(message: string, readonly status = 409) { super(message); } }
 function contextInput(draft: PersistedStudioProjectDraft, references = draft.referenceAssets ?? []) {
@@ -34,7 +36,14 @@ export async function validateSavedGenerationScope(ownerId: string, saved: Saved
     asset.provider === "swarmui" && asset.status === "completed" && asset.jobId && asset.target?.planSignature === origin.scopeSignature))) {
     throw new SourceConfirmationError("Confirm the revised story's existing footage before planning or generating its missing shots.");
   }
-  try { assertCurrentReusedTakePlacements(project, saved.draft.generatedDraft?.reusedTakePlacements); }
+  try {
+    const rows = saved.draft.generatedDraft?.reusedTakePlacements;
+    const runtime = rows?.some(row => row.target?.animaticMotion) ? hydrateStudioProjectDraft({ draft: saved.draft }) : undefined;
+    const segments = runtime ? buildStoryDraftSegments({ projectId: saved.project.id, project: runtime.musicVideoProject,
+      videoSources: runtime.videoSources, referenceAssets: runtime.referenceAssets, storyState: runtime.storyState,
+      audio: runtime.analysis ?? project.song }) : undefined;
+    assertCurrentReusedTakePlacements(project, rows, segments);
+  }
   catch { throw new SourceConfirmationError("A reused placement is stale or outside its canonical story/source scope."); }
   if(project.currentIdentity&&!project.generationScope)throw new SourceConfirmationError("The current-reference migration receipt is unavailable.");
   const scope = effectiveGenerationScope(project);

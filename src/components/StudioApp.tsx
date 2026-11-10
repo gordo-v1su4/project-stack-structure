@@ -2882,9 +2882,9 @@ export default function StudioApp() {
             /> : null}
             {tab === "generate" && musicVideoProject ? <ReusedFootagePanel key={activeProjectId ?? "unsaved"} project={musicVideoProject} assets={generatedAssets}
               segments={baseStoryPreviewSegments} draft={generatedDraft} onConfirm={() => confirmAppendedSources("creative-rebaseline")}
-              onSelect={(asset, segment) => {
+              onSelect={(asset, segment, sourceStart) => {
                 if (!generatedDraft) throw new Error("Confirm the revised story first.");
-                const nextDraft = selectReusedTakePlacement(generatedDraft, musicVideoProject, asset, segment);
+                const nextDraft = selectReusedTakePlacement(generatedDraft, musicVideoProject, asset, segment, sourceStart);
                 invalidateArrangementOutput();
                 setGeneratedReviewState(current => current.draft?.revision === generatedDraft.revision
                   ? { ...current, draft: nextDraft } : current);

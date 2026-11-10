@@ -41,7 +41,7 @@ test("Draft projects exact reviewed frame windows without mutating legacy story 
   expect(planH3DraftWindows(segments)).toEqual(segments);
   expect(planH3DraftWindows([{ ...segments[0], musicEnd: 13 }])).toEqual([]);
   expect(() => selectReusedTakePlacement({ planSignature: segments[0].planSignature!, revision: 1, assetIds: [] }, f.input.project,
-    {} as GeneratedStudioAsset, segments[0])).toThrow("source-trim review support");
+    {} as GeneratedStudioAsset, { ...segments[0], animaticMotion: undefined })).toThrow("Review the current complete animatic");
 });
 
 test("a stale review keeps every cut visible but removes generation and candidate eligibility", () => {
