@@ -12,6 +12,7 @@ import { normalizeStudioOwnerSegment, normalizeStudioProjectId } from "./studioS
 import { assertH3ConditioningProfile } from "./h3ReferenceConditioning";
 import { getH3PolicyFamily } from "@/components/studio/issuedIdentityPolicy";
 import { H3_FIRST_FRAME_PROFILE, isH3FirstFrameId, firstFrameHash, normalizeH3FirstFrameArtifact } from "@/components/studio/h3FirstFrame";
+import { materializeAnimaticMotion } from "./h3AnimaticMotionServer";
 
 export class H3RequestError extends Error {
   constructor(message: string, public status = 400) { super(message); }
@@ -27,6 +28,17 @@ function text(value: unknown, name: string, max = 500) {
 export function parseH3Request(value: unknown): H3GenerationRequest {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new H3RequestError("A shot request is required.");
   const v = value as Record<string, unknown>;
+  let animaticMotion: H3GenerationRequest["animaticMotion"];
+  if (v.animaticMotion !== undefined) {
+    const m = v.animaticMotion as Record<string, unknown> | null;
+    if (!m || typeof m !== "object" || Array.isArray(m)
+      || Object.keys(m).some(key => !["shotId", "bindingSha256", "reviewBindingSha256", "imageSha256"].includes(key))
+      || typeof m.shotId !== "string" || !/^[A-Za-z0-9_-]{1,96}$/.test(m.shotId)
+      || ![m.bindingSha256, m.reviewBindingSha256, m.imageSha256].every(firstFrameHash)
+      || v.sceneProofScopeSha256 !== undefined) throw new H3RequestError("Use the exact reviewed animatic motion binding.");
+    animaticMotion = { shotId: m.shotId, bindingSha256: m.bindingSha256 as string,
+      reviewBindingSha256: m.reviewBindingSha256 as string, imageSha256: m.imageSha256 as string };
+  }
   let conditioning: H3GenerationRequest["conditioning"];
   if (v.conditioning !== undefined) {
     const c = v.conditioning as Record<string, unknown> | null;
@@ -72,6 +84,7 @@ export function parseH3Request(value: unknown): H3GenerationRequest {
     draftRevision: v.draftRevision as number | undefined,
     ...(v.identityPolicyFamily === undefined ? {} : { identityPolicyFamily: v.identityPolicyFamily as H3GenerationRequest["identityPolicyFamily"] }),
     ...(conditioning ? { conditioning } : {}),
+    ...(animaticMotion ? { animaticMotion } : {}),
     ...(v.sceneProofScopeSha256 === undefined ? {} : { sceneProofScopeSha256: v.sceneProofScopeSha256 as string }) };
 }
 
@@ -95,6 +108,7 @@ export function h3GenerationJobId(ownerId: string, request: H3GenerationRequest,
 /** Validate against the saved project again immediately before dispatch and GPU execution. */
 export function materializeH3Job(ownerId: string, saved: SavedStudioProject, request: H3GenerationRequest, bucket: string,
   options: H3GenerationProfileOptions = { profile: H3_PROFILE, conditioningPreparationVersion: H3_CONDITIONING_PREPARATION_VERSION }): H3GenerationJob {
+  if (request.animaticMotion) return materializeAnimaticMotion(ownerId, saved, request, bucket, options);
   assertH3ConditioningProfile(options);
   if (Boolean(request.conditioning) !== (options.profile === H3_FIRST_FRAME_PROFILE)) throw new H3RequestError("First-frame conditioning requires its explicit generation profile.");
   if(options.profile===H3_FIRST_FRAME_PROFILE&&!["sface-yunet-foreground-frontal-v2","sface-yunet-joint-frontal-v2"].includes(request.identityPolicyFamily??""))throw new H3RequestError("First-frame conditioning requires a frontal v2 screen.");

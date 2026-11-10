@@ -23,6 +23,8 @@ export type H3GenerationRequest = {
   conditioning?: H3FirstFrameChoice;
   /** Exact reviewed scene intersections for new scene-proof production. Omitted on immutable legacy jobs. */
   sceneProofScopeSha256?: string;
+  /** Explicit reviewed full-song cut; legacy timeline IDs remain provenance. */
+  animaticMotion?: { shotId: string; bindingSha256: string; reviewBindingSha256: string; imageSha256: string };
 };
 
 export type H3ReferenceSnapshot = {
