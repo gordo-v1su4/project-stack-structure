@@ -207,6 +207,19 @@ The existing V1S-442 workflow issue remains open, with these verified children:
 - V1S-463: protected pacing proposals, blocked natively by V1S-460 because the
   proposal must target the shared selection. Scheduled after fast review work;
   that priority is not represented as invented technical dependencies.
+- V1S-464 (In Progress): trace the Python/media API topology and separate service
+  latency from frontend review work. Live App VM checks confirm healthy web,
+  Essentia and video-worker containers and active caption-gateway systemd service.
+  Essentia live source is FastAPI and entrypoint Uvicorn; caption gateway is
+  FastAPI/Uvicorn; video worker live command is Uvicorn with tracked FastAPI
+  requirements. Media API tracked source is Node/Express on documented storage
+  VM114; its live process is not yet checked. Initial public-browser metrics are
+  posted in V1S-458, but are exploratory and do not establish interaction latency
+  or framework causality.
+
+Robert explicitly excluded SwarmUI/ComfyUI inspection and generation-workflow
+optimization from this diagnostic. Treat that path as accepted for this scope;
+do not tune, restart or investigate it as part of review performance work.
 
 Verify on the populated film using cold/warm stage switches, selection feedback,
 visible-card readiness and first video frame. Proposed budgets: feedback under
