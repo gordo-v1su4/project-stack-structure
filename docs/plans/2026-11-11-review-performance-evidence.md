@@ -72,3 +72,52 @@ establish that changing React to Svelte would solve this application's lag.
 
 SwarmUI/ComfyUI investigation and generation-workflow tuning are excluded by
 Robert. Neither is needed to test the existing-media review path.
+
+## Linked range selection slice
+
+Diagnosis: section/cut selection was wired to Join only, whereas the timing graph
+kept a separate local suggestion ID. Markers painted over its block buttons
+intercepted pointer input. The preview spine also divided its local elapsed
+clock by full-song duration, which points at the wrong song position during a
+mid-song or separated-range audition.
+
+Story, Draft and Join now share an ephemeral song-time selection. Ordinary click
+replaces it, Shift-click extends from the original anchor, Ctrl/Cmd-click or the
+visible multi-select mode toggles ranges, and Shift-drag adds whole intersected
+blocks. Section zoom is emitted to the graph; graph markers are pointer-transparent
+so buttons respond through their full height. Missing selected footage is shown
+separately from musical timing suggestions. Selection does not save, rearrange,
+dispatch work or start playback.
+
+Play selection prepares a separate audition in song order, with each segment's
+absolute master-song position preserved. Partial windows trim at normal speed;
+short footage and missing intervals remain gaps rather than being stretched or
+silently skipped. Separated selected ranges are explicitly labeled comparison
+jumps. The audition retains its own range snapshot while the next selection is
+edited; Return to full cut pauses and restores the normal preview. Project/audio
+context and source-array guards prevent old audition snapshots being reused for
+a different project or changed media selection. The spine maps the local audition
+clock back to song time, and seeks map song positions to local audition offsets.
+
+Five model regressions verify immutable selection, toggle/subtraction, anchored
+extension/addition, exact source/master clipping and visible missing coverage.
+Affected selection, cue-map, subscription and footage-label tests pass. Full
+check before the final presentation-only audition label: 2,070 passed, 27 fixture
+skips, zero failures; lint retains five existing warnings. Final typecheck and
+production build also run for this slice.
+
+Browser proof mounts the actual BeatSpine, MusicCutExplorer and selection-bar
+components with a synthetic sixty-second song: Chorus 1 and Ctrl-click Chorus 2
+select 10–20 and 30–40 seconds; focusing each updates both views. Play selection
+prepares precisely those two windows, in order. Shift-click A016→A019 selects
+30–38 seconds. A real Shift-drag adds cuts A023–A024 (44–48 seconds) without
+removing the choruses. Center-clicking the 34–38-second suggestion replaces the
+selection; the visible multi-select button adds 52–56 seconds without modifiers.
+Evidence: `.tmp/review-performance/selection.png`, `selection.tsx`,
+`serve-selection.ts`. This harness verifies component gestures and preparation,
+not audible playback or full StudioApp/project persistence acceptance.
+
+Still open in V1S-460: actual mounted-player master audio across skipped ranges,
+the standalone shared Preview integration under V1S-461, legacy Join editing
+selection reconciliation, narrow layouts and real populated-film browser proof.
+No project data or generation is used for these synthetic checks.

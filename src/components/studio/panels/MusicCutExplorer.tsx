@@ -7,6 +7,7 @@ import type { BeatJoinAnalysis } from "../types";
 import { ParamSlider } from "../ParamSlider";
 import { Button, Surface } from "../ui";
 import { MatchMusicCueTimeline } from "./MatchMusicCueTimeline";
+import type { SelectionGesture, SongRange } from "../reviewSelection";
 
 export type MusicCutExplorerProps = {
   analysis: BeatJoinAnalysis | null;
@@ -20,6 +21,11 @@ export type MusicCutExplorerProps = {
   onOpenMatch?: () => void;
   matchReady?: boolean;
   editSettings?: StoryEditSettings;
+  selectedRanges?: SongRange[];
+  visibleRange?: SongRange | null;
+  multiSelect?: boolean;
+  onSelectRange?: (range: SongRange, gesture: SelectionGesture) => void;
+  coverage?: Array<SongRange & { filled: boolean }>;
 };
 
 /** Suggestion settings only: this component has no placement, approval or dispatch callback. */
@@ -65,7 +71,8 @@ export function MusicCutExplorer(props: MusicCutExplorerProps) {
       <ParamSlider label="Combine nearby cues" value={lyricMergeWindow} min={0} max={5} step={0.5} unit="s" layout="stack" accent="var(--color-accent)" onChange={props.onLyricMergeWindow} />
     </div>
     <p className="mb-2 text-xs text-fg-3" aria-live="polite">{cueMap.chunks.length} suggested blocks · {cueMap.onsetActiveCount} music cues · {cueMap.lyricActiveCount} lyric cues. {fast ? "Fast targets 1–3 seconds using actual music cues; sparse cues may leave longer blocks." : "Suggested pace is 4–6 seconds; short section edges remain visible."}</p>
-    <MatchMusicCueTimeline cueMap={cueMap} project={project} selectedChunkId={selected?.id} onSelectChunk={setSelectedChunkId} />
+    <MatchMusicCueTimeline cueMap={cueMap} project={project} selectedChunkId={selected?.id} onSelectChunk={setSelectedChunkId}
+      selectedRanges={props.selectedRanges} visibleRange={props.visibleRange} onSelectRange={props.onSelectRange} multiSelect={props.multiSelect} coverage={props.coverage} />
     {selected ? <p className="mt-2 font-mono text-xs text-fg-1" aria-live="polite">Selected suggestion: {selected.start.toFixed(3)}–{selected.end.toFixed(3)}s · {(selected.end - selected.start).toFixed(3)}s · starts on {boundaryLabel(selected.start)}</p> : null}
     <p className="mt-1 text-xs text-fg-3">Choose a block to inspect its exact timing. Onsets and phrases use their detected timestamps; section and spacing boundaries may fall between beats. Pace changes here only explore suggestions; saved Story settings remain unchanged.</p>
     <p className="mt-2 text-xs leading-5 text-fg-3">Orange marks musical accents; cyan marks lyric phrases. Without timed lyrics, musical cues still work. Footage semantics remain in Match review; this graph does not rerank or apply footage.</p>
