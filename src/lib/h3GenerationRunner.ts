@@ -27,6 +27,7 @@ import { prepareH3FirstFrame } from "./h3FirstFramePreflight";
 import { assertH3FirstFrameMatchesJob } from "./h3FirstFrameStore";
 import { assertH3SceneProofsApproved } from "./h3SceneProofServer";
 import { boundedH3PreparationRead, H3PreparationReadTimeout } from "./h3PreparationRead";
+import { H3RecoverableReadError, isH3RecoverableReadError } from "./h3AutomaticRecovery";
 
 export type H3JobReference = { ownerId: string; projectId: string; jobId: string; mode?: "identity-recheck"|"current-reference-assessment"; assessment?: H3IdentityAssessmentScope; currentRequestId?:string };
 
@@ -34,10 +35,10 @@ const MAX_IMAGE_BYTES = 32 * 1024 * 1024;
 const executeImagePreparation = promisify(execFile);
 const IMAGE_EXTENSIONS: Record<string, string> = { "image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp" };
 class H3ProviderRejection extends Error {}
-class H3ProviderReadTransient extends Error {}
+class H3ProviderReadTransient extends H3RecoverableReadError {}
 
 async function providerJson(baseUrl: string, route: string, body?: unknown, timeoutMs = 20_000) {
-  const pollRead = body === undefined && (route === "queue" || route.startsWith("history/"));
+  const pollRead = body === undefined;
   try {
     const response = await fetch(buildSwarmComfyDirectUrl(baseUrl, route), {
       ...(body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
@@ -96,7 +97,8 @@ function cancellationRequested(job: H3GenerationJob) { return Boolean(job.cancel
 
 async function uploadReference(baseUrl: string, job: H3GenerationJob, index: number, folder: string, prepared?: PreparedH3PolicyReference) {
   const ref = job.references[index];
-  const media = prepared ? { bytes: new Uint8Array(prepared.bytes).buffer, mime: prepared.mime } : await downloadH3ReferenceImage(ref);
+  const media = prepared ? { bytes: new Uint8Array(prepared.bytes).buffer, mime: prepared.mime }
+    : await boundedH3PreparationRead("Downloading the pinned H3 reference image", () => downloadH3ReferenceImage(ref));
   const extension = IMAGE_EXTENSIONS[media.mime];
   if (!extension || !media.bytes.byteLength || media.bytes.byteLength > MAX_IMAGE_BYTES) throw new Error("H3 references must be PNG, JPEG or WebP images smaller than 32 MiB.");
   const hash = createHash("sha256").update(Buffer.from(media.bytes)).digest("hex");
@@ -372,6 +374,9 @@ export async function runH3Generation(reference: H3JobReference, runId: string,
       if (current.runId && current.runId !== runId) return current;
       if (["ready", "failed", "cancelled"].includes(current.state)) return current;
       if (cancellationRequested(current)) return { ...current, state: "cancel_requested", error: message };
+      // A scheduled read retry remains cancellable and observable as unfinished.
+      // Do not label it terminal while Trigger still owns the same run.
+      if (isH3RecoverableReadError(error)) return { ...current, error: message };
       return { ...current, state: error instanceof H3ProviderRejection || error instanceof SwarmComfyClientUnavailable ? "failed"
         : current.promptId || current.state === "submitting" || current.state === "submission_unknown" ? "submission_unknown" : "failed", error: message };
     });

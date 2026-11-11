@@ -45,7 +45,10 @@ mock.module("@/lib/studioProjectStore", () => ({ readStudioProject: async () => 
 } }));
 mock.module("@/lib/h3JobStore", () => ({
   pinH3JobReferences: async (candidate: H3GenerationJob) => candidate,
-  downloadH3ReferenceImage: async () => ({ bytes: new Uint8Array([1, 2, 3]).buffer, mime: "image/png" }),
+  downloadH3ReferenceImage: async () => {
+    if (stallReferenceDownload) await new Promise<void>(resolve => { releaseReferenceDownload = resolve; });
+    return { bytes: new Uint8Array([1, 2, 3]).buffer, mime: "image/png" };
+  },
   readH3Job: async () => structuredClone(job),
   updateH3Job: async (_owner: string, _project: string, _id: string, update: (current: H3GenerationJob) => H3GenerationJob) => {
     job = update(structuredClone(job)); return structuredClone(job);
@@ -63,13 +66,28 @@ mock.module("@/components/studio/mediaProbe", () => ({ probeMediaFile: async (fi
 mock.module("@/lib/h3IdentityVerification", () => ({ assessH3Identity: async ({ asset }: { asset: unknown }) => asset }));
 const { materializeH3Job } = await import("@/lib/h3GenerationServer");
 const { runH3Generation } = await import("@/lib/h3GenerationRunner");
+let stallReferenceDownload = false;
+let releaseReferenceDownload: (() => void) | undefined;
 
 afterEach(() => {
   globalThis.fetch = originalFetch; globalThis.WebSocket = originalSocket;
   globalThis.setTimeout = originalSetTimeout;
   releaseProjectRead?.(); releaseProjectRead = undefined;
+  releaseReferenceDownload?.(); releaseReferenceDownload = undefined; stallReferenceDownload = false;
   if (previousSwarm === undefined) delete process.env.SWARMUI_URL; else process.env.SWARMUI_URL = previousSwarm;
   if (previousLocal === undefined) delete process.env.LOCAL_SWARMUI_URL; else process.env.LOCAL_SWARMUI_URL = previousLocal;
+});
+
+test("a stalled pinned-reference body cannot reach GPU submission even after it completes late", async () => {
+  setup(); stallReferenceDownload = true;
+  globalThis.setTimeout = ((handler: Parameters<typeof setTimeout>[0], delay?: number, ...args: unknown[]) =>
+    originalSetTimeout(handler, delay === 120_000 ? 5 : delay, ...args)) as typeof setTimeout;
+  await expect(runH3Generation({ ownerId: job.ownerId, projectId: job.projectId, jobId: job.id }, "run-1",
+    { wait: async () => {}, stage: () => {} })).rejects.toThrow("Downloading the pinned H3 reference image");
+  expect(submissions).toBe(0); expect(job.compiledPrompt).toBe(undefined);
+  releaseReferenceDownload!();
+  await new Promise(resolve => originalSetTimeout(resolve, 10));
+  expect(submissions).toBe(0); expect(sockets).toHaveLength(0);
 });
 const json = (value: unknown) => Response.json(value);
 function setup(changeSource = false) {

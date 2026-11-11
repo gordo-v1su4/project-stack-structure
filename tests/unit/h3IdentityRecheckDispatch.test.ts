@@ -18,9 +18,21 @@ mock.module("@trigger.dev/sdk", () => ({ idempotencyKeys: { create: async (key: 
   tasks: { trigger: async (task: string, payload: Record<string, unknown>, options: Record<string, unknown>) => {
     sends.push({ task, payload, options }); return { id: "recheck-run" };
   } } }));
-const { triggerH3IdentityRecheck, triggerFfmpegPreview, triggerFinalExport, triggerShaderCaptureExport } = await import("@/lib/triggerOrchestration");
+const { triggerH3Generation, triggerH3IdentityRecheck, triggerFfmpegPreview, triggerFinalExport, triggerShaderCaptureExport } = await import("@/lib/triggerOrchestration");
 const job = { id: `h3-${"a".repeat(64)}`, ownerId: "owner-a", projectId: "project-a", request: { prompt: "Saved shot" } } as H3GenerationJob;
 const intent = "00000000-0000-4000-8000-000000000001";
+
+test("H3 recovery keeps the same generation intent and opts into the bounded durable retry budget", async () => {
+  owner = "owner-a"; sends.length = 0; keys.length = 0;
+  await triggerH3Generation(job); await triggerH3Generation(job);
+  expect(sends[0].options.maxAttempts).toBe(8);
+  expect(sends[1].options.idempotencyKey).toEqual(sends[0].options.idempotencyKey);
+  expect(sends[0].payload.h3Job).toEqual({ ownerId: job.ownerId, projectId: job.projectId, jobId: job.id });
+  expect(sends[0].options.tags).toContain("user:owner-a");
+  owner = "owner-b";
+  await expect(triggerH3Generation(job)).rejects.toThrow("another user");
+  expect(sends).toHaveLength(2);
+});
 
 describe("authenticated export output dispatch", () => {
   const input = { bucket: "studio", objectKey: "media-uploads/owner-a/input.mp4", fileName: "input.mp4" };

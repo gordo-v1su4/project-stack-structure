@@ -23,6 +23,7 @@ import { createTriggerIdempotencyKey } from "@/lib/triggerIdempotency";
 import { EXPORT_DISPATCH_UPGRADE_MESSAGE, isOwnedExportRequestKey } from "@/components/studio/exportDispatchProtocol";
 import { retrieveOwnedTriggerRun } from "@/lib/triggerRunAccess";
 import { normalizeTriggerRunStatus } from "@/lib/triggerRunStatus";
+import { H3_AUTOMATIC_RECOVERY_ATTEMPTS } from "@/lib/h3AutomaticRecovery";
 
 export const STACK_STRUCTURE_TRIGGER_TASKS = {
   mediaVideoPipeline: "media-video-pipeline",
@@ -285,7 +286,7 @@ export async function triggerH3Generation(job: H3GenerationJob, resumeIntentId?:
   return tasks.trigger<typeof localGenerationTask>(STACK_STRUCTURE_TRIGGER_TASKS.localGeneration, {
     request: { provider: "swarmui", kind: "video", prompt: job.request.prompt },
     h3Job: { ownerId: job.ownerId, projectId: job.projectId, jobId: job.id },
-  }, { idempotencyKey, idempotencyKeyTTL: "30d", maxAttempts: 1,
+  }, { idempotencyKey, idempotencyKeyTTL: "30d", maxAttempts: H3_AUTOMATIC_RECOVERY_ATTEMPTS,
     tags: [...dispatch.tags, `project:${job.projectId}`, `h3:${job.id}`], metadata: dispatch.metadata }) as Promise<{ id: string }>;
 }
 

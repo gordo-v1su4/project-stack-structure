@@ -325,7 +325,7 @@ describe("durable native H3 execution", () => {
     }
   });
 
-  test("persistent status transport failure is bounded and leaves the original submission unknown", async () => {
+  test("persistent status transport failure stays cancellable and the next worker attempt resumes without another POST", async () => {
     setup(); const count = providerFetch(), provider = globalThis.fetch, waits: number[] = []; let reads = 0;
     globalThis.fetch = (async (input, init) => {
       if (String(input).includes("history/provider-1")) { reads++; throw new TypeError("fetch failed"); }
@@ -333,7 +333,30 @@ describe("durable native H3 execution", () => {
     }) as typeof fetch;
     await expect(runH3Generation({ ownerId: job.ownerId, projectId: job.projectId, jobId: job.id }, "run-1", { wait: async seconds => { waits.push(seconds); }, stage: () => {} })).rejects.toThrow("temporarily unavailable");
     expect(reads).toBe(5); expect(waits).toEqual([3, 6, 12, 24]); expect(count()).toBe(1);
-    expect(job.promptId).toBe("provider-1"); expect(job.state).toBe("submission_unknown"); expect(persisted).toBe(0);
+    expect(job.promptId).toBe("provider-1"); expect(job.state).toBe("rendering"); expect(persisted).toBe(0);
+    globalThis.fetch = provider;
+    await runH3Generation({ ownerId: job.ownerId, projectId: job.projectId, jobId: job.id }, "run-1", { wait: async () => {}, stage: () => {} });
+    expect(count()).toBe(1); expect(job.state).toBe("ready"); expect(persisted).toBe(1);
+  });
+
+  test("GPU unavailable before submission recovers with the same job, but cancellation prevents a retry render", async () => {
+    for (const cancel of [false, true]) {
+      setup(); const count = providerFetch(), provider = globalThis.fetch;
+      const ref = { ownerId: job.ownerId, projectId: job.projectId, jobId: job.id };
+      globalThis.fetch = (async (input, init) => String(input).endsWith("system_stats")
+        ? new Response("GPU offline", { status: 503 }) : provider(input, init)) as typeof fetch;
+      await expect(runH3Generation(ref, "run-1", { wait: async () => {}, stage: () => {} })).rejects.toThrow("503");
+      expect(count()).toBe(0); expect(job.state).toBe("preparing");
+      globalThis.fetch = provider;
+      if (cancel) {
+        job.state = "cancelled";
+        await expect(runH3Generation(ref, "run-1", { wait: async () => {}, stage: () => {} })).rejects.toThrow("cancelled");
+        expect(count()).toBe(0);
+      } else {
+        await runH3Generation(ref, "run-1", { wait: async () => {}, stage: () => {} });
+        expect(count()).toBe(1); expect(job.state).toBe("ready");
+      }
+    }
   });
 
   test("read retries retain the overall render deadline and cap each request to remaining time", async () => {
