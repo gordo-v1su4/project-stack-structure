@@ -4,6 +4,7 @@ import { getSessionUser, unauthorizedResponse } from "@/lib/session";
 import { canReadMediaObject } from "@/lib/studioMediaAccess";
 import { isCanonicalStudioMetadata, isSafeStudioObjectKey } from "@/lib/studioMetadataPrivacy";
 import { isOwnedDraftStoragePath } from "@/lib/studioDraftPolicy";
+import { getMediaThumbnail, ThumbnailError } from "@/lib/mediaThumbnail";
 
 export const runtime = "nodejs";
 
@@ -27,6 +28,29 @@ export async function GET(request: Request) {
     || isOwnedDraftStoragePath(objectKey, user.id)
     || (!metadata && (isLegacyRawMediaPool || await canReadMediaObject({ userId: user.id, bucket, objectKey })));
   if (!canRead) return Response.json({ error: "Object does not belong to the current user." }, { status: 403 });
+
+  const thumbnail = url.searchParams.get("thumbnail");
+  if (thumbnail !== null) {
+    if (!["320", "640"].includes(thumbnail) || metadata || request.headers.has("range")) {
+      return Response.json({ error: "Use a supported image thumbnail size without a byte range." }, { status: 400 });
+    }
+    try {
+      // Source identity/version and owner isolate the bounded cache. Authorization
+      // above still runs before either cached bytes or an ETag response is returned.
+      const key = JSON.stringify([user.id, bucket, objectKey, thumbnail, url.searchParams.get("v")]);
+      const result = await getMediaThumbnail(key, Number(thumbnail) as 320 | 640, () => fetch(buildMediaGatewayFileUrl(config, bucket, objectKey), {
+        cache: "no-store", headers: { Authorization: `Bearer ${config.token}` },
+        signal: AbortSignal.timeout(20_000),
+      }));
+      const headers = { "content-type": "image/webp", "cache-control": "private, no-cache", etag: result.etag,
+        "cross-origin-resource-policy": "same-origin", "x-content-type-options": "nosniff" };
+      if (request.headers.get("if-none-match") === result.etag) return new Response(null, { status: 304, headers });
+      return new Response(new Uint8Array(result.bytes), { headers });
+    } catch (error) {
+      return Response.json({ error: error instanceof ThumbnailError ? error.message : "Image thumbnail could not be prepared." },
+        { status: error instanceof ThumbnailError ? error.status : 502 });
+    }
+  }
 
   const range = request.headers.get("range");
   let upstream: Response;

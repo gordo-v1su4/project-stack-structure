@@ -3,7 +3,7 @@ import { buildEditPlanPreviewSegments, isPlacementPlanCurrent, type EditPlanPrev
 import { effectiveGenerationScope } from "./generationScope";
 import { animaticContextSha256, animaticImage, animaticShotBinding, normalizeStillAnimaticPlan, type StillAnimaticPlan } from "./stillAnimatic";
 import { animaticReviewBinding } from "./animaticReview";
-import { stillMediaUrl } from "./h3StillClient";
+import { mediaThumbnailUrl } from "./mediaThumbnailUrl";
 import type { StoryTreatment } from "./storyTreatments";
 import type { SceneProofPlan } from "./sceneProofs";
 import type { ReferenceAsset } from "./referenceAssets";
@@ -36,7 +36,7 @@ export function buildStoryDraftSegments(input: { projectId: string; project: Mus
       ...(reviewed && shot.proof ? { animaticFirstFrame: { kind: "first-frame" as const, artifactId: shot.proof.result.artifactId, expectedSha256: shot.proof.result.native.sha256 } } : {}),
       planSignature, timelineItemId: `animatic:${shot.id}`, placementId: `animatic:${shot.id}`, sectionId: story.sceneProofPlan?.scenes.find(scene => scene.id === shot.sceneId)?.sectionId ?? shot.sceneId,
       storyDirection: shot.prompt, label: `${shot.id} · ${shot.title}`, kind: "gap" as const, videoUrl: "", musicStart, musicEnd,
-      startTime: 0, endTime: musicEnd - musicStart, thumbnailUrl: image ? stillMediaUrl(image) : undefined,
+      startTime: 0, endTime: musicEnd - musicStart, thumbnailUrl: image ? mediaThumbnailUrl(image) : undefined,
       gapReason: !reviewed ? "Complete and review the full-song still animatic before motion."
         : shot.sourceFrame ? "Review and place the existing source footage for this shot." : "Prepare and review motion for this shot." };
   });
