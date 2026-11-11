@@ -26,6 +26,7 @@ import { H3_FIRST_FRAME_PROFILE } from "@/components/studio/h3FirstFrame";
 import { prepareH3FirstFrame } from "./h3FirstFramePreflight";
 import { assertH3FirstFrameMatchesJob } from "./h3FirstFrameStore";
 import { assertH3SceneProofsApproved } from "./h3SceneProofServer";
+import { boundedH3PreparationRead, H3PreparationReadTimeout } from "./h3PreparationRead";
 
 export type H3JobReference = { ownerId: string; projectId: string; jobId: string; mode?: "identity-recheck"|"current-reference-assessment"; assessment?: H3IdentityAssessmentScope; currentRequestId?:string };
 
@@ -156,7 +157,11 @@ export async function runH3Generation(reference: H3JobReference, runId: string,
     return {provider:"swarmui" as const,status:"completed" as const,message:"Current-reference CPU assessment completed; project selection is unchanged.",assets:[],currentIdentityRequest:outcome};
   }
   const { ownerId, projectId, jobId } = reference;
-  const storedJob = await readH3Job(ownerId, projectId, jobId);
+  const preparationRead = <T>(label: string, read: () => Promise<T>) => {
+    options.stage(label);
+    return boundedH3PreparationRead(label, read);
+  };
+  const storedJob = await preparationRead("Reading the saved H3 shot", () => readH3Job(ownerId, projectId, jobId));
   if (!storedJob) throw new Error("Generation job not found.");
   let job: H3GenerationJob = storedJob;
   if (job.state === "ready" && job.result) return completedOutput(job);
@@ -184,15 +189,15 @@ export async function runH3Generation(reference: H3JobReference, runId: string,
     if (!baseUrl || !/^https?:\/\//.test(baseUrl)) throw new Error("The SwarmUI gateway is not configured.");
     if (job.runId && job.runId !== runId) throw new Error("A different Trigger run owns this job.");
     await update({ runId, error: undefined });
-    const saved = await readStudioProject(ownerId, projectId, { fresh: true });
+    const saved = await preparationRead("Reading the saved project before H3 generation", () => readStudioProject(ownerId, projectId, { fresh: true }));
     const config = getMediaGatewayConfig();
     if (!saved || !config) throw new Error("The saved project is unavailable.");
     if (!job.promptId && job.state !== "submitting" && job.state !== "submission_unknown" && !cancellationRequested(job)) {
-      await validateSavedGenerationScope(ownerId, saved);
-      await assertH3SceneProofsApproved(ownerId, saved, config.bucket, undefined, job.request);
-      const current = await pinH3JobReferences(materializeH3Job(ownerId, saved, job.request, config.bucket, {
+      await preparationRead("Validating the saved source confirmation", () => validateSavedGenerationScope(ownerId, saved));
+      await preparationRead("Checking the approved H3 scene and stills", () => assertH3SceneProofsApproved(ownerId, saved, config.bucket, undefined, job.request));
+      const current = await preparationRead("Checking the pinned H3 reference objects", () => pinH3JobReferences(materializeH3Job(ownerId, saved, job.request, config.bucket, {
         profile: job.profile, conditioningPreparationVersion: job.conditioningPreparationVersion, ...(job.firstFrame?{firstFrame:job.firstFrame}:{}),
-      }));
+      })));
       if(job.firstFrame)assertH3FirstFrameMatchesJob(job.firstFrame,current);
       if (current.id !== job.id) throw new Error("The story plan or reference package changed before generation.");
     }
@@ -253,11 +258,11 @@ export async function runH3Generation(reference: H3JobReference, runId: string,
       const client = await openSwarmComfyClient(baseUrl);
       try {
         client.assertOpen();
-        const latest = await readStudioProject(ownerId, projectId, { fresh: true });
+        const latest = await preparationRead("Re-reading the project before H3 submission", () => readStudioProject(ownerId, projectId, { fresh: true }));
         if (!latest) throw new Error("The saved project is unavailable before video submission.");
         // Source authorization belongs to the exact saved object, including this fresh reread.
-        await validateSavedGenerationScope(ownerId, latest);
-        await assertH3SceneProofsApproved(ownerId, latest, config.bucket, undefined, job.request);
+        await preparationRead("Revalidating the current source confirmation", () => validateSavedGenerationScope(ownerId, latest));
+        await preparationRead("Rechecking the current H3 scene and stills", () => assertH3SceneProofsApproved(ownerId, latest, config.bucket, undefined, job.request));
         await update({ state: "submitting", compiledPrompt: built.prompt, frames: built.frames, referenceHashes: hashes,
           conditioningReferenceHashes: conditioningHashes, ...(firstFrameBytes?{}:{conditioningPreparations: preparations}) });
         options.stage("Submitting the native H3 reference shot");
@@ -358,6 +363,10 @@ export async function runH3Generation(reference: H3JobReference, runId: string,
     if (!job.result || job.state !== "ready") throw new Error("H3 output was cancelled before draft acceptance.");
     return completedOutput(job);
   } catch (error) {
+    // A stalled storage read may ignore its transport abort. End this worker
+    // without another possibly stalled write; the owned GET reconciles its
+    // terminal run. The timed-out read cannot continue this caller to GPU POST.
+    if (error instanceof H3PreparationReadTimeout) throw error;
     const message = error instanceof Error ? error.message : "Local H3 generation failed.";
     await updateH3Job(ownerId, projectId, jobId, current => {
       if (current.runId && current.runId !== runId) return current;

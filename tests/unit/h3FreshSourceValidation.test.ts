@@ -10,6 +10,9 @@ const reads: SavedStudioProject[] = [], validations: SavedStudioProject[] = [];
 const sockets: FakeSwarmSocket[] = [];
 let job: H3GenerationJob, changedDuringPreparation = false, changeAfterUpload = false, submissions = 0;
 const originalFetch = globalThis.fetch, originalSocket = globalThis.WebSocket;
+const originalSetTimeout = globalThis.setTimeout;
+let stalledProjectRead = 0;
+let releaseProjectRead: (() => void) | undefined;
 const previousSwarm = process.env.SWARMUI_URL, previousLocal = process.env.LOCAL_SWARMUI_URL;
 const originalScopeModule = await import("@/lib/generationScopeServer");
 const originalMediaModule = await import("@/lib/mediaGateway");
@@ -36,7 +39,9 @@ mock.module("@/lib/h3SceneProofServer", () => ({
   assertH3SceneProofsApproved: async (_owner: string, saved: SavedStudioProject) => { requireAuthorization(saved); },
 }));
 mock.module("@/lib/studioProjectStore", () => ({ readStudioProject: async () => {
-  const saved = structuredClone(fixture.saved); reads.push(saved); return saved;
+  const saved = structuredClone(fixture.saved); reads.push(saved);
+  if (reads.length === stalledProjectRead) await new Promise<void>(resolve => { releaseProjectRead = resolve; });
+  return saved;
 } }));
 mock.module("@/lib/h3JobStore", () => ({
   pinH3JobReferences: async (candidate: H3GenerationJob) => candidate,
@@ -61,12 +66,15 @@ const { runH3Generation } = await import("@/lib/h3GenerationRunner");
 
 afterEach(() => {
   globalThis.fetch = originalFetch; globalThis.WebSocket = originalSocket;
+  globalThis.setTimeout = originalSetTimeout;
+  releaseProjectRead?.(); releaseProjectRead = undefined;
   if (previousSwarm === undefined) delete process.env.SWARMUI_URL; else process.env.SWARMUI_URL = previousSwarm;
   if (previousLocal === undefined) delete process.env.LOCAL_SWARMUI_URL; else process.env.LOCAL_SWARMUI_URL = previousLocal;
 });
 const json = (value: unknown) => Response.json(value);
 function setup(changeSource = false) {
   reads.length = 0; validations.length = 0; sockets.length = 0; submissions = 0;
+  stalledProjectRead = 0; releaseProjectRead = undefined;
   changedDuringPreparation = false; changeAfterUpload = changeSource;
   authorized.add(fixture.saved);
   job = materializeH3Job("github-test", fixture.saved, structuredClone(fixture.request), "studio");
@@ -107,3 +115,22 @@ test("a canonical source change during uploads blocks GPU submission and closes 
   expect(validations).toHaveLength(2); expect(submissions).toBe(0);
   expect(job.promptId).toBe(undefined); expect(job.state).toBe("failed"); expect(sockets[0].closeCalls).toBe(1);
 });
+
+for (const readNumber of [1, 2]) {
+  test(`a stalled project read ${readNumber} releases the worker without a GPU POST, including after late resolution`, async () => {
+    setup(); stalledProjectRead = readNumber;
+    globalThis.setTimeout = ((handler: Parameters<typeof setTimeout>[0], delay?: number, ...args: unknown[]) =>
+      originalSetTimeout(handler, delay === 120_000 ? 5 : delay, ...args)) as typeof setTimeout;
+    const stages: string[] = [];
+    await expect(runH3Generation({ ownerId: job.ownerId, projectId: job.projectId, jobId: job.id }, "run-1",
+      { wait: async () => {}, stage: label => { stages.push(label); } })).rejects.toThrow("H3 preparation read timed out");
+    expect(submissions).toBe(0);
+    expect(job.promptId).toBe(undefined); expect(job.compiledPrompt).toBe(undefined);
+    expect(job.state).toBe(readNumber === 1 ? "queued" : "preparing");
+    expect(stages).toContain(readNumber === 1 ? "Reading the saved project before H3 generation" : "Re-reading the project before H3 submission");
+    if (readNumber === 2) expect(sockets[0].closeCalls).toBe(1);
+    releaseProjectRead!();
+    await new Promise(resolve => originalSetTimeout(resolve, 10));
+    expect(submissions).toBe(0);
+  });
+}
