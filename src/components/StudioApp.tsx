@@ -3273,6 +3273,8 @@ export default function StudioApp() {
 
         <PreviewTransportBar
           player={hasBrowserPreview ? previewPlayer : null}
+          segments={displayedBrowserPreviewSegments}
+          songDuration={beatJoinAnalysis?.duration}
           transport={transportModel}
           onToggle={handleTransportToggle}
           onStop={handleTransportStop}

@@ -334,3 +334,16 @@ Separate commits f2756bb and e3cdb2a theme parameter/time controls and checkboxe
 thin rails with rectangular handles/position lines, dark gray checkbox wells,
 light gray borders and orange checks, preserving native keyboard and disabled
 behavior. Checkbox production build and Chromium visual/input checks passed.
+
+Follow-up clock correction: the editor footer now maps the selected preview's
+local clock back into absolute song time, using the same segment mapping as the
+top spine. Its denominator stays the analyzed full-song duration. Generic
+non-song previews retain their local clock. A four-second comparison of song
+20–22 / 40–42 shows 40.50 / 60.00 in the second range and 42.00 / 60.00 at the
+end; it does not change playback, source trims or selected-audition duration.
+The regression and mounted actual transport with deterministic player ticks
+verify both boundaries. Evidence: `.tmp/review-performance/master-song-clock.png`.
+The final combined check/build includes the fractional-width adjustment above.
+`bun run check`: 2,092 passed, 27 fixture skips, zero failures; lint/typecheck
+completed with the two previously noted StudioApp warnings. Production build
+passed. These checks do not replace real-film production acceptance.

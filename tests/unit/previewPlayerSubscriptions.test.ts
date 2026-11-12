@@ -118,6 +118,31 @@ describe("playback leaves server rendering", () => {
     expect(source.subscriptions).toBe(0);
   });
 
+  test("selected-range transport follows absolute song time and retains the full song duration", () => {
+    const source = new PlayerSource();
+    source.state.currentTime = 2.5;
+    source.state.currentIndex = 1;
+    source.state.totalDuration = 4;
+    const player = source as unknown as BrowserPreviewPlayer;
+    const segments = [20, 40].map(musicStart => ({ videoUrl: "blob:fixture", startTime: 1, endTime: 3,
+      musicStart, musicEnd: musicStart + 2, label: "Selected chorus" }));
+    const render = () => renderToStaticMarkup(createElement(PreviewTransportBar, {
+      ...transportProps, player, segments, songDuration: 60,
+    }));
+    const html = render();
+    expect(html).toContain("00:40.50");
+    expect(html).toContain("01:00.00");
+    expect(html).toContain("Song time");
+    expect(html).not.toContain("00:02.50");
+    const ended = new PlayerSource();
+    ended.state = { ...source.state, currentTime: 4, status: "ended" };
+    expect(renderToStaticMarkup(createElement(PreviewTransportBar, {
+      ...transportProps, player: ended as unknown as BrowserPreviewPlayer, segments, songDuration: 60,
+    }))).toContain("00:42.00");
+    expect(source.state.totalDuration).toBe(4);
+    expect(source.subscriptions).toBe(0);
+  });
+
   test("monitor and beat spine render without browser media work or eager subscriptions", () => {
     const source = new PlayerSource();
     const player = source as unknown as BrowserPreviewPlayer;

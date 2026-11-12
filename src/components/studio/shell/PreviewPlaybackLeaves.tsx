@@ -20,11 +20,18 @@ export function PreviewBeatSpine({ player, songPlayhead, segments = [], ...props
   return <BeatSpine {...props} playhead={playhead} />;
 }
 
-export function PreviewTransportBar({ player, transport, ...props }: ComponentProps<typeof TransportBar> & {
+export function PreviewTransportBar({ player, transport, segments = [], songDuration, ...props }: ComponentProps<typeof TransportBar> & {
   player: BrowserPreviewPlayer | null;
+  segments?: PreviewSegment[];
+  songDuration?: number;
 }) {
   const state = usePreviewPlayerState(player);
+  const songTime = player && transport.source === "preview"
+    ? animaticFootageSongTime(segments, state.currentIndex, state.currentTime) : null;
+  const useSongTime = songTime !== null && songDuration !== undefined && Number.isFinite(songDuration) && songDuration > 0;
   return <TransportBar {...props} transport={player && transport.source === "preview"
-    ? { ...transport, currentTime: state.currentTime }
+    ? { ...transport, currentTime: useSongTime ? Math.min(songDuration!, Math.max(0, songTime!)) : state.currentTime,
+      duration: useSongTime ? songDuration! : transport.duration,
+      label: useSongTime ? `Song time · ${transport.label}` : transport.label }
     : transport} />;
 }
