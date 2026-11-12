@@ -29,6 +29,7 @@ export interface RoughCutSwapProposal {
   trims: RoughCutTrim[];
   residualGaps: ApprovedPlacement[];
   summary: string;
+  crossBeatWarning?: string;
 }
 
 export interface RoughCutSwapResult {
@@ -176,6 +177,7 @@ function proposeArrangement(project: MusicVideoProject, firstPlacementId: string
     planSnapshot: JSON.stringify(plan), firstPlacementId, secondPlacementId, replacementMomentId,
     before: structuredClone(replacementMoment ? [first] : [first, second]),
     after: structuredClone([...firstReplacements, ...secondReplacements]), trims, residualGaps: structuredClone(residualGaps), summary,
+    ...(first.timelineItemId !== second.timelineItemId ? { crossBeatWarning: `This moves footage between story beats: ${first.label} and ${second.label}. Review the narrative order before explicitly allowing this move.` } : {}),
   } };
 }
 

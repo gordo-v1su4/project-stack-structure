@@ -26,6 +26,7 @@ import { isPlacementPlanCurrent, storyProjectInputSignature, prepareApprovedPlac
 import { buildStoryDraftSegments } from "./studio/animaticDraft";
 import { AnimaticSourceFootagePanel } from "./studio/panels/AnimaticSourceFootagePanel";
 import { clearRoughCutPlacement, applyRoughCutSwap, proposeRoughCutSwap, proposeRoughCutReplacement, type RoughCutSwapProposal } from "./studio/roughCutArrangement";
+import { applyPacingProposal, type PacingProposal } from "./studio/pacingProposal";
 import { selectStorySectionCandidate } from "./studio/musicVideoProjectSelection";
 import { buildAutoShaderCues, describeMusicVideoShaderPreset, MUSIC_VIDEO_SHADER_PRESETS, type ShaderAccentKinds } from "./studio/shaderEffectPlan";
 import {
@@ -225,6 +226,7 @@ export default function StudioApp() {
   const [roughCutProposal, setRoughCutProposal] = useState<RoughCutSwapProposal | null>(null);
   const [roughCutEditMessage, setRoughCutEditMessage] = useState<string | null>(null);
   const [roughCutUndo, setRoughCutUndo] = useState<{ before: MusicVideoProject; afterPlan: string } | null>(null);
+  const [pacingUndo, setPacingUndo] = useState<{ before: MusicVideoProject; after: string; context: string } | null>(null);
   const [captionMode, setCaptionMode] = useState<SceneCaptionMode>("smart");
   const [referenceAssets, setReferenceAssets] = useState<ReferenceAsset[]>([]);
   const [aestheticReferences, setAestheticReferences] = useState<AestheticLibrary>(EMPTY_AESTHETIC_REFERENCES);
@@ -1951,6 +1953,26 @@ export default function StudioApp() {
     invalidateArrangementOutput();
   }
 
+  const pacingReviewContext = useMemo(() => JSON.stringify([activeProjectId, generatedReviewState, referenceRevision, storyState]), [activeProjectId, generatedReviewState, referenceRevision, storyState]);
+  function applyReviewedPacing(proposal: PacingProposal): string | null {
+    if (!musicVideoProject || isFinalExporting || isShaderCaptureExporting || previewState.activeRequestKey) return "Stop the active export or preparation before applying pacing.";
+    try {
+      const context = pacingReviewContext;
+      const next = applyPacingProposal(musicVideoProject, proposal, context);
+      if (next === musicVideoProject) return "No timing changes to apply.";
+      setPacingUndo({ before: musicVideoProject, after: JSON.stringify(next), context });
+      setMusicVideoProject(next);
+      invalidateArrangementOutput();
+      return null;
+    } catch (error) { return error instanceof Error ? error.message : "Prepare a new proposal."; }
+  }
+  function undoPacing() {
+    if (!musicVideoProject || !pacingUndo || JSON.stringify(musicVideoProject) !== pacingUndo.after || pacingReviewContext !== pacingUndo.context) return;
+    setMusicVideoProject(pacingUndo.before);
+    setPacingUndo(null);
+    invalidateArrangementOutput();
+  }
+
   function playRoughCutSelection(startIndex: number, endIndex: number) {
     if (!storyPreviewSegments[startIndex] || !storyPreviewSegments[endIndex]) return;
     setReviewAudition(null);
@@ -2968,6 +2990,10 @@ export default function StudioApp() {
               onOnsetDensity={setMatchOnsetDensity} onLyricCueBlend={setMatchLyricCueBlend} onLyricMergeWindow={setMatchLyricMergeWindow}
               onOpenMatch={() => handleSelectTab("shuffle")} matchReady={storyState.storyGenerated}
               editSettings={storyState.editSettings}
+              pacingContext={pacingReviewContext} protectedRanges={baseStoryPreviewSegments.filter(segment => Boolean(segment.animaticShotId || segment.generatedAssetId || segment.reusedTakePlacementId)).map(segment => ({ start: segment.musicStart, end: segment.musicEnd }))}
+              onApplyPacing={applyReviewedPacing} onUndoPacing={undoPacing}
+              canUndoPacing={Boolean(pacingUndo && musicVideoProject && JSON.stringify(musicVideoProject) === pacingUndo.after && pacingReviewContext === pacingUndo.context)}
+              pacingBusy={isFinalExporting || isShaderCaptureExporting || Boolean(previewState.activeRequestKey)}
               selectedRanges={songSelection?.ranges ?? []} visibleRange={reviewViewport} onSelectRange={handleReviewRange} multiSelect={multiSelect} coverage={reviewCoverage}
               focusedShot={selectedSlot}
             /> : null}
@@ -3193,6 +3219,8 @@ export default function StudioApp() {
                 onSwap={reviewRoughCutSwap}
                 onRemove={removeRoughCutClip}
                 proposalSummary={roughCutProposal?.summary ?? null}
+                crossBeatWarning={roughCutProposal?.crossBeatWarning}
+                proposalReviewKey={roughCutProposal ? JSON.stringify(roughCutProposal) : undefined}
                 editMessage={roughCutEditMessage}
                 onApplyProposal={applyRoughCutArrangement}
                 onCancelProposal={() => setRoughCutProposal(null)}

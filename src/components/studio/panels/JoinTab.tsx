@@ -24,6 +24,8 @@ type JoinTabProps = {
   onSwap: (firstIndex: number, secondIndex: number) => void;
   onRemove: (index: number) => void;
   proposalSummary: string | null;
+  crossBeatWarning?: string;
+  proposalReviewKey?: string;
   editMessage: string | null;
   onApplyProposal: () => void;
   onCancelProposal: () => void;
@@ -34,9 +36,10 @@ type JoinTabProps = {
 
 export function JoinTab({ previewSegments, sectionLabels, existingFootage, activeClip, onActiveClip, onPlayWhole, selection, selectedRanges, onPlaySelectedRanges, onPlaySelection,
   onFillGap, onReviewAlternates, onSwap, onRemove, proposalSummary, editMessage, onApplyProposal,
-  onCancelProposal, onUndo, canUndo, busy }: JoinTabProps) {
+  onCancelProposal, onUndo, canUndo, busy, crossBeatWarning, proposalReviewKey }: JoinTabProps) {
   const [swapTarget, setSwapTarget] = useState("");
   const [replacement, setReplacement] = useState("");
+  const [consentFor, setConsentFor] = useState<string | null>(null);
   if (!previewSegments.length) return <Surface>
     <p className="text-sm text-fg-1">Your rough cut will appear here after Story and Split.</p>
     <p className="mt-2 text-sm text-fg-3">Missing shots can stay as holes while you review the whole song.</p>
@@ -134,7 +137,8 @@ export function JoinTab({ previewSegments, sectionLabels, existingFootage, activ
       {editMessage ? <p role="status" className="mt-3 text-sm text-fg-2">{editMessage}</p> : null}
       {proposalSummary ? <div className="mt-3 rounded-md border border-review-lo bg-review-tint p-3">
         <p className="text-sm text-fg-1">{proposalSummary}</p>
-        <div className="mt-3 flex gap-2"><Button size="sm" disabled={busy} onClick={onApplyProposal}>Apply arrangement</Button><Button size="sm" onClick={onCancelProposal}>Cancel change</Button></div>
+        {crossBeatWarning ? <div className="mt-2 text-xs text-warn"><p role="alert">{crossBeatWarning}</p><label className="mt-2 flex items-center gap-2"><input type="checkbox" checked={consentFor === proposalReviewKey} onChange={event => setConsentFor(event.target.checked ? proposalReviewKey ?? null : null)} />Allow this specific cross-beat move</label></div> : null}
+        <div className="mt-3 flex gap-2"><Button size="sm" disabled={busy || Boolean(crossBeatWarning && consentFor !== proposalReviewKey)} onClick={() => { setConsentFor(null); onApplyProposal(); }}>Apply arrangement</Button><Button size="sm" onClick={() => { setConsentFor(null); onCancelProposal(); }}>Cancel change</Button></div>
       </div> : null}
     </Surface>
 
