@@ -15,7 +15,8 @@
   "authorization": "Robert's November 11 instruction in chat 01a1cdf6-feb5-77c1-8853-f056c1e8a62c: write the workflow changes, then make the existing execution owner execute one at a time; necessary coupled work is allowed.",
   "readinessMessage": "Seven items are tracked in Linear. Starting with V1S-458 only in the existing worktree; verify its acceptance and conclude in Linear before 459. Necessary coupled work needs an explicit reason and stopping point. One combined PR/GrepTile review after the batch; public release remains separate.",
   "contextByIssue": {
-    "V1S-458": "01a1c36a-2e37-7260-9204-378380cc385f-current-ticket"
+    "V1S-458": "01a1c36a-2e37-7260-9204-378380cc385f-current-ticket",
+    "V1S-459": "subagent:/root/review_media_459"
   },
   "coupledWork": [
     {
