@@ -37,6 +37,7 @@ environment, or deployment history here.
 | `local-ai-generation` | `vm100-heavy` (1) | generated objects in RustFS |
 | `ffmpeg-preview-or-concat` | `media-assembly` (2) | preview MP4 in RustFS |
 | `prepare-review-video` | `review-video-preparation` (1) | version-bound proxy, poster, scrub sheet and ready manifest in RustFS (source candidate; not deployed) |
+| `prepare-project-review-videos` | `review-project-preparation` (1) | owned-project backfill receipts with sequential child preparation (source candidate; not deployed) |
 | `ffmpeg-final-music-video-export` | `media-assembly` (2) | final MP4 in RustFS |
 | `ffmpeg-shader-capture-export` | `media-assembly` (2) | muxed MP4 in RustFS |
 | `ffmpeg-seedance-audio-reference` | `media-assembly` (2) | section audio reference in RustFS |
@@ -59,8 +60,13 @@ New uploaded videos and retained H3 clips request this CPU preparation after
 durable source completion. The child uses the configured worker SDK context;
 it does not require duplicating the web app's Trigger variables into worker
 configuration. Its eight-second dispatch observation deadline is unconfirmed,
-not a failed source or permission to submit twice. Existing-film bulk backfill
-and live production qualification remain open.
+not a failed source or permission to submit twice. Existing-film backfill uses
+an independent authenticated project route and private CAS receipts. The parent
+has a separate concurrency-one queue, waits for sequential children and requires
+their exact stored receipts before marking rows ready. Unknown acknowledgments
+reconnect the same intent/source list. Candidate evidence is in
+[V1S-459 verification](review-media-459.md); live production qualification remains
+a separate release gate.
 
 Verified through the production worker API on 2026-09-07: worker
 `20260907.2` (`worker_cmtqvhk7x00me3is05myhu6b6`) uses SDK/CLI `4.5.16`
