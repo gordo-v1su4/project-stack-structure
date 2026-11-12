@@ -25,6 +25,12 @@
   "coupledWork": [
     {
       "primary": "V1S-461",
+      "related": "V1S-459",
+      "reason": "Robert observed Preview thumbnails disappearing and loading again during return scrolling. The shared card removed its image on every viewport exit. Retain viewed derivatives and prefetch nearby cards within the board scroll area, while keeping initially unseen boards lazy.",
+      "stopWhen": "Public scroll away/back retains the same loaded image nodes without repeat thumbnail requests or colored-placeholder flashes; originals and master ownership remain intact."
+    },
+    {
+      "primary": "V1S-461",
       "related": "V1S-460",
       "reason": "Inherited public screenshot shows cue settings using viewport breakpoints despite a narrow center column. Wrap controls by available panel width as part of stage usability.",
       "stopWhen": "Controls wrap without horizontal overflow at the public narrow viewport; preserve exact selection overlays and master seek/play barrier."
