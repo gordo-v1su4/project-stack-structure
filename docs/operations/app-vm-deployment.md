@@ -1,7 +1,7 @@
 # App VM deployment
 
 Project Stack Structure runs at **https://stack.v1su4.dev** on VM100 App VM.
-GitHub-hosted Actions builds exact main commits and activates their pinned images through
+GitHub-hosted Actions builds exact committed revisions and activates their pinned images through
 the existing Hostinger Dockhand control plane. Next.js remains the framework;
 Vercel is not needed for application hosting, authentication callbacks or media
 transfers. The migration starts from the previously deployed `05da59e` tree.
@@ -32,6 +32,24 @@ GitHub environment `production-app-vm` accepts only main. App secrets stay on th
 server; they are not copied to GitHub Actions or image build arguments.
 
 ## Build and release
+
+Main pushes still publish main automatically. An authorized operator can also
+publish an exact committed candidate before its final PR, without merging the
+candidate into main:
+
+```powershell
+git push origin codex/animatic-motion-source-validation
+gh workflow run deploy-app-vm.yml --ref main -f revision=<full-40-character-commit-sha>
+```
+
+The workflow must run from main. It resolves the full lowercase SHA in this
+repository, checks/builds that exact source on the hosted runner, and labels the
+image and transfer artifact with that SHA. The private deploy job continues to
+execute only the deployment script from the trusted main workflow commit;
+candidate deployment scripts never run on the private runner. Existing image
+checksums, revision readback, authentication checks and managed rollback apply.
+Record the published SHA and run URL per ticket; final acceptance happens in the
+signed-in public browser. Publication does not create or merge a PR.
 
 `infra/app-vm/Dockerfile` uses Bun for frozen dependency installation and builds
 the Next standalone output. The supported webpack build avoids the observed
