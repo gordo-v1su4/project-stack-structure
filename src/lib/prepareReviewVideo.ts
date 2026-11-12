@@ -103,9 +103,12 @@ export async function prepareReviewVideo(sourceFile: string, options: Options = 
     const scaledWidth = displayAspect >= 16 / 9 ? 640 : Math.max(2, Math.floor(360 * displayAspect / 2) * 2);
     const scaledHeight = displayAspect >= 16 / 9 ? Math.max(2, Math.floor(640 / displayAspect / 2) * 2) : 360;
     options.onStage?.("proxy");
+    // Normalize the input clock before filtering. Resetting PTS in the filter
+    // graph can exclude the last VFR frame from FFmpeg 7.1's MP4 edit window.
+    // Keep the source's edit list and every relative frame timestamp intact.
     await run("ffmpeg", ["-hide_banner", "-nostdin", "-v", "error", "-y", "-protocol_whitelist", "file,pipe", "-format_whitelist", FORMATS,
-      "-threads", "2", "-i", source, "-map", `0:${original.stream.index}`, "-an", "-sn", "-dn", "-map_metadata", "-1",
-      "-filter_threads", "1", "-vf", `scale=${scaledWidth}:${scaledHeight},setsar=1,pad=640:360:(ow-iw)/2:(oh-ih)/2,setpts=PTS-STARTPTS`,
+      "-copyts", "-itsoffset", (-original.startTime).toFixed(9), "-threads", "2", "-i", source, "-map", `0:${original.stream.index}`, "-an", "-sn", "-dn", "-map_metadata", "-1",
+      "-filter_threads", "1", "-vf", `scale=${scaledWidth}:${scaledHeight},setsar=1,pad=640:360:(ow-iw)/2:(oh-ih)/2`,
       "-c:v", "libx264", "-preset", "veryfast", "-crf", "26", "-pix_fmt", "yuv420p", "-threads", "2", "-g", "24",
       "-fps_mode", "passthrough", "-enc_time_base", "-1", "-movflags", "+faststart", "-fs", String(MAX_PROXY), proxyFile], "proxy", options.signal);
     const proxyProbe = await probe(proxyFile, options.signal), prepared = videoInfo(proxyProbe);
