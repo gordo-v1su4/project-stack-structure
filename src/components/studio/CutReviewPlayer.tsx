@@ -78,7 +78,7 @@ export function CutReviewPlayer({ segments, audioUrl, plan, context, initialRang
       <Button disabled={!displayed.length || !audioUrl} onClick={() => {
         if (state.status === "playing" || state.status === "loading") player.pause();
         else if (state.status === "paused") player.resume();
-        else void player.play();
+        else { if (state.status === "ended") player.stop(); void player.play(); }
       }}>{state.status === "playing" || state.status === "loading" ? "Pause cut" : "Play cut"}</Button>
       <Button onClick={() => player.stop()}>Stop</Button>
       <Button aria-pressed={labels} onClick={() => setLabels(value => !value)}>Shot labels {labels ? "on" : "off"}</Button>

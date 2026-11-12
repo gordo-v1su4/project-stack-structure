@@ -8,6 +8,8 @@ import { applyApprovedGeneratedAssets, type GeneratedStudioAsset } from "@/compo
 import { createH3PickupWindow, findH3TargetSegment, h3WindowKey, planH3DraftWindows } from "@/components/studio/h3DraftPlan";
 import { selectReusedTakePlacement } from "@/components/studio/reusedTakePlacements";
 import { projectReviewCut } from "@/lib/projectReviewCut";
+import { buildDeliveredScreeningSegments } from "@/components/studio/deliveredScreening";
+import { selectStoryAssemblyPreview } from "@/components/studio/resolvedPreviewSelection";
 
 function fixture() {
   const f = reviewedScenePlanningFixture(), input = f.source(), audio = { storageBucket: "studio", storagePath: "media-uploads/github-test/master.wav" };
@@ -99,6 +101,11 @@ test("shared Preview shows selected pending video without adopting available ren
   expect(available.deliveredSegments?.[0].thumbnailUrl).toBe(available.segments[0].thumbnailUrl);
   expect(available.deliveredSegments?.[0].thumbnailUrl).toBeTruthy();
   expect(available.segments[0].kind).toBe("gap");
+  const inline = selectStoryAssemblyPreview("story", buildDeliveredScreeningSegments({ segments: f.projection(),
+    assets: [asset], videoSources: [], plan: f.plan, projectId: f.input.projectId }));
+  expect(inline[0].videoUrl).toBe(available.deliveredSegments?.[0].videoUrl);
+  expect(inline[0].kind).toBe("source");
+  expect(f.saved.draft.generatedDraft.assetIds).toEqual([]);
   expect(available.coverage?.[0]).toEqual({ shotId: f.plan.shots[0].id, availableTakeIds: [asset.id], selectedVideoCount: 0, approvedTakeCount: 0 });
   f.saved.draft.generatedDraft.assetIds = [asset.id];
   const before = JSON.stringify(f.saved);

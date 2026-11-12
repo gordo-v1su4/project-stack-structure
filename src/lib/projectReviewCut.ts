@@ -2,7 +2,8 @@ import { createHash } from "node:crypto";
 import { hydrateStudioProjectDraft, type PersistedStudioProjectDraft } from "@/components/studio/projectPersistence";
 import { buildStoryDraftSegments } from "@/components/studio/animaticDraft";
 import { applyDraftGeneratedAssets } from "@/components/studio/generatedDraft";
-import { applyGeneratedAssetOverlays, generatedAssetMatchesPreviewSegment, listApprovedGeneratedVideoAssets } from "@/components/studio/generatedAssets";
+import { generatedAssetMatchesPreviewSegment, listApprovedGeneratedVideoAssets } from "@/components/studio/generatedAssets";
+import { buildDeliveredScreeningSegments } from "@/components/studio/deliveredScreening";
 import type { PreviewReviewCut } from "@/components/studio/animaticPreviewSnapshot";
 import type { StillAnimaticPlan } from "@/components/studio/stillAnimatic";
 import { clipAudioKey, normalizeClipAudioSettings, usesClipAudio } from "@/components/studio/clipAudio";
@@ -24,27 +25,7 @@ export function projectReviewCut(projectId: string, draft: PersistedStudioProjec
   const { runtime, base } = projectReviewInputs(projectId, draft, plan);
   const assets = runtime.generatedAssets ?? [];
   const segments = applyDraftGeneratedAssets(base, assets, runtime.generatedDraft);
-  // A read-only screening copy makes delivered candidates watchable before the
-  // separate, explicit selection/identity/approval steps. Never persist it.
-  const candidates = assets.filter(asset => asset.reviewStatus !== "rejected")
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
-  const deliveredSegments = segments.flatMap(segment => {
-    if (segment.kind !== "gap" && segment.videoUrl) return [segment];
-    const overlaid = applyGeneratedAssetOverlays([segment], candidates);
-    if (overlaid.some(part => part.kind !== "gap" && part.videoUrl)) return overlaid.map(part => ({
-      ...part, thumbnailUrl: part.thumbnailUrl ?? segment.thumbnailUrl,
-    }));
-    const retained = plan?.projectId === projectId ? plan.shots.find(shot => shot.id === segment.animaticShotId)?.sourceFrame : undefined;
-    const source = retained && runtime.videoSources.find(source => source.id === retained.sourceId);
-    const duration = segment.musicEnd - segment.musicStart;
-    if (!retained || !source?.videoUrl || !Number.isFinite(retained.sourceSecond) || retained.sourceSecond < 0
-      || !Number.isFinite(source.duration) || retained.sourceSecond + duration > source.duration + .001) return [segment];
-    const videoUrl = source.storageBucket && source.storagePath
-      ? `/api/storage/media?${new URLSearchParams({ bucket: source.storageBucket, objectKey: source.storagePath })}` : source.videoUrl;
-    return [{ ...segment, kind: "source" as const, videoUrl, sourceClipId: source.id,
-      startTime: retained.sourceSecond, endTime: retained.sourceSecond + duration, gapReason: undefined,
-      sourceRefLabel: "PREVIEW · retained source footage", useClipAudio: false }];
-  });
+  const deliveredSegments = buildDeliveredScreeningSegments({ segments, assets, videoSources: runtime.videoSources, plan, projectId });
   const availableVideoCount = assets.filter(asset => asset.status === "completed" && asset.mediaKind === "video"
     && base.some(segment => generatedAssetMatchesPreviewSegment(asset, segment))).length;
   const approved = new Set(listApprovedGeneratedVideoAssets(assets).map(asset => asset.id));

@@ -24,6 +24,7 @@ import { prepareAppendedSourceConfirmation, sourceConfirmationBaselineSha256 } f
 import { buildSongSectionReview, selectReviewRange, type ReviewSelection } from "./studio/songSectionReview";
 import { isPlacementPlanCurrent, storyProjectInputSignature, prepareApprovedPlacements, normalizeStoryEditSettings, type EditPlanPreviewSegment, type MusicVideoProject } from "./studio/musicVideoProject";
 import { buildStoryDraftSegments } from "./studio/animaticDraft";
+import { buildDeliveredScreeningSegments } from "./studio/deliveredScreening";
 import { AnimaticSourceFootagePanel } from "./studio/panels/AnimaticSourceFootagePanel";
 import { clearRoughCutPlacement, applyRoughCutSwap, proposeRoughCutSwap, proposeRoughCutReplacement, type RoughCutSwapProposal } from "./studio/roughCutArrangement";
 import { applyPacingProposal, type PacingProposal } from "./studio/pacingProposal";
@@ -737,6 +738,12 @@ export default function StudioApp() {
 
   const storyPreviewSegments = useMemo(() => applyAcceptedGeneratedDraft(baseStoryPreviewSegments, generatedAssets, generatedDraft), [baseStoryPreviewSegments, generatedAssets, generatedDraft]);
   const draftPreviewSegments = useMemo(() => applyDraftGeneratedAssets(baseStoryPreviewSegments, generatedAssets, generatedDraft), [baseStoryPreviewSegments, generatedAssets, generatedDraft]);
+  const storyScreeningSegments = useMemo(() => buildDeliveredScreeningSegments({ segments: storyPreviewSegments,
+    assets: generatedAssets, videoSources, plan: storyState.stillAnimaticPlan, projectId: activeProjectId ?? "" }),
+  [activeProjectId, generatedAssets, storyPreviewSegments, storyState.stillAnimaticPlan, videoSources]);
+  const draftScreeningSegments = useMemo(() => buildDeliveredScreeningSegments({ segments: draftPreviewSegments,
+    assets: generatedAssets, videoSources, plan: storyState.stillAnimaticPlan, projectId: activeProjectId ?? "" }),
+  [activeProjectId, draftPreviewSegments, generatedAssets, storyState.stillAnimaticPlan, videoSources]);
   const currentReferenceReviewAssets = useMemo(() => assetsForCurrentReferenceReview(generatedAssets, generatedDraft, baseStoryPreviewSegments),
     [generatedAssets, generatedDraft, baseStoryPreviewSegments]);
 
@@ -2057,13 +2064,13 @@ export default function StudioApp() {
 
   const reviewContext = JSON.stringify([activeProjectId, beatJoinAnalysis?.storagePath ?? beatJoinAnalysis?.sourceLabel, beatJoinAnalysis?.duration]);
   const songSelection = songSelectionState?.context === reviewContext ? songSelectionState.selection : null;
-  const reviewSource = tab === "generate" ? draftPreviewSegments : storyPreviewSegments;
+  const reviewSource = tab === "generate" ? draftScreeningSegments : storyScreeningSegments;
   const activeReviewAudition = reviewAudition?.context === reviewContext && reviewAudition.source === reviewSource ? reviewAudition.segments : null;
   const reviewCoverage = useMemo(() => reviewSource.map(s => ({ start: s.musicStart, end: s.musicEnd, filled: s.kind !== "gap" && Boolean(s.videoUrl) })), [reviewSource]);
   const browserPreviewSegments = useMemo<EditPlanPreviewSegment[]>(() => (usesStoryAssembly(tab) ? activeReviewAudition : null) ?? selectStoryAssemblyPreview(
-    tab, tab === "generate" ? draftPreviewSegments : storyPreviewSegments, tab === "generate" ? generatePreviewRange : roughCutPreviewRange,
+    tab, reviewSource, tab === "generate" ? generatePreviewRange : roughCutPreviewRange,
     generatedAuditionSegments,
-  ), [tab, draftPreviewSegments, storyPreviewSegments, generatePreviewRange, roughCutPreviewRange, generatedAuditionSegments, activeReviewAudition]);
+  ), [tab, reviewSource, generatePreviewRange, roughCutPreviewRange, generatedAuditionSegments, activeReviewAudition]);
 
   useEffect(() => {
     if (!usesStoryAssembly(tab) || previewAuditionRequest === 0 || !browserPreviewSegments.length) return;
@@ -2732,7 +2739,7 @@ export default function StudioApp() {
         const status = previewPlayer.getState().status;
         if (status === "playing" || status === "loading") previewPlayer.pause();
         else if (status === "paused") previewPlayer.resume();
-        else void previewPlayer.play();
+        else { if (status === "ended") previewPlayer.stop(); void previewPlayer.play(); }
         return;
       }
       if (transportModel.source === "song") songTransport.toggle();
@@ -2803,8 +2810,8 @@ export default function StudioApp() {
   });
   // Match the current step's full assembly, including pending takes during Draft review.
   const spineSlots = useMemo(
-    () => buildSpineSlots({ segments: storyPreviewSegments, draftSegments: draftPreviewSegments, activeTab: tab, project: musicVideoProject, generatedAssets }),
-    [draftPreviewSegments, generatedAssets, musicVideoProject, storyPreviewSegments, tab],
+    () => buildSpineSlots({ segments: storyScreeningSegments, draftSegments: draftScreeningSegments, activeTab: tab, project: musicVideoProject, generatedAssets }),
+    [draftScreeningSegments, generatedAssets, musicVideoProject, storyScreeningSegments, tab],
   );
   const selectedSlot = useMemo(() => spineSlots.find((slot) => slot.id === selectedSlotId) ?? null, [selectedSlotId, spineSlots]);
   useEffect(() => {
