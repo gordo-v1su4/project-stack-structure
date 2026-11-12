@@ -5,3 +5,5 @@ disable-model-invocation: true
 ---
 
 Call the Skill tool twice, for "grilling" and "domain-modeling".
+
+When outcome and acceptance settle, use `ticket-execution` for the visible planning-to-tracker handoff. Reuse the configured tracker and prior authorization; proactively propose tickets instead of waiting for a slash command. Planning alone does not start implementation.

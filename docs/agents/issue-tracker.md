@@ -29,6 +29,8 @@ A deliberately deferred `Backlog` ticket is not ready to dispatch. The zero-foot
 
 For the review-performance batch V1S-458 through V1S-464, Robert explicitly directed sequential execution on November 11, 2026: finish V1S-458, verify its actual acceptance, record evidence and close it before proceeding to V1S-459, then continue numerically through V1S-464. Keep only the current issue In Progress. Preserve existing partial work on later issues, but do not expand it before its turn. Do not dispatch parallel implementation for this batch without a new explicit instruction. Scale verification to demonstrated risks; do not repeat passing checks without changes or new evidence.
 
+Robert's follow-up permits bounded back-and-forth where two tickets genuinely depend on each other. Record the primary, related issue, reason and stopping condition before crossing scope; retain one active primary rather than reopening the batch. Use `docs/plans/2026-11-11-review-execution.json` and `.agents/skills/ticket-execution/SKILL.md`; refresh the seven issue records and run its checker before advancing. Reuse the existing worktree/branch, finish the already-active 458 in its current context, then use a fresh scoped implementation context per ticket with one writer. Do not create eight worktrees. Record acceptance evidence, commit and read-back of Done before starting the next ticket; preserve public release as a separate final gate.
+
 Maintain one current-film project writer and GPU submission controller. Re-read current project/reference versions before writes or generation; reconcile ambiguous submissions rather than duplicating them.
 
 ## No PRs

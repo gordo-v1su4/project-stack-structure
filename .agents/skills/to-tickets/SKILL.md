@@ -8,6 +8,8 @@ disable-model-invocation: true
 
 Break a plan, spec, or conversation into a set of **tickets**: tracer-bullet vertical slices, each declaring the tickets that **block** it.
 
+Use `ticket-execution` before publication and after reading back the batch. Check acceptance/prerequisite overlap, default to sequential work, and announce tracker, first item, mode and closure boundary. Reuse prior approval; planning-only requests do not start implementation. Record the execution plan and run its checker against fresh tracker records before dispatch.
+
 The issue tracker and triage label vocabulary should have been provided to you. If not, tell the user to run `/setup-matt-pocock-skills`.
 
 ## Process

@@ -28,6 +28,8 @@ A separate PRD, test spec, and ADR are useful for complex work; they are not pre
 
 ## Execute and verify
 
+At the planning boundary, proactively announce that the work is ready for tickets in the configured tracker. Publish when authorized, otherwise present the concrete breakdown and ask to publish/start; reuse settled tracker choices. Use [ticket-execution](../../.agents/skills/ticket-execution/SKILL.md) to record execution order, acceptance dependencies, context/worktree policy and criterion-specific closure. Announce the first ticket and run its checker against fresh tracker records before execution/advancement. Default to one primary at a time; a fresh context does not require a fresh worktree. Necessary coupled work has an explicit reason and stopping point. Conclude each ticket in the tracker before moving on; a final combined PR does not defer closure.
+
 Preserve the applicable product contracts: musical fit takes priority over motion continuity, post-cut segments remain the analysis unit, segmentation and fit fallbacks remain explicit, and playback uses prepared previews. Retain existing platform decision constraints. For affected media paths, verify that:
 
 - previews stay aligned with musical accents;

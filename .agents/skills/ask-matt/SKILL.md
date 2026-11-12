@@ -35,6 +35,8 @@ The route most work travels. You have an idea and want it built.
 
 ### Context hygiene
 
+At planning-to-tickets and ticket-to-execution boundaries, use `ticket-execution`. Proactively announce tracker publication/readiness and reuse authorization. Default to one primary ticket and fresh implementation context at a time in the existing worktree; bounded coupled work needs an explicit reason and stopping condition. Conclude and read back each ticket in the tracker before advancing. Parallel implementation is an explicit mode with independent contexts/scopes, not interleaving the batch in one growing chat.
+
 Keep steps 1–3 in **one unbroken context window** (don't compact or clear until after `/to-tickets`) so the grilling, spec, and tickets all build on the same thinking. Each `/implement` then starts fresh, working from the ticket. Run `/retro` in the session it's looking back on, before you clear; after clearing, point it at that session's log instead.
 
 The limit on this is the **[smart zone](https://www.aihero.dev/ai-coding-dictionary/smart-zone)**: the window (~150k tokens on state-of-the-art models) within which the model still reasons sharply. If a session approaches it before `/to-tickets`, don't push on degraded; `/compact` at the nearest phase boundary and carry on (see Phase boundaries).

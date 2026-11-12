@@ -193,6 +193,8 @@ to Q10-Q12. Broader pacing proposals follow the initial review milestone.
 
 ## Tracked execution plan
 
+The list below is the initial planning snapshot, not live tracker status. Current execution follows [review-execution.json](2026-11-11-review-execution.json) and [the tracker policy](../agents/issue-tracker.md): one active primary, conclude 458 before advancing, reuse the existing worktree with fresh contexts for subsequent tickets. Necessary coupling has a recorded reason/stopping point. V1S-459 owns final prepared-hover acceptance; V1S-458 owns navigation/selection verification. Refresh Linear and run the ticket-execution checker at boundaries.
+
 The existing V1S-442 workflow issue remains open, with these verified children:
 
 - V1S-458 (In Progress): measure and repair populated-film navigation/review

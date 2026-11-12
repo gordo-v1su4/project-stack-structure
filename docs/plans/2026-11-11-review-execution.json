@@ -1,0 +1,17 @@
+{
+  "tracker": "Linear",
+  "project": "P-V1S-11",
+  "mode": "sequential",
+  "maxActive": 1,
+  "order": ["V1S-458", "V1S-459", "V1S-460", "V1S-461", "V1S-462", "V1S-463", "V1S-464"],
+  "authorization": "Robert's November 11 instruction in chat 01a1cdf6-feb5-77c1-8853-f056c1e8a62c: write the workflow changes, then make the existing execution owner execute one at a time; necessary coupled work is allowed.",
+  "readinessMessage": "Seven items are tracked in Linear. Starting with V1S-458 only in the existing worktree; verify its acceptance and conclude in Linear before 459. Necessary coupled work needs an explicit reason and stopping point. One combined PR/GrepTile review after the batch; public release remains separate.",
+  "contextByIssue": { "V1S-458": "01a1c36a-2e37-7260-9204-378380cc385f-current-ticket" },
+  "coupledWork": [{
+    "primary": "V1S-458",
+    "related": "V1S-459",
+    "reason": "458 records existing-media/first-frame baselines; final prepared-hover delivery and its under-500-ms check belong to 459, which supplies that feature. Do not expand preview/backfill implementation while closing navigation work.",
+    "stopWhen": "458 has equivalent populated-film navigation/selection measurements and its own evidence; 459 retains prepared-hover acceptance. Reconcile these ownership boundaries in Linear before closure."
+  }],
+  "completion": {}
+}
