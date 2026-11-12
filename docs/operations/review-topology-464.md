@@ -133,3 +133,65 @@ source video muted/rate 1 at 3.866088, sole audible master at 3.793719 seconds.
 Full-cut playback also emitted native frame callbacks, including 7.2 ms decoder
 processing; preloaded/hidden callbacks are not claimed as visible-first-frame
 latency. Native screenshot and samples remain private under `464-*`.
+
+The repaired public build `273c5e75694bbe2c8b5aaa1e8f98365a48ba7674`, Actions
+`43188424113`, passed the complete check again: 2151 pass / 27 fixture skips /
+0 failures, production build/deploy/auth/checksum/exact public health.
+Worker `20261112.2`, `worker_cmwdbw0bm00q33zoe0w96peww`, deployment `8fxjzhh7`,
+published that exact source at immutable image digest
+`sha256:472182c47ee5d1109dd89e3c83c041a309d105e9e7a025caa11f649f3bf0cc49`.
+Live inventory now contains 21 tasks, including both review tasks. Independent
+read-only/no-network image proof matched all 90 pre-copy files (71 root bundles,
+19 task-entry files), checked their syntax and the exact patched controller;
+Bun 1.3.3, Node 24.3.0 and Sharp 0.34.5 are retained. No runtime upgrade occurred.
+
+The original runs remained parked after registration because their pre-deploy
+fallback queue was `task/prepare-review-video`; the registered queue is
+`review-video-preparation`. Recovery used only supported dashboard actions:
+cancel each never-started original, verify CANCELED/zero usage/no lock, then
+replay its unchanged payload/tags on the registered queue and latest worker.
+No direct queue/database mutation or concurrent duplicate execution occurred.
+
+| Recovered run | Original canceled run | Queue → start | Start → completion | Service usage |
+| --- | --- | ---: | ---: | ---: |
+| `run_cmwdc1h9a00q53zoe0nqq3w2h` | `run_cmwd9w0v000pz3zoeo0ews785` | 132 ms | 1852 ms | 758 ms |
+| `run_cmwdc2z6c00qa3zoely2p8q6s` | `run_cmwd9t2rh00pw3zoekcnrxly8` | 224 ms | 2212 ms | 1073 ms |
+
+Both are `COMPLETED_SUCCESSFULLY` on 20261112.2, with replay lineage in Trigger.
+Authenticated application polling returns success; the version-bound ready
+manifests agree with the run results. All eight original/proxy/poster/sprite
+reads returned 200 and matched exact byte lengths and SHA-256 through the
+authenticated media route. Original sizes 879122 / 2492624 bytes become
+123900 / 261418 byte proxies, each retaining 124/124 frames at 640×360.
+Original hashes remain `c84c8dd0635b28c9de9e4f24adc7d94e3da9e402e79dfdf492f3bbd3d72722fd`
+and `69f0733821dfa20d71a8bc1436065678a13961fe3be9c8605ef16ded7c5ca84d`.
+The six July pending records were checked afterward: still pending, never
+started, zero usage; none was replayed/canceled or otherwise changed.
+
+Actual public A006 take-card hover now plays the durable 640×360 proxy silently
+at rate 1. Pointer movement and leave were exercised; leave removes the player.
+At the user's naturally resized 1483×1140 viewport, first and repeat entries
+presented a frame in **844.4 / 958.9 ms**, including dwell/readiness/delivery;
+decoder processing was **8.0 / 1.6 ms**. Both miss the under-500-ms target.
+These normal-cache samples follow byte verification; they are not clean HTTP
+cold-cache measurements. The earlier controlled 348.3-ms result is not promoted
+to real public performance. This remains an explicitly reported performance
+miss, as V1S-459's criterion requires, rather than a Python/GPU diagnosis.
+
+No full 194-source project backfill, caption inference, audio analysis, export
+or AI generation was dispatched for qualification. The parent backfill task is
+registered and syntax/unit-verified; its whole-project production execution is
+not claimed. The two real child runs, exact runtime/packaging proof, durable
+readbacks and visible existing-media playback qualify the exercised app/worker
+review-copy path. Creative acceptance remains separate.
+
+Final protected readback: finishing full draft
+`aace50749de17e84a18ff49cb455063e715a5c2d2732e509f5ff658358a8f6cc`, revision
+`"cc65ad585238c4398526b995005e8822"`; original full draft
+`db8869edc20b187c6c31bf2df46e8e8bb66fb39433d2447cb4cf1598f79ce20d`, revision
+`"e4833a39ffeac77a83e7a6657b3923f1"`. Both match exactly. Finishing Preview
+still shows 0/108 selected, 103 current takes available and zero replacement
+marks. Guarded finishing Studio inspection blocked no writes; the editor
+document was discarded by navigating to read-only Preview before protections
+were removed with document teardown. Final guard/hover/observer globals are
+undefined; no fixture storage or network/cache/viewport override remains.

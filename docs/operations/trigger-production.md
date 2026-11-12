@@ -23,6 +23,13 @@ environment, or deployment history here.
 
 ## Production task inventory
 
+November 12 review release: production worker `20261112.2`, deployment `8fxjzhh7`,
+source `273c5e75694bbe2c8b5aaa1e8f98365a48ba7674`, registers 21 tasks. Bun remains
+1.3.3 and SDK/CLI 4.5.16. Both review queues are deployed; two real CPU child runs,
+durable artifact readbacks, exact image/syntax/source proof and public viewing
+evidence are recorded in [V1S-464 topology/qualification](review-topology-464.md).
+The earlier 17/19-task counts below are dated history, not the current inventory.
+
 | Task | Queue | Durable result |
 | --- | --- | --- |
 | `stack-structure-service-health` | `service-health` (2) | health result |
@@ -33,11 +40,12 @@ environment, or deployment history here.
 | `essentia-analyze-stored-audio` | `vm100-heavy` (1) | analysis JSON in RustFS |
 | `qwen-smart-scene-caption` | `vm100-heavy` (1) | caption JSON in RustFS |
 | `qwen-story-treatment` | `vm100-heavy` (1) | story treatments JSON |
-| `qwen-h3-shot-planning` | `vm100-heavy` (1) | owned immutable shot directions (source candidate; not deployed) |
+| `qwen-h3-shot-planning` | `vm100-heavy` (1) | owned immutable shot directions |
+| `minimax-h3-still` | `vm100-heavy` (1) | prepared still and durable job receipt |
 | `local-ai-generation` | `vm100-heavy` (1) | generated objects in RustFS |
 | `ffmpeg-preview-or-concat` | `media-assembly` (2) | preview MP4 in RustFS |
-| `prepare-review-video` | `review-video-preparation` (1) | version-bound proxy, poster, scrub sheet and ready manifest in RustFS (source candidate; not deployed) |
-| `prepare-project-review-videos` | `review-project-preparation` (1) | owned-project backfill receipts with sequential child preparation (source candidate; not deployed) |
+| `prepare-review-video` | `review-video-preparation` (1) | version-bound proxy, poster, scrub sheet and ready manifest in RustFS |
+| `prepare-project-review-videos` | `review-project-preparation` (1) | owned-project backfill receipts with sequential child preparation |
 | `ffmpeg-final-music-video-export` | `media-assembly` (2) | final MP4 in RustFS |
 | `ffmpeg-shader-capture-export` | `media-assembly` (2) | muxed MP4 in RustFS |
 | `ffmpeg-seedance-audio-reference` | `media-assembly` (2) | section audio reference in RustFS |
@@ -52,7 +60,7 @@ with concurrency 2. Separate queues do not provide a global GPU lock; worker
 GPU locking still protects shared hardware. Paid Higgsfield work is independently
 serialized and uses one attempt so automatic retries cannot duplicate spend.
 
-The source-candidate review-preparation task is CPU-only, uses the existing
+The review-preparation task is CPU-only, uses the existing
 FFmpeg/Sharp worker image and a separate concurrency-one queue. It permits two
 safe preparation attempts and has a 15-minute task limit. It never generates
 new creative media or selects/approves takes. See [review video preparation](../architecture/review-video-preparation.md).
@@ -65,8 +73,8 @@ an independent authenticated project route and private CAS receipts. The parent
 has a separate concurrency-one queue, waits for sequential children and requires
 their exact stored receipts before marking rows ready. Unknown acknowledgments
 reconnect the same intent/source list. Candidate evidence is in
-[V1S-459 verification](review-media-459.md); live production qualification remains
-a separate release gate.
+[V1S-459 verification](review-media-459.md); live child-path qualification and
+whole-project backfill limits are in [V1S-464](review-topology-464.md).
 
 Verified through the production worker API on 2026-09-07: worker
 `20260907.2` (`worker_cmtqvhk7x00me3is05myhu6b6`) uses SDK/CLI `4.5.16`
@@ -153,7 +161,7 @@ Use the private ops runbook for checkout paths, SSH entry points, and registry U
 3. Run `bun run trigger:deploy -- --dry-run`.
 4. Run `bun run trigger:deploy`.
 5. Confirm the emitted image was pushed to the worker's local registry.
-6. Query the current production worker and compare all 17 task IDs with the table above before triggering acceptance runs.
+6. Query the current production worker and compare all 21 task IDs with the table above before triggering acceptance runs.
 
 The deploy script refuses non-Linux hosts, verifies SDK/build/React hooks share one pin, runs the Trigger CLI through `bunx`, uses `--local-build`, and pushes the built image to the production registry.
 
@@ -210,7 +218,7 @@ or deploy must not modify `/opt/pindeck`.
 Static checks are prerequisites, not completion. Record separately:
 
 - focused and full tests, lint, typecheck, and production build;
-- current worker version, deployment code, and exact 17-task inventory;
+- current worker version, deployment code, and exact 21-task inventory;
 - one authenticated browser input and its application user/project ID;
 - parent and child run IDs with queue/start/end timing;
 - production worker host service responses for the exercised path;
