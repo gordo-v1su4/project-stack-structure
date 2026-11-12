@@ -405,3 +405,37 @@ skips, zero failures; typecheck/lint completed (two existing StudioApp warnings)
 and production build passed. A regression verifies workflow sanitization,
 content-reference reuse and preserved export invalidation on shader/cut changes.
 V1S-458/464 remain open; no production release or framework decision is implied.
+
+## Reuse caption vocabulary during repeated story matching
+
+The Story-return CPU profile spends several seconds in keyword matching. A
+bounded index now retains each candidate caption's normalized vocabulary and
+individual query-word comparisons. Different story queries can reuse those
+comparisons without caching project objects, source eligibility or approvals.
+The exact/prefix/fuzzy rules, weights, duplicate-token density and final rounding
+are unchanged. Caption changes use a different immutable text key.
+
+The LRU retains at most 256 captions and two million UTF-16 key/token characters
+(approximately 4 MiB, plus bounded collection overhead). Captions longer than
+8,192 characters bypass retention. Each caption retains at most 256 compared
+query words of at most 64 characters. Eviction releases their counted characters
+as well as the caption index. Oversized inputs are scored normally.
+
+A local before/after comparison uses the previous committed module and current
+module against all 16 saved film sections and 90 source moments. Every complete
+ranking result has the same SHA-256 across three passes of each implementation.
+Before passes: 1,213 / 1,279 / 1,321ms. After: 453 / 73 / 68ms. This is a local
+domain benchmark, not browser/production latency. The new regression also checks
+query-word multiplicity, changed captions, zero matches, oversized-caption density
+and results after cache churn; existing matching/continuity tests remain intact.
+
+In the same isolated populated StudioApp harness, two Story → Draft frame
+intervals were 542 / 559ms; Draft → Story was 1,085 / 1,016ms, versus the earlier
+6,418ms Story-return sample before vocabulary indexing. The harness still blocks
+writes/generation and serves no media. These are limited diagnostic intervals;
+they do not establish production responsiveness or video playback performance.
+Evidence: ignored `verify-semantic-corpus.ts`, `semantic-corpus.json`, and
+`semantic-navigation.json` under `.tmp/review-performance/`.
+
+Final `bun run check` and production build passed. Navigation/performance remains
+open: further stage/preview work and media/backend measurements are required.

@@ -5,6 +5,20 @@ import { buildSemanticEditPlan, keywordSemanticScore, rankMomentsForSection, res
 import { makeMotionDescriptor } from "../helpers/studioFixtures";
 
 describe("semantic edit planner", () => {
+  test("reused caption vocabulary preserves query multiplicity and changes with the actual caption text", () => {
+    const caption = "rain dance";
+    const one = keywordSemanticScore("rain", caption);
+    const repeated = keywordSemanticScore("rain rain", caption);
+    expect(repeated).toBeGreaterThan(one);
+    expect(keywordSemanticScore("ocean", caption)).toBe(0);
+    expect(keywordSemanticScore("rain", "indoor kitchen")).toBe(0);
+    expect(keywordSemanticScore("rain", caption)).toBe(one);
+    // A large caption can bypass retained indexes without changing scoring.
+    expect(keywordSemanticScore("rain", "rain ".repeat(2000))).toBe(0.78);
+    for (let i = 0; i < 300; i++) keywordSemanticScore("rain", `unrelated-caption-${i}`);
+    expect(keywordSemanticScore("rain", caption)).toBe(one);
+  });
+
   test("matches lyric and prompt language to captioned scene moments", () => {
     const plan = buildSemanticEditPlan({
       sections: [
