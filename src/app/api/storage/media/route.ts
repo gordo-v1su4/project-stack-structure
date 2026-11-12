@@ -5,6 +5,7 @@ import { canReadMediaObject } from "@/lib/studioMediaAccess";
 import { isCanonicalStudioMetadata, isSafeStudioObjectKey } from "@/lib/studioMetadataPrivacy";
 import { isOwnedDraftStoragePath } from "@/lib/studioDraftPolicy";
 import { getMediaThumbnail, ThumbnailError } from "@/lib/mediaThumbnail";
+import { preparedThumbnailPersistence } from "@/lib/preparedThumbnailStore";
 
 export const runtime = "nodejs";
 
@@ -38,12 +39,15 @@ export async function GET(request: Request) {
       // Source identity/version and owner isolate the bounded cache. Authorization
       // above still runs before either cached bytes or an ETag response is returned.
       const key = JSON.stringify([user.id, bucket, objectKey, thumbnail, url.searchParams.get("v")]);
+      const persistence = preparedThumbnailPersistence({ ownerId: user.id, bucket, objectKey,
+        sha256: url.searchParams.get("v") ?? "", width: Number(thumbnail) as 320 | 640 });
       const result = await getMediaThumbnail(key, Number(thumbnail) as 320 | 640, () => fetch(buildMediaGatewayFileUrl(config, bucket, objectKey), {
         cache: "no-store", headers: { Authorization: `Bearer ${config.token}` },
         signal: AbortSignal.timeout(20_000),
-      }));
+      }), persistence);
       const headers = { "content-type": "image/webp", "cache-control": "private, no-cache", etag: result.etag,
-        "cross-origin-resource-policy": "same-origin", "x-content-type-options": "nosniff" };
+        "cross-origin-resource-policy": "same-origin", "x-content-type-options": "nosniff",
+        "x-thumbnail-storage": result.durable ? "durable" : "runtime" };
       if (request.headers.get("if-none-match") === result.etag) return new Response(null, { status: 304, headers });
       return new Response(new Uint8Array(result.bytes), { headers });
     } catch (error) {

@@ -439,3 +439,37 @@ Evidence: ignored `verify-semantic-corpus.ts`, `semantic-corpus.json`, and
 
 Final `bun run check` and production build passed. Navigation/performance remains
 open: further stage/preview work and media/backend measurements are required.
+
+## Durable image-thumbnail read-through storage
+
+Versioned image-thumbnail requests now reuse raw WebP artifacts in RustFS through
+the existing canonical S3 connection. Owner, bucket, original key, source SHA-256,
+requested size and recipe determine the derivative namespace. A miss verifies
+the actual source bytes against the claimed hash before any durable write.
+Invalid/non-hash versions keep the existing runtime-only behavior. Source
+authorization still precedes cache hits and conditional responses.
+
+Durable reads are bounded to 2 MiB and check WebP/content metadata, recipe,
+source version, width and output digest. A corrupt derivative can be prepared
+again. Missing/unavailable derivative storage retains usable runtime pixels
+without claiming persistence (`x-thumbnail-storage: runtime`). Source images,
+film state, identity evidence and conditioning/export inputs are unchanged.
+Preparation retains the existing two-active/64-pending limits and 32 MiB runtime
+LRU; S3 reads/writes have five-second deadlines. No new environment variables,
+credentials, local production storage or provider generation are introduced.
+
+Four domain/storage tests cover reuse, source/owner/size isolation, changed-source
+rejection, unavailable storage, corrupt metadata and streamed byte bounds. An
+integration test starts two independent Bun processes against a loopback S3
+protocol fixture using the actual SDK. First process: GET miss → PUT raw WebP.
+Second process: GET only, same bytes/ETag, zero source loads, with the source file
+unavailable to that process. The original file hash remains unchanged. This is
+restart/protocol proof, not a live RustFS acceptance claim.
+
+The full check passed 2,099 tests with 27 fixture skips and zero failures; lint
+and typecheck completed with existing warnings, production build passed. A final
+test-only refinement made the restarted process's source path unavailable; that
+integration test and typecheck pass afterward. Desktop runtime storage variables
+are not set in this shell, so no live bucket write was attempted. Live RustFS
+verification remains a release gate. V1S-459 remains open for proactive image
+preparation, video proxies/scrub assets, hover and populated media/decode proof.

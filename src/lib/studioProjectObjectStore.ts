@@ -42,6 +42,9 @@ function storage() {
 }
 
 const status = (error: unknown) => (error as { $metadata?: { httpStatusCode?: number } })?.$metadata?.httpStatusCode;
+/** Shared server-only connection; binary review derivatives use the same canonical configuration. */
+export const studioMediaStorage = () => storage();
+
 export const studioProjectObjects: StudioJsonObjectStore = {
   async read<T>(key: string): Promise<StudioObjectVersion<T> | null> {
     const { client, bucket } = storage();

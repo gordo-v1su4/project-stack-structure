@@ -4,7 +4,8 @@ import sharp from "sharp";
 const MAX_SOURCE_BYTES = 20 * 1024 * 1024;
 const MAX_CACHE_BYTES = 32 * 1024 * 1024;
 const MAX_PENDING = 64;
-type Thumbnail = { bytes: Uint8Array; etag: string; expires: number };
+type Thumbnail = { bytes: Uint8Array; etag: string; expires: number; durable: boolean };
+export type ThumbnailPersistence = { sourceSha256: string; read(): Promise<Uint8Array | null>; write(bytes: Uint8Array): Promise<void> };
 const cache = new Map<string, Thumbnail>();
 const pending = new Map<string, Promise<Thumbnail>>();
 let cacheBytes = 0;
@@ -47,7 +48,7 @@ async function readImage(response: Response) {
 }
 
 /** Call only after authorizing the source on every request, including cache hits. */
-export async function getMediaThumbnail(key: string, width: 320 | 640, load: () => Promise<Response>): Promise<Thumbnail> {
+export async function getMediaThumbnail(key: string, width: 320 | 640, load: () => Promise<Response>, persistence?: ThumbnailPersistence): Promise<Thumbnail> {
   const cached = cache.get(key);
   if (cached) {
     cache.delete(key);
@@ -61,12 +62,22 @@ export async function getMediaThumbnail(key: string, width: 320 | 640, load: () 
     if (active >= 2) await new Promise<void>(resolve => waiters.push(resolve));
     else active++;
     try {
-      const source = await readImage(await load());
-      const bytes = await sharp(source, { limitInputPixels: 40_000_000, animated: false })
-        .timeout({ seconds: 5 })
-        .rotate().resize({ width, height: width * 9 / 16, fit: "inside", withoutEnlargement: true })
-        .webp({ quality: 75, effort: 3 }).toBuffer();
-      const result = { bytes, etag: `"thumb-${createHash("sha256").update(bytes).digest("hex")}"`, expires: Date.now() + 10 * 60_000 };
+      let bytes: Uint8Array | null = null;
+      let durable = false;
+      let canPersist = Boolean(persistence);
+      try { bytes = await persistence?.read() ?? null; durable = bytes !== null; } catch { canPersist = false; }
+      if (bytes === null) {
+        const source = await readImage(await load());
+        if (persistence && createHash("sha256").update(source).digest("hex") !== persistence.sourceSha256) {
+          throw new ThumbnailError("The image changed. Refresh its current preview version.", 409);
+        }
+        bytes = await sharp(source, { limitInputPixels: 40_000_000, animated: false })
+          .timeout({ seconds: 5 })
+          .rotate().resize({ width, height: width * 9 / 16, fit: "inside", withoutEnlargement: true })
+          .webp({ quality: 75, effort: 3 }).toBuffer();
+        try { if (persistence && canPersist) { await persistence.write(bytes); durable = true; } } catch { /* The prepared image remains usable without claiming persistence. */ }
+      }
+      const result = { bytes, durable, etag: `"thumb-${createHash("sha256").update(bytes).digest("hex")}"`, expires: Date.now() + 10 * 60_000 };
       cache.set(key, result); cacheBytes += bytes.byteLength;
       while (cacheBytes > MAX_CACHE_BYTES || cache.size > 256) {
         const oldest = cache.keys().next().value!;
