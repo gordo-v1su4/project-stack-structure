@@ -1,6 +1,6 @@
 import { auth } from "@/auth";
 import type { PersistedStudioProjectDraft } from "@/components/studio/projectPersistence";
-import { readStudioProject, saveStudioProject } from "@/lib/studioProjectStore";
+import { readStudioProject, saveStudioProject, setStudioProjectDeleted } from "@/lib/studioProjectStore";
 import { requireStudioProjectRevision, StudioProjectConflictError } from "@/lib/studioProjectObjectStore";
 import { readStudioJsonBody, studioJsonBodyErrorResponse, studioJsonResponse } from "@/lib/studioJsonTransportServer";
 import { validateReferenceMigrationAdoption } from "@/lib/referenceMigrationServer";
@@ -55,4 +55,28 @@ function isPersistedDraft(value: unknown): value is PersistedStudioProjectDraft 
 
 function unauthorized() {
   return Response.json({ success: false, error: "Sign in with GitHub to access saved projects." }, { status: 401 });
+}
+
+export async function DELETE(request: Request, context: RouteContext) {
+  return changeDeleted(request, context, true);
+}
+
+/** Restore a retained project from Trash without adopting any new draft content. */
+export async function POST(request: Request, context: RouteContext) {
+  return changeDeleted(request, context, false);
+}
+
+async function changeDeleted(request: Request, context: RouteContext, deleted: boolean) {
+  const session = await auth();
+  if (!session?.user?.id) return unauthorized();
+  const { projectId } = await context.params;
+  try {
+    const expectedRevision = deleted ? requireStudioProjectRevision(request.headers.get("if-match")) : undefined;
+    const project = await setStudioProjectDeleted({ ownerId: session.user.id, projectId, deleted, expectedRevision });
+    if (!project) return Response.json({ success: false, error: "Project not found." }, { status: 404 });
+    return Response.json({ success: true, project });
+  } catch (error) {
+    if (error instanceof StudioProjectConflictError) return Response.json({ success: false, error: error.message }, { status: error.status });
+    throw error;
+  }
 }

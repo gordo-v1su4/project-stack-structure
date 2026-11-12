@@ -15,6 +15,7 @@ mock.module("@/lib/session", () => ({
 }));
 mock.module("@/lib/studioProjectStore", () => ({
   createStudioProjectId: () => "project-1", listStudioProjects: async () => [],
+  setStudioProjectDeleted: async () => null,
   readStudioProject: async (ownerId: string, projectId: string) => ownerId === "owner-1" && projectId === "project-1" ? stored : null,
   saveStudioProject: async (input: { ownerId: string; projectId: string; name: string; draft: PersistedStudioProjectDraft }) => {
     saves++;

@@ -43,9 +43,9 @@ mock.module("@/lib/mediaGateway", () => ({
   normalizeMediaPath: (path: string) => path.replace(/^\/+|\/+$/g, ""),
 }));
 mock.module("@/auth", () => ({ auth: async () => authenticated ? { user: { id: "github-test" } } : null }));
-const { saveStudioProject, readStudioProject } = await import("@/lib/studioProjectStore");
+const { saveStudioProject, readStudioProject, listStudioProjects, setStudioProjectDeleted } = await import("@/lib/studioProjectStore");
 const { mergeStudioProjectIndex, studioProjectObjects } = await import("@/lib/studioProjectObjectStore");
-const { PUT, GET } = await import("@/app/api/studio/projects/[projectId]/route");
+const { PUT, GET, DELETE, POST: restoreProject } = await import("@/app/api/studio/projects/[projectId]/route");
 const { POST } = await import("@/app/api/studio/projects/route");
 const originalFetch = globalThis.fetch;
 const names = ["NODE_ENV", "RUSTFS_S3_ENDPOINT", "RUSTFS_ACCESS_KEY", "RUSTFS_SECRET_KEY"] as const;
@@ -78,6 +78,38 @@ test("same-base writers cannot erase one another's reference edits", async () =>
   if (winner.status !== "fulfilled") throw Error("missing winner");
   expect((await readStudioProject(ownerId, projectId, { fresh: true }))?.draft).toEqual(winner.value.draft);
   expect(JSON.parse(objects.get(key)!.body).revision).toBe(undefined);
+});
+
+test("Trash hides only the chosen project, retains its draft, and can restore it", async () => {
+  setup();
+  const created = await saveStudioProject({ ownerId, projectId, name: "Film", draft: draft("retained"), expectedRevision: null });
+  const other = await saveStudioProject({ ownerId, projectId: "other", name: "Keep", draft: draft("other"), expectedRevision: null });
+  await setStudioProjectDeleted({ ownerId, projectId, deleted: true, expectedRevision: created.revision });
+  expect((await listStudioProjects(ownerId)).map(project => project.id)).toEqual([other.project.id]);
+  expect((await listStudioProjects(ownerId, { deleted: true })).map(project => project.id)).toEqual([projectId]);
+  expect(await readStudioProject(ownerId, projectId, { fresh: true })).toBeNull();
+  expect(JSON.parse(objects.get(key)!.body).draft).toEqual(created.draft);
+  await expect(saveStudioProject({ ownerId, projectId, name: "Old tab", draft: draft("obsolete"), expectedRevision: created.revision })).rejects.toThrow("Trash");
+  await setStudioProjectDeleted({ ownerId, projectId, deleted: false });
+  expect((await readStudioProject(ownerId, projectId, { fresh: true }))?.draft).toEqual(created.draft);
+  expect(await listStudioProjects(ownerId, { deleted: true })).toEqual([]);
+});
+
+test("delete requires the current revision and cannot delete another owner's project", async () => {
+  setup();
+  const created = await saveStudioProject({ ownerId, projectId, name: "Film", draft: draft("first"), expectedRevision: null });
+  await saveStudioProject({ ownerId, projectId, name: "Film", draft: draft("fresh"), expectedRevision: created.revision });
+  await expect(setStudioProjectDeleted({ ownerId, projectId, deleted: true, expectedRevision: created.revision })).rejects.toThrow();
+  expect(await setStudioProjectDeleted({ ownerId: "github-other", projectId, deleted: true, expectedRevision: created.revision })).toBeNull();
+  expect((await readStudioProject(ownerId, projectId, { fresh: true }))?.draft.referenceAssets?.[0]?.id).toBe("fresh");
+});
+
+test("delete and restore routes reject anonymous callers before writes", async () => {
+  setup(); authenticated = false;
+  const context = { params: Promise.resolve({ projectId }) };
+  expect((await DELETE(new Request("https://app.example/api/studio/projects/film", { method: "DELETE" }), context)).status).toBe(401);
+  expect((await restoreProject(new Request("https://app.example/api/studio/projects/film", { method: "POST" }), context)).status).toBe(401);
+  expect(writes).toHaveLength(0);
 });
 
 test("same-ID creates with different names claim one deterministic object", async () => {

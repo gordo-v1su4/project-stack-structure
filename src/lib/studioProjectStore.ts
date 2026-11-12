@@ -22,6 +22,7 @@ export type StudioProjectSummary = {
   storageFolder: string;
   createdAt: string;
   updatedAt: string;
+  deletedAt?: string;
   audioLabel: string | null;
   videoCount: number;
   sceneCount: number;
@@ -54,8 +55,10 @@ export function studioProjectLocalCacheEnabled(env: Record<string, string | unde
   return env.NODE_ENV !== "production";
 }
 
-export async function listStudioProjects(ownerId: string) {
-  return (await readProjectIndex(ownerId)).projects.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+export async function listStudioProjects(ownerId: string, options: { deleted?: boolean } = {}) {
+  return (await readProjectIndex(ownerId, { fresh: true })).projects
+    .filter(project => Boolean(project.deletedAt) === Boolean(options.deleted))
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
 export async function readStudioProject(ownerId: string, projectId: string, options: { fresh?: boolean } = {}): Promise<SavedStudioProject | null> {
@@ -67,6 +70,7 @@ export async function readStudioProject(ownerId: string, projectId: string, opti
       ? await readLocalJson<SavedStudioProject>(localProjectPath(safeOwnerId, safeProjectId))
       : await readRemoteProject(safeOwnerId, safeProjectId);
     if (!isSavedStudioProject(project, safeOwnerId, safeProjectId)) continue;
+    if (project.project.deletedAt) return null;
     if (source === "remote" && readSources[0] === "local") {
       await writeLocalJson(localProjectPath(safeOwnerId, safeProjectId), project);
     }
@@ -86,6 +90,7 @@ export async function saveStudioProject(params: {
   const projectId = normalizeProjectId(params.projectId);
   const version = await readRemoteProjectVersion(ownerId, projectId);
   const existing = version?.saved;
+  if (existing?.project.deletedAt) throw new StudioProjectConflictError("This project is in Trash. Restore it before saving; this window was not written.");
   if (existing) {
     if (params.expectedRevision === null) throw new StudioProjectConflictError("A project with this ID already exists; it was not replaced.");
     const expected = requireStudioProjectRevision(params.expectedRevision);
@@ -140,6 +145,27 @@ export async function saveStudioProject(params: {
 
 export function createStudioProjectId() {
   return crypto.randomUUID();
+}
+
+/** Move only project metadata to/from Trash. Shared media and the draft are retained. */
+export async function setStudioProjectDeleted(params: { ownerId: string; projectId: string; deleted: boolean; expectedRevision?: string }) {
+  const ownerId = normalizeIdentity(params.ownerId), projectId = normalizeProjectId(params.projectId);
+  const version = await readRemoteProjectVersion(ownerId, projectId);
+  if (!version) return null;
+  if (params.deleted && version.saved.revision !== requireStudioProjectRevision(params.expectedRevision)) throw new StudioProjectConflictError();
+  if (Boolean(version.saved.project.deletedAt) === params.deleted) return version.saved.project;
+  const project = { ...version.saved.project };
+  if (params.deleted) project.deletedAt = new Date().toISOString();
+  else delete project.deletedAt;
+  const saved: SavedStudioProject = { ...version.saved, project };
+  delete saved.revision;
+  await studioProjectObjects.write(version.objectKey, saved, version.saved.revision!);
+  await mergeStudioProjectIndex(studioProjectObjects, ownerProjectsIndexPath(ownerId), async () => {
+    const latest = await studioProjectObjects.read<SavedStudioProject>(version.objectKey);
+    if (!latest || !isSavedStudioProject(latest.value, ownerId, projectId)) throw new Error("Project deletion could not be reconciled.");
+    return latest.value.project;
+  });
+  return project;
 }
 
 async function readRemoteProject(ownerId: string, projectId: string): Promise<SavedStudioProject | null> {

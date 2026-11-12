@@ -26,7 +26,7 @@ export function AnimaticPreviewPage({ projectId }: { projectId: string }) {
   const [selected, setSelected] = useState(""), [preview, setPreview] = useState<"images" | "timing" | null>(null);
   const [imageOpen, setImageOpen] = useState(false), [arrivals, setArrivals] = useState<string[]>([]);
   const [checked, setChecked] = useState("");
-  const [mode, setMode] = useState<"video" | "images" | "timing">("video");
+  const [mode, setMode] = useState<"video" | "delivered" | "images" | "timing">("video");
   const [selection, setSelection] = useState<SongSelection | null>(null), [multiSelect, setMultiSelect] = useState(false);
   const [initialRanges, setInitialRanges] = useState<SongRange[]>([]);
   const [viewport, setViewport] = useState<SongRange | null>(null), [initialViewport, setInitialViewport] = useState<SongRange | null>(null);
@@ -67,6 +67,7 @@ export function AnimaticPreviewPage({ projectId }: { projectId: string }) {
             }
             knownImages.current = images; revision = next.revision;
             const coverage = next.cut?.coverage ?? [];
+            if (!knownVideos.current && next.cut?.selectedVideoCount === 0 && next.cut.deliveredVideoCount) setMode("delivered");
             if (knownVideos.current) {
               const arrived = coverage.filter(row => row.availableTakeIds.some(id => !knownVideos.current!.has(id))).map(row => row.shotId);
               if (arrived.length) setVideoArrivals(arrived);
@@ -100,13 +101,16 @@ export function AnimaticPreviewPage({ projectId }: { projectId: string }) {
     {error ? <p role="alert" className="text-sm text-warn">{error}</p> : null}
     {snapshot?.reviewSources ? <ReviewPreparationPanel key={`preparation:${projectId}`} projectId={projectId} sources={snapshot.reviewSources} /> : null}
     {snapshot ? <div className="flex flex-wrap items-center gap-2" aria-label="Preview modes">
+      {snapshot.cut?.deliveredVideoCount ? <Button aria-pressed={mode === "delivered"} onClick={() => { setMode("delivered"); setWatch(null); setPreview(null); }}>Watch delivered takes</Button> : null}
       <Button aria-pressed={mode === "video"} onClick={() => { setMode("video"); setWatch(null); setPreview(null); }}>Current video cut</Button>
       <Button aria-pressed={mode === "images"} disabled={!plan || !snapshot.audioUrl} onClick={() => { setMode("images"); setPreview("images"); }}>Watch images</Button>
       <Button aria-pressed={mode === "timing"} disabled={!plan || !snapshot.audioUrl} onClick={() => { setMode("timing"); setPreview("timing"); }}>Play timing</Button>
     </div> : null}
-    {mode === "video" && snapshot?.cut ? <Surface className="space-y-2" aria-label="Current cut review">
-      <p className="text-xs text-fg-3">{snapshot.cut.selectedVideoCount}/{snapshot.cut.segments.length} windows have selected video · {snapshot.cut.availableVideoCount} current video takes available</p>
-      <div className="mx-auto max-w-4xl"><CutReviewPlayer key={`${projectId}:${watch?.nonce ?? "current"}`} segments={snapshot.cut.segments} audioUrl={snapshot.audioUrl}
+    {(mode === "video" || mode === "delivered") && snapshot?.cut ? <Surface className="space-y-2" aria-label="Current cut review">
+      {mode === "delivered" ? <><h2 className="text-sm font-medium text-fg-0">Delivered takes · screening copy</h2>
+        <p className="text-xs text-fg-2">{snapshot.cut.deliveredVideoCount}/{snapshot.cut.deliveredSegments?.length} windows have video. Watch the delivered takes with the original song. Saved selections, identity review and approvals stay unchanged.</p></>
+        : <p className="text-xs text-fg-3">{snapshot.cut.selectedVideoCount}/{snapshot.cut.segments.length} windows have selected video · {snapshot.cut.availableVideoCount} current video takes available</p>}
+      <div className="mx-auto max-w-4xl"><CutReviewPlayer key={`${projectId}:${mode}:${watch?.nonce ?? "current"}`} segments={mode === "delivered" ? snapshot.cut.deliveredSegments ?? snapshot.cut.segments : snapshot.cut.segments} audioUrl={snapshot.audioUrl}
         plan={plan} context={context} initialRanges={watch?.ranges ?? initialRanges} autoPlay={Boolean(watch)}
         analysis={snapshot.analysis} focusedShotId={selected} onFocusShot={setSelected} initialViewport={initialViewport} onViewportChange={setViewport}
         selection={selection} onSelectionChange={setSelection} multiSelect={multiSelect} onMultiSelect={() => setMultiSelect(value => !value)} /></div>
@@ -142,7 +146,7 @@ export function AnimaticPreviewPage({ projectId }: { projectId: string }) {
         </ol>
       </Surface>
       {shot && snapshot.cut ? <div className="flex flex-wrap items-center gap-3"><span className="font-mono text-xs text-fg-2">{shot.id} · {shot.title}</span>
-        <Button disabled={!snapshot.audioUrl} onClick={() => { setImageOpen(false); setPreview(null); setMode("video");
+        <Button disabled={!snapshot.audioUrl} onClick={() => { setImageOpen(false); setPreview(null); setMode(current => current === "delivered" ? "delivered" : "video");
           setWatch(previous => ({ nonce: (previous?.nonce ?? 0) + 1, ranges: [{ start: shot.startFrame / plan.fps, end: shot.endFrame / plan.fps }] })); }}>Watch this shot</Button></div> : null}
       {shot ? <details key={shot.id} className="rounded-md border border-line bg-ink-2 p-4"><summary className="cursor-pointer text-sm text-fg-1">{shot.id} · {shot.title} · shot details</summary>
         <p className="mt-3 font-mono text-xs text-fg-3">{shot.sceneId} · frames {shot.startFrame}–{shot.endFrame} · {(shot.startFrame / plan.fps).toFixed(2)}–{(shot.endFrame / plan.fps).toFixed(2)}s</p>
