@@ -5,6 +5,7 @@ import type { MusicVideoProject } from "../musicVideoProject";
 import { clipSpineRange } from "../shell/spineViewport";
 import { useSongRangeDrag } from "../useSongRangeDrag";
 import type { SelectionGesture, SongRange } from "../reviewSelection";
+import { SongSelectionOverlay } from "../SongSelectionOverlay";
 
 export function MatchMusicCueTimeline({ cueMap, project, selectedChunkId, onSelectChunk, selectedRanges, focusedRange, visibleRange, onSelectRange, multiSelect, coverage }: {
   cueMap: AdaptiveCueMap; project: MusicVideoProject | null; selectedChunkId?: string; onSelectChunk?: (id: string) => void;
@@ -33,7 +34,7 @@ export function MatchMusicCueTimeline({ cueMap, project, selectedChunkId, onSele
   const showSparseTranscriptWarning = shouldWarnForEarlySrtEnd(cueMap, duration);
 
   return (
-    <div className="bg-ink-0">
+    <div className="min-w-0 bg-ink-0">
       <div {...drag} aria-label="Timing blocks" className="relative h-24 overflow-hidden border-y border-line bg-ink-0">
         {buildSongSectionReview(project?.storySections ?? []).map((section) => {
           const geometry = clipSpineRange(section, view);
@@ -63,7 +64,7 @@ export function MatchMusicCueTimeline({ cueMap, project, selectedChunkId, onSele
               aria-pressed={onSelectChunk || onSelectRange ? isSelected : undefined}
               aria-current={focusedRange && focusedRange.start >= chunk.start && focusedRange.start < chunk.end ? "true" : undefined}
               onClick={event => { onSelectChunk?.(chunk.id); onSelectRange?.(chunk, { extend: event.shiftKey, toggle: event.ctrlKey || event.metaKey || multiSelect }); }}
-              className={`absolute inset-y-0 border text-left transition-colors hover:border-accent focus-visible:outline-2 focus-visible:outline-accent ${isSelected ? "border-fg-0 outline-2 outline-fg-0 -outline-offset-2" : "border-line"}`}
+              className={`absolute inset-y-0 border text-left transition-colors hover:border-accent focus-visible:outline-2 focus-visible:outline-accent ${isSelected && !selectedRanges ? "border-fg-0 outline-2 outline-fg-0 -outline-offset-2" : "border-line"}`}
               style={{
                 left: `${left}%`,
                 width: `${width}%`,
@@ -116,17 +117,18 @@ export function MatchMusicCueTimeline({ cueMap, project, selectedChunkId, onSele
           return geometry ? <span key={index} aria-hidden className={`pointer-events-none absolute bottom-0 h-1 border-r border-ink-0 ${range.filled ? "bg-ok" : "border-t border-dashed border-fg-3"}`}
             style={{ left: `${geometry.left}%`, width: `${geometry.width}%` }} /> : null;
         })}
+        <SongSelectionOverlay ranges={selectedRanges ?? []} view={view} lane="timing" />
       </div>
-      {coverage ? <p className="mt-1 text-xs text-fg-3">Light outline = review selection. Footage coverage: solid green = selected video; dashed = gap. Orange blocks are musical timing suggestions.</p> : null}
+      {coverage ? <p className="mt-1 text-xs text-fg-3">White band = exact selected time across cuts, waveform and timing blocks. Footage coverage: solid green = selected video; dashed = gap. Orange blocks are musical timing suggestions; ◆ marks shot focus.</p> : null}
       {showSparseTranscriptWarning ? (
         <div className="mt-2 rounded-[2px] border border-[#6f4a12] bg-[#120d05] px-2 py-1.5 text-[10px] leading-4 text-[#c07a3f]">
           SRT transcript ends at {fmt(cueMap.lyricLastTime)} of {fmt(duration)} — the vocal after that has no timed lyrics, so no cyan cuts can appear there. Re-run the transcription in Story for full-song lyric cuts.
         </div>
       ) : null}
-      <div className="mt-2 flex items-center justify-between font-mono text-[9px] text-[#555]">
-        <span>{fmt(view.start)}</span>
-        <span>{cueMap.chunks.length} blocks · {cueMap.onsetActiveCount} active music cues · {cueMap.lyricActiveCount}/{cueMap.lyricCount} SRT cuts · {cueMap.lyricMergedCount} merged into music cues · {cueMap.beatCount} beats</span>
-        <span>{fmt(view.end)}</span>
+      <div className="mt-2 flex items-start justify-between gap-2 font-mono text-[9px] text-[#555]">
+        <span className="shrink-0">{fmt(view.start)}</span>
+        <span className="min-w-0 text-center">{cueMap.chunks.length} blocks · {cueMap.onsetActiveCount} active music cues · {cueMap.lyricActiveCount}/{cueMap.lyricCount} SRT cuts · {cueMap.lyricMergedCount} merged into music cues · {cueMap.beatCount} beats</span>
+        <span className="shrink-0">{fmt(view.end)}</span>
       </div>
     </div>
   );

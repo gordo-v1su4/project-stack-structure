@@ -47,7 +47,7 @@ export function MusicCutExplorer(props: MusicCutExplorerProps) {
     return [markers.some(marker => marker.kind === "onset") ? "onset" : "", beat ? "beat" : "",
       markers.some(marker => marker.kind === "lyric") ? "lyric phrase" : ""].filter(Boolean).join(" + ") || "section or spacing boundary";
   };
-  return <Surface as="section" aria-label="Music and cut timing">
+  return <Surface as="section" aria-label="Music and cut timing" className="min-w-0 max-w-full">
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div>
         <h2 className="text-sm font-medium text-fg-0">Music and cut timing</h2>
@@ -74,7 +74,7 @@ export function MusicCutExplorer(props: MusicCutExplorerProps) {
     <p className="mb-2 text-xs text-fg-3" aria-live="polite">{cueMap.chunks.length} suggested blocks · {cueMap.onsetActiveCount} music cues · {cueMap.lyricActiveCount} lyric cues. {fast ? "Fast targets 1–3 seconds using actual music cues; sparse cues may leave longer blocks." : "Suggested pace is 4–6 seconds; short section edges remain visible."}</p>
     <MatchMusicCueTimeline cueMap={cueMap} project={project} selectedChunkId={selected?.id} onSelectChunk={setSelectedChunkId}
       selectedRanges={props.selectedRanges} focusedRange={props.focusedShot} visibleRange={props.visibleRange} onSelectRange={props.onSelectRange} multiSelect={props.multiSelect} coverage={props.coverage} />
-    {props.focusedShot ? <p className="mt-2 font-mono text-xs text-accent">Focused shot: {props.focusedShot.label} · {props.focusedShot.start.toFixed(2)}–{props.focusedShot.end.toFixed(2)}s</p> : null}
+    {props.focusedShot ? <p className="mt-2 break-words font-mono text-xs text-accent">◆ Focused shot: {props.focusedShot.label} · {props.focusedShot.start.toFixed(2)}–{props.focusedShot.end.toFixed(2)}s</p> : null}
     {selected ? <p className="mt-2 font-mono text-xs text-fg-1" aria-live="polite">Selected suggestion: {selected.start.toFixed(3)}–{selected.end.toFixed(3)}s · {(selected.end - selected.start).toFixed(3)}s · starts on {boundaryLabel(selected.start)}</p> : null}
     <p className="mt-1 text-xs text-fg-3">Choose a block to inspect its exact timing. Onsets and phrases use their detected timestamps; section and spacing boundaries may fall between beats. Pace changes here only explore suggestions; saved Story settings remain unchanged.</p>
     <p className="mt-2 text-xs leading-5 text-fg-3">Orange marks musical accents; cyan marks lyric phrases. Without timed lyrics, musical cues still work. Footage semantics remain in Match review; this graph does not rerank or apply footage.</p>

@@ -2958,7 +2958,7 @@ export default function StudioApp() {
               />
             ) : null}
 
-            <main className={`studio-review-scroll studio-fade-in min-h-0 flex-1 space-y-3 overflow-y-auto ${monitorFocused || (activeStageBlocked && !["story", "generate", "join"].includes(tab)) ? "hidden" : ""}`}>
+            <main className={`studio-review-scroll studio-fade-in min-h-0 min-w-0 flex-1 space-y-3 overflow-y-auto ${monitorFocused || (activeStageBlocked && !["story", "generate", "join"].includes(tab)) ? "hidden" : ""}`}>
             {activeProjectId && ["story", "generate"].includes(tab) ? <ReviewPreparationPanel key={`preparation:${activeProjectId}`} projectId={activeProjectId} sources={reviewSources} /> : null}
             {activeProjectId && beatJoinAnalysis && ["story", "generate", "join"].includes(tab) ? <ReplacementReviewPanel key={`replacement:${activeProjectId}`}
               projectId={activeProjectId} targets={replacementReviewTargets} ranges={songSelection?.ranges ?? []} /> : null}

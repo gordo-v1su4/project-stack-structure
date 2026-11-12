@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useSongRangeDrag } from "../useSongRangeDrag";
-import type { SelectionGesture, SongRange } from "../reviewSelection";
+import { rangeIsSelected, type SelectionGesture, type SongRange } from "../reviewSelection";
 import { buildSongSectionReview } from "../songSectionReview";
 
 import { fmt } from "../math";
@@ -13,6 +13,7 @@ import type { SpineSlot } from "./spineSlots";
 import { clipSpineRange, getSpineViewport, type SpineZoomMode } from "./spineViewport";
 import { ReviewVideoHover } from "../ReviewVideoHover";
 import { viewingThumbnailUrl } from "../mediaThumbnailUrl";
+import { SongSelectionOverlay } from "../SongSelectionOverlay";
 
 /** The top filmstrip has priority over the scrolling board, but no offscreen originals. */
 function SpineThumbnail({ url, active }: { url: string; active: boolean }) {
@@ -83,6 +84,7 @@ export function BeatSpine({ analysis, bpm, playhead, onSeek, onSelectSection, se
   const drag = useSongRangeDrag(view, slots, onSelectRange);
   useEffect(() => { onVisibleRangeChange?.({ start: view.start, end: view.end }); }, [onVisibleRangeChange, view.start, view.end]);
   const viewDuration = view.end - view.start;
+  const ranges = selectedRanges ?? (selectedRange ? [selectedRange] : selected ? [selected] : []);
   const pct = (seconds: number) => `${((seconds - view.start) / viewDuration) * 100}%`;
   const playheadVisible = playheadSeconds >= view.start && playheadSeconds <= view.end;
   function selectSection(index: number, extend = false, toggle = false) {
@@ -96,7 +98,7 @@ export function BeatSpine({ analysis, bpm, playhead, onSeek, onSelectSection, se
   }
 
   return (
-    <section aria-label="Beat spine" className="studio-song-spine vt-spine shrink-0 overflow-hidden rounded-[10px] border border-line bg-ink-1">
+    <section aria-label="Beat spine" className="studio-song-spine vt-spine min-w-0 shrink-0 overflow-hidden rounded-[10px] border border-line bg-ink-1">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-2 py-1.5">
         <div role="group" aria-label="Timeline zoom" className="flex gap-1">
           {([["fit", "Full song"], ["section", "Selected section"], ["selected", "Selected cut"]] as const).map(([mode, label]) => (
@@ -113,12 +115,13 @@ export function BeatSpine({ analysis, bpm, playhead, onSeek, onSelectSection, se
         {sections.map((section, index) => {
           const left = (Math.max(0, section.start) / duration) * 100;
           const width = Math.max(0.5, ((Math.min(duration, section.end) - Math.max(0, section.start)) / duration) * 100);
-          const isSelected = (selectedRanges ?? (selectedRange ? [selectedRange] : [])).some(range => range.end > section.start && range.start < section.end);
+          const isSelected = rangeIsSelected(ranges, section);
+          const isPartial = !isSelected && ranges.some(range => range.end > section.start && range.start < section.end);
           return (
             <button
               key={`${section.label}-${index}`}
               type="button"
-              aria-pressed={onSelectSection ? isSelected : undefined}
+              aria-pressed={onSelectSection ? isPartial ? "mixed" : isSelected : undefined}
               onClick={(event) => {
                 selectSection(index, event.shiftKey, event.ctrlKey || event.metaKey);
               }}
@@ -130,6 +133,7 @@ export function BeatSpine({ analysis, bpm, playhead, onSeek, onSelectSection, se
             </button>
           );
         })}
+        <SongSelectionOverlay ranges={ranges} view={{ start: 0, end: duration }} lane="sections" />
       </nav>
 
       {slots.length ? (
@@ -161,9 +165,7 @@ export function BeatSpine({ analysis, bpm, playhead, onSeek, onSelectSection, se
                   title: `${slot.sectionLabel} · ${fmt(slot.start)}–${fmt(slot.end)}\n${slot.label}${slot.kind === "generated" ? "\nGenerated shot" : ""}${slot.videoUrl ? "\nHover for silent preview" : "\nNo selected video · inspect shot takes"}`,
                   style: { left: `${geometry.left}%`, width: `max(2px, calc(${geometry.width}% - 2px))` } }}
                 className={`group absolute top-[5px] h-[58px] overflow-hidden rounded-[5px] bg-ink-3 text-left outline-offset-[-1px] transition-[transform,box-shadow] duration-[var(--duration-fast)] ease-[var(--ease-out-soft)] ${
-                  isSelected
-                    ? "z-10 scale-y-[1.04] shadow-[0_0_0_1.5px_var(--color-accent)]"
-                    : isLive
+                  isLive
                       ? "shadow-[0_0_0_1px_var(--color-fg-2)]"
                       : "shadow-[0_0_0_1px_oklch(1_0_0/0.1)] hover:shadow-[0_0_0_1px_var(--color-fg-3)]"
                 }`}
@@ -181,17 +183,40 @@ export function BeatSpine({ analysis, bpm, playhead, onSeek, onSelectSection, se
                     {slot.label}
                   </span>
                 ) : null}
+                {slot.id === selectedSlotId ? <span className="absolute left-1 top-1 rounded-sm bg-ink-0/90 px-1 font-mono text-[9px] text-accent">◆{wide ? " Focus" : ""}</span> : null}
               </ReviewVideoHover>
             );
           })}
+          <SongSelectionOverlay ranges={ranges} view={view} lane="cuts" />
           {playheadVisible ? <span aria-hidden className="pointer-events-none absolute top-0 h-full w-px bg-fg-0/80" style={{ left: pct(playheadSeconds) }} /> : null}
         </div>
         </>
       ) : null}
 
+      <div className="relative my-1" aria-label="Song waveform">
+        <SolidWaveform
+          points={analysis.waveform}
+          playhead={playhead}
+          bpm={bpm}
+          beatTimes={analysis.beats}
+          durationSeconds={duration}
+          beatsPerBar={4}
+          accent="oklch(0.7 0.19 45)"
+          height={slots.length ? 88 : 112}
+          label={caption ?? ""}
+          showRuler
+          zoom={1}
+          visibleRange={view}
+          edgeToEdge
+          onSeek={onSeek}
+        />
+        <SongSelectionOverlay ranges={ranges} view={view} lane="waveform" />
+      </div>
+
       {selected && takes.length > 1 ? (
-        <div aria-label={`Source suggestions for ${selected.sectionLabel}`} className="relative flex h-11 items-center gap-1 overflow-x-auto border-b border-line bg-ink-1 px-1.5">
-          <span aria-hidden className="absolute top-0 h-full w-px bg-accent/60" style={{ left: pct(selected.start) }} />
+        <details className="min-w-0 border-t border-line text-xs text-fg-2">
+          <summary className="cursor-pointer py-2 focus-visible:outline-2 focus-visible:outline-accent">Source suggestions for {selected.sectionLabel} · {takes.length}</summary>
+        <div aria-label={`Source suggestions for ${selected.sectionLabel}`} className="relative flex h-11 items-center gap-1 overflow-x-auto bg-ink-1 px-1.5">
           <span title="Section-wide source suggestions. Percentages show matching fit, not render quality. Click to preview without changing the cut." className="shrink-0 pl-1 pr-2 font-mono text-[10px] text-fg-3">Sources · fit</span>
           {takes.map((take) => (
             <button
@@ -215,26 +240,8 @@ export function BeatSpine({ analysis, bpm, playhead, onSeek, onSelectSection, se
             </button>
           ))}
         </div>
+        </details>
       ) : null}
-
-      <div className="pb-1 pt-1">
-        <SolidWaveform
-          points={analysis.waveform}
-          playhead={playhead}
-          bpm={bpm}
-          beatTimes={analysis.beats}
-          durationSeconds={duration}
-          beatsPerBar={4}
-          accent="oklch(0.7 0.19 45)"
-          height={slots.length ? 88 : 112}
-          label={caption ?? ""}
-          showRuler
-          zoom={1}
-          visibleRange={view}
-          edgeToEdge
-          onSeek={onSeek}
-        />
-      </div>
     </section>
   );
 }
