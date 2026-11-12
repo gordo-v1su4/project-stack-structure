@@ -61,6 +61,13 @@ mock.module("@aws-sdk/client-s3", () => ({ GetObjectCommand, PutObjectCommand, L
 mock.module("@/lib/mediaGateway", () => ({ getMediaGatewayConfig: () => ({ bucket: "studio", url: "https://media.example", token: "test-only" }) }));
 const { createH3Job, readH3Job, updateH3Job, listH3Jobs, pinH3JobReferences, downloadH3ReferenceImage, claimH3GenerationIntent } = await import("@/lib/h3JobStore");
 
+test("a canceled queue history read stops before accessing durable job storage", async () => {
+  const controller = new AbortController(); controller.abort(new Error("queue view closed"));
+  const before = JSON.stringify([...objects]);
+  await expect(listH3Jobs("github-test", "project-1", controller.signal)).rejects.toThrow("queue view closed");
+  expect(JSON.stringify([...objects])).toBe(before);
+});
+
 function setup() {
   objects.clear(); serial = 0; conditionalFailures = 0; sourceEtag = "image-version-1";
   metadataOverride = {}; metadataError = undefined;

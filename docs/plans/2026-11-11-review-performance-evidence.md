@@ -121,3 +121,50 @@ Still open in V1S-460: actual mounted-player master audio across skipped ranges,
 the standalone shared Preview integration under V1S-461, legacy Join editing
 selection reconciliation, narrow layouts and real populated-film browser proof.
 No project data or generation is used for these synthetic checks.
+
+## Shared current-cut Preview and read-only queue slice
+
+Preview now projects the saved Draft using its existing confirmation, identity,
+selection and trim rules. Completed renders remain available without becoming
+selected or approved. The response includes a stable cut fingerprint; unrelated
+poll updates retain the mounted player input. Video is the default viewing mode,
+with explicit still/timing alternatives and labeled gaps. Studio links carry the
+shot and bounded selected song ranges without autoplay. Approval details collapse
+separately from viewing. Queue loading is independent of Preview and begins only
+when opened; a right-activity link discovers it.
+
+The new authenticated project work route rechecks ownership before receipt reads
+and conditional responses. It coalesces short-lived per-owner reads, bounds
+concurrency, supports cancellation of motion-history reads and returns compact
+shot/run/state receipts. Current-plan state is separate from retained history;
+unreadable image receipts remain unavailable. Live Trigger activity is explicitly
+account-wide. This route never submits, retries, reconciles or approves work.
+
+Full check: 2,077 passed, 27 fixture skips, zero failures; production build passed.
+Affected tests cover owner-first access, conditional/coalesced reads, safe errors,
+unreadable receipts, bounded URL context, cancellation, and current-cut selection.
+One final presentation change removed the duplicate scrub bar found in browser QA.
+
+The mounted browser harness uses the actual CutReviewPlayer and ProjectRenderQueue
+under React StrictMode and an existing local MP4 (no new media generation). With
+0.1–2.1-second source trims, selection plays master song 0–2 then 6–8 seconds.
+Native events show one unmuted audio element seeking to 6.000741 seconds, ending
+at 8.007323 seconds, with muted current/standby video. Unmount during replay removes
+all media elements and pauses the master at 0.18333 seconds. There are no queue
+requests while collapsed. Opening shows the current A001 video as rendering;
+including earlier plans adds the retained image, and Shot image targets A001.
+Harness and screenshot: `.tmp/review-performance/player.tsx`, `serve-player.ts`,
+`player-queue.png`. The fixture intentionally has no live Trigger session; this
+does not verify public deployment, production counts or creative approval.
+
+The same existing MP4 exposes a decoder edge case at source in-point zero:
+ffprobe confirms its first video frame starts at 0.046029 seconds while audio
+starts at zero. The existing frame-presentation gate rejects that first positive
+timestamp and reports its bounded five-second decoder failure. This remains open
+under V1S-458/460; testing an interior in-point proves range audio behavior, not
+resolution of that edge case. No frame-validation gate was weakened.
+
+Still open: project return-context restoration, raw-take review/adoption, durable
+thumbnail/proxy preparation and hover scanning, public populated-film performance,
+and complete narrow-layout/legacy selection acceptance. No deployment or film
+mutation was performed for this slice.

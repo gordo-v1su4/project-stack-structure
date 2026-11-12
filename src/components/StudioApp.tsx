@@ -2847,6 +2847,8 @@ export default function StudioApp() {
               meta={monitorEmpty.meta}
               next={monitorEmpty.next}
               previewProjectId={activeProjectId}
+              previewShotId={selectedSlot?.animaticShotId}
+              previewRanges={songSelection?.ranges}
             />
 
             {beatJoinAnalysis && !monitorFocused ? (

@@ -7,6 +7,7 @@ import { parseH3StillRequest } from "@/lib/h3StillRequest";
 import { applyApprovedGeneratedAssets, type GeneratedStudioAsset } from "@/components/studio/generatedAssets";
 import { createH3PickupWindow, findH3TargetSegment, h3WindowKey, planH3DraftWindows } from "@/components/studio/h3DraftPlan";
 import { selectReusedTakePlacement } from "@/components/studio/reusedTakePlacements";
+import { projectReviewCut } from "@/lib/projectReviewCut";
 
 function fixture() {
   const f = reviewedScenePlanningFixture(), input = f.source(), audio = { storageBucket: "studio", storagePath: "media-uploads/github-test/master.wav" };
@@ -76,4 +77,29 @@ test("retained stills remain explicit source-placement gaps and a project withou
   const segments = f.projection(); expect(segments[1].animaticRetainedSource).toBe(true); expect(segments[1].videoUrl).toBe("");
   delete f.saved.draft.storyState.stillAnimaticPlan;
   expect(f.projection().every(s => !s.animaticShotId)).toBe(true);
+});
+
+test("shared Preview shows selected pending video without adopting available renders or approving the cut", () => {
+  const f = fixture(), first = f.projection()[0];
+  f.saved.draft.analysis = { ...f.saved.draft.analysis!, ...f.audio };
+  f.saved.draft.storyState.storyGenerated = true;
+  f.saved.draft.storyState.confirmedTreatmentId = f.input.treatment.id;
+  f.saved.draft.storyState.storyContentSignature = "confirmed-fixture";
+  const asset: GeneratedStudioAsset = { id: "pending-video", provider: "editorial", model: "fixture", prompt: "", createdAt: new Date().toISOString(),
+    status: "completed", mediaKind: "video", durationSeconds: 5, reviewStatus: "pending",
+    target: { planSignature: first.planSignature, timelineItemId: first.timelineItemId!, sectionId: first.sectionId,
+      sectionLabel: first.label, songStart: first.musicStart, songEnd: first.musicEnd, animaticMotion: first.animaticMotion },
+    fullStorage: { bucket: "studio", storagePath: "media-uploads/github-test/preview.mp4", objectKey: "media-uploads/github-test/preview.mp4", mime: "video/mp4", publicUrl: "https://media.test/preview.mp4" } };
+  f.saved.draft.generatedAssets = [asset];
+  f.saved.draft.generatedDraft = { planSignature: first.planSignature!, revision: 1, assetIds: [] };
+  const available = projectReviewCut(f.input.projectId, f.saved.draft, f.plan);
+  expect(available.availableVideoCount).toBe(1); expect(available.selectedVideoCount).toBe(0);
+  f.saved.draft.generatedDraft.assetIds = [asset.id];
+  const before = JSON.stringify(f.saved);
+  const selected = projectReviewCut(f.input.projectId, f.saved.draft, f.plan);
+  expect(selected.selectedVideoCount).toBe(1);
+  expect(selected.segments[0].kind).toBe("source"); expect(selected.segments[1].kind).toBe("gap");
+  expect(selected.fingerprint).not.toBe(available.fingerprint);
+  expect(asset.reviewStatus).toBe("pending"); expect(JSON.stringify(f.saved)).toBe(before);
+  expect(projectReviewCut(f.input.projectId, f.saved.draft, f.plan).fingerprint).toBe(selected.fingerprint);
 });

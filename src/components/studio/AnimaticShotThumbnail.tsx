@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type MouseEvent } from "react";
 import type { H3StillImage } from "@/lib/h3StillJobStore";
 import type { AnimaticShot } from "./stillAnimatic";
 import { AnimaticTimingCard, animaticShotColor } from "./AnimaticShotIdentity";
@@ -8,7 +8,7 @@ import { mediaThumbnailUrl } from "./mediaThumbnailUrl";
 
 /** Only nearby cards request a small viewing derivative, never the source PNG. */
 export function AnimaticShotThumbnail({ shot, fps, image, selected, onSelect }: {
-  shot: AnimaticShot; fps: number; image?: H3StillImage; selected: boolean; onSelect: () => void;
+  shot: AnimaticShot; fps: number; image?: H3StillImage; selected: boolean; onSelect: (event: MouseEvent<HTMLButtonElement>) => void;
 }) {
   const element = useRef<HTMLLIElement>(null);
   const [visible, setVisible] = useState(false);

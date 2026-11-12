@@ -3,15 +3,16 @@ import { fmt } from "./math";
 import { Button } from "./ui";
 import type { SongSelection, SongRange } from "./reviewSelection";
 
-export function ReviewSelectionBar({ selection, multiSelect, onMultiSelect, onPlay, onClear, auditioning, auditionRanges, onFullSong }: {
+export function ReviewSelectionBar({ selection, multiSelect, onMultiSelect, onPlay, onClear, auditioning, auditionRanges, onFullSong, hideMultiSelect = false }: {
   selection: SongSelection | null; multiSelect: boolean; onMultiSelect: () => void; onPlay: () => void; onClear: () => void;
   auditioning: boolean; onFullSong: () => void;
   auditionRanges?: SongRange[];
+  hideMultiSelect?: boolean;
 }) {
   const ranges = selection?.ranges ?? [];
   const duration = ranges.reduce((sum, r) => sum + r.end - r.start, 0);
   return <div aria-label="Review selection" className="flex shrink-0 flex-wrap items-center gap-2 rounded-md border border-line bg-ink-2 px-3 py-2 text-xs text-fg-2">
-    <Button size="sm" aria-pressed={multiSelect} onClick={onMultiSelect}>Multi-select {multiSelect ? "on" : "off"}</Button>
+    {!hideMultiSelect ? <Button size="sm" aria-pressed={multiSelect} onClick={onMultiSelect}>Multi-select {multiSelect ? "on" : "off"}</Button> : null}
     <Button size="sm" disabled={!ranges.length} onClick={onPlay}>Play selection</Button>
     <Button size="sm" disabled={!ranges.length} onClick={onClear}>Clear selection</Button>
     {auditioning ? <Button size="sm" onClick={onFullSong}>Return to full cut</Button> : null}
