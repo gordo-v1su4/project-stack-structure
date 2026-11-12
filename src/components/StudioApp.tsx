@@ -9,7 +9,7 @@ import { markPlaybackTiming } from "./studio/playbackTiming";
 import { acquireMediaPlaybackOwnership } from "./studio/mediaPlaybackOwnership";
 import { createBlankNamedStudioProject } from "./studio/newStudioProject";
 import { clipAudioKey, normalizeClipAudioSettings, usesClipAudio } from "./studio/clipAudio";
-import { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type SetStateAction } from "react";
+import { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type SetStateAction } from "react";
 import { flushSync } from "react-dom";
 import { extractWaveformData, fetchEssentiaAnalysis, getEssentiaStorageFromPayload, parseEssentiaPayload } from "./studio/audioAnalysis";
 import type { DeepgramTranscriptSummary } from "./studio/deepgramUtils";
@@ -134,11 +134,22 @@ import type {
   UploadedVideoSource,
 } from "./studio/types";
 
+function DeferredGenerationPanel({ children }: { children: ReactNode }) {
+  const [mounted, setMounted] = useState(false);
+  return <details className="rounded-md border border-line bg-ink-2 p-3" onToggle={event => {
+    if (event.currentTarget.open) setMounted(true);
+  }}>
+    <summary className="cursor-pointer text-sm text-fg-3">Advanced generation and external imports</summary>
+    {mounted ? children : null}
+  </details>;
+}
+
 type PendingStudioAutosave = {
   readonly projectId: string | null;
   readonly projectName: string;
   readonly contextEpoch: number;
   readonly params: Parameters<typeof createPersistableStudioProjectDraft>[0];
+  readonly draft: ReturnType<typeof createPersistableStudioProjectDraft>;
 };
 
 export default function StudioApp() {
@@ -304,6 +315,10 @@ export default function StudioApp() {
       : undefined };
   }, [storedMusicVideoProject, sourceContextSignature]);
   const placementPlanCurrent = useMemo(() => Boolean(musicVideoProject && isPlacementPlanCurrent(musicVideoProject)), [musicVideoProject]);
+  const monitorAnimaticContext = useMemo(() => activeProjectId && musicVideoProject && storyState.confirmedTreatmentSnapshot && storyState.sceneProofPlan
+    ? animaticContextSha256({ projectId: activeProjectId, project: musicVideoProject, treatment: storyState.confirmedTreatmentSnapshot,
+      storyBeats: storyState.storyBeats, references: referenceAssets, sceneProofPlan: storyState.sceneProofPlan }) : undefined,
+  [activeProjectId, musicVideoProject, storyState.confirmedTreatmentSnapshot, storyState.sceneProofPlan, storyState.storyBeats, referenceAssets]);
   // Current-reference eligibility is a projection; historical bank records stay intact.
   const generatedAssets = useMemo(() => withCurrentReferenceIdentity(rawGeneratedAssets, musicVideoProject?.currentIdentity),
     [rawGeneratedAssets, musicVideoProject?.currentIdentity]);
@@ -371,60 +386,6 @@ export default function StudioApp() {
   useEffect(() => {
     if (!draftRestored) return;
 
-    // Restoring a saved snapshot is not an edit and must not enqueue a write.
-    if (skipRestoredAutosaveRef.current) {
-      skipRestoredAutosaveRef.current = false;
-      skipNextDirtyMarkRef.current = false;
-      return;
-    }
-
-    pendingAutosaveRef.current = {
-      projectId: activeProjectId,
-      projectName: activeProjectName,
-      contextEpoch: projectSaveSessionRef.current!.contextEpoch,
-      params: {
-        analysis: beatJoinAnalysis,
-        videoSources,
-        storyState,
-        musicVideoProject,
-        referenceAssets,
-        aestheticReferences,
-        generatedAssets: rawGeneratedAssets,
-        generatedDraft,
-        clipAudioSettings,
-        captionSettings: buildSceneCaptionSettings(captionMode, beatJoinAnalysis, storyState, referenceAssets),
-        workflowUiSettings: {
-          activeTab: tab,
-          splitMode,
-          matchMode,
-          matchOnsetDensity,
-          matchLyricCueBlend,
-          matchLyricMergeWindow,
-          colorGradient,
-          shaderPresetId,
-          shaderAccentKinds,
-          isPreviewExpanded,
-          committedSplit: committedBeatSplit ?? undefined,
-          finalExportIntent,
-          finalExport: finalExportUrl ? { videoUrl: finalExportUrl, downloadFileName: finalExportName ?? "stack-structure-final.mp4", cueCount: finalExportCueCount, status: finalExportStatus } : undefined,
-        },
-      },
-    };
-    const pending = pendingAutosaveRef.current;
-    pending.params.workflowUiSettings = {
-      ...pending.params.workflowUiSettings,
-      finalExport: currentCompletedExport(createPersistableStudioProjectDraft(pending.params), activeProjectId),
-    };
-    if (skipNextDirtyMarkRef.current) {
-      skipNextDirtyMarkRef.current = false;
-      return;
-    }
-    setSaveState((current) => (current.kind === "dirty" || current.kind === "saving" ? current : { ...current, kind: "dirty" }));
-  }, [activeProjectId, activeProjectName, beatJoinAnalysis, clipAudioSettings, captionMode, colorGradient, committedBeatSplit, draftRestored, finalExportIntent, finalExportCueCount, finalExportName, finalExportStatus, finalExportUrl, rawGeneratedAssets, generatedDraft, isPreviewExpanded, matchLyricCueBlend, matchLyricMergeWindow, matchMode, matchOnsetDensity, musicVideoProject, referenceAssets, aestheticReferences, shaderAccentKinds, shaderPresetId, splitMode, storyState, tab, videoSources]);
-
-  useEffect(() => {
-    if (!draftRestored) return;
-
     const flushPendingAutosave = async () => {
       if (autosaveInFlightRef.current) return;
       const pending = pendingAutosaveRef.current;
@@ -438,7 +399,7 @@ export default function StudioApp() {
           ? await saveVersionedProject({
               projectId: pending.projectId,
               name: pending.projectName,
-              draft: createPersistableStudioProjectDraft(pending.params),
+              draft: { ...pending.draft, savedAt: new Date().toISOString() },
             }, {}, pending.contextEpoch, "autosave").then((saved) => saved.draft)
           : await saveStudioProjectDraft(pending.params, {
               audioFile: audioFileRef.current,
@@ -2190,6 +2151,28 @@ export default function StudioApp() {
       finalExport: finalExportUrl ? { videoUrl: finalExportUrl, downloadFileName: finalExportName ?? "stack-structure-final.mp4", cueCount: finalExportCueCount, status: finalExportStatus } : undefined,
   }), activeProjectId), [persistableProjectContent, activeProjectId, colorGradient, committedBeatSplit, finalExportIntent, finalExportCueCount, finalExportName, finalExportStatus, finalExportUrl, isPreviewExpanded, matchLyricCueBlend, matchLyricMergeWindow, matchMode, matchOnsetDensity, shaderAccentKinds, shaderPresetId, splitMode, tab]);
   const currentFinalExport = useMemo(() => currentCompletedExport(persistableProjectDraft, activeProjectId), [persistableProjectDraft, activeProjectId]);
+  useEffect(() => {
+    if (!draftRestored) return;
+    // Restoring a snapshot is not an edit. Keep this guard ahead of all queued writes.
+    if (skipRestoredAutosaveRef.current) {
+      skipRestoredAutosaveRef.current = false;
+      skipNextDirtyMarkRef.current = false;
+      return;
+    }
+    // The render already sanitized this exact content and its current view settings.
+    // Reusing it avoids hashing the full take bank again on every navigation.
+    pendingAutosaveRef.current = {
+      projectId: activeProjectId, projectName: activeProjectName,
+      contextEpoch: projectSaveSessionRef.current!.contextEpoch, draft: persistableProjectDraft,
+      params: { analysis: beatJoinAnalysis, videoSources, storyState, musicVideoProject, referenceAssets, aestheticReferences,
+        generatedAssets: rawGeneratedAssets, generatedDraft, clipAudioSettings,
+        captionSettings: buildSceneCaptionSettings(captionMode, beatJoinAnalysis, storyState, referenceAssets),
+        workflowUiSettings: persistableProjectDraft.workflowUiSettings },
+    };
+    if (skipNextDirtyMarkRef.current) { skipNextDirtyMarkRef.current = false; return; }
+    setSaveState(current => current.kind === "dirty" || current.kind === "saving" ? current : { ...current, kind: "dirty" });
+  }, [activeProjectId, activeProjectName, beatJoinAnalysis, captionMode, clipAudioSettings, draftRestored, generatedDraft,
+    musicVideoProject, persistableProjectDraft, rawGeneratedAssets, referenceAssets, aestheticReferences, storyState, videoSources]);
   const exportContentSha256 = useMemo(() => finalExportSnapshotSha256(withPersistedWorkflowUiSettings(persistableProjectContent, {
     shaderPresetId, shaderAccentKinds,
   })), [persistableProjectContent, shaderPresetId, shaderAccentKinds]);
@@ -2963,9 +2946,7 @@ export default function StudioApp() {
                 previewAssetKey={previewState.currentAssetKey}
                 previewAssetUrl={previewAssetUrl}
                 animaticPlan={storyState.stillAnimaticPlan}
-                animaticContext={activeProjectId && musicVideoProject && storyState.confirmedTreatmentSnapshot && storyState.sceneProofPlan
-                  ? animaticContextSha256({ projectId: activeProjectId, project: musicVideoProject, treatment: storyState.confirmedTreatmentSnapshot,
-                    storyBeats: storyState.storyBeats, references: referenceAssets, sceneProofPlan: storyState.sceneProofPlan }) : undefined}
+                animaticContext={monitorAnimaticContext}
                 empty={monitorEmpty}
                 focused={monitorFocused}
                 onToggleFocused={() => setIsPreviewExpanded((current) => !current)}
@@ -3141,8 +3122,7 @@ export default function StudioApp() {
 
             {tab === "generate" && (
               <>
-              <details className="rounded-md border border-line bg-ink-2 p-3">
-              <summary className="cursor-pointer text-sm text-fg-3">Advanced generation and external imports</summary>
+              <DeferredGenerationPanel>
               <GenerateTab
                 project={musicVideoProject}
                 analysis={beatJoinAnalysis}
@@ -3182,7 +3162,7 @@ export default function StudioApp() {
                 onSelectMatch={() => handleSelectTab("shuffle")}
                 onSelectJoin={() => handleSelectTab("join")}
               />
-              </details>
+              </DeferredGenerationPanel>
               </>
             )}
 

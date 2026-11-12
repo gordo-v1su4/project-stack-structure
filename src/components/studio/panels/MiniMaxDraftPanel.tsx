@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { buildGeneratedAssetPlaybackUrl, generatedAssetDraftIdentityBlockReason, type GeneratedStudioAsset } from "../generatedAssets";
 import { canDeliverH3IdentityAssessment, h3IdentityAssessmentTrimWindow } from "../h3IdentityAssessment";
 import { generatedAssetDraftSimilarityLabel, generatedAssetDraftSimilarityWarnings, normalizeGeneratedAssetIdentityVerification } from "../generatedAssetIdentity";
@@ -66,7 +66,7 @@ const STATE_LABELS: Record<H3GenerationJob["state"], string> = {
 
 export function MiniMaxDraftPanel(props: Props) {
   const [allJobs, setJobs] = useState<H3GenerationJob[]>([]);
-  const jobs = allJobs.filter(job => job.projectId === props.projectId);
+  const jobs = useMemo(() => allJobs.filter(job => job.projectId === props.projectId), [allJobs, props.projectId]);
   const [jobHistory, setJobHistory] = useState({ projectId: props.projectId, limit: 40 });
   const visibleJobLimit = jobHistory.projectId === props.projectId ? jobHistory.limit : 40;
   if (jobHistory.projectId !== props.projectId) setJobHistory({ projectId: props.projectId, limit: 40 });
@@ -486,7 +486,7 @@ export function MiniMaxDraftPanel(props: Props) {
     } finally { if (mounted.current) setBusy(false); }
   }
 
-  const missing = planH3DraftWindows(props.segments);
+  const missing = useMemo(() => planH3DraftWindows(props.segments), [props.segments]);
   const pickupWindow = selectH3PickupWindow(missing, pickupKey);
   const pickupEditKey = `${props.projectId ?? "unsaved"}:${pickupWindow ? h3WindowKey(pickupWindow) : ""}`;
   const pickupDirection = pickupEdits[pickupEditKey]?.direction ?? pickupWindow?.storyDirection?.trim() ?? pickupWindow?.label ?? "";
@@ -512,9 +512,9 @@ export function MiniMaxDraftPanel(props: Props) {
   const firstFrameContext=identityPolicySha256({target:pickupEditKey,planSignature:pickupWindow?.planSignature??"",duration:Number(pickupDuration),direction:pickupDirection,
     references:props.referenceAssets,source:nativeSourceSelection??null});
   const firstFrameFile=preparedFirstFrame?.context===firstFrameContext?preparedFirstFrame.file:null;
-  const stillContext = stillCanonicalContext({ projectId: props.projectId, windowKey: pickupEditKey, references: props.referenceAssets,
+  const stillContext = useMemo(() => stillCanonicalContext({ projectId: props.projectId, windowKey: pickupEditKey, references: props.referenceAssets,
     plan: props.project?.placementPlan ?? null, currentIdentity: props.project?.currentIdentity ?? null,
-    storyApproved: props.storyApproved ?? true });
+    storyApproved: props.storyApproved ?? true }), [props.projectId, pickupEditKey, props.referenceAssets, props.project?.placementPlan, props.project?.currentIdentity, props.storyApproved]);
   stillContextRef.current = stillContext;
   const stillFormGuard = identityPolicySha256({ context: stillContext, direction: pickupDirection, duration: pickupDuration });
   stillFormGuardRef.current = stillFormGuard;
@@ -553,8 +553,11 @@ export function MiniMaxDraftPanel(props: Props) {
 
   const activeJobs = jobs.filter(job => !isH3JobTerminal(job));
   const attemptsLeft = (job: H3GenerationJob) => 2 - Math.max(job.request.attempt ?? 0, ...jobs.filter(candidate => candidate.request.requestIntentId === job.request.requestIntentId).map(candidate => candidate.request.attempt ?? 0));
-  const selectedIds = new Set(props.draft?.assetIds ?? []);
-  const liveTakes = buildLiveDraftTakes(props.assets, jobs, [...selectedIds]);
+  const selectedIds = useMemo(() => new Set(props.draft?.assetIds ?? []), [props.draft?.assetIds]);
+  const liveTakes = useMemo(() => buildLiveDraftTakes(props.assets, jobs, [...selectedIds]), [props.assets, jobs, selectedIds]);
+  const displayedIdentityReasons = useMemo(() => new Map([...new Set([
+    ...props.assets.filter(asset => asset.mediaKind === "video" || selectedIds.has(asset.id)), ...liveTakes.map(take => take.asset),
+  ])].map(asset => [asset, generatedAssetDraftIdentityBlockReason(asset)])), [props.assets, liveTakes, selectedIds]);
   const readOnly = props.storyApproved === false;
   const editingBlocked = readOnly || busy || accepting || activeJobs.length > 0;
   const selected = props.assets.filter(asset => selectedIds.has(asset.id));
@@ -568,7 +571,7 @@ export function MiniMaxDraftPanel(props: Props) {
       <h3 className="text-sm font-semibold">Arriving and saved takes</h3>
       <p className="text-xs text-fg-3">Open a completed take while the queue continues. Viewing does not select or approve footage.</p>
       {liveTakes.slice(0, visibleJobLimit).map(({ asset, playbackUrl, selected }) => <div key={asset.id} className="border-b border-line py-2">
-        <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span>{asset.title ?? "Saved take"} · {selected ? "Selected" : "Banked"}{generatedAssetDraftIdentityBlockReason(asset) ? ` · ${generatedAssetDraftIdentityBlockReason(asset)}` : ""}</span>
+        <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span>{asset.title ?? "Saved take"} · {selected ? "Selected" : "Banked"}{displayedIdentityReasons.get(asset) ? ` · ${displayedIdentityReasons.get(asset)}` : ""}</span>
           <Button onClick={() => setOpenedTake(openedTake?.projectId === props.projectId && openedTake.id === asset.id ? null : { projectId: props.projectId, id: asset.id })}>
             {openedTake?.projectId === props.projectId && openedTake.id === asset.id ? "Close take" : "Open saved take"}</Button></div>
         {openedTake?.projectId === props.projectId && openedTake.id === asset.id ? <LiveDraftTakeViewer key={`${props.projectId}:${asset.id}`} asset={asset} playbackUrl={playbackUrl} /> : null}
@@ -744,8 +747,8 @@ export function MiniMaxDraftPanel(props: Props) {
       <p className="mt-1 text-xs text-fg-3">Edit this shot direction while keeping the named people and location. The rest of the story stays intact.</p>
       <div className="mt-3 space-y-3">{selected.map(asset => <div key={asset.id} className="rounded-md border border-line p-3">
         <div className="mb-2 flex items-center justify-between gap-2"><span className="text-sm">{asset.title}</span><span className="text-xs text-fg-3">{clock(asset.target?.songStart ?? 0)}</span></div>
-        {generatedAssetDraftIdentityBlockReason(asset) ? <p className="mb-2 text-xs text-warning">
-          Selected cut retained · {generatedAssetDraftIdentityBlockReason(asset)}. Review and export wait for this check.
+        {displayedIdentityReasons.get(asset) ? <p className="mb-2 text-xs text-warning">
+          Selected cut retained · {displayedIdentityReasons.get(asset)}. Review and export wait for this check.
         </p> : null}
         <SimilarityFilterNote asset={asset} />
         <label className="block text-xs text-fg-3">Shot direction<textarea aria-label={`Revision for ${asset.title}`} rows={2}
@@ -759,7 +762,7 @@ export function MiniMaxDraftPanel(props: Props) {
     {props.assets.some(asset => !selectedIds.has(asset.id) && asset.mediaKind === "video" && asset.status === "completed" && asset.reviewStatus === "pending") ? <Surface>
       <h3 className="mb-2 text-sm font-semibold">Other takes</h3>
       {props.assets.filter(asset => !selectedIds.has(asset.id) && asset.mediaKind === "video" && asset.status === "completed" && asset.reviewStatus === "pending").map(asset => {
-        const block = generatedAssetDraftIdentityBlockReason(asset);
+        const block = displayedIdentityReasons.get(asset);
         const checkBlock = asset.currentReferenceIdentity?.required ? currentReferenceBankCheckBlockReason(asset, props.segments) : null;
         return <div key={asset.id} className="py-2 text-sm"><div className="flex flex-wrap items-center justify-between gap-2"><span>{asset.title}{block ? ` · ${block}` : ""}</span><div className="flex flex-wrap gap-2">
           {asset.currentReferenceIdentity?.required && props.onCheckCurrentReferences ? <Button disabled={editingBlocked || Boolean(checkBlock)} reason={checkBlock}
@@ -818,8 +821,9 @@ function NativeHandleControl({asset,range,disabled,onStartFrame}:NativeHandlePro
 }
 
 export function SimilarityFilterNote({ asset }: { asset: GeneratedStudioAsset }) {
-  const label = generatedAssetDraftSimilarityLabel(asset), warnings = generatedAssetDraftSimilarityWarnings(asset);
-  const filter = normalizeGeneratedAssetIdentityVerification(asset.identityVerification)?.draftSimilarityFilter;
+  const { label, warnings, filter } = useMemo(() => ({ label: generatedAssetDraftSimilarityLabel(asset),
+    warnings: generatedAssetDraftSimilarityWarnings(asset),
+    filter: normalizeGeneratedAssetIdentityVerification(asset.identityVerification)?.draftSimilarityFilter }), [asset]);
   if (!label && !filter && !warnings.length) return null;
   const scores = filter ? filter.samples.flatMap((sample) => sample.scores.map(({ score }) => score)) : [];
   const range = scores.reduce<[number, number]>(([low, high], score) => [Math.min(low, score), Math.max(high, score)], [Infinity, -Infinity]);
