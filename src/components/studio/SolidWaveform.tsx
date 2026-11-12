@@ -19,6 +19,8 @@ type SolidWaveformProps = {
   zoom?: 1 | 2;
   /** Optional fixed viewport, in master-song seconds. Seeks remain song-normalized. */
   visibleRange?: { start: number; end: number };
+  /** Match adjacent timeline lanes without adding a horizontal frame inset. */
+  edgeToEdge?: boolean;
   onSeek?: (nextPlayhead: number) => void;
 };
 
@@ -36,6 +38,7 @@ export function SolidWaveform({
   showRuler = true,
   zoom = 1,
   visibleRange,
+  edgeToEdge = false,
   onSeek,
 }: SolidWaveformProps) {
   const wrapperRef = useRef<HTMLDivElement | null>(null);
@@ -80,7 +83,7 @@ export function SolidWaveform({
     const observer = new ResizeObserver((entries) => {
       const entry = entries[0];
       if (!entry) return;
-      setWidth(Math.max(1, Math.floor(entry.contentRect.width)));
+      setWidth(Math.max(1, entry.contentRect.width));
     });
 
     observer.observe(node);
@@ -140,7 +143,7 @@ export function SolidWaveform({
   return (
     <div
       ref={wrapperRef}
-      className={`relative overflow-hidden rounded-[6px] border border-line bg-ink-0 ${onSeek ? "cursor-pointer" : ""}`}
+      className={`relative overflow-hidden ${edgeToEdge ? "border-y" : "rounded-[6px] border"} border-line bg-ink-0 ${onSeek ? "cursor-pointer" : ""}`}
       style={{ height }}
       onPointerDown={(event) => handleSeek(event.clientX)}
     >

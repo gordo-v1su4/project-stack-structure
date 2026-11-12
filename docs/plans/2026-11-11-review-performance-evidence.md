@@ -299,3 +299,38 @@ not public RustFS persistence; production integration remains a release gate.
 V1S-462 remains open for explicit multi-shot replacement preparation/submission
 through existing generation/review gates and populated-film acceptance. Marking is
 not a render request. No protected film data, media or jobs were changed for QA.
+
+## Song-lane alignment and themed controls
+
+User clarification: clips, waveform, time position and orange timing blocks need
+matching time geometry rather than a separate playhead on every lane. The master
+position remains full-song; a section viewport is a distinct, shared zoom scope.
+
+The mounted selection fixture measured three different origins before correction:
+clip strip x=12.667, waveform x=21.333 and timing graph x=37.333 CSS pixels. Nested
+padding and a different scrolling width caused this mismatch. The fixed spine and
+scrolling review panels now reserve the same stable scrollbar gutter; lane content
+uses matching 16px panel insets. Removed the timing graph's extra nested frame and
+the waveform's horizontal inset. Waveform CSS width retains fractional pixels;
+the backing bitmap still rounds to physical pixels in the existing painter.
+
+With an independently scrolling lower panel at 1280px viewport, clip strip and
+timing graph both start at x=28.667 with width=1202.667; waveform starts at the
+same x with width=1202.656 (less than 0.02px browser rounding). At 390px, both lanes
+have width=312.667, waveform=312.656, with no horizontal document overflow. Choosing
+Verse 1 shows A011–A015 and timing blocks 20–24 / 24–30 seconds together. No extra
+playhead was added to the timing graph. This is component integration evidence,
+not acceptance against the deployed film. Evidence: ignored local selection
+fixture and `.tmp/review-performance/alignment.png`.
+
+Twenty-three selection/cue/subscription tests and eight waveform/viewport tests
+passed, along with typecheck. Affected lint has no errors and two pre-existing
+StudioApp warnings. Production build passed before the final fractional-width
+adjustment; the final adjustment passed typecheck and mounted-browser verification.
+No film state or media changed. Full-song master-position behavior, real-film
+navigation/performance and production acceptance remain open requirements.
+
+Separate commits f2756bb and e3cdb2a theme parameter/time controls and checkboxes:
+thin rails with rectangular handles/position lines, dark gray checkbox wells,
+light gray borders and orange checks, preserving native keyboard and disabled
+behavior. Checkbox production build and Chromium visual/input checks passed.

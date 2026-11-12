@@ -68,7 +68,7 @@ export function BeatSpine({ analysis, bpm, playhead, onSeek, onSelectSection, se
   }
 
   return (
-    <section aria-label="Beat spine" className="vt-spine shrink-0 overflow-hidden rounded-[10px] border border-line bg-ink-1">
+    <section aria-label="Beat spine" className="studio-song-spine vt-spine shrink-0 overflow-hidden rounded-[10px] border border-line bg-ink-1">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-2 py-1.5">
         <div role="group" aria-label="Timeline zoom" className="flex gap-1">
           {([["fit", "Full song"], ["section", "Selected section"], ["selected", "Selected cut"]] as const).map(([mode, label]) => (
@@ -186,7 +186,7 @@ export function BeatSpine({ analysis, bpm, playhead, onSeek, onSelectSection, se
         </div>
       ) : null}
 
-      <div className="px-2 pb-1 pt-1">
+      <div className="pb-1 pt-1">
         <SolidWaveform
           points={analysis.waveform}
           playhead={playhead}
@@ -200,6 +200,7 @@ export function BeatSpine({ analysis, bpm, playhead, onSeek, onSelectSection, se
           showRuler
           zoom={1}
           visibleRange={view}
+          edgeToEdge
           onSeek={onSeek}
         />
       </div>

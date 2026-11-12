@@ -32,8 +32,8 @@ export function MatchMusicCueTimeline({ cueMap, project, selectedChunkId, onSele
   const showSparseTranscriptWarning = shouldWarnForEarlySrtEnd(cueMap, duration);
 
   return (
-    <div className="rounded-[2px] border border-[#151515] bg-[#060606] p-2">
-      <div {...drag} aria-label="Timing blocks" className="relative h-24 overflow-hidden border border-line bg-ink-0">
+    <div className="bg-ink-0">
+      <div {...drag} aria-label="Timing blocks" className="relative h-24 overflow-hidden border-y border-line bg-ink-0">
         {buildSongSectionReview(project?.storySections ?? []).map((section) => {
           const geometry = clipSpineRange(section, view);
           if (!geometry) return null;

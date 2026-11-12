@@ -257,6 +257,16 @@ dialog.studio-pop:not([open])::backdrop { opacity: 0; }
   }
 }
 
+.studio-song-spine {
+  padding-inline: 16px;
+}
+
+/* Reserve the same scrollbar gutter for the fixed spine and scrolling panels. */
+.studio-song-spine,
+.studio-review-scroll {
+  scrollbar-gutter: stable;
+}
+
 .studio-range-control,
 .studio-window-control {
   position: relative;
