@@ -3,15 +3,43 @@
   "project": "P-V1S-11",
   "mode": "sequential",
   "maxActive": 1,
-  "order": ["V1S-458", "V1S-459", "V1S-460", "V1S-461", "V1S-462", "V1S-463", "V1S-464"],
+  "order": [
+    "V1S-458",
+    "V1S-459",
+    "V1S-460",
+    "V1S-461",
+    "V1S-462",
+    "V1S-463",
+    "V1S-464"
+  ],
   "authorization": "Robert's November 11 instruction in chat 01a1cdf6-feb5-77c1-8853-f056c1e8a62c: write the workflow changes, then make the existing execution owner execute one at a time; necessary coupled work is allowed.",
   "readinessMessage": "Seven items are tracked in Linear. Starting with V1S-458 only in the existing worktree; verify its acceptance and conclude in Linear before 459. Necessary coupled work needs an explicit reason and stopping point. One combined PR/GrepTile review after the batch; public release remains separate.",
-  "contextByIssue": { "V1S-458": "01a1c36a-2e37-7260-9204-378380cc385f-current-ticket" },
-  "coupledWork": [{
-    "primary": "V1S-458",
-    "related": "V1S-459",
-    "reason": "458 records existing-media/first-frame baselines; final prepared-hover delivery and its under-500-ms check belong to 459, which supplies that feature. Do not expand preview/backfill implementation while closing navigation work.",
-    "stopWhen": "458 has equivalent populated-film navigation/selection measurements and its own evidence; 459 retains prepared-hover acceptance. Reconcile these ownership boundaries in Linear before closure."
-  }],
-  "completion": {}
+  "contextByIssue": {
+    "V1S-458": "01a1c36a-2e37-7260-9204-378380cc385f-current-ticket"
+  },
+  "coupledWork": [
+    {
+      "primary": "V1S-458",
+      "related": "V1S-459",
+      "reason": "458 records existing-media/first-frame baselines; final prepared-hover delivery and its under-500-ms check belong to 459, which supplies that feature. Do not expand preview/backfill implementation while closing navigation work.",
+      "stopWhen": "458 has equivalent populated-film navigation/selection measurements and its own evidence; 459 retains prepared-hover acceptance. Reconcile these ownership boundaries in Linear before closure."
+    }
+  ],
+  "completion": {
+    "V1S-458": {
+      "commit": "c4b8a37",
+      "trackerReceipt": "Linear get_issue read-back: V1S-458 Done, updatedAt 2026-11-12T05:05:06.687Z, completedAt 2026-11-12T05:05:06.680Z; evidence comment 38c9afed-e4f6-4cb6-b7c9-698ba8389f6c",
+      "criteria": {
+        "Record cold/warm public-browser baselines for stage switching, selected-shot feedback, visible thumbnail readiness and first video frame; separate network/transfer, decoding, React commits and synchronous model work.": "docs/operations/review-performance-458.md browser verification: real public document/project, partial image-readiness observation, native first presented frame 1162.8ms after Play via requestVideoFrameCallback; separate raw CPU/React stacks/model SSR. Public first/repeat Draft2334.7/2981.9ms, Story7186.3ms, A013Story1649.3ms. Private raw recordings in .tmp/review-performance; partial observations explicitly bounded.",
+        "Repair demonstrated navigation/selection bottlenecks and compare the same interactions under the same conditions; proposed budgets: selection feedback under 100 ms, warm stage change under 300 ms. Report misses rather than relaxing them silently. <issue id=\"010e2ff8-5f26-4bdb-95fb-5240c2afc021\" label=\"V1S-459\" href=\"https://linear.app/v1su4/issue/V1S-459/load-prepared-169-thumbnails-and-fast-hover-previews-without-original\" /> owns the prepared-hover implementation and its under-500-ms first-frame acceptance.": "c4b8a37, fc099ef, 8e5fd59, 0b053d6. Same controlled populated harness before Draft898.9/959ms, Story783.3/751.9ms; final warm Draft346.8/389.2ms, Story597.7/625.6ms. Story selection293.3ms; Draft83.5/109.5/73ms. Proposed budgets MISSED as documented, not labeled passed. Repairs: root model/context reuse, no duplicate autosave sanitation, deferred12186 hidden advanced nodes, memoized display evidence.",
+        "Navigation stays interactive while media loads; bounded media/player lifetime, no stale playback or duplicate master audio.": "media-loading-liveness.json: six deliberately delayed media requests before/after A013 paint286.4ms; not decoder throughput proof. Browser verified advanced initialsummary1node→open12186→close retains12186. Public saved-take inspection then navigation: savedTakePlayers0, playing0. Candidate activeMedia0. Ownership/transport lifecycle regressions passed.",
+        "Preserve saved cut, references, review state and ownership. Use existing media without new generation.": "Public diagnostic project/draft writes blocked before view changes; candidate blocks all writes and generation. No creative adoption/reference/review changes. Epoch, revision/unknownACK guards retained;13save-session tests passed. Existing-input hash invariant and Story markup equality recorded for fc099ef. No AI/GPU generation or release.",
+        "No React→Svelte migration unless profiling establishes a remaining framework bottleneck and a bounded comparison justifies it.": "No framework migration or server upgrade. CPU profiles demonstrate repeated model/policy hashing and eager hidden controls. Remaining proposed-budget misses are recorded; no inference that React requires replacing."
+      },
+      "environment": "1280x720 in-app browser; public deployed app baseline versus isolated populated production-React/Bun candidate, media delivery excluded in candidate timing; no deployment acceptance claim",
+      "verification": "Full check2130pass/27skip/0fail; buildpassed; final6live-draft +13save-session +typecheckpassed",
+      "budgetMisses": "300ms warm-stage target missed;100ms Story selection and one109.5ms Draft sample missed;459 prepared-hover500ms target unchanged",
+      "releaseAcceptance": "Separate final public release gate remains open"
+    }
+  }
 }
