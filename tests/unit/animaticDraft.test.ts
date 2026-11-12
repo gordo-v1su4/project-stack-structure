@@ -94,6 +94,9 @@ test("shared Preview shows selected pending video without adopting available ren
   f.saved.draft.generatedDraft = { planSignature: first.planSignature!, revision: 1, assetIds: [] };
   const available = projectReviewCut(f.input.projectId, f.saved.draft, f.plan);
   expect(available.availableVideoCount).toBe(1); expect(available.selectedVideoCount).toBe(0);
+  expect(available.deliveredVideoCount).toBe(1);
+  expect(available.deliveredSegments?.[0].generatedAssetId).toBe(asset.id);
+  expect(available.segments[0].kind).toBe("gap");
   expect(available.coverage?.[0]).toEqual({ shotId: f.plan.shots[0].id, availableTakeIds: [asset.id], selectedVideoCount: 0, approvedTakeCount: 0 });
   f.saved.draft.generatedDraft.assetIds = [asset.id];
   const before = JSON.stringify(f.saved);
@@ -105,4 +108,24 @@ test("shared Preview shows selected pending video without adopting available ren
   expect(selected.fingerprint).not.toBe(available.fingerprint);
   expect(asset.reviewStatus).toBe("pending"); expect(JSON.stringify(f.saved)).toBe(before);
   expect(projectReviewCut(f.input.projectId, f.saved.draft, f.plan).fingerprint).toBe(selected.fingerprint);
+  asset.reviewStatus = "rejected";
+  f.saved.draft.generatedDraft.assetIds = [];
+  expect(projectReviewCut(f.input.projectId, f.saved.draft, f.plan).deliveredVideoCount).toBe(0);
+});
+
+test("screening retained source footage never changes selected windows or exceeds source duration", () => {
+  const f = fixture(), shot = f.plan.shots[1];
+  const image = shot.proof!.result.master;
+  delete shot.record; delete shot.proof;
+  shot.sourceFrame = { sourceId: 1, sourceSecond: 2, sourceSha256: "a".repeat(64), image };
+  f.saved.draft.videoSources = [{ id: 1, name: "Retained", duration: 10, storageBucket: "studio", storagePath: "media-uploads/github-test/retained.mp4" }] as typeof f.saved.draft.videoSources;
+  const before = JSON.stringify(f.saved);
+  const result = projectReviewCut(f.input.projectId, f.saved.draft, f.plan);
+  expect(result.selectedVideoCount).toBe(0);
+  expect(result.deliveredSegments?.[1].startTime).toBe(2);
+  expect(result.deliveredSegments?.[1].endTime).toBe(7);
+  expect(result.deliveredVideoCount).toBe(1);
+  expect(JSON.stringify(f.saved)).toBe(before);
+  shot.sourceFrame.sourceSecond = 9;
+  expect(projectReviewCut(f.input.projectId, f.saved.draft, f.plan).deliveredVideoCount).toBe(0);
 });

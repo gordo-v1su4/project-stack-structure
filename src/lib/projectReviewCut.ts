@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { hydrateStudioProjectDraft, type PersistedStudioProjectDraft } from "@/components/studio/projectPersistence";
 import { buildStoryDraftSegments } from "@/components/studio/animaticDraft";
 import { applyDraftGeneratedAssets } from "@/components/studio/generatedDraft";
-import { generatedAssetMatchesPreviewSegment, listApprovedGeneratedVideoAssets } from "@/components/studio/generatedAssets";
+import { applyGeneratedAssetOverlays, generatedAssetMatchesPreviewSegment, listApprovedGeneratedVideoAssets } from "@/components/studio/generatedAssets";
 import type { PreviewReviewCut } from "@/components/studio/animaticPreviewSnapshot";
 import type { StillAnimaticPlan } from "@/components/studio/stillAnimatic";
 import { clipAudioKey, normalizeClipAudioSettings, usesClipAudio } from "@/components/studio/clipAudio";
@@ -24,6 +24,23 @@ export function projectReviewCut(projectId: string, draft: PersistedStudioProjec
   const { runtime, base } = projectReviewInputs(projectId, draft, plan);
   const assets = runtime.generatedAssets ?? [];
   const segments = applyDraftGeneratedAssets(base, assets, runtime.generatedDraft);
+  // A read-only screening copy makes delivered candidates watchable before the
+  // separate, explicit selection/identity/approval steps. Never persist it.
+  const candidates = assets.filter(asset => asset.reviewStatus !== "rejected")
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+  const deliveredSegments = segments.flatMap(segment => {
+    if (segment.kind !== "gap" && segment.videoUrl) return [segment];
+    const overlaid = applyGeneratedAssetOverlays([segment], candidates);
+    if (overlaid.some(part => part.kind !== "gap" && part.videoUrl)) return overlaid;
+    const retained = plan?.projectId === projectId ? plan.shots.find(shot => shot.id === segment.animaticShotId)?.sourceFrame : undefined;
+    const source = retained && runtime.videoSources.find(source => source.id === retained.sourceId);
+    const duration = segment.musicEnd - segment.musicStart;
+    if (!retained || !source?.videoUrl || !Number.isFinite(retained.sourceSecond) || retained.sourceSecond < 0
+      || !Number.isFinite(source.duration) || retained.sourceSecond + duration > source.duration + .001) return [segment];
+    return [{ ...segment, kind: "source" as const, videoUrl: source.videoUrl, sourceClipId: source.id,
+      startTime: retained.sourceSecond, endTime: retained.sourceSecond + duration, gapReason: undefined,
+      sourceRefLabel: "PREVIEW · retained source footage", useClipAudio: false }];
+  });
   const availableVideoCount = assets.filter(asset => asset.status === "completed" && asset.mediaKind === "video"
     && base.some(segment => generatedAssetMatchesPreviewSegment(asset, segment))).length;
   const approved = new Set(listApprovedGeneratedVideoAssets(assets).map(asset => asset.id));
@@ -35,6 +52,7 @@ export function projectReviewCut(projectId: string, draft: PersistedStudioProjec
       selectedVideoCount: segments.filter(segment => segment.animaticShotId === shot.id && segment.kind !== "gap" && Boolean(segment.videoUrl)).length,
       approvedTakeCount: available.filter(asset => approved.has(asset.id)).length };
   });
-  return { segments, targets: replacementTargets(projectId, base), coverage, availableVideoCount, selectedVideoCount: segments.filter(s => s.kind !== "gap" && Boolean(s.videoUrl)).length,
-    fingerprint: createHash("sha256").update(JSON.stringify(segments)).digest("hex") };
+  return { segments, deliveredSegments, deliveredVideoCount: deliveredSegments.filter(s => s.kind !== "gap" && Boolean(s.videoUrl)).length,
+    targets: replacementTargets(projectId, base), coverage, availableVideoCount, selectedVideoCount: segments.filter(s => s.kind !== "gap" && Boolean(s.videoUrl)).length,
+    fingerprint: createHash("sha256").update(JSON.stringify({ segments, deliveredSegments })).digest("hex") };
 }

@@ -6,10 +6,10 @@ import { readStudioJsonBody, studioJsonBodyErrorResponse, studioJsonResponse } f
 
 export const runtime = "nodejs";
 
-export async function GET() {
+export async function GET(request?: Request) {
   const session = await auth();
   if (!session?.user?.id) return unauthorized();
-  const projects = await listStudioProjects(session.user.id);
+  const projects = await listStudioProjects(session.user.id, { deleted: request ? new URL(request.url).searchParams.get("deleted") === "true" : false });
   return Response.json({ success: true, projects, user: session.user });
 }
 

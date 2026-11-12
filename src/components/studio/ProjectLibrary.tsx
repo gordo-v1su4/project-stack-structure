@@ -8,6 +8,7 @@ import { hydrateStudioProjectDraft, listSavedStudioProjects, loadSavedStudioProj
 import type { StudioProjectSummary } from "@/lib/studioProjectStore";
 import { newStudioProjectNameError } from "./newStudioProject";
 import { Button } from "./ui";
+import { STUDIO_JSON_TRANSPORT_HEADERS } from "@/lib/studioJsonTransport";
 
 type SessionUser = { id?: string; name?: string | null; email?: string | null; image?: string | null; login?: string };
 
@@ -29,6 +30,8 @@ export function ProjectLibrary({ draft, activeProjectId, activeProjectName, onNe
   const [name, setName] = useState(activeProjectName);
   const [status, setStatus] = useState("Sign in to save projects across devices.");
   const [busy, setBusy] = useState(false);
+  const [showTrash, setShowTrash] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<StudioProjectSummary | null>(null);
   const [newProjectName, setNewProjectName] = useState<string | null>(null);
   const [newProjectError, setNewProjectError] = useState<string | null>(null);
   const newNameRef = useRef<HTMLInputElement>(null);
@@ -36,7 +39,7 @@ export function ProjectLibrary({ draft, activeProjectId, activeProjectName, onNe
   const creatingNewProject = newProjectName !== null;
   const githubIdentity = user?.login || user?.name || "GitHub user";
   const rootRef = useRef<HTMLDivElement>(null);
-  const close = useCallback(() => { if (!busy) { setOpen(false); setNewProjectName(null); setNewProjectError(null); } }, [busy]);
+  const close = useCallback(() => { if (!busy) { setOpen(false); setDeleteTarget(null); setNewProjectName(null); setNewProjectError(null); } }, [busy]);
   useDismiss(rootRef, open, close);
 
   function beginGitHubSignIn() {
@@ -82,12 +85,20 @@ export function ProjectLibrary({ draft, activeProjectId, activeProjectName, onNe
 
   async function saveProject(createNew = false) {
     if (!user) return beginGitHubSignIn();
+    let saveName = name.trim();
+    if (createNew && saveName === activeProjectName) {
+      let number = 1;
+      do { saveName = `${activeProjectName.slice(0, 100)} (copy ${number++})`; } while (projects.some(project => project.name.toLowerCase() === saveName.toLowerCase()));
+    }
+    if (projects.some(project => project.id !== (createNew ? null : activeProjectId) && project.name.toLowerCase() === saveName.toLowerCase())) {
+      setStatus("Choose a different project name so the saved projects are easy to tell apart."); return;
+    }
     setBusy(true);
     setStatus("Saving project to RustFS...");
     try {
       const saved = await onSaveProject({
         projectId: createNew ? null : activeProjectId,
-        name,
+        name: saveName,
         draft,
       });
       setProjects((current) => [saved.project, ...current.filter((entry) => entry.id !== saved.project.id)]);
@@ -99,6 +110,39 @@ export function ProjectLibrary({ draft, activeProjectId, activeProjectName, onNe
     } finally {
       setBusy(false);
     }
+  }
+
+  async function refreshProjects(trash: boolean) {
+    setBusy(true);
+    try {
+      const response = await fetch(`/api/studio/projects${trash ? "?deleted=true" : ""}`, { cache: "no-store" });
+      const payload = await response.json();
+      if (!response.ok || !payload.success) throw new Error(payload.error || "Could not load projects.");
+      setProjects(payload.projects); setShowTrash(trash); setDeleteTarget(null);
+      setStatus(trash ? "Deleted projects can be restored. Shared footage is retained." : `${payload.projects.length} saved projects.`);
+    } catch (error) { setStatus(error instanceof Error ? error.message : "Could not load projects."); }
+    finally { setBusy(false); }
+  }
+
+  async function changeDeleted(project: StudioProjectSummary, deleted: boolean) {
+    if (deleted && project.id === activeProjectId) return;
+    setBusy(true);
+    try {
+      const url = `/api/studio/projects/${encodeURIComponent(project.id)}`;
+      let revision: string | undefined;
+      if (deleted) {
+        const read = await fetch(url, { cache: "no-store", headers: STUDIO_JSON_TRANSPORT_HEADERS });
+        const payload = await read.json();
+        if (!read.ok || !payload.saved?.revision) throw new Error(payload.error || "Reload the project library before deleting.");
+        revision = payload.saved.revision;
+      }
+      const response = await fetch(url, { method: deleted ? "DELETE" : "POST", headers: revision ? { "if-match": revision } : {} });
+      const payload = await response.json();
+      if (!response.ok || !payload.success) throw new Error(payload.error || "Could not update project.");
+      setProjects(current => current.filter(entry => entry.id !== project.id)); setDeleteTarget(null);
+      setStatus(deleted ? `${project.name} moved to Trash. Footage retained.` : `${project.name} restored.`);
+    } catch (error) { setStatus(error instanceof Error ? error.message : "Could not update project."); }
+    finally { setBusy(false); }
   }
 
   async function loadProject(project: StudioProjectSummary) {
@@ -149,7 +193,7 @@ export function ProjectLibrary({ draft, activeProjectId, activeProjectName, onNe
         title={user ? `${activeProjectName} · signed in as @${githubIdentity}` : "Sign in with GitHub to save projects"}
         className="group flex max-w-full items-center gap-1.5 rounded-md py-0.5 pl-1 pr-1.5 text-left hover:bg-ink-2"
       >
-        <span className="min-w-0 truncate text-[14px] font-medium text-fg-0">{activeProjectName}</span>
+        <span className="min-w-0 whitespace-normal break-words text-[14px] font-medium leading-5 text-fg-0">{activeProjectName}</span>
         <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="shrink-0 text-fg-3 group-hover:text-fg-1">
           <path d="M3 4.5 6 7.5l3-3" />
         </svg>
@@ -157,7 +201,7 @@ export function ProjectLibrary({ draft, activeProjectId, activeProjectName, onNe
       </button>
 
       {open ? (
-        <div role="dialog" aria-label="Project library" className="absolute left-0 top-[calc(100%+8px)] z-50 w-[340px] rounded-[10px] border border-line-2 bg-ink-1 p-4 shadow-2xl shadow-black/70">
+        <div role="dialog" aria-label="Project library" className="absolute right-0 top-[calc(100%+8px)] z-50 w-[520px] max-w-[calc(100vw-24px)] rounded-[10px] border border-line-2 bg-ink-1 p-4 shadow-2xl shadow-black/70">
           <div className="mb-3 flex items-start justify-between gap-3">
             <div className="min-w-0">
               <div className="text-[13px] font-medium text-fg-0">Projects</div>
@@ -166,7 +210,8 @@ export function ProjectLibrary({ draft, activeProjectId, activeProjectName, onNe
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-3 text-[11px]">
-              <button type="button" disabled={busy || !sessionChecked} onClick={() => {
+              {user ? <button type="button" disabled={busy} onClick={() => void refreshProjects(!showTrash)} className="text-fg-2 hover:text-fg-0">{showTrash ? "Back to projects" : "Trash"}</button> : null}
+              <button type="button" disabled={busy || !sessionChecked || showTrash} onClick={() => {
                 if (!user) return beginGitHubSignIn();
                 setNewProjectName(""); setNewProjectError(null);
               }} className="text-accent hover:text-accent-hi disabled:opacity-40">New</button>
@@ -187,6 +232,7 @@ export function ProjectLibrary({ draft, activeProjectId, activeProjectName, onNe
 
           {user ? (
             <>
+              <div hidden={showTrash}>
               {newProjectName !== null ? <form className="mb-3 space-y-3 rounded-md border border-line bg-ink-0 p-3" aria-label="New project"
                 onSubmit={event => { event.preventDefault(); void startNewProject(); }}>
                 <div className="text-sm font-medium text-fg-0">New project</div>
@@ -210,24 +256,35 @@ export function ProjectLibrary({ draft, activeProjectId, activeProjectName, onNe
                 {activeProjectId ? <button type="button" disabled={busy} onClick={() => void saveProject(true)} className="rounded-md border border-line-2 px-2.5 py-2 text-[12px] text-fg-2 hover:text-fg-0 disabled:opacity-40">Save as</button> : null}
               </div>}
 
-              <div className="max-h-[300px] overflow-y-auto border-t border-line">
+              </div>
+              {deleteTarget ? <div role="alertdialog" aria-label="Delete project" className="mb-3 rounded-md border border-danger p-3">
+                <p className="break-words text-sm text-fg-0">Delete “{deleteTarget.name}”?</p>
+                <p className="mt-1 text-xs leading-5 text-fg-2">Moves this project to Trash. You can restore it later. Shared footage and other projects are kept.</p>
+                <div className="mt-2 flex gap-2"><Button disabled={busy} onClick={() => void changeDeleted(deleteTarget, true)}>Move to Trash</Button><Button disabled={busy} onClick={() => setDeleteTarget(null)}>Cancel</Button></div>
+              </div> : null}
+              <div className="max-h-[50vh] overflow-y-auto border-t border-line">
                 {projects.map((project) => (
-                  <button key={project.id} type="button" disabled={busy || newProjectName !== null} onClick={() => void loadProject(project)} className={`flex w-full flex-col gap-0.5 border-b border-line px-1 py-2 text-left last:border-b-0 hover:bg-ink-2 disabled:opacity-40 ${project.id === activeProjectId ? "text-fg-0" : "text-fg-2"}`}>
+                  <div key={project.id} className="flex items-start gap-2 border-b border-line py-2 last:border-b-0">
+                  <button type="button" disabled={busy || showTrash || newProjectName !== null} onClick={() => void loadProject(project)} className={`flex min-w-0 flex-1 flex-col gap-1 px-1 text-left hover:bg-ink-2 disabled:opacity-60 ${project.id === activeProjectId ? "text-fg-0" : "text-fg-2"}`}>
                     <div className="flex w-full items-center justify-between gap-3">
                       <span className="flex min-w-0 items-center gap-2">
                         {project.id === activeProjectId ? <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" /> : null}
-                        <span className="truncate text-[13px]">{project.name}</span>
+                        <span className="whitespace-normal break-words text-[13px]">{project.name}</span>
                       </span>
                       <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.1em] text-fg-3">{project.status}</span>
                     </div>
                     <div className="font-mono text-[10.5px] text-fg-3">{project.videoCount} clips · {project.sceneCount} scenes · {project.captionedSceneCount} captioned · {new Date(project.updatedAt).toLocaleString()}</div>
+                    {project.id === activeProjectId ? <span className="text-[11px] text-accent">Currently open</span> : null}
                   </button>
+                  <button type="button" disabled={busy || (!showTrash && project.id === activeProjectId)} aria-label={`${showTrash ? "Restore" : "Delete"} ${project.name}`} title={project.id === activeProjectId && !showTrash ? "Open another project before deleting this one." : undefined}
+                    onClick={() => showTrash ? void changeDeleted(project, false) : setDeleteTarget(project)} className="shrink-0 px-2 py-1 text-xs text-accent disabled:opacity-30">{showTrash ? "Restore" : "Delete"}</button>
+                  </div>
                 ))}
-                {!projects.length ? <div className="py-5 text-center text-[12px] text-fg-3">Save this workspace to create the first project.</div> : null}
+                {!projects.length ? <div className="py-5 text-center text-[12px] text-fg-3">{showTrash ? "Trash is empty." : "No saved projects."}</div> : null}
               </div>
             </>
           ) : null}
-          <div className="mt-3 truncate border-t border-line pt-2 font-mono text-[10.5px] text-fg-3">{status}</div>
+          <div role="status" className="mt-3 whitespace-normal break-words border-t border-line pt-2 font-mono text-[10.5px] text-fg-3">{status}</div>
         </div>
       ) : null}
     </div>
