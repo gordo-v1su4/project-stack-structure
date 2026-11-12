@@ -115,7 +115,7 @@ export function SlotInspector({ evidence, onClose, onPlayFrom, onPreviewSource, 
         {alternates.length ? (
           <div>
             <Kicker>Source suggestions</Kicker>
-            <p className="mt-1 text-[11px] text-fg-3">Section-wide footage suggestions. Click to inspect; your selected cut stays in place.</p>
+            <p className="mt-1 text-[11px] text-fg-3">Section-wide footage suggestions. Percentages measure matching fit, not take or render quality. Click to inspect; your selected cut stays in place.</p>
             <ul className="mt-1.5 flex flex-col">
               {alternates.map((take) => (
                 <li key={take.moment.id}>
