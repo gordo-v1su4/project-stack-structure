@@ -34,6 +34,9 @@ import type { StoryTreatment } from "../storyTreatments";
 import type { StoryPlanDraft } from "../musicVideoProject";
 import type { SceneProofPlan } from "../sceneProofs";
 import { sceneProofScopeSha256 } from "../sceneProofPlanning";
+import { ReplacementBatchPanel } from "../ReplacementBatchPanel";
+import { replacementBatchRequests, readReplacementMarks } from "../replacementBatch";
+import type { ReplacementReviewSnapshot } from "../replacementReview";
 
 type Props = {
   storyApproved?: boolean;
@@ -44,6 +47,7 @@ type Props = {
   projectId: string | null;
   project?: MusicVideoProject | null;
   segments: EditPlanPreviewSegment[];
+  replacementSegments?: EditPlanPreviewSegment[];
   assets: GeneratedStudioAsset[];
   draft: GeneratedDraftSelection | null;
   referenceAssets: ReferenceAsset[];
@@ -159,7 +163,8 @@ export function MiniMaxDraftPanel(props: Props) {
     if (batchRef.current?.projectId !== projectId) {
       try {
         const restored = parseH3DraftBatch(localStorage.getItem(h3DraftBatchStorageKey(projectId)), projectId);
-        batchRef.current = restored; setBatch(restored);
+        const safe = restored?.replacementReview ? { ...restored, paused: true } : restored;
+        batchRef.current = safe; setBatch(safe);
       } catch { batchRef.current = null; setBatch(null); }
     }
     let active = true;
@@ -227,7 +232,17 @@ export function MiniMaxDraftPanel(props: Props) {
           setError("The story plan changed. Saved generation requests are paused."); break;
         }
         let request = saved.requests[0];
-        if (request.draftRevision === undefined) {
+        if (saved.replacementReview) {
+          const marks = await readReplacementMarks(saved.projectId);
+          if (marks.revision !== saved.replacementReview.revision
+            || JSON.stringify(marks.marks.map(mark => mark.key)) !== JSON.stringify(saved.replacementReview.keys)) throw new Error("Replacement marks changed. Clear pending requests and prepare the current marks again.");
+          const current = latest.current;
+          const requests = replacementBatchRequests(saved.projectId, marks, current.replacementSegments ?? current.segments, current.referenceAssets, current.aestheticReferences);
+          if (!requests.some(candidate => h3RequestWindowKey(candidate) === h3RequestWindowKey(request)
+            && candidate.prompt === request.prompt && JSON.stringify(candidate.referenceAssetIds) === JSON.stringify(request.referenceAssetIds)
+            && JSON.stringify(candidate.conditioning) === JSON.stringify(request.conditioning))) throw new Error("Replacement shot changed. Prepare the current Story again.");
+        }
+        if (request.draftRevision === undefined && !saved.replacementReview) {
           request = { ...request, draftRevision: latest.current.draft?.revision ?? 0 };
           persistBatch({ ...saved, requests: [request, ...saved.requests.slice(1)] });
         }
@@ -305,8 +320,39 @@ export function MiniMaxDraftPanel(props: Props) {
     finally { planning.current?.controller.abort(); planning.current = null; preparingDraft.current = false; if (mounted.current && !running.current) setBusy(false); }
   }
 
+  const preparedReplacement = useRef<string | null>(null);
+  function replacementRequests(snapshot: ReplacementReviewSnapshot) {
+    const current = latest.current;
+    if (!current.projectId || current.storyApproved === false) throw new Error("Confirm current Story first.");
+    return replacementBatchRequests(current.projectId, snapshot, current.replacementSegments ?? current.segments, current.referenceAssets, current.aestheticReferences)
+      .map(bindPreparedSceneRequest);
+  }
+  function replacementFingerprint(snapshot: ReplacementReviewSnapshot) {
+    return generationScopeSha256({ snapshot, requests: replacementRequests(snapshot).map(({ requestIntentId, ...request }) => { void requestIntentId; return request; }) });
+  }
+  async function submitReplacements(snapshot: ReplacementReviewSnapshot) {
+    if (!mayEdit() || busy || accepting || batchRef.current?.requests.length || preparingDraft.current) throw new Error("Finish existing work before submitting replacements.");
+    preparingDraft.current = true;
+    try {
+      const projectId = latest.current.projectId!;
+      const refreshed = await readReplacementMarks(projectId);
+      if (!mounted.current || preparedReplacement.current !== replacementFingerprint(refreshed)
+        || snapshot.revision !== refreshed.revision) throw new Error("Marks, project or Story changed. Prepare replacements again.");
+      const savedId = await latest.current.onEnsureSavedProject();
+      const jobs = await readJobs(savedId);
+      if (!mayEdit() || savedId !== projectId || jobs.some(job => !isH3JobTerminal(job))
+        || preparedReplacement.current !== replacementFingerprint(await readReplacementMarks(projectId))) throw new Error("Current project or generation state changed. Prepare replacements again.");
+      const requests = replacementRequests(refreshed);
+      persistBatch({ version: 1, projectId, planSignature: requests[0].planSignature, requests, paused: false,
+        replacementReview: { revision: refreshed.revision!, keys: refreshed.marks.map(mark => mark.key) } });
+      preparedReplacement.current = null;
+      void runBatch();
+    } finally { preparingDraft.current = false; }
+  }
+
   async function revise(asset: GeneratedStudioAsset) {
     if (!mayEdit() || busy || accepting) return;
+    if (batchRef.current?.replacementReview) { setError("Finish or clear the replacement queue before preparing a separate revision."); return; }
     if (batchRef.current && !batchRef.current.paused) { setError("Pause upcoming submissions before revising a take."); return; }
     const target = asset.target;
     if (!target) return;
@@ -566,6 +612,9 @@ export function MiniMaxDraftPanel(props: Props) {
   const unavailable = !props.segments.length ? "Confirm a story first." : !referencesReady ? "Upload named character and location references in Setup." : null;
 
   return <div className="space-y-3">
+    {props.projectId ? <ReplacementBatchPanel key={props.projectId} projectId={props.projectId}
+      blocked={editingBlocked || Boolean(batch?.requests.length)}
+      onPrepare={snapshot => { preparedReplacement.current = replacementFingerprint(snapshot); }} onSubmit={submitReplacements} /> : null}
     {readOnly ? <p role="status" className="text-sm text-fg-3">Confirm the current Story to change the draft. Saved progress and take playback remain available; upcoming submissions are paused.</p> : null}
     {liveTakes.length ? <Surface aria-label="Arriving and saved takes">
       <h3 className="text-sm font-semibold">Arriving and saved takes</h3>

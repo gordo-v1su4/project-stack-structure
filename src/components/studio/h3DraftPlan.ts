@@ -157,7 +157,8 @@ export function nextH3Attempt(job: H3GenerationJob, siblings: H3GenerationJob[],
   return { ...job.request, attempt, draftRevision, prompt };
 }
 
-export type H3DraftBatch = { version: 1; projectId: string; planSignature: string; requests: H3GenerationRequest[]; paused: boolean; pauseAfterRequest?: string };
+export type H3DraftBatch = { version: 1; projectId: string; planSignature: string; requests: H3GenerationRequest[]; paused: boolean; pauseAfterRequest?: string;
+  replacementReview?: { revision: string; keys: string[] } };
 export function h3DraftBatchStorageKey(projectId: string) { return `stack-structure:h3-draft-batch:v1:${projectId}`; }
 export function parseH3DraftBatch(raw: string | null, projectId: string): H3DraftBatch | null {
   if (!raw) return null;
@@ -171,6 +172,10 @@ export function parseH3DraftBatch(raw: string | null, projectId: string): H3Draf
         || !Number.isInteger(request.attempt ?? 0) || (request.attempt ?? 0) < 0 || (request.attempt ?? 0) > 2)) return null;
     if (value.pauseAfterRequest !== undefined && (typeof value.pauseAfterRequest !== "string"
       || value.pauseAfterRequest !== `${value.requests[0]?.requestIntentId}:${value.requests[0]?.attempt ?? 0}`)) return null;
+    if (value.replacementReview && (typeof value.replacementReview.revision !== "string" || !value.replacementReview.revision
+      || !Array.isArray(value.replacementReview.keys) || !value.replacementReview.keys.length || value.replacementReview.keys.length > 512
+      || value.replacementReview.keys.some(key => typeof key !== "string" || key.length > 4096)
+      || value.requests.some(request => request.draftRevision !== undefined))) return null;
     return { ...value, paused: Boolean(value.paused) };
   } catch { return null; }
 }

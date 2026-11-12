@@ -2983,6 +2983,7 @@ export default function StudioApp() {
                   ? { ...current, draft: nextDraft } : current);
               }} /> : null}
             {tab === "generate" ? <MiniMaxDraftPanel project={musicVideoProject} aestheticReferences={aestheticReferences} onAestheticSelection={(shotId, ids) => { referenceAutosaveRequestedRef.current = true; setAestheticReferences(library => ({ ...library, shots: { ...library.shots, [shotId]: ids } })); }} projectId={activeProjectId} segments={draftPreviewSegments}
+              replacementSegments={baseStoryPreviewSegments}
               confirmedTreatment={storyState.confirmedTreatmentSnapshot}
               sceneProofPlan={storyState.sceneProofPlan} sceneProofReviewRequired={storyState.sceneProofReviewRequired} storyBeats={storyState.storyBeats}
               storyApproved={storyState.storyGenerated && Boolean(storyState.confirmedTreatmentId)
