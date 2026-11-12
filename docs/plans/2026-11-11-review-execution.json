@@ -121,6 +121,20 @@
       "verification": "Final hosted2145pass/27fixture skips/0fail, production build/deploy and independent exact public health3e359e7.28focused tests/typecheck/affectedlint pass. Public real scrolling, queue,modal,playback,context,narrow layout and final protected readback.",
       "releaseAcceptance": "461public acceptance complete.462–464retain own acceptance and final combined PR/worker qualification."
     },
+    "V1S-463": {
+      "commit": "77ae7c572b52c27e26bccd2f87df9c571f4a6e41",
+      "trackerReceipt": "Linear get_issue readback V1S-463 Done, updatedAt 2026-11-12T08:45:51.979Z, completedAt 2026-11-12T08:45:51.958Z; evidence comment18b19e6a-b785-4f4e-89f2-8f2ae947db96; all5acceptance checkboxes checked individually during QA",
+      "criteria": {
+        "Sliders never rewrite the live cut; Prepare → review proposed changes/conflicts → Apply.": "77ae7c5; docs/operations/review-pacing-463.md. Public real finishing sliders/Prepare keep108cuts. Labeled browser-only actual-media fixture separate141window proposal; actual Apply35→141blocks, Undo restores.463-real-film-proposal.png,463-fixture-applied.png.",
+        "Preserve hand-picked takes/manual trims, normal video speed and story-beat order automatically.": "Public fixture source13retained after141/146window pacing; manual3.750–7.73199987411499s exact range remains. Actual selected-range cave-entry footage master3.846951/source3.894184s,source muted/rate1; end native master7.736296/source7.783245s. Undo exact label/title list. Pure exact3.25–8.25trim/editPlan order regression.463-retained-playback.png/json.",
+        "Show gaps and unsuitable coverage for targeted replacement; no auto generation, stretching or speed ramps.": "Real finishing Prepare30protected conflicts/27underlying gaps with unsuitable/replacement reasons; all bound windows retained/Apply disabled. Fixture lists exact proposed gap ranges. No dispatch/generation/stretch/speed changes; all project/dispatch writes guarded and final protected hashes/revisions unchanged.",
+        "Intentional cross-beat user moves require warning/explicit action and undo; no automatic cross-beat shuffle.": "Actual public fixture cross-story-item Review swap warning, Apply disabled→check enabled→uncheck disabled→check + Apply changescut→Undo arrangement restores exact aria-label/title list.463-cross-beat-warning.png. Automatic pacing never moves source placements.",
+        "Current cut remains available during preparation; stale proposals cannot overwrite newer edits; demonstrate on existing media.": "Same native master node plays13.773823→14.074096s through actual Prepare, current cuts unchanged. Slider change and real newer manual Remove disable stale Apply with alert; Undo restores footage. Model rejects same-revision/project/take/reference/tampered proposal changes.463-stale-proposal.png,463-preparation-playback.json."
+      },
+      "environment": "Visible signed-in public in-app browser actual2432x1592; real finishing view-only and labeled browser-only existing-media response fixture. Final read-only finishing Preview0/108selected/103available; no guard/fixture/observer/local fixture storage or viewport/cache/network overrides. Native Chrome not claimed.",
+      "verification": "Published run43183551633:2151pass/27unique fixture skips/0fail,production build/deploy/transfer/auth/exacthealth77ae7c5. Local23model+4affected component tests/typecheck/lint0errors(2existingwarnings). Protected full hashes/revisions identical before/after. Evidence48a1d1a.",
+      "releaseAcceptance": "463public acceptance complete.464owns diagnostic topology/queue follow-up, final batch check/build, app-worker qualification and ONE combined PR/GrepTile. No generation/runtime tuning/worker upgrade."
+    },
     "V1S-462": {
       "commit": "d248a61cd0866582ce339d759208d555baed9858",
       "trackerReceipt": "Linear get_issue readback V1S-462 Done, updatedAt 2026-11-12T08:18:33.083Z, completedAt 2026-11-12T08:18:33.069Z; evidence comment80710069-b6ac-402e-8195-9fcbc7e2bb8d",
