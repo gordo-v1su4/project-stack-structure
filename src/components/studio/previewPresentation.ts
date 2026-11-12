@@ -69,7 +69,11 @@ export class PreviewPresentation {
         // rVFC timestamps can be rounded to microseconds (for example 68/24
         // appears as 2.833333). Compare in that same integer timebase so the
         // excluded frame is not admitted by floating-point representation.
-        const firstTarget = !!state.snapshot || targetTime === undefined || metadata.mediaTime <= targetTime + 0.000001;
+        // A source can begin with a positive first video PTS while its audio
+        // starts at zero. A seek to source zero requests that first decoded
+        // image; there is no preceding frame to wait for. Interior in-points
+        // still require the containing frame and every out-point stays exclusive.
+        const firstTarget = !!state.snapshot || targetTime === undefined || targetTime === 0 || metadata.mediaTime <= targetTime + 0.000001;
         if (firstTarget && Math.round(metadata.mediaTime * 1_000_000) < Math.round(endTime * 1_000_000) && video.videoWidth > 0) {
           const scale = Math.min(1, Math.sqrt(MAX_PIXELS / (video.videoWidth * video.videoHeight)));
           const width = Math.max(1, Math.floor(video.videoWidth * scale));

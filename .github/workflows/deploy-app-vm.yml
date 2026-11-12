@@ -3,39 +3,69 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      revision:
+        description: Exact 40-character commit SHA to publish (blank uses this main commit)
+        required: false
+        type: string
 permissions:
   contents: read
 concurrency:
   group: project-stack-structure-production-app-vm
   cancel-in-progress: false
 jobs:
+  resolve:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      revision: ${{ steps.revision.outputs.revision }}
+    steps:
+      - name: Resolve an exact commit in this repository
+        id: revision
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          REQUESTED_REVISION: ${{ inputs.revision }}
+        with:
+          script: |
+            const requested = process.env.REQUESTED_REVISION || context.sha;
+            if (!/^[a-f0-9]{40}$/.test(requested)) throw new Error('Use an exact lowercase 40-character commit SHA');
+            const { data } = await github.rest.repos.getCommit({ ...context.repo, ref: requested });
+            if (data.sha !== requested) throw new Error('Commit resolution changed the requested revision');
+            core.setOutput('revision', requested);
   build:
+    needs: resolve
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ needs.resolve.outputs.revision }}
       - name: Check committed source and build the standalone image
+        env:
+          APP_REVISION: ${{ needs.resolve.outputs.revision }}
         run: |
           set -euo pipefail
           docker build --target dependencies -f infra/app-vm/Dockerfile -t stack-dependencies .
           docker run --rm --cpus=2 --memory=6g -v "$PWD:/app" -w /app stack-dependencies sh -c 'bun install --frozen-lockfile && bun run check'
-          docker build --build-arg APP_REVISION="$GITHUB_SHA" -f infra/app-vm/Dockerfile -t "project-stack-structure-web:$GITHUB_SHA" .
+          docker build --build-arg APP_REVISION="$APP_REVISION" -f infra/app-vm/Dockerfile -t "project-stack-structure-web:$APP_REVISION" .
       - name: Package image for the private App VM runner
+        env:
+          APP_REVISION: ${{ needs.resolve.outputs.revision }}
         run: |
           mkdir -p image
-          docker save "project-stack-structure-web:$GITHUB_SHA" > image/source.tar
-          node scripts/package-app-vm-image.mjs image/source.tar image/app.tar.gz "$GITHUB_SHA"
+          docker save "project-stack-structure-web:$APP_REVISION" > image/source.tar
+          node scripts/package-app-vm-image.mjs image/source.tar image/app.tar.gz "$APP_REVISION"
           rm image/source.tar
           cd image
           sha256sum app.tar.gz > app.tar.gz.sha256
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: app-vm-image-${{ github.sha }}
+          name: app-vm-image-${{ needs.resolve.outputs.revision }}
           path: image/
           retention-days: 1
           compression-level: 0
   deploy:
-    needs: build
+    needs: [resolve, build]
     if: github.ref == 'refs/heads/main'
     runs-on: [self-hosted, Linux, X64, stack-structure-production]
     environment: production-app-vm
@@ -45,22 +75,28 @@ jobs:
       actions: write
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          # Deployment code always comes from the trusted main workflow commit.
+          ref: ${{ github.sha }}
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: app-vm-image-${{ github.sha }}
+          name: app-vm-image-${{ needs.resolve.outputs.revision }}
           path: ${{ runner.temp }}/stack-image
       - name: Verify image transfer and activate exact main through Dockhand
-        run: node scripts/deploy-app-vm.mjs "$GITHUB_SHA" "$RUNNER_TEMP/stack-image"
+        env:
+          APP_REVISION: ${{ needs.resolve.outputs.revision }}
+        run: node scripts/deploy-app-vm.mjs "$APP_REVISION" "$RUNNER_TEMP/stack-image"
       - name: Remove the transferred image artifact
         if: always()
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
+            const revision = '${{ needs.resolve.outputs.revision }}';
             const result = await github.rest.actions.listWorkflowRunArtifacts({
               ...context.repo, run_id: context.runId,
             });
             for (const artifact of result.data.artifacts) {
-              if (artifact.name === `app-vm-image-${context.sha}`) {
+              if (artifact.name === `app-vm-image-${revision}`) {
                 await github.rest.actions.deleteArtifact({ ...context.repo, artifact_id: artifact.id });
               }
             }

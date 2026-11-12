@@ -9,11 +9,12 @@ type TrackHeaderProps = {
   previewProjectId?: string | null;
   previewShotId?: string;
   previewRanges?: SongRange[];
+  previewViewport?: SongRange | null;
   previewStage?: ReviewStage;
 };
 
 /** Compact song identity above the beat spine — workspace chrome, not a hero title. */
-export function TrackHeader({ headline, meta, next, previewProjectId, previewShotId, previewRanges, previewStage }: TrackHeaderProps) {
+export function TrackHeader({ headline, meta, next, previewProjectId, previewShotId, previewRanges, previewViewport, previewStage }: TrackHeaderProps) {
   return (
     <header className="flex shrink-0 items-baseline justify-between gap-4 pb-1">
       <div className="min-w-0">
@@ -27,7 +28,7 @@ export function TrackHeader({ headline, meta, next, previewProjectId, previewSho
           {next}
         </p>
       ) : null}
-      {previewProjectId ? <a href={reviewPreviewHref(previewProjectId, { shotId: previewShotId, ranges: previewRanges, stage: previewStage })} target="_blank" rel="noopener noreferrer"
+      {previewProjectId ? <a href={reviewPreviewHref(previewProjectId, { shotId: previewShotId, ranges: previewRanges, viewport: previewViewport, stage: previewStage })} target="_blank" rel="noopener noreferrer"
         className="rounded-md border border-accent bg-accent-tint px-3 py-2 text-xs font-medium text-fg-0 hover:bg-accent-lo focus-visible:outline-2 focus-visible:outline-accent">Preview</a> : null}
       </div>
     </header>

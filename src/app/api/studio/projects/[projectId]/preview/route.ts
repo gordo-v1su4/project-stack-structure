@@ -25,7 +25,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ proj
   const audioUrl = audio?.storageBucket && audio.storagePath
     ? `/api/storage/media?${new URLSearchParams({ bucket: audio.storageBucket, objectKey: audio.storagePath })}` : "";
   const snapshot: AnimaticPreviewSnapshot = { projectId, name: saved.project.name, revision: saved.revision ?? "",
-    songLabel: audio?.sourceLabel ?? "Original master", audioUrl, plan,
+    songLabel: audio?.sourceLabel ?? "Original master", audioUrl, plan, analysis: audio ? { ...audio, audioUrl } : undefined,
     cut: projectReviewCut(projectId, d, plan),
     reviewSources: reviewPreparationSources(d.videoSources ?? [], d.generatedAssets ?? []),
     contextSha256: project && story.confirmedTreatmentSnapshot && story.sceneProofPlan

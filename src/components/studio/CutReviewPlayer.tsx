@@ -4,7 +4,10 @@ import { BrowserPreviewPlayer } from "./previewPlayer";
 import { PreviewPlayer } from "./PreviewPlayerComponent";
 import { usePreviewPlayerState } from "./usePreviewPlayerState";
 import { ReviewSelectionBar } from "./ReviewSelectionBar";
-import { buildSelectedPlayback, type SongRange, type SongSelection } from "./reviewSelection";
+import { buildSelectedPlayback, previewOffsetAtSongTime, selectSongRange, type SelectionGesture, type SongRange, type SongSelection } from "./reviewSelection";
+import { BeatSpine } from "./shell/BeatSpine";
+import { buildSpineSlots } from "./shell/spineSlots";
+import type { BeatJoinAnalysis } from "./types";
 import type { EditPlanPreviewSegment } from "./musicVideoProject";
 import { animaticImage, animaticShotAtTime, type StillAnimaticPlan } from "./stillAnimatic";
 import { animaticFootageSongTime } from "./shell/AnimaticFootageLabels";
@@ -13,11 +16,13 @@ import { mediaThumbnailUrl } from "./mediaThumbnailUrl";
 import { Button } from "./ui";
 
 /** One current/standby player, shared master clock, and honest still/gap fallbacks. */
-export function CutReviewPlayer({ segments, audioUrl, plan, context, initialRanges, autoPlay = false, selection = null, onSelectionChange, multiSelect = false, onMultiSelect }: {
+export function CutReviewPlayer({ segments, audioUrl, plan, context, initialRanges, autoPlay = false, selection = null, onSelectionChange, multiSelect = false, onMultiSelect, analysis, focusedShotId, onFocusShot, initialViewport, onViewportChange }: {
   segments: EditPlanPreviewSegment[]; audioUrl: string; plan?: StillAnimaticPlan | null; context: string;
   initialRanges?: SongRange[]; autoPlay?: boolean;
   selection?: SongSelection | null; onSelectionChange?: (selection: SongSelection | null) => void;
   multiSelect?: boolean; onMultiSelect?: () => void;
+  analysis?: BeatJoinAnalysis; focusedShotId?: string; onFocusShot?: (id: string) => void;
+  initialViewport?: SongRange | null; onViewportChange?: (range: SongRange) => void;
 }) {
   const [player] = useState(() => new BrowserPreviewPlayer());
   const [audition, setAudition] = useState<SongRange[] | null>(() => autoPlay ? initialRanges ?? null : null);
@@ -26,6 +31,12 @@ export function CutReviewPlayer({ segments, audioUrl, plan, context, initialRang
   const handledRequest = useRef(0);
   const state = usePreviewPlayerState(player);
   const displayed = useMemo(() => audition ? buildSelectedPlayback(segments, audition) : segments, [segments, audition]);
+  const slots = useMemo(() => buildSpineSlots({ segments, project: null, generatedAssets: [] }), [segments]);
+  const select = (range: SongRange, gesture: SelectionGesture = {}) => {
+    onSelectionChange?.(selectSongRange(selection, range, { ...gesture, toggle: gesture.toggle || (!gesture.add && multiSelect) }));
+    const focus = segments.find(s => s.musicEnd > range.start && s.musicStart < range.end);
+    if (focus?.animaticShotId) onFocusShot?.(focus.animaticShotId);
+  };
   useEffect(() => {
     if (!playRequest || handledRequest.current === playRequest) return;
     handledRequest.current = playRequest;
@@ -40,6 +51,14 @@ export function CutReviewPlayer({ segments, audioUrl, plan, context, initialRang
   const image = shot && plan ? animaticImage(plan, shot, context) : undefined;
   const isGap = !current?.videoUrl || current.kind === "gap";
   return <section aria-label="Current video cut" className="space-y-2">
+    {focusedShotId ? <p className="font-mono text-xs text-accent">Focused shot: {focusedShotId} · selection is for review only</p> : null}
+    {analysis ? <BeatSpine analysis={analysis} bpm={analysis.bpm ?? 120} playhead={(time ?? 0) / Math.max(analysis.duration, .001)}
+      caption="Current cut · song time" slots={slots} takes={[]} onPreviewSource={() => {}}
+      selectedSlotId={slots.find(s => s.animaticShotId === focusedShotId)?.id ?? null}
+      selectedRanges={selection?.ranges ?? []} onSelectRange={select} initialVisibleRange={initialViewport} onVisibleRangeChange={onViewportChange}
+      onSelectSection={(start, end, extend, toggle) => select({ start, end }, { extend, toggle })}
+      onSelectSlot={(slot, extend, toggle) => { if (slot) select(slot, { extend, toggle }); else onSelectionChange?.(null); }}
+      onSeek={fraction => { const offset = previewOffsetAtSongTime(displayed, fraction * analysis.duration); if (offset !== null) void player.seekToTime(offset); }} /> : null}
     <div className="relative aspect-video overflow-hidden rounded-md border border-line bg-ink-0">
       <PreviewPlayer player={player} segments={displayed} masterAudioUrl={audioUrl || null} variant="monitor" />
       {isGap ? <div className="pointer-events-none absolute inset-0">

@@ -29,3 +29,12 @@ test("explicit return stage survives persisted workflow restore without changing
   expect(restoredReviewTab("other", "review", "?reviewProject=project-1&stage=draft")).toBe("review");
   expect(restoredReviewTab("project-1", "join", "")).toBe("join");
 });
+
+test("the exact viewing viewport survives both routes independently from disjoint selection", () => {
+  const context = { shotId: "A013", ranges: [{ start: 10, end: 20 }, { start: 40, end: 50 }], viewport: { start: 29.75, end: 43.5 } };
+  const href = reviewPreviewHref("project-1", context);
+  expect(readReviewPreviewContext(href.slice(href.indexOf("?")))).toEqual(context);
+  expect(readStudioReviewContext(studioReviewHref("project-1", context).slice(1))?.viewport).toEqual(context.viewport);
+  expect(readReviewPreviewContext("?view=9-2").viewport).toBe(undefined);
+  expect(readReviewPreviewContext("?view=0-99999").viewport).toBe(undefined);
+});

@@ -13,12 +13,20 @@
     "V1S-464"
   ],
   "authorization": "Robert's November 11 instruction in chat 01a1cdf6-feb5-77c1-8853-f056c1e8a62c: write the workflow changes, then make the existing execution owner execute one at a time; necessary coupled work is allowed.",
-  "readinessMessage": "Seven items are tracked in Linear. Starting with V1S-458 only in the existing worktree; verify its acceptance and conclude in Linear before 459. Necessary coupled work needs an explicit reason and stopping point. One combined PR/GrepTile review after the batch; public release remains separate.",
+  "readinessMessage": "Seven items are tracked in Linear. Execute one primary ticket per fresh chat on the existing worktree. Commit and publish each ticket, then verify final acceptance through actual visible interactions/screenshots on the public app before Linear Done. One combined PR/GrepTile at the end after464.",
+  "publicationAuthorization": "Robert explicitly corrected the boundary in chat01a1ce58-ea5d-7930-b126-90e74f3c417b on November12: publish every section and run final tests on the public app, no PR until the very end. He selected adding manual exact-revision deployment so implementation commits remain unmerged for the combined PR. This supersedes the previous no-deployment instruction for this batch.",
   "contextByIssue": {
     "V1S-458": "01a1c36a-2e37-7260-9204-378380cc385f-current-ticket",
-    "V1S-459": "01a1ce3e-3217-74a0-a93a-3d8eb179eaa7"
+    "V1S-459": "01a1ce3e-3217-74a0-a93a-3d8eb179eaa7",
+    "V1S-460": "01a1ce58-ea5d-7930-b126-90e74f3c417b"
   },
   "coupledWork": [
+    {
+      "primary": "V1S-460",
+      "related": "V1S-461",
+      "reason": "460 requires shared cut/section selection, focused shot and viewport in standalone Preview. Add that selection lane and route context now; retain existing preview partials.",
+      "stopWhen": "Cut/section selection and viewing context work across Studio/Preview; queue, media arrivals and remaining unified media behavior stay with461."
+    },
     {
       "primary": "V1S-459",
       "related": "V1S-462",

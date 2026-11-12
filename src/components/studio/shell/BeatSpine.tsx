@@ -49,6 +49,7 @@ type BeatSpineProps = {
   selectedRanges?: SongRange[];
   onSelectRange?: (range: SongRange, gesture: SelectionGesture) => void;
   onVisibleRangeChange?: (range: SongRange) => void;
+  initialVisibleRange?: SongRange | null;
   /** Act-specific caption on the right, e.g. "Match · sections". */
   caption: string | null;
   /** Cuts of the prepared edit, in song time. Empty until Story has a plan. */
@@ -66,7 +67,8 @@ type BeatSpineProps = {
  * takes under the selected slot, then the waveform with the beat ruler and a
  * playhead the transport bar drives.
  */
-export function BeatSpine({ analysis, bpm, playhead, onSeek, onSelectSection, selectedRange, selectedRanges, onSelectRange, onVisibleRangeChange, caption, slots, selectedSlotId, onSelectSlot, takes, onPreviewSource }: BeatSpineProps) {
+export function BeatSpine({ analysis, bpm, playhead, onSeek, onSelectSection, selectedRange, selectedRanges, onSelectRange, onVisibleRangeChange, initialVisibleRange, caption, slots, selectedSlotId, onSelectSlot, takes, onPreviewSource }: BeatSpineProps) {
+  const [restoredView, setRestoredView] = useState(initialVisibleRange);
   const [zoomMode, setZoomMode] = useState<SpineZoomMode>("fit");
   const [focusedSection, setFocusedSection] = useState<{ start: number; selectionAnchor: number | undefined } | null>(null);
   const duration = Math.max(analysis.duration, 0.001);
@@ -77,7 +79,7 @@ export function BeatSpine({ analysis, bpm, playhead, onSeek, onSelectSection, se
   const anchor = focusedSection?.start ?? selectionAnchor ?? selectedRanges?.[0]?.start ?? playheadSeconds;
   const sectionIndex = sections.findIndex(section => anchor >= section.start && anchor < section.end);
   const section = sections[sectionIndex] ?? null;
-  const view = getSpineViewport(duration, zoomMode, section, selected);
+  const view = restoredView ? getSpineViewport(duration, "section", restoredView) : getSpineViewport(duration, zoomMode, section, selected);
   const drag = useSongRangeDrag(view, slots, onSelectRange);
   useEffect(() => { onVisibleRangeChange?.({ start: view.start, end: view.end }); }, [onVisibleRangeChange, view.start, view.end]);
   const viewDuration = view.end - view.start;
@@ -86,6 +88,7 @@ export function BeatSpine({ analysis, bpm, playhead, onSeek, onSelectSection, se
   function selectSection(index: number, extend = false, toggle = false) {
     const next = sections[index];
     if (!next) return;
+    setRestoredView(null);
     onSelectSection?.(next.start, next.end, extend, toggle);
     if (!onSelectRange) onSeek(Math.max(0, next.start) / duration);
     setFocusedSection({ start: next.start, selectionAnchor });
@@ -97,12 +100,12 @@ export function BeatSpine({ analysis, bpm, playhead, onSeek, onSelectSection, se
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-2 py-1.5">
         <div role="group" aria-label="Timeline zoom" className="flex gap-1">
           {([["fit", "Full song"], ["section", "Selected section"], ["selected", "Selected cut"]] as const).map(([mode, label]) => (
-            <button key={mode} type="button" aria-pressed={zoomMode === mode} disabled={mode === "section" ? !section : mode === "selected" ? !selected : false} onClick={() => { if (mode === "section" && section) setFocusedSection({ start: section.start, selectionAnchor }); setZoomMode(mode); }} className={`rounded-sm px-2 py-1 text-xs focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40 ${zoomMode === mode ? "bg-accent-tint text-accent" : "text-fg-2 hover:bg-ink-2"}`}>{label}</button>
+            <button key={mode} type="button" aria-pressed={!restoredView && zoomMode === mode} disabled={mode === "section" ? !section : mode === "selected" ? !selected : false} onClick={() => { setRestoredView(null); if (mode === "section" && section) setFocusedSection({ start: section.start, selectionAnchor }); setZoomMode(mode); }} className={`rounded-sm px-2 py-1 text-xs focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40 ${!restoredView && zoomMode === mode ? "bg-accent-tint text-accent" : "text-fg-2 hover:bg-ink-2"}`}>{label}</button>
           ))}
         </div>
         <div className="flex items-center gap-2 text-xs text-fg-2">
           <button type="button" aria-label="Previous song section" disabled={sectionIndex <= 0} onClick={() => selectSection(sectionIndex - 1)} className="rounded-sm px-2 py-1 hover:bg-ink-2 focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40">←</button>
-          <span>{zoomMode === "fit" ? "Full song" : zoomMode === "section" ? section?.label ?? "Full song" : selected?.label ?? "Full song"} <span className="font-mono text-fg-3">{fmt(view.start)}–{fmt(view.end)}</span></span>
+          <span>{restoredView ? "Review focus" : zoomMode === "fit" ? "Full song" : zoomMode === "section" ? section?.label ?? "Full song" : selected?.label ?? "Full song"} <span className="font-mono text-fg-3">{fmt(view.start)}–{fmt(view.end)}</span></span>
           <button type="button" aria-label="Next song section" disabled={!sections.length || sectionIndex >= sections.length - 1} onClick={() => selectSection(sectionIndex + 1)} className="rounded-sm px-2 py-1 hover:bg-ink-2 focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40">→</button>
         </div>
       </div>
@@ -152,7 +155,7 @@ export function BeatSpine({ analysis, bpm, playhead, onSeek, onSelectSection, se
                 floating contextKey={`${view.start}:${view.end}`} previewLabel={slot.label}
                 posterWhenVisible={!slot.thumbnailUrl}
                 showStatus={wide}
-                buttonProps={{ type: "button", role: "option", "aria-selected": isSelected,
+                buttonProps={{ type: "button", role: "option", "aria-selected": isSelected, "aria-current": slot.id === selectedSlotId ? "true" : undefined,
                   onClick: event => { setFocusedSection(null); onSelectSlot(onSelectSection ? slot : isSelected ? null : slot, event.shiftKey, event.ctrlKey || event.metaKey); },
                   onDoubleClick: () => onSeek(slot.start / duration),
                   title: `${slot.sectionLabel} · ${fmt(slot.start)}–${fmt(slot.end)}\n${slot.label}${slot.kind === "generated" ? "\nGenerated shot" : ""}${slot.videoUrl ? "\nHover for silent preview" : "\nNo selected video · inspect shot takes"}`,

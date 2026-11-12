@@ -176,6 +176,7 @@ export default function StudioApp() {
   const [songSelectionState, setSongSelectionState] = useState<{ context: string; selection: SongSelection | null } | null>(null);
   const [multiSelect, setMultiSelect] = useState(false);
   const [reviewViewport, setReviewViewport] = useState<SongRange | null>(null);
+  const [initialReviewViewport, setInitialReviewViewport] = useState<SongRange | null>(null);
   const [reviewAudition, setReviewAudition] = useState<{ context: string; source: EditPlanPreviewSegment[]; segments: EditPlanPreviewSegment[]; ranges: SongRange[] } | null>(null);
 
   const [clipDur, setClipDur] = useState(5);
@@ -2789,6 +2790,7 @@ export default function StudioApp() {
     const incoming = readStudioReviewContext(window.location.search);
     restoredReviewContext.current = true;
     if (!incoming || incoming.projectId !== activeProjectId) return;
+    setInitialReviewViewport(incoming.viewport ?? null);
     const ranges = incoming.ranges.flatMap(range => {
       const end = Math.min(range.end, beatJoinAnalysis.duration);
       return end > range.start ? [{ start: range.start, end }] : [];
@@ -2890,11 +2892,14 @@ export default function StudioApp() {
               previewProjectId={activeProjectId}
               previewShotId={selectedSlot?.animaticShotId}
               previewRanges={songSelection?.ranges}
+              previewViewport={reviewViewport}
               previewStage={tab === "generate" ? "draft" : "story"}
             />
 
             {beatJoinAnalysis && !monitorFocused ? (
               <PreviewBeatSpine
+                key={`${reviewContext}:${JSON.stringify(initialReviewViewport)}`}
+                initialVisibleRange={initialReviewViewport}
                 player={hasBrowserPreview ? previewPlayer : null}
                 analysis={beatJoinAnalysis}
                 bpm={displayBpm ?? bpm}
@@ -2918,7 +2923,6 @@ export default function StudioApp() {
                     setActiveClip(indexes[0]!);
                     setRoughCutSelection(previous => selectReviewRange(previous, indexes[0]!, indexes.at(-1)!, extend));
                   }
-                  setSelectedSlotId(null);
                 }}
                 slots={spineSlots}
                 selectedSlotId={selectedSlotId}
@@ -2965,6 +2969,7 @@ export default function StudioApp() {
               onOpenMatch={() => handleSelectTab("shuffle")} matchReady={storyState.storyGenerated}
               editSettings={storyState.editSettings}
               selectedRanges={songSelection?.ranges ?? []} visibleRange={reviewViewport} onSelectRange={handleReviewRange} multiSelect={multiSelect} coverage={reviewCoverage}
+              focusedShot={selectedSlot}
             /> : null}
             {tab === "generate" ? <AnimaticSourceFootagePanel key={activeProjectId ?? "unsaved"} sources={videoSources} segments={baseStoryPreviewSegments}
               plan={storyState.stillAnimaticPlan} onSelect={asset => { invalidateArrangementOutput(); receiveGeneratedAsset(asset, generatedDraft?.revision ?? 0); }} /> : null}
@@ -3176,9 +3181,11 @@ export default function StudioApp() {
                 sectionLabels={Object.fromEntries((musicVideoProject?.storySections ?? []).map(section => [section.id, section.label]))}
                 existingFootage={(musicVideoProject?.videoMoments ?? []).map(moment => ({ id: moment.id, label: moment.sourceRefLabel ?? moment.label, caption: moment.caption }))}
                 activeClip={Math.min(activeClip, Math.max(0, storyPreviewSegments.length - 1))}
-                onActiveClip={setActiveClip}
+                onActiveClip={(index, extend, toggle) => handleSelectSlot(spineSlots[index] ?? null, extend, toggle)}
                 onPlayWhole={() => void runBrowserPreview()}
                 selection={roughCutSelection}
+                selectedRanges={songSelection?.ranges}
+                onPlaySelectedRanges={playReviewSelection}
                 onPlaySelection={playRoughCutSelection}
                 onFillGap={fillRoughCutPosition}
                 onReviewAlternates={reviewRoughCutReplacement}

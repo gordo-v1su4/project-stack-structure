@@ -1,24 +1,30 @@
 import { normalizeSongRanges, type SongRange } from "./reviewSelection";
 import type { Tab } from "./types";
 
-export function readReviewPreviewContext(search: string): { shotId?: string; ranges: SongRange[] } {
+export function readReviewPreviewContext(search: string): { shotId?: string; ranges: SongRange[]; viewport?: SongRange } {
   const params = new URLSearchParams(search);
   const shot = params.get("shot") ?? "";
   const ranges = (params.get("ranges") ?? "").slice(0, 2048).split(",").slice(0, 32).flatMap(value => {
     const match = /^(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)$/.exec(value);
     return match && Number(match[2]) <= 3600 ? [{ start: Number(match[1]), end: Number(match[2]) }] : [];
   });
-  return { shotId: /^[\w-]{1,96}$/.test(shot) ? shot : undefined, ranges: normalizeSongRanges(ranges) };
+  const viewport = normalizeSongRanges((params.get("view") ?? "").split(",").slice(0, 1).flatMap(value => {
+    const match = /^(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)$/.exec(value);
+    return match && Number(match[2]) <= 3600 ? [{ start: Number(match[1]), end: Number(match[2]) }] : [];
+  }))[0];
+  return { shotId: /^[\w-]{1,96}$/.test(shot) ? shot : undefined, ranges: normalizeSongRanges(ranges), ...(viewport ? { viewport } : {}) };
 }
 
 export type ReviewStage = "story" | "draft";
-export type ReviewLinkContext = { shotId?: string; ranges?: SongRange[]; stage?: ReviewStage };
+export type ReviewLinkContext = { shotId?: string; ranges?: SongRange[]; stage?: ReviewStage; viewport?: SongRange | null };
 
 export function reviewPreviewHref(projectId: string, context: ReviewLinkContext = {}) {
   const params = new URLSearchParams();
   if (context.shotId && /^[\w-]{1,96}$/.test(context.shotId)) params.set("shot", context.shotId);
   const ranges = normalizeSongRanges(context.ranges ?? []).filter(r => r.end <= 3600).slice(0, 32);
   if (ranges.length) params.set("ranges", ranges.map(r => `${r.start}-${r.end}`).join(","));
+  const view = normalizeSongRanges(context.viewport ? [context.viewport] : [])[0];
+  if (view && view.end <= 3600) params.set("view", `${view.start}-${view.end}`);
   if (context.stage === "story" || context.stage === "draft") params.set("stage", context.stage);
   return `/preview/${encodeURIComponent(projectId)}${params.size ? `?${params}` : ""}`;
 }

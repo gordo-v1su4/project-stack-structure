@@ -22,6 +22,7 @@ export type MusicCutExplorerProps = {
   matchReady?: boolean;
   editSettings?: StoryEditSettings;
   selectedRanges?: SongRange[];
+  focusedShot?: { start: number; end: number; label: string } | null;
   visibleRange?: SongRange | null;
   multiSelect?: boolean;
   onSelectRange?: (range: SongRange, gesture: SelectionGesture) => void;
@@ -72,7 +73,8 @@ export function MusicCutExplorer(props: MusicCutExplorerProps) {
     </div>
     <p className="mb-2 text-xs text-fg-3" aria-live="polite">{cueMap.chunks.length} suggested blocks · {cueMap.onsetActiveCount} music cues · {cueMap.lyricActiveCount} lyric cues. {fast ? "Fast targets 1–3 seconds using actual music cues; sparse cues may leave longer blocks." : "Suggested pace is 4–6 seconds; short section edges remain visible."}</p>
     <MatchMusicCueTimeline cueMap={cueMap} project={project} selectedChunkId={selected?.id} onSelectChunk={setSelectedChunkId}
-      selectedRanges={props.selectedRanges} visibleRange={props.visibleRange} onSelectRange={props.onSelectRange} multiSelect={props.multiSelect} coverage={props.coverage} />
+      selectedRanges={props.selectedRanges} focusedRange={props.focusedShot} visibleRange={props.visibleRange} onSelectRange={props.onSelectRange} multiSelect={props.multiSelect} coverage={props.coverage} />
+    {props.focusedShot ? <p className="mt-2 font-mono text-xs text-accent">Focused shot: {props.focusedShot.label} · {props.focusedShot.start.toFixed(2)}–{props.focusedShot.end.toFixed(2)}s</p> : null}
     {selected ? <p className="mt-2 font-mono text-xs text-fg-1" aria-live="polite">Selected suggestion: {selected.start.toFixed(3)}–{selected.end.toFixed(3)}s · {(selected.end - selected.start).toFixed(3)}s · starts on {boundaryLabel(selected.start)}</p> : null}
     <p className="mt-1 text-xs text-fg-3">Choose a block to inspect its exact timing. Onsets and phrases use their detected timestamps; section and spacing boundaries may fall between beats. Pace changes here only explore suggestions; saved Story settings remain unchanged.</p>
     <p className="mt-2 text-xs leading-5 text-fg-3">Orange marks musical accents; cyan marks lyric phrases. Without timed lyrics, musical cues still work. Footage semantics remain in Match review; this graph does not rerank or apply footage.</p>

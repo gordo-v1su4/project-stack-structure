@@ -8,6 +8,7 @@ export type PreviewReviewCut = { segments: EditPlanPreviewSegment[]; targets?: R
 export type AnimaticPreviewSnapshot = {
   projectId: string; name: string; revision: string; songLabel: string; audioUrl: string;
   contextSha256: string; plan: StillAnimaticPlan | null;
+  analysis?: import("./types").BeatJoinAnalysis;
   /** Older deployed snapshot routes may not include the motion projection yet. */
   cut?: PreviewReviewCut;
   reviewSources?: import("./reviewBackfill").ReviewBackfillInput[];

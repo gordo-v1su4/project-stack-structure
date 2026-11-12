@@ -6,9 +6,10 @@ import { clipSpineRange } from "../shell/spineViewport";
 import { useSongRangeDrag } from "../useSongRangeDrag";
 import type { SelectionGesture, SongRange } from "../reviewSelection";
 
-export function MatchMusicCueTimeline({ cueMap, project, selectedChunkId, onSelectChunk, selectedRanges, visibleRange, onSelectRange, multiSelect, coverage }: {
+export function MatchMusicCueTimeline({ cueMap, project, selectedChunkId, onSelectChunk, selectedRanges, focusedRange, visibleRange, onSelectRange, multiSelect, coverage }: {
   cueMap: AdaptiveCueMap; project: MusicVideoProject | null; selectedChunkId?: string; onSelectChunk?: (id: string) => void;
   selectedRanges?: SongRange[]; visibleRange?: SongRange | null; multiSelect?: boolean;
+  focusedRange?: SongRange | null;
   onSelectRange?: (range: SongRange, gesture: SelectionGesture) => void;
   coverage?: Array<SongRange & { filled: boolean }>;
 }) {
@@ -60,8 +61,9 @@ export function MatchMusicCueTimeline({ cueMap, project, selectedChunkId, onSele
               type="button"
               aria-label={`Suggested block ${chunk.start.toFixed(3)} to ${chunk.end.toFixed(3)} seconds`}
               aria-pressed={onSelectChunk || onSelectRange ? isSelected : undefined}
+              aria-current={focusedRange && focusedRange.start >= chunk.start && focusedRange.start < chunk.end ? "true" : undefined}
               onClick={event => { onSelectChunk?.(chunk.id); onSelectRange?.(chunk, { extend: event.shiftKey, toggle: event.ctrlKey || event.metaKey || multiSelect }); }}
-              className={`absolute bottom-2 top-6 border text-left transition-colors hover:border-accent focus-visible:outline-2 focus-visible:outline-accent ${isSelected ? "border-accent outline-1 outline-accent" : "border-line"}`}
+              className={`absolute inset-y-0 border text-left transition-colors hover:border-accent focus-visible:outline-2 focus-visible:outline-accent ${isSelected ? "border-fg-0 outline-2 outline-fg-0 -outline-offset-2" : "border-line"}`}
               style={{
                 left: `${left}%`,
                 width: `${width}%`,
@@ -115,7 +117,7 @@ export function MatchMusicCueTimeline({ cueMap, project, selectedChunkId, onSele
             style={{ left: `${geometry.left}%`, width: `${geometry.width}%` }} /> : null;
         })}
       </div>
-      {coverage ? <p className="mt-1 text-xs text-fg-3">Footage coverage: solid green = selected video; dashed = gap. Orange blocks are timing suggestions.</p> : null}
+      {coverage ? <p className="mt-1 text-xs text-fg-3">Light outline = review selection. Footage coverage: solid green = selected video; dashed = gap. Orange blocks are musical timing suggestions.</p> : null}
       {showSparseTranscriptWarning ? (
         <div className="mt-2 rounded-[2px] border border-[#6f4a12] bg-[#120d05] px-2 py-1.5 text-[10px] leading-4 text-[#c07a3f]">
           SRT transcript ends at {fmt(cueMap.lyricLastTime)} of {fmt(duration)} — the vocal after that has no timed lyrics, so no cyan cuts can appear there. Re-run the transcription in Story for full-song lyric cuts.

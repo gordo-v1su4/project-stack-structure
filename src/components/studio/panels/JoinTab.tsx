@@ -6,15 +6,18 @@ import { fmt } from "../math";
 import { describePreviewBlocks } from "../previewBlockSummary";
 import type { EditPlanPreviewSegment } from "../musicVideoProject";
 import { Button, Surface } from "../ui";
+import type { SongRange } from "../reviewSelection";
 
 type JoinTabProps = {
   previewSegments: EditPlanPreviewSegment[];
   sectionLabels: Record<string, string>;
   existingFootage: { id: string; label: string; caption?: string }[];
   activeClip: number;
-  onActiveClip: (index: number) => void;
+  onActiveClip: (index: number, extend?: boolean, toggle?: boolean) => void;
   onPlayWhole: () => void;
   selection?: ReviewSelection | null;
+  selectedRanges?: SongRange[];
+  onPlaySelectedRanges?: () => void;
   onPlaySelection: (startIndex: number, endIndex: number) => void;
   onFillGap: (index: number) => void;
   onReviewAlternates: (index: number, momentId: string) => void;
@@ -29,7 +32,7 @@ type JoinTabProps = {
   busy: boolean;
 };
 
-export function JoinTab({ previewSegments, sectionLabels, existingFootage, activeClip, onActiveClip, onPlayWhole, selection, onPlaySelection,
+export function JoinTab({ previewSegments, sectionLabels, existingFootage, activeClip, onActiveClip, onPlayWhole, selection, selectedRanges, onPlaySelectedRanges, onPlaySelection,
   onFillGap, onReviewAlternates, onSwap, onRemove, proposalSummary, editMessage, onApplyProposal,
   onCancelProposal, onUndo, canUndo, busy }: JoinTabProps) {
   const [swapTarget, setSwapTarget] = useState("");
@@ -46,7 +49,8 @@ export function JoinTab({ previewSegments, sectionLabels, existingFootage, activ
   const selected = previewSegments[selectedIndex]!;
   const sections = buildRoughCutSections(previewSegments, sectionLabels);
   const currentSection = sections.find(section => section.sectionIds.includes(selected.sectionId))!;
-  const cuts = selection && previewSegments[selection.startIndex] && previewSegments[selection.endIndex]
+  const selectedCuts = selectedRanges?.length ? previewSegments.flatMap((segment, index) => selectedRanges.some(r => segment.musicEnd > r.start && segment.musicStart < r.end) ? [{ segment, index }] : []) : [];
+  const cuts = selectedCuts.length ? selectedCuts : selection && previewSegments[selection.startIndex] && previewSegments[selection.endIndex]
     ? previewSegments.flatMap((segment, index) => index >= selection.startIndex && index <= selection.endIndex ? [{ segment, index }] : [])
     : currentSection.cuts;
   const visibleSections = sections.filter(section => cuts.some(cut => section.sectionIds.includes(cut.segment.sectionId)));
@@ -67,11 +71,11 @@ export function JoinTab({ previewSegments, sectionLabels, existingFootage, activ
         <div className="mb-3 flex items-center justify-between gap-3">
           <div><h3 className="text-sm font-medium text-fg-1">{selectionLabel}</h3>
             <p className="mt-1 text-xs text-fg-3">{time(cuts[0]!.segment.musicStart)}–{time(cuts.at(-1)!.segment.musicEnd)} · {describePreviewBlocks(cuts.map(cut => cut.segment))}</p></div>
-          <Button size="sm" disabled={busy} onClick={() => onPlaySelection(cuts[0]!.index, cuts.at(-1)!.index)}>Play selection</Button>
+          <Button size="sm" disabled={busy} onClick={() => selectedCuts.length && onPlaySelectedRanges ? onPlaySelectedRanges() : onPlaySelection(cuts[0]!.index, cuts.at(-1)!.index)}>Play selection</Button>
         </div>
         <div className="flex gap-2 overflow-x-auto pb-2">
           {cuts.map(({ segment, index }) => <button key={`${segment.placementId}:${index}`} type="button" aria-pressed={index === selectedIndex}
-            onClick={() => onActiveClip(index)} aria-label={`Review timeline block ${index + 1}: ${segment.label}`}
+            onClick={event => onActiveClip(index, event.shiftKey, event.ctrlKey || event.metaKey)} aria-label={`Review timeline block ${index + 1}: ${segment.label}`}
             className={`w-40 shrink-0 overflow-hidden rounded-md border text-left ${index === selectedIndex ? "border-accent bg-accent-tint" : segment.kind === "gap" ? "border-dashed border-warn-lo bg-warn-tint" : "border-line bg-ink-1 hover:border-line-3"}`}>
             <div className="relative aspect-video bg-ink-0">
               {segment.kind !== "gap" && segment.thumbnailUrl ?
