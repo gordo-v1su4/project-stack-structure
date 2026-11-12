@@ -551,15 +551,18 @@ class FakeAudioElement {
 
 class ClockAudioElement extends FakeAudioElement {
   readyState = 4;
+  seeking = false;
+  delaySeek = false;
   readonly seeks: number[] = [];
   private clock = 0;
   constructor() {
     super();
     Object.defineProperty(this, "currentTime", { get: () => this.clock, set: (value: number) => {
-      this.clock = value; this.seeks.push(value);
+      this.clock = value; this.seeks.push(value); this.seeking = this.delaySeek;
     } });
   }
   tick(time: number) { this.clock = time; }
+  settleSeek() { this.seeking = false; this.dispatch("seeked"); }
 }
 
 class PresentedVideoElement extends FakeVideoElement {
@@ -712,6 +715,31 @@ describe("BrowserPreviewPlayer musical cut clock", () => {
       expect(audio.paused).toBe(false);
     });
   });
+
+  for (const stopDuringSeek of [false, true]) {
+    test(`comparison jumps hold the prepared video until audio seek completes${stopDuringSeek ? "; stop cancels the pending start" : ""}`, async () => {
+      await withClock(async (player, front, back, audio) => {
+        player.load([
+          { videoUrl: "blob:a", startTime: 0, endTime: 1, musicStart: 10, label: "First" },
+          { videoUrl: "blob:b", startTime: 0, endTime: 1, musicStart: 25, label: "Separated" },
+        ]);
+        void player.play(); await flushAsync();
+        audio.delaySeek = true;
+        front.currentTime = 1; audio.tick(11); await flushAsync(10);
+        expect(audio.seeks).toEqual([10, 25]);
+        expect(audio.seeking).toBe(true);
+        expect(audio.paused).toBe(true);
+        expect(front.paused).toBe(true);
+        expect(back.paused).toBe(true);
+        expect(back.playCalls).toBe(0);
+        if (stopDuringSeek) player.stop();
+        audio.settleSeek(); await flushAsync();
+        expect(back.playCalls).toBe(stopDuringSeek ? 0 : 1);
+        expect(audio.paused).toBe(stopDuringSeek);
+        expect(player.getState().status).toBe(stopDuringSeek ? "idle" : "playing");
+      });
+    });
+  }
 
   test("resuming a paused seek stages the next decoder before the cut and swaps without reloading the current decoder", async () => {
     await withClock(async (player, front, back, audio) => {

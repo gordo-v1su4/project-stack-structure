@@ -212,9 +212,15 @@ export class BrowserPreviewPlayer {
         && Math.abs(getMasterAudioTimeForPosition(this.segments, this.currentIndex, segment.startTime)
           - getMasterAudioTimeForPosition(this.segments, this.currentIndex - 1, previous.endTime)) > 0.000001;
       if (!this.masterAudioPositioned || discontinuity) {
+        this.pauseMasterAudio();
         audio.currentTime = target;
-        this.masterAudioPositioned = true;
       }
+      // currentTime changes synchronously even when the requested song window
+      // still needs a network seek. A playing audio element's play() would
+      // otherwise resolve immediately and let the source decoder run ahead.
+      await waitForAudioSeek(audio, token, () => this.playbackToken, signal);
+      if (token !== this.playbackToken) return;
+      this.masterAudioPositioned = true;
       this.masterAudioSegmentIndex = this.currentIndex;
       if (audio.paused) await audio.play();
       };
@@ -630,9 +636,14 @@ export class BrowserPreviewPlayer {
     await this.waitForSegmentEnd(segment.endTime, token);
     if (token !== this.playbackToken) return;
 
+    const comparisonJump = nextSegment && Math.abs(
+      getMasterAudioTimeForPosition(this.segments, index + 1, nextSegment.startTime)
+      - getMasterAudioTimeForPosition(this.segments, index, segment.endTime)) > 0.000001;
     if (standby && nextSegment && standbyReady) {
       try {
-        await standby.play();
+        // Only contiguous cuts can start the standby decoder immediately.
+        // A comparison jump must pass the master's seek/play barrier first.
+        if (!comparisonJump) await standby.play();
       } catch {
         // Standby refused to start (errored or undecodable source). currentIndex
         // still points at the finished cut, so the single advanceToNext fallback
@@ -653,7 +664,7 @@ export class BrowserPreviewPlayer {
         this.activeElementIndex = this.activeElementIndex === 0 ? 1 : 0;
         video.muted = true;
         video.pause();
-        this.nextSegmentIsLive = true;
+        this.nextSegmentIsLive = !comparisonJump;
         this.stopProgressLoop();
       }
     }
@@ -1099,6 +1110,26 @@ function hasAssignedVideoSource(video: HTMLVideoElement, requested: string): boo
   } catch {
     return false;
   }
+}
+
+function waitForAudioSeek(audio: HTMLAudioElement, token: number, getToken: () => number, signal: AbortSignal): Promise<void> {
+  if (!audio.seeking || token !== getToken() || signal.aborted) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      audio.removeEventListener("seeked", onSeeked);
+      audio.removeEventListener("error", onError);
+      signal.removeEventListener("abort", onAbort);
+    };
+    const onSeeked = () => {
+      if (audio.seeking && token === getToken() && !signal.aborted) return;
+      cleanup(); resolve();
+    };
+    const onAbort = () => { cleanup(); resolve(); };
+    const onError = () => { cleanup(); reject(new Error("Could not seek master audio.")); };
+    audio.addEventListener("seeked", onSeeked);
+    audio.addEventListener("error", onError, { once: true });
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 function waitForMetadata(video: HTMLMediaElement, token: number, getToken: () => number, signal: AbortSignal): Promise<void> {
