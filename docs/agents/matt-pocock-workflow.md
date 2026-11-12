@@ -14,9 +14,9 @@ Wayfinder is for an effort whose unresolved decisions cannot be held in one sess
 - Preserve the approved story, identities, reference roles and original project. Do not reopen settled scope without new evidence.
 - Actual creative review and final cut consent remain real acceptance gates; delegated routine decisions do not manufacture approval.
 - Use Linear as configured in `issue-tracker.md`, with native parent/blocking relationships.
-- Commits are allowed; no PRs until Robert asks.
+- Commits are allowed. For the review-performance batch V1S-458–464, Robert authorized one combined PR/GrepTile review at the end, after all seven issues are verified. Do not open an early PR or invoke GrepTile during implementation.
 - Finish the existing Love Me Tonight film first. Preparation for separate zero-footage acceptance may proceed, but its live GPU run waits for that priority to be satisfied.
-- One owner controls the current film's project writes and GPU submissions. Parallel agents can perform independent ready work without competing saves or duplicate renders.
+- One owner controls the current film's project writes and GPU submissions. For V1S-458–464, work sequentially in numerical order with one issue In Progress: diagnose, implement, verify actual acceptance, record evidence, commit and close, then move to the next issue. Preserve previously started later work without expanding it before its turn. Robert explicitly rejected parallel implementation for this batch on November 11, 2026.
 
 ## Domain documentation
 
@@ -24,6 +24,6 @@ Use the existing `CONTEXT.md` and accepted ADRs according to `domain.md`. Do not
 
 ## Current entry point
 
-[Current completion spec](https://linear.app/v1su4/issue/V1S-436), beginning with [Resume Love Me Tonight with current references and closing takes](https://linear.app/v1su4/issue/V1S-437). See the [reconciliation record](../plans/2026-11-06-current-completion-map.md). These are the current instructions; October backlog issues and older checkpoint paragraphs are historical evidence.
+The current review-performance batch is V1S-458–464 under V1S-442, beginning with [Measure and repair populated-film navigation and review latency](https://linear.app/v1su4/issue/V1S-458). The earlier [film completion spec](https://linear.app/v1su4/issue/V1S-436) and [reconciliation record](../plans/2026-11-06-current-completion-map.md) remain historical context; they do not override the current batch order or its end-of-batch PR instruction.
 
 The repository-local skills are available for subsequent sessions in this completion worktree. Read `ask-matt/SKILL.md` for routing, not an invented generic sequence.
