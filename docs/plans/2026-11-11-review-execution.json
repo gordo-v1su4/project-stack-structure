@@ -104,6 +104,20 @@
       "verification": "Full check2139pass/27skip/0fail; final affected tests, lint0errors/5existingwarnings, typecheck and build pass after final layout/hover correction",
       "budgetMisses": "Cold first thumbnail preparation7.516s; populated-app startup~2.8s separate458cost; prepared-hover<500ms passed all samples; no zero-latency claim",
       "releaseAcceptance": "Compatible web/worker and public signed-in Trigger/RustFS/playback qualification remain separate final release gate"
+    },
+    "V1S-461": {
+      "commit": "3e359e7a7c7d47f4f5a4c6c401d9224c1f83be78",
+      "trackerReceipt": "Linear get_issue read-back V1S-461 Done, updatedAt 2026-11-12T07:55:25.147Z, completedAt 2026-11-12T07:55:25.120Z; evidence comment90bb3852-b0f1-452c-b1dd-4ce6789298de",
+      "criteria": {
+        "Default to current video cut with labeled still/gap fallbacks; optional still/timing modes.": "3e359e7 and4580748; docs/operations/review-preview-461.md. Public default Current video cut0/108selected/103available, labeled still fallback with one master advancing9.843s; optional images/timing played and modal close removed media. Read-only original13/35selected, muted1280x720source7.033759s with sole audible master7.035160s.",
+        "One discoverable detailed queue connected to right activity; actual waiting/running/failed/complete states linked to exact shots.": "Public right activity actual link opened shared queue expanded and carriedA012/29.3–43.84s/viewport/stage.206current ready,0waiting/running/failed/unknown; retained275ready/2failed labeled Earlier plan and durable failure job/run/time expanded. VideoA103receipt→exact2048x1152still→NextA104→Close. No live job created for nonzero active states; canonical state/route fixtures cover waiting/running.",
+        "Ready, selected and approved are distinct; current coverage/table updates from current selection and generated media.": "Current-shot table separates ready/selected/currently approved; A0041/0/0. Browser-only existingA103visibility fixture then real response updates103available and arrival notice while SAME master node keeps playing. Not a live new-render claim. Snapshot regression preserves segments only, refreshes metadata; pending selected video stays unapproved in projection tests.",
+        "Back navigation preserves context; stage remains usable while media loads.": "Actual Story and Draft returns restoreA012/selection29.3–43.84s/viewport; remain paused.970CSS panel2columns,clientWidth=scrollWidth487. SeparateQA5000mslatency A052→A053 both complete=false,width0; Next/Close work, finally removes overrides. User scroll defect fixed3e359e7: first18same connected320x180nodes,requests18→18; middleA043–A060 retained,requests36→36 atscrollTop923.333. Native461-final-public.jpg.",
+        "Keep scene-direction, take and exact-cut approval distinct; no duplicate render submission or local-only queue.": "Scene-direction/take/exact-cut receipts remain separate; no dispatch/retry/newgeneration/adoption/approval/originaleditor. Final full protected draft hashes/revisions exactly match460handoff. Queue reads durable canonical receipts. Browser guard blocked test-control autosave; discarded local changes. No PR/GrepTile or worker/server upgrade."
+      },
+      "environment": "Visible signed-in public in-app browser;1280x720default and measured970x900narrow. Native Chrome not claimed. Temporary network/cache/viewport overrides removed. Controlled metadata arrival fixture distinguished from real queue data.",
+      "verification": "Final hosted2145pass/27fixture skips/0fail, production build/deploy and independent exact public health3e359e7.28focused tests/typecheck/affectedlint pass. Public real scrolling, queue,modal,playback,context,narrow layout and final protected readback.",
+      "releaseAcceptance": "461public acceptance complete.462–464retain own acceptance and final combined PR/worker qualification."
     }
   }
 }
