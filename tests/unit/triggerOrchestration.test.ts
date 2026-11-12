@@ -78,6 +78,7 @@ describe("Trigger orchestration", () => {
       shaderCaptureExport: "ffmpeg-shader-capture-export",
       ffglitch: "ffglitch-transform",
       imageSplitter: "image-split-grid",
+      reviewVideo: "prepare-review-video",
     });
   });
 

@@ -24,6 +24,8 @@ import { EXPORT_DISPATCH_UPGRADE_MESSAGE, isOwnedExportRequestKey } from "@/comp
 import { retrieveOwnedTriggerRun } from "@/lib/triggerRunAccess";
 import { normalizeTriggerRunStatus } from "@/lib/triggerRunStatus";
 import { H3_AUTOMATIC_RECOVERY_ATTEMPTS } from "@/lib/h3AutomaticRecovery";
+import type { reviewVideoTask } from "@/trigger/reviewVideo";
+import { reviewVideoIdentity, type ReviewVideoSource } from "./preparedReviewVideoStore";
 
 export const STACK_STRUCTURE_TRIGGER_TASKS = {
   mediaVideoPipeline: "media-video-pipeline",
@@ -44,7 +46,23 @@ export const STACK_STRUCTURE_TRIGGER_TASKS = {
   shaderCaptureExport: "ffmpeg-shader-capture-export",
   ffglitch: "ffglitch-transform",
   imageSplitter: "image-split-grid",
+  reviewVideo: "prepare-review-video",
 } as const;
+
+export async function triggerReviewVideo(source: ReviewVideoSource, intentId: string) {
+  assertTriggerConfigured();
+  if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(intentId)) throw new Error("Invalid review-video intent.");
+  const identity = reviewVideoIdentity(source);
+  const dispatch = await buildDispatchContext(["stack-structure", "review-preparation"], {
+    stageLabel: "Waiting to prepare video review media", progressMode: "indeterminate",
+  });
+  if (dispatch.userId !== source.ownerId) throw new Error("Review preparation belongs to another user.");
+  return tasks.trigger<typeof reviewVideoTask>(STACK_STRUCTURE_TRIGGER_TASKS.reviewVideo,
+    { applicationUserId: dispatch.userId, source }, {
+      idempotencyKey: createTriggerIdempotencyKey("review-video-v1", [dispatch.userId, identity, intentId]),
+      idempotencyKeyTTL: "1d", tags: dispatch.tags, metadata: dispatch.metadata,
+    }) as Promise<{ id: string }>;
+}
 
 export async function triggerH3Still(job: H3StillJob) {
   assertTriggerConfigured();

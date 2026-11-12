@@ -505,3 +505,34 @@ from a 1,102,327-byte source, retaining 295 frames and its 0.046029-second sourc
 offset; poster 2,760 bytes, scrub sheet 83,001 bytes. This local artifact check
 does not establish populated-film transfer, browser playback, production worker
 or RustFS acceptance. No media generation, live project write or deployment ran.
+
+## Video review storage and background dispatch
+
+The encoder is now connected to source-pinned RustFS storage and an authenticated
+GET/POST preparation API through a dedicated Trigger CPU queue. A source binding
+includes owner, configured bucket, safe video key, S3 ETag, byte length and recipe.
+The worker verifies authorization again and downloads with `If-Match`, checking
+length and streamed bounds. It publishes content-addressed proxy/poster/sprite
+objects before conditionally creating a validated ready manifest. No project or
+take state changes. Source replacement, partial uploads and stale manifests
+cannot masquerade as complete preparation.
+
+An actual S3 SDK loopback test passes 22 assertions for pinned conditional reads,
+upload order, reuse without encoding/downloading again, original integrity,
+ownership-before-storage, source-version isolation/rejection, scratch cleanup,
+partial upload failure, duplicate publication and pointer-tamper rejection.
+Duplicate artifact creation also checks existing object length/type/hash/recipe
+metadata before accepting the conditional-create conflict.
+Four route tests pass 27 assertions for auth/ownership, read-only GET, ready
+reuse, queued acknowledgments, ignored forged owner/version fields, validation
+and safe errors. A dispatch test passes nine assertions for exactly one session
+user tag, stable transport intent and changed source/retry isolation. These are
+contract/protocol tests; they do not prove deployment or public worker/storage.
+
+The next integration is focused hover/playback consumption and ingestion/backfill
+dispatch. None is claimed complete by the presence of a task definition or API.
+See [the storage/dispatch contract](../architecture/review-video-preparation.md).
+
+The full check passed 2,108 tests with 27 fixture skips and zero failures, and
+production build passed. A subsequent duplicate-object integrity guard and its
+wire-protocol assertion pass the affected integration test and type checking.

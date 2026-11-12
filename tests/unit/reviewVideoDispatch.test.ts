@@ -1,0 +1,28 @@
+import { afterEach, expect, mock, test } from "bun:test";
+let user: string | null = "github-fixture";
+const trigger = mock(async () => ({ id: "run-review" }));
+mock.module("@/auth", () => ({ auth: async () => user ? { user: { id: user } } : null }));
+mock.module("@trigger.dev/sdk", () => ({ tasks: { trigger }, runs: {}, idempotencyKeys: {} }));
+const { triggerReviewVideo } = await import("@/lib/triggerOrchestration");
+const source = { ownerId: "github-fixture", bucket: "stack-structure", objectKey: "media-uploads/projects/github-fixture/clips/source.mp4", etag: '"version"', bytes: 100 };
+const originalUrl = process.env.TRIGGER_API_URL, originalKey = process.env.TRIGGER_SECRET_KEY;
+afterEach(() => { user = "github-fixture"; trigger.mockClear();
+  if (originalUrl === undefined) delete process.env.TRIGGER_API_URL; else process.env.TRIGGER_API_URL = originalUrl;
+  if (originalKey === undefined) delete process.env.TRIGGER_SECRET_KEY; else process.env.TRIGGER_SECRET_KEY = originalKey;
+});
+test("review dispatch is user-scoped and idempotent for exactly one source-version intent", async () => {
+  process.env.TRIGGER_API_URL = "https://trigger.v1su4.dev"; process.env.TRIGGER_SECRET_KEY = "fixture-only";
+  const intent = "f60c0142-6f93-46b4-a663-ef7c8bc0f74c";
+  await triggerReviewVideo(source, intent); await triggerReviewVideo(source, intent);
+  const first = trigger.mock.calls[0] as unknown as [string, unknown, { tags: string[]; idempotencyKey: string }];
+  const repeated = trigger.mock.calls[1] as unknown as typeof first;
+  expect(first[0]).toBe("prepare-review-video"); expect(first[1]).toEqual({ applicationUserId: user, source });
+  expect(first[2].tags.filter(tag => tag.startsWith("user:"))).toEqual(["user:github-fixture"]);
+  expect(first[2].idempotencyKey).toBe(repeated[2].idempotencyKey);
+  await triggerReviewVideo({ ...source, etag: '"changed"' }, intent);
+  expect((trigger.mock.calls[2] as unknown as typeof first)[2].idempotencyKey).not.toBe(first[2].idempotencyKey);
+  await triggerReviewVideo(source, "a60c0142-6f93-46b4-a663-ef7c8bc0f74c");
+  expect((trigger.mock.calls[3] as unknown as typeof first)[2].idempotencyKey).not.toBe(first[2].idempotencyKey);
+  const count = trigger.mock.calls.length; user = null; await expect(triggerReviewVideo(source, intent)).rejects.toThrow("Sign in");
+  user = "github-other"; await expect(triggerReviewVideo(source, intent)).rejects.toThrow("another user"); expect(trigger.mock.calls.length).toBe(count);
+});

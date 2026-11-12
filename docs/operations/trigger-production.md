@@ -36,6 +36,7 @@ environment, or deployment history here.
 | `qwen-h3-shot-planning` | `vm100-heavy` (1) | owned immutable shot directions (source candidate; not deployed) |
 | `local-ai-generation` | `vm100-heavy` (1) | generated objects in RustFS |
 | `ffmpeg-preview-or-concat` | `media-assembly` (2) | preview MP4 in RustFS |
+| `prepare-review-video` | `review-video-preparation` (1) | version-bound proxy, poster, scrub sheet and ready manifest in RustFS (source candidate; not deployed) |
 | `ffmpeg-final-music-video-export` | `media-assembly` (2) | final MP4 in RustFS |
 | `ffmpeg-shader-capture-export` | `media-assembly` (2) | muxed MP4 in RustFS |
 | `ffmpeg-seedance-audio-reference` | `media-assembly` (2) | section audio reference in RustFS |
@@ -50,9 +51,14 @@ with concurrency 2. Separate queues do not provide a global GPU lock; worker
 GPU locking still protects shared hardware. Paid Higgsfield work is independently
 serialized and uses one attempt so automatic retries cannot duplicate spend.
 
+The source-candidate review-preparation task is CPU-only, uses the existing
+FFmpeg/Sharp worker image and a separate concurrency-one queue. It permits two
+safe preparation attempts and has a 15-minute task limit. It never generates
+new creative media or selects/approves takes. See [review video preparation](../architecture/review-video-preparation.md).
+
 Verified through the production worker API on 2026-09-07: worker
 `20260907.2` (`worker_cmtqvhk7x00me3is05myhu6b6`) uses SDK/CLI `4.5.16`
-and exposes exactly the 17 local task IDs above. Deployment `pqu9v2i8` was built
+and exposed the 17 task IDs present then. Deployment `pqu9v2i8` was built
 on Linux from detached source commit `a07cd1ea24f30ad856db0e00cfae651ea2684ddc`
 and published to the production worker host registry with image digest
 `sha256:c2fd98ff0c3cb044f7a60ace5a019f9603d76e6d84377dcb9f8aad30c92b941c`.
