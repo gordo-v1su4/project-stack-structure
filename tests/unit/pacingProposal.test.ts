@@ -1,11 +1,84 @@
 import { expect, test } from "bun:test";
-import { createMusicVideoProject, prepareApprovedPlacements, placementInputSignature } from "@/components/studio/musicVideoProject";
+import { buildEditPlanPreviewSegments, createMusicVideoProject, prepareApprovedPlacements, placementInputSignature } from "@/components/studio/musicVideoProject";
 import { applyPacingProposal, preparePacingProposal } from "@/components/studio/pacingProposal";
+import { effectiveGenerationScope, generationScopeSha256, generationSemanticSha256, type GenerationScopeReceipt } from "@/components/studio/generationScope";
+import { applyGeneratedAssetOverlays } from "@/components/studio/generatedAssets";
+import { selectedFootageFixture } from "../helpers/selectedFootageEvidence";
 
 function fixture() {
   return prepareApprovedPlacements({ project: createMusicVideoProject({ analysis: null, duration: 12, videoSources: [],
     storyDrafts: [{ id: "intro", label: "Intro", prompt: "Dancing", start: 0, end: 12 }] }), videoSources: [] });
 }
+
+function selectedTakeFixture(version: 1 | 2, issued = false) {
+  const project = fixture();
+  project.sourceContextSignature = "source-context";
+  const gap = project.placementPlan!.placements[0];
+  project.placementPlan!.placements = [
+    { ...gap, id: "protected", songStart: 0, songEnd: 4, sourceEnd: 4 },
+    { ...gap, id: "unbound", songStart: 4, songEnd: 12, sourceEnd: 8 },
+  ];
+  if (version === 2) {
+    project.generationScopeVersion = 2;
+    project.generationSourceContextSha256 = "a".repeat(64);
+    project.generationStorySha256 = "b".repeat(64);
+  }
+  project.placementPlan!.inputSignature = placementInputSignature(project);
+  const scope = effectiveGenerationScope(project)!;
+  if (issued) {
+    const body: GenerationScopeReceipt["body"] = {
+      version: 1, kind: "baseline", ownerId: "owner", projectId: project.id, baselineRevision: "r1",
+      fromSourceContext: project.sourceContextSignature!, toSourceContext: project.sourceContextSignature!,
+      fromInputSignature: project.placementPlan!.inputSignature, toInputSignature: project.placementPlan!.inputSignature,
+      scopeSignature: scope, semanticSha256: generationSemanticSha256(project), references: [], rawReferences: [],
+      sourceMediaVersions: [], appendedReferenceIds: [], storySha256: project.generationStorySha256!,
+      sourceInventorySha256: project.generationSourceContextSha256!,
+    };
+    const sha256 = generationScopeSha256(body);
+    project.generationScope = { version: 1, id: `generation-scope-${sha256}`, sha256, body };
+  }
+  const asset = selectedFootageFixture().asset;
+  asset.trimStart = 0;
+  asset.target = { ...asset.target!, planSignature: scope, timelineItemId: gap.timelineItemId,
+    sectionId: gap.sectionId, requirementId: project.editPlan.timelineItems[0].requirementId, songStart: 0, songEnd: 4 };
+  const generatedDraft = { planSignature: scope, revision: 1, assetIds: [asset.id] };
+  const playback = (current = project) => applyGeneratedAssetOverlays(
+    buildEditPlanPreviewSegments({ project: current, videoSources: [] }), [asset],
+  ).filter(segment => segment.generatedAssetId === asset.id);
+  return { project, asset, generatedDraft, playback };
+}
+
+for (const issued of [false, true]) {
+  test(`pacing refuses to orphan protected selected footage with ${issued ? "an issued" : "a derived"} v2 scope`, () => {
+    const { project, asset, generatedDraft, playback } = selectedTakeFixture(2, issued);
+    const before = JSON.stringify({ project, asset, generatedDraft });
+    expect(effectiveGenerationScope(project)).toBe(generatedDraft.planSignature);
+    expect(playback()).toHaveLength(1);
+    const proposal = preparePacingProposal(project, [2, 4, 6, 8, 10], [{ start: 0, end: 4 }], "selected");
+    expect(proposal.changed).toBe(true);
+    expect(proposal.placements[0]).toEqual(project.placementPlan!.placements[0]);
+    expect(() => applyPacingProposal(project, proposal, "selected")).toThrow("protected take or shot bindings");
+    expect(JSON.stringify({ project, asset, generatedDraft })).toBe(before);
+    expect(playback(JSON.parse(JSON.stringify(project)))).toHaveLength(1);
+  });
+}
+
+test("legacy pacing that retains the scope keeps selected footage playable", () => {
+  const { project, playback } = selectedTakeFixture(1);
+  const proposal = preparePacingProposal(project, [2, 4, 6, 8, 10], [{ start: 0, end: 4 }], "selected");
+  const next = applyPacingProposal(project, proposal, "selected");
+  expect(next.placementPlan!.placements).toHaveLength(5);
+  expect(effectiveGenerationScope(next)).toBe(effectiveGenerationScope(project));
+  expect(playback(next)).toHaveLength(1);
+});
+
+test("v2 pacing remains available without protected bindings, and a no-op preserves the scope", () => {
+  const { project } = selectedTakeFixture(2);
+  const unchanged = preparePacingProposal(project, [4], [{ start: 0, end: 4 }], "");
+  expect(applyPacingProposal(project, unchanged, "")).toBe(project);
+  const proposal = preparePacingProposal(project, [2, 4, 6, 8, 10], [], "");
+  expect(applyPacingProposal(project, proposal, "").placementPlan!.placements).toHaveLength(6);
+});
 
 test("preparation keeps live cut exact; apply changes only reviewed gap timing; undo snapshot remains intact", () => {
   const project = fixture(), before = structuredClone(project);

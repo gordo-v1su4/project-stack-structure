@@ -1,5 +1,6 @@
 import { isPlacementPlanCurrent, type ApprovedPlacement, type MusicVideoProject } from "./musicVideoProject";
 import type { SongRange } from "./reviewSelection";
+import { effectiveGenerationScope } from "./generationScope";
 
 export interface PacingProposal {
   snapshot: string;
@@ -66,6 +67,12 @@ export function applyPacingProposal(project: MusicVideoProject, proposal: Pacing
   const checked = preparePacingProposal(project, proposal.cues, proposal.protectedRanges, context);
   if (JSON.stringify(checked) !== JSON.stringify(proposal)) throw new Error("The pacing proposal changed. Prepare it again.");
   if (!checked.changed) return project;
-  return { ...project, generationScope: undefined, faithfulPlacementPlan: undefined,
+  const next: MusicVideoProject = { ...project, generationScope: undefined, faithfulPlacementPlan: undefined,
     placementPlan: { ...project.placementPlan!, revision: project.placementPlan!.revision + 1, placements: checked.placements } };
+  // Exact placements alone cannot preserve takes whose targets bind the whole plan.
+  // Keep the live cut intact until an explicit reconciliation can retain those bindings.
+  if (checked.protectedRanges.length && effectiveGenerationScope(next) !== effectiveGenerationScope(project)) {
+    throw new Error("Pacing would invalidate protected take or shot bindings. Keep the current cut until those bindings can be reconciled.");
+  }
+  return next;
 }
