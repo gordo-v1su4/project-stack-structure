@@ -44,6 +44,7 @@ export function ProjectRenderQueue({ projectId, revision, shotIds, onInspectShot
   const rows = (snapshot?.projectId === projectId ? snapshot.rows : []).filter(row => history || row.currentPlan);
   const running = rows.filter(isProjectWorkActive).length;
   const completed = rows.filter(row => row.state === "ready").length;
+  const unknown = rows.filter(row => !isProjectWorkActive(row) && !["ready", "failed", "cancelled"].includes(row.state)).length;
   return <Surface className="space-y-2"><details id="queue" open={open} onToggle={event => setOpen(event.currentTarget.open)}>
     <summary className="cursor-pointer text-sm font-medium text-fg-0">Render queue · images and videos</summary>
     {open ? <div className="mt-3 space-y-3">
@@ -52,7 +53,7 @@ export function ProjectRenderQueue({ projectId, revision, shotIds, onInspectShot
       <div className="flex flex-wrap items-center gap-3 text-xs text-fg-2">
         <Button size="sm" onClick={() => setRefreshKey(n => n + 1)}>Refresh receipts</Button>
         <label><input type="checkbox" checked={history} onChange={event => setHistory(event.target.checked)} /> Include earlier shot plans</label>
-        <span role="status">{snapshot ? `${completed} ready · ${running} unfinished · ${rows.filter(r => r.state === "failed").length} failed` : "Reading project receipts…"}</span>
+        <span role="status">{snapshot ? `${completed} ready · ${rows.filter(r => r.state === "queued").length} waiting · ${running - rows.filter(r => r.state === "queued").length} running · ${rows.filter(r => r.state === "failed").length} failed · ${rows.filter(r => r.state === "cancelled").length} cancelled · ${unknown} unknown` : "Reading project receipts…"}</span>
       </div>
       {snapshot ? <p className="text-xs text-fg-3">Receipts read {new Date(snapshot.checkedAt).toLocaleTimeString()} · available media, selected footage and approval are separate.</p> : null}
       {error ? <p role="alert" className="text-xs text-warn">{error}</p> : null}
@@ -60,10 +61,11 @@ export function ProjectRenderQueue({ projectId, revision, shotIds, onInspectShot
       <ol aria-label="Project render receipts" className="max-h-[55vh] space-y-1 overflow-y-auto">
         {rows.slice(0, limit).map(row => {
           const tone: StatusTone = row.state === "ready" ? "ready" : row.state === "failed" ? "failed"
-            : ["unavailable", "submission_unknown"].includes(row.state) ? "review" : row.state === "queued" ? "waiting" : "processing";
+            : row.state === "queued" || row.state === "cancelled" ? "waiting" : isProjectWorkActive(row) ? "processing" : "review";
           return <li key={`${row.kind}:${row.id}`} className="flex flex-wrap items-center gap-2 rounded-sm border border-line px-2 py-2 text-xs text-fg-2">
             <StatusDot tone={tone} /><span className="w-12 text-fg-3">{row.kind}</span><span className="min-w-0 max-w-[18ch] truncate font-mono">{row.shotId}</span>
             <span>{row.state.replaceAll("_", " ")}</span><span className="text-fg-3">attempt {row.attempt + 1}</span>
+            {!row.currentPlan ? <span className="text-fg-3">Earlier plan</span> : null}
             {row.selected ? <span className="text-accent">Selected in cut</span> : null}
             {shotIds.includes(row.shotId) ? <Button size="sm" onClick={() => onInspectShot(row.shotId)}>Shot image</Button> : null}
             <details className="ml-auto text-fg-3"><summary className="cursor-pointer">Receipt</summary><p className="break-all font-mono">{row.id}</p>

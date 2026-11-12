@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { hydrateStudioProjectDraft, type PersistedStudioProjectDraft } from "@/components/studio/projectPersistence";
 import { buildStoryDraftSegments } from "@/components/studio/animaticDraft";
 import { applyDraftGeneratedAssets } from "@/components/studio/generatedDraft";
-import { generatedAssetMatchesPreviewSegment } from "@/components/studio/generatedAssets";
+import { generatedAssetMatchesPreviewSegment, listApprovedGeneratedVideoAssets } from "@/components/studio/generatedAssets";
 import type { PreviewReviewCut } from "@/components/studio/animaticPreviewSnapshot";
 import type { StillAnimaticPlan } from "@/components/studio/stillAnimatic";
 import { clipAudioKey, normalizeClipAudioSettings, usesClipAudio } from "@/components/studio/clipAudio";
@@ -26,6 +26,15 @@ export function projectReviewCut(projectId: string, draft: PersistedStudioProjec
   const segments = applyDraftGeneratedAssets(base, assets, runtime.generatedDraft);
   const availableVideoCount = assets.filter(asset => asset.status === "completed" && asset.mediaKind === "video"
     && base.some(segment => generatedAssetMatchesPreviewSegment(asset, segment))).length;
-  return { segments, targets: replacementTargets(projectId, base), availableVideoCount, selectedVideoCount: segments.filter(s => s.kind !== "gap" && Boolean(s.videoUrl)).length,
+  const approved = new Set(listApprovedGeneratedVideoAssets(assets).map(asset => asset.id));
+  const coverage = (plan?.shots ?? []).map(shot => {
+    const windows = base.filter(segment => segment.animaticShotId === shot.id);
+    const available = assets.filter(asset => asset.status === "completed" && asset.mediaKind === "video"
+      && windows.some(segment => generatedAssetMatchesPreviewSegment(asset, segment)));
+    return { shotId: shot.id, availableTakeIds: available.map(asset => asset.id),
+      selectedVideoCount: segments.filter(segment => segment.animaticShotId === shot.id && segment.kind !== "gap" && Boolean(segment.videoUrl)).length,
+      approvedTakeCount: available.filter(asset => approved.has(asset.id)).length };
+  });
+  return { segments, targets: replacementTargets(projectId, base), coverage, availableVideoCount, selectedVideoCount: segments.filter(s => s.kind !== "gap" && Boolean(s.videoUrl)).length,
     fingerprint: createHash("sha256").update(JSON.stringify(segments)).digest("hex") };
 }

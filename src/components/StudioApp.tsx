@@ -3230,6 +3230,7 @@ export default function StudioApp() {
 
           <Inspector
             model={stageHeaderModel}
+            reviewContext={{ shotId: selectedSlot?.animaticShotId, ranges: songSelection?.ranges, viewport: reviewViewport, stage: tab === "generate" ? "draft" : "story" }}
             preview={stagePreviewRun}
             notice={splitNotice}
             onPrimary={handleStagePrimary}

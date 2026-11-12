@@ -66,7 +66,7 @@ export function MusicCutExplorer(props: MusicCutExplorerProps) {
         <option value="fast">Fast · 1–3s</option><option value="balanced">Balanced · 4s minimum</option><option value="relaxed">Relaxed · 4s minimum</option>
       </select>
     </label>
-    <div className="my-3 grid gap-3 md:grid-cols-3">
+    <div className="my-3 grid grid-cols-[repeat(auto-fit,minmax(min(100%,12rem),1fr))] gap-3">
       <ParamSlider label="Cue density" value={onsetDensity} min={5} max={100} step={5} unit="%" layout="stack" accent="var(--color-accent)" onChange={props.onOnsetDensity} />
       <ParamSlider label="Lyric influence" value={lyricCueBlend} min={0} max={100} step={5} unit="%" layout="stack" accent="var(--color-accent)" onChange={props.onLyricCueBlend} />
       <ParamSlider label="Combine nearby cues" value={lyricMergeWindow} min={0} max={5} step={0.5} unit="s" layout="stack" accent="var(--color-accent)" onChange={props.onLyricMergeWindow} />

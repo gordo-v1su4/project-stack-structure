@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import type { AnimaticPreviewSnapshot } from "./animaticPreviewSnapshot";
+import { reconcilePreviewSnapshot, type AnimaticPreviewSnapshot } from "./animaticPreviewSnapshot";
 import { animaticImage } from "./stillAnimatic";
 import { AnimaticShotThumbnail } from "./AnimaticShotThumbnail";
 import { StillAnimaticPreview } from "./StillAnimaticPreview";
@@ -33,6 +33,8 @@ export function AnimaticPreviewPage({ projectId }: { projectId: string }) {
   const [returnStage, setReturnStage] = useState<ReviewStage>("story");
   const [watch, setWatch] = useState<{ nonce: number; ranges: SongRange[] } | null>(null);
   const knownImages = useRef<Map<string, string> | null>(null);
+  const knownVideos = useRef<Set<string> | null>(null);
+  const [videoArrivals, setVideoArrivals] = useState<string[]>([]);
   useEffect(() => {
     const incoming = readReviewPreviewContext(window.location.search);
     setReturnStage(new URLSearchParams(window.location.search).get("stage") === "draft" ? "draft" : "story");
@@ -40,6 +42,7 @@ export function AnimaticPreviewPage({ projectId }: { projectId: string }) {
     setViewport(incoming.viewport ?? null); setInitialViewport(incoming.viewport ?? null);
     setSelection(incoming.ranges.length ? { ranges: incoming.ranges, anchor: incoming.ranges[0] } : null);
     setSnapshot(null); knownImages.current = null; setArrivals([]); setImageOpen(false); setWatch(null); setPreview(null);
+    knownVideos.current = null; setVideoArrivals([]); setMode("video");
     let active = true, timer: ReturnType<typeof setTimeout>, revision = "", busy = false;
     const controller = new AbortController();
     async function refresh() {
@@ -63,7 +66,13 @@ export function AnimaticPreviewPage({ projectId }: { projectId: string }) {
               if (arrived.length) setArrivals(arrived);
             }
             knownImages.current = images; revision = next.revision;
-            setSnapshot(current => ({ ...next, cut: next.cut && current?.projectId === next.projectId && current.cut?.fingerprint === next.cut.fingerprint ? current.cut : next.cut }));
+            const coverage = next.cut?.coverage ?? [];
+            if (knownVideos.current) {
+              const arrived = coverage.filter(row => row.availableTakeIds.some(id => !knownVideos.current!.has(id))).map(row => row.shotId);
+              if (arrived.length) setVideoArrivals(arrived);
+            }
+            knownVideos.current = new Set(coverage.flatMap(row => row.availableTakeIds));
+            setSnapshot(current => reconcilePreviewSnapshot(current, next));
           }
         }
         if (active) { setError(""); setChecked(new Date().toLocaleTimeString()); }
@@ -87,6 +96,7 @@ export function AnimaticPreviewPage({ projectId }: { projectId: string }) {
     <p className="max-w-3xl text-sm text-fg-3">Review the current video cut with the master song. Missing video stays labeled as a still or timing gap; completed media is separate from cut approval.</p>
     {checked ? <p className="text-xs text-fg-3">Live · Checked {checked}{requested.length ? ` · Requested: ${requested.join(", ")}` : ""}</p> : null}
     {arrivals.length ? <p role="status" className="text-sm text-accent">New images: {arrivals.join(", ")}</p> : null}
+    {videoArrivals.length ? <p role="status" className="text-sm text-accent">New video takes ready for review: {videoArrivals.join(", ")} · selection unchanged</p> : null}
     {error ? <p role="alert" className="text-sm text-warn">{error}</p> : null}
     {snapshot?.reviewSources ? <ReviewPreparationPanel key={`preparation:${projectId}`} projectId={projectId} sources={snapshot.reviewSources} /> : null}
     {snapshot ? <div className="flex flex-wrap items-center gap-2" aria-label="Preview modes">
@@ -104,6 +114,17 @@ export function AnimaticPreviewPage({ projectId }: { projectId: string }) {
     {snapshot?.cut?.targets ? <ReplacementReviewPanel key={`replacement:${projectId}`} projectId={projectId} targets={snapshot.cut.targets} ranges={selection?.ranges ?? []} /> : null}
     {snapshot ? <ProjectRenderQueue key={`queue:${projectId}`} projectId={projectId} revision={snapshot.revision} shotIds={plan?.shots.map(s => s.id) ?? []}
       onInspectShot={id => { setSelected(id); setImageOpen(true); }} /> : null}
+    {snapshot?.cut?.coverage?.length ? <details className="rounded-md border border-line p-3">
+      <summary className="cursor-pointer text-sm text-fg-2">Current shot coverage · ready, selected and approved</summary>
+      <p className="my-2 text-xs text-fg-3">Ready counts current delivered takes. Selection controls this viewing cut. Take approval requires current evidence; scene direction and exact-cut consent are separate reviews in Story and Draft.</p>
+      <div className="max-h-72 overflow-auto"><table className="w-full text-left text-xs" aria-label="Current shot coverage">
+        <thead><tr><th className="p-2">Shot</th><th className="p-2">Ready takes</th><th className="p-2">Selected windows</th><th className="p-2">Approved takes</th></tr></thead>
+        <tbody>{snapshot.cut.coverage.map(row => <tr key={row.shotId} className="border-t border-line">
+          <th className="p-2"><button className="text-accent hover:underline" onClick={() => { setSelected(row.shotId); setImageOpen(true); }}>{row.shotId}</button></th>
+          <td className="p-2">{row.availableTakeIds.length}</td><td className="p-2">{row.selectedVideoCount}</td><td className="p-2">{row.approvedTakeCount}</td>
+        </tr>)}</tbody>
+      </table></div>
+    </details> : null}
     {plan && snapshot ? <>
       <details className="rounded-md border border-line p-3"><summary className="cursor-pointer text-sm text-fg-2">Still direction review</summary>
         <AnimaticReviewPanel snapshot={snapshot} onSaved={(revision, review, expectedRevision) => setSnapshot(current =>

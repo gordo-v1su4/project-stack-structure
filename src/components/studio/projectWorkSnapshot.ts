@@ -3,5 +3,5 @@ export type ProjectWorkRow = { id: string; kind: "image" | "video"; shotId: stri
 export type ProjectWorkSnapshot = { projectId: string; revision: string; checkedAt: string; total: number;
   partial: boolean; rows: ProjectWorkRow[] };
 export function isProjectWorkActive(row: ProjectWorkRow) {
-  return !["ready", "failed", "cancelled"].includes(row.state);
+  return ["queued", "preparing", "submitting", "rendering", "persisting", "cancel_requested"].includes(row.state);
 }

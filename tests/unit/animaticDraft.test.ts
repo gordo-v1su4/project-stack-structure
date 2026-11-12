@@ -94,10 +94,13 @@ test("shared Preview shows selected pending video without adopting available ren
   f.saved.draft.generatedDraft = { planSignature: first.planSignature!, revision: 1, assetIds: [] };
   const available = projectReviewCut(f.input.projectId, f.saved.draft, f.plan);
   expect(available.availableVideoCount).toBe(1); expect(available.selectedVideoCount).toBe(0);
+  expect(available.coverage?.[0]).toEqual({ shotId: f.plan.shots[0].id, availableTakeIds: [asset.id], selectedVideoCount: 0, approvedTakeCount: 0 });
   f.saved.draft.generatedDraft.assetIds = [asset.id];
   const before = JSON.stringify(f.saved);
   const selected = projectReviewCut(f.input.projectId, f.saved.draft, f.plan);
   expect(selected.selectedVideoCount).toBe(1);
+  expect(selected.coverage?.[0].selectedVideoCount).toBe(1);
+  expect(selected.coverage?.[0].approvedTakeCount).toBe(0);
   expect(selected.segments[0].kind).toBe("source"); expect(selected.segments[1].kind).toBe("gap");
   expect(selected.fingerprint).not.toBe(available.fingerprint);
   expect(asset.reviewStatus).toBe("pending"); expect(JSON.stringify(f.saved)).toBe(before);

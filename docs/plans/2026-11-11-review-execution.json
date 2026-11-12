@@ -19,9 +19,16 @@
   "contextByIssue": {
     "V1S-458": "01a1c36a-2e37-7260-9204-378380cc385f-current-ticket",
     "V1S-459": "01a1ce3e-3217-74a0-a93a-3d8eb179eaa7",
-    "V1S-460": "01a1ce58-ea5d-7930-b126-90e74f3c417b"
+    "V1S-460": "01a1ce58-ea5d-7930-b126-90e74f3c417b",
+    "V1S-461": "01a1cea3-3a8e-76f3-bace-c00af2ac8e9d"
   },
   "coupledWork": [
+    {
+      "primary": "V1S-461",
+      "related": "V1S-460",
+      "reason": "Inherited public screenshot shows cue settings using viewport breakpoints despite a narrow center column. Wrap controls by available panel width as part of stage usability.",
+      "stopWhen": "Controls wrap without horizontal overflow at the public narrow viewport; preserve exact selection overlays and master seek/play barrier."
+    },
     {
       "primary": "V1S-460",
       "related": "V1S-459",
