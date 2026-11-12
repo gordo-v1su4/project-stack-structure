@@ -124,6 +124,7 @@ test("screening retained source footage never changes selected windows or exceed
   expect(result.selectedVideoCount).toBe(0);
   expect(result.deliveredSegments?.[1].startTime).toBe(2);
   expect(result.deliveredSegments?.[1].endTime).toBe(7);
+  expect(result.deliveredSegments?.[1].videoUrl.startsWith("/api/storage/media?")).toBe(true);
   expect(result.deliveredVideoCount).toBe(1);
   expect(JSON.stringify(f.saved)).toBe(before);
   shot.sourceFrame.sourceSecond = 9;

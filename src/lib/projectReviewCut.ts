@@ -37,7 +37,9 @@ export function projectReviewCut(projectId: string, draft: PersistedStudioProjec
     const duration = segment.musicEnd - segment.musicStart;
     if (!retained || !source?.videoUrl || !Number.isFinite(retained.sourceSecond) || retained.sourceSecond < 0
       || !Number.isFinite(source.duration) || retained.sourceSecond + duration > source.duration + .001) return [segment];
-    return [{ ...segment, kind: "source" as const, videoUrl: source.videoUrl, sourceClipId: source.id,
+    const videoUrl = source.storageBucket && source.storagePath
+      ? `/api/storage/media?${new URLSearchParams({ bucket: source.storageBucket, objectKey: source.storagePath })}` : source.videoUrl;
+    return [{ ...segment, kind: "source" as const, videoUrl, sourceClipId: source.id,
       startTime: retained.sourceSecond, endTime: retained.sourceSecond + duration, gapReason: undefined,
       sourceRefLabel: "PREVIEW · retained source footage", useClipAudio: false }];
   });
