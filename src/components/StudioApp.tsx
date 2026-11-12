@@ -44,6 +44,8 @@ import { loadStudioProjectSelection, readStudioProjectSelection, rememberStudioP
 import { readStudioReviewContext, restoredReviewTab } from "./studio/reviewPreviewContext";
 import { resolveSourceSuggestionPreview } from "./studio/sourceSuggestionPreview";
 import { resolveShotTakeTarget, selectShotTake } from "./studio/shotTakeReview";
+import { replacementTargets } from "./studio/replacementReview";
+import { ReplacementReviewPanel } from "./studio/ReplacementReviewPanel";
 import { ProjectSaveSession } from "./studio/projectSaveSession";
 import { saveVersionedStudioProject } from "./studio/preparedProjectSave";
 import type { StudioProjectSummary } from "@/lib/studioProjectStore";
@@ -2807,6 +2809,7 @@ export default function StudioApp() {
     [generatedAssets, musicVideoProject, selectedSlot],
   );
   const shotTakeTarget = useMemo(() => resolveShotTakeTarget(selectedSlot, baseStoryPreviewSegments), [selectedSlot, baseStoryPreviewSegments]);
+  const replacementReviewTargets = useMemo(() => replacementTargets(activeProjectId ?? "", baseStoryPreviewSegments), [activeProjectId, baseStoryPreviewSegments]);
   const canSelectShotTake = storyState.storyGenerated && Boolean(storyState.confirmedTreatmentId)
     && Boolean(storyState.storyContentSignature) && Boolean(musicVideoProject && isPlacementPlanCurrent(musicVideoProject));
   const useShotTake = (assetId: string, expectedTargetKey: string, expectedRevision: number) => {
@@ -2936,6 +2939,8 @@ export default function StudioApp() {
               auditioning={Boolean(activeReviewAudition)} auditionRanges={activeReviewAudition ? reviewAudition?.ranges : undefined}
               onFullSong={() => { previewPlayer.pause(); setReviewAudition(null); setGeneratePreviewRange(null); setRoughCutPreviewRange(null); setGeneratedAuditionSegments(null); }} /> : null}
 
+            {activeProjectId && beatJoinAnalysis && ["story", "generate", "join"].includes(tab) ? <ReplacementReviewPanel key={activeProjectId}
+              projectId={activeProjectId} targets={replacementReviewTargets} ranges={songSelection?.ranges ?? []} /> : null}
             {monitorGate && !monitorFocused ? <StageGateBanner gate={monitorGate} /> : null}
 
             {showProgramMonitor ? (

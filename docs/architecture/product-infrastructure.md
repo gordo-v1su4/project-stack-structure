@@ -1,5 +1,13 @@
 # Product Infrastructure
 
+Review annotations for replacement shots use a separate owner/project object at
+`media-uploads/projects/<owner>/<project-id>/review/replacement-marks.json` in the
+configured RustFS bucket. The authenticated project-owned replacement-review
+route uses direct conditional object writes with an independent ETag. It does not
+save the film draft or dispatch work. Exact shot/plan/reference keys prevent marks
+from silently following changed footage; stale annotations require review before
+any future replacement submission. This uses the existing RustFS configuration.
+
 How the smart auto music-video editor is assembled: what runs where, what the user supplies, and what the server does.
 
 For pipeline contracts and ranking rules, see [media-pipeline.md](./media-pipeline.md). For product vision, see [creative-production-brief.md](../product/creative-production-brief.md).

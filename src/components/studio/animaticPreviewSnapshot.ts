@@ -1,7 +1,8 @@
 import type { StillAnimaticPlan } from "./stillAnimatic";
 import type { EditPlanPreviewSegment } from "./musicVideoProject";
+import type { ReplacementTarget } from "./replacementReview";
 
-export type PreviewReviewCut = { segments: EditPlanPreviewSegment[]; fingerprint: string;
+export type PreviewReviewCut = { segments: EditPlanPreviewSegment[]; targets?: ReplacementTarget[]; fingerprint: string;
   availableVideoCount: number; selectedVideoCount: number };
 
 export type AnimaticPreviewSnapshot = {

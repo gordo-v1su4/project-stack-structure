@@ -17,6 +17,7 @@ const CutReviewPlayer = dynamic(() => import("./CutReviewPlayer").then(module =>
   ssr: false, loading: () => <p className="py-8 text-sm text-fg-3">Loading cut player…</p>,
 });
 const ProjectRenderQueue = dynamic(() => import("./ProjectRenderQueue").then(module => module.ProjectRenderQueue), { ssr: false });
+const ReplacementReviewPanel = dynamic(() => import("./ReplacementReviewPanel").then(module => module.ReplacementReviewPanel), { ssr: false });
 
 export function AnimaticPreviewPage({ projectId }: { projectId: string }) {
   const [loadedSnapshot, setSnapshot] = useState<AnimaticPreviewSnapshot | null>(null), [error, setError] = useState("");
@@ -95,6 +96,7 @@ export function AnimaticPreviewPage({ projectId }: { projectId: string }) {
         plan={plan} context={context} initialRanges={watch?.ranges ?? initialRanges} autoPlay={Boolean(watch)}
         selection={selection} onSelectionChange={setSelection} multiSelect={multiSelect} onMultiSelect={() => setMultiSelect(value => !value)} /></div>
     </Surface> : null}
+    {snapshot?.cut?.targets ? <ReplacementReviewPanel key={projectId} projectId={projectId} targets={snapshot.cut.targets} ranges={selection?.ranges ?? []} /> : null}
     {snapshot ? <ProjectRenderQueue key={projectId} projectId={projectId} revision={snapshot.revision} shotIds={plan?.shots.map(s => s.id) ?? []}
       onInspectShot={id => { setSelected(id); setImageOpen(true); }} /> : null}
     {plan && snapshot ? <>

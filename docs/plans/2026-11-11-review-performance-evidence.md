@@ -253,3 +253,49 @@ only until viewing context is consumed. A regression covers saved Story → requ
 Draft, the reverse, other-project isolation and ordinary saved-tab restoration.
 Ten affected URL/project-selection tests, typecheck and affected lint pass (two
 existing StudioApp warnings). This does not replace populated-browser acceptance.
+
+## Durable replacement marks independent of the film draft
+
+Story/Draft and standalone Preview now share a replacement review panel. Selecting
+one or several exact cuts/sections can mark/unmark their planned shot targets.
+Notes and marks use their own owner/project RustFS artifact and conditional ETag,
+through an authenticated project-owned GET/POST route. They never autosave the film
+draft, change media selection/approval, invalidate the cut or dispatch generation.
+This avoids turning a review note in a second tab into a competing film writer.
+
+Each mark retains its exact project/plan/destination/time/reference binding and
+original note. Current status requires agreement between the displayed targets and
+the server's fresh saved targets. Changed plans/references become stale marks;
+they are not rebound automatically. A stale view cannot mark the new selection.
+Marks can be cleared individually, by selection or as an explicit stale group.
+Concurrent annotation updates reject stale revisions without losing locally typed
+notes. Refresh preserves unsaved note text, and authorization failures hide cached
+mark records. Malformed saved records fail closed rather than resetting history.
+
+The endpoint bounds JSON writes to 2 MiB and marks to 512 entries / 2,000-character
+notes, requires JSON content type and authenticates project ownership before any
+artifact read/write. It reuses existing direct RustFS conditional object storage;
+there is no local production fallback, new credential or environment variable.
+Review list content mounts only when expanded and initially renders at most forty
+rows. Merely loading Studio/Preview makes no marks request and loads no media.
+
+Full check before final client stale-view/error presentation refinements: 2,091
+passed, 27 fixture skips, zero failures; production build passed. Added domain,
+store and isolated route tests cover binding changes, multi-mark/notes, persistence,
+owner isolation, stale CAS, unknown targets, JSON/body bounds and safe failures.
+Final client refinements are checked with typecheck/lint and mounted browser proof.
+
+Browser proof mounts the actual panel with 108 synthetic shot targets and the real
+review-store/domain functions backed by an isolated local fixture JSON artifact.
+Two marks and a note survive reload; all 108 and the note survive a server-process
+restart. The open list mounts forty textareas and no media; collapsing mounts zero
+rows. Changing the reference image produces 108 stale marks. A second window whose
+displayed plan is old also shows those marks as stale against the server's current
+targets. Competing note saves produce a conflict; refreshing keeps the first
+window's unsaved note text. Evidence: `.tmp/review-performance/marks.tsx`,
+`serve-marks.ts`, `replacement-marks.png`. This fixture proves UI/store protocol,
+not public RustFS persistence; production integration remains a release gate.
+
+V1S-462 remains open for explicit multi-shot replacement preparation/submission
+through existing generation/review gates and populated-film acceptance. Marking is
+not a render request. No protected film data, media or jobs were changed for QA.
