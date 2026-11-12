@@ -6,6 +6,23 @@ function media() {
 }
 
 describe("media playback ownership", () => {
+  test("silent previews yield to a playing transport and never claim its ownership", () => {
+    const ownership = new MediaPlaybackOwnership();
+    const main = Object.assign(media(), { paused: false, ended: false }), hover = Object.assign(media(), { paused: false, ended: false });
+    const all = [main, hover] as unknown as HTMLMediaElement[];
+    let stopped = 0, transportPauses = 0;
+    ownership.register({}, [main], () => { transportPauses++; });
+    const unregister = ownership.registerPassive(hover, () => { stopped++; hover.paused = true; });
+    expect(ownership.canPlayPassive(all)).toBe(false);
+    expect(ownership.claim(hover, all)).toBe(false);
+    expect(stopped).toBe(1); expect(main.pauses).toBe(0); expect(transportPauses).toBe(0);
+    main.paused = true; hover.paused = false;
+    expect(ownership.canPlayPassive(all)).toBe(true); expect(ownership.claim(hover, all)).toBe(false);
+    expect(main.pauses).toBe(0); expect(stopped).toBe(1);
+    ownership.claim(main, all); expect(stopped).toBe(2); expect(transportPauses).toBe(0);
+    ownership.pauseAll(all); expect(stopped).toBe(3);
+    unregister(); ownership.pauseAll(all); expect(stopped).toBe(3);
+  });
   test("master audio and both preview buffers share one owner; native clip interrupts the transport", () => {
     const ownership = new MediaPlaybackOwnership();
     const main = media(), standby = media(), audio = media(), clip = media();

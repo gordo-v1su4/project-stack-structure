@@ -2,6 +2,16 @@
 export class MediaPlaybackOwnership {
   private groups = new Map<object, { elements: Set<EventTarget>; pause: () => void }>();
   private active: object | null = null;
+  private passive = new Map<EventTarget, () => void>();
+
+  registerPassive(element: EventTarget, stop: () => void) {
+    this.passive.set(element, stop);
+    return () => { this.passive.delete(element); };
+  }
+
+  canPlayPassive(media: Iterable<HTMLMediaElement>) {
+    return ![...media].some(element => !this.passive.has(element) && element.paused === false && !element.ended);
+  }
 
   register(owner: object, elements: EventTarget[], pause: () => void) {
     this.groups.set(owner, { elements: new Set(elements), pause });
@@ -12,6 +22,12 @@ export class MediaPlaybackOwnership {
   }
 
   claim(element: EventTarget, media: Iterable<HTMLMediaElement>) {
+    const passive = this.passive.get(element);
+    if (passive) {
+      if (!this.canPlayPassive(media)) passive();
+      return false; // Silent browsing never takes transport or cross-tab ownership.
+    }
+    for (const stop of this.passive.values()) stop();
     const owner = [...this.groups].find(([, group]) => group.elements.has(element))?.[0] ?? element;
     const changed = this.active !== owner;
     this.active = owner;
@@ -22,6 +38,7 @@ export class MediaPlaybackOwnership {
   }
 
   pauseAll(media: Iterable<HTMLMediaElement>) {
+    for (const stop of this.passive.values()) stop();
     this.active = null;
     for (const group of this.groups.values()) group.pause();
     for (const element of media) element.pause();
@@ -59,6 +76,16 @@ export function acquireMediaPlaybackOwnership() {
 
 export function registerMediaPlaybackGroup(owner: object, elements: HTMLMediaElement[], pause: () => void) {
   const unregister = ownership.register(owner, elements, pause);
+  const release = acquireMediaPlaybackOwnership();
+  return () => { unregister(); release(); };
+}
+
+export function canStartPassiveMediaPlayback() {
+  return ownership.canPlayPassive(document.querySelectorAll<HTMLMediaElement>("video, audio"));
+}
+
+export function registerPassiveMediaPlayback(element: HTMLMediaElement, stop: () => void) {
+  const unregister = ownership.registerPassive(element, stop);
   const release = acquireMediaPlaybackOwnership();
   return () => { unregister(); release(); };
 }

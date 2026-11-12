@@ -11,6 +11,7 @@ import { SolidWaveform } from "../SolidWaveform";
 import type { BeatJoinAnalysis } from "../types";
 import type { SpineSlot } from "./spineSlots";
 import { clipSpineRange, getSpineViewport, type SpineZoomMode } from "./spineViewport";
+import { ReviewVideoHover } from "../ReviewVideoHover";
 
 type BeatSpineProps = {
   analysis: BeatJoinAnalysis;
@@ -119,15 +120,18 @@ export function BeatSpine({ analysis, bpm, playhead, onSeek, onSelectSection, se
             const isLive = playheadSeconds >= slot.start && playheadSeconds < slot.end;
             const wide = geometry.width > 4;
             return (
-              <button
+              <ReviewVideoHover
                 key={slot.id}
-                type="button"
-                role="option"
-                aria-selected={isSelected}
-                onClick={(event) => { setFocusedSection(null); onSelectSlot(onSelectSection ? slot : isSelected ? null : slot, event.shiftKey, event.ctrlKey || event.metaKey); }}
-                onDoubleClick={() => onSeek(slot.start / duration)}
-                title={`${slot.sectionLabel} · ${fmt(slot.start)}–${fmt(slot.end)}\n${slot.label}${slot.kind === "generated" ? "\nGenerated shot" : ""}`}
-                style={{ left: `${geometry.left}%`, width: `max(2px, calc(${geometry.width}% - 2px))` }}
+                videoUrl={slot.videoUrl}
+                start={slot.previewSegment?.startTime ?? 0}
+                end={slot.previewSegment?.endTime}
+                floating contextKey={`${view.start}:${view.end}`} previewLabel={slot.label}
+                showStatus={wide}
+                buttonProps={{ type: "button", role: "option", "aria-selected": isSelected,
+                  onClick: event => { setFocusedSection(null); onSelectSlot(onSelectSection ? slot : isSelected ? null : slot, event.shiftKey, event.ctrlKey || event.metaKey); },
+                  onDoubleClick: () => onSeek(slot.start / duration),
+                  title: `${slot.sectionLabel} · ${fmt(slot.start)}–${fmt(slot.end)}\n${slot.label}${slot.kind === "generated" ? "\nGenerated shot" : ""}${slot.videoUrl ? "\nHover for silent preview" : "\nNo selected video · inspect shot takes"}`,
+                  style: { left: `${geometry.left}%`, width: `max(2px, calc(${geometry.width}% - 2px))` } }}
                 className={`group absolute top-[5px] h-[58px] overflow-hidden rounded-[5px] bg-ink-3 text-left outline-offset-[-1px] transition-[transform,box-shadow] duration-[var(--duration-fast)] ease-[var(--ease-out-soft)] ${
                   isSelected
                     ? "z-10 scale-y-[1.04] shadow-[0_0_0_1.5px_var(--color-accent)]"
@@ -150,7 +154,7 @@ export function BeatSpine({ analysis, bpm, playhead, onSeek, onSelectSection, se
                     {slot.label}
                   </span>
                 ) : null}
-              </button>
+              </ReviewVideoHover>
             );
           })}
           {playheadVisible ? <span aria-hidden className="pointer-events-none absolute top-0 h-full w-px bg-fg-0/80" style={{ left: pct(playheadSeconds) }} /> : null}

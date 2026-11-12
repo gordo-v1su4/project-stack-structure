@@ -536,3 +536,62 @@ See [the storage/dispatch contract](../architecture/review-video-preparation.md)
 The full check passed 2,108 tests with 27 fixture skips and zero failures, and
 production build passed. A subsequent duplicate-object integrity guard and its
 wire-protocol assertion pass the affected integration test and type checking.
+
+## Silent prepared hover on timeline cuts and shot takes
+
+The actual BeatSpine cuts and exact-shot take cards now consume the prepared
+proxy path after 280 ms pointer/keyboard dwell. Idle cards mount no video and
+make no preparation request. A shared coordinator cancels stale observation,
+immediately unloads the old decoder, and keeps a single active silent preview.
+Native playback ownership treats it as passive: master playback cannot be
+interrupted by hover, while a normal/remote playback claim stops the preview.
+Source trims map through the proxy timestamp offset without retiming footage.
+Original video is loaded only through the existing explicit inspection action.
+Failed Trigger preparation is detected through the authorized run lookup rather
+than left looking queued; successful runs still require the stored ready result.
+
+An isolated real-browser harness mounts the production React BeatSpine (100
+slots) and 12 generic preview cards using the already prepared canonical preview
+fixture. It serves no connected API/provider services and blocks original video
+requests. Before interaction: zero video elements and zero API resource requests.
+On hover: one muted 640×360 video decodes, using only prepared poster/proxy URLs.
+A warm sample presents its first frame 324.2 ms after measurement starts,
+including the 280 ms dwell (video insertion at 307.3 ms; first media timestamp
+0.966667 for requested source 1.0 s and recorded 0.046029 s offset). This is a
+single local diagnostic sample, not a general or populated-film latency claim.
+
+With the pointer still over the active card, native keyboard activation of the
+master starts audio (0.077794 s observed) and leaves zero hover videos. Switching
+from a deliberately two-second delayed readiness response to another card leaves
+only the new card playing; the delayed card remains idle. Unmounting the view
+leaves zero videos. After the final focus-handling refinement, actual Intro zoom
+shows ten cut buttons; timeline hover plays one muted video, shows Silent preview
+and leaves selection empty. Pointer leave removes it. Keyboard Tab starts the
+next cut's silent preview; moving focus out removes it. A fresh test-server
+network capture records eight API requests, zero original-video requests and
+zero POSTs (this browser fixture supplies ready derivatives). Missing/preparing
+and failed-run contracts are checked separately with unit tests, not claimed as
+a live worker test.
+
+The full check, including the additional terminal-run failure regression, passed
+2,116 tests with 27 fixture skips and zero failures, plus production build.
+The final floating-timeline preview refinement is checked separately below.
+Harness/evidence remain ignored under
+`.tmp/review-performance/` (`hover-browser.tsx`, `serve-hover.ts`,
+`hover-network.json`). Actual public worker/RustFS, populated-film transfer/decode,
+prepared poster backfill and proactive ingest remain required. No original film,
+open public save-conflict tab, creative generation, deployment or PR was changed.
+
+The final timeline refinement uses a pointer-transparent floating 16:9 preview:
+full-song cuts are too narrow for useful in-place video. A real-browser recheck
+on the 100-slot full-song spine observes the cut still 9.13 CSS pixels wide while
+its separate labeled preview decodes one muted 640×360 video in a 320×180 frame.
+Selection remains empty. Resizing stops it; a narrow emulation (487 CSS pixels
+measured by `innerWidth`, despite a 390-pixel device override) clamps the new
+320×180 frame to left 7.99 / right 327.99. Pointer leave removes all videos.
+Scroll/scope/resize invalidate placement, and an aborted dwell cannot later
+start loading. Ready results are also tied to their source URL in component
+state so a changed source does not reuse the previous card's prepared pixels.
+The final refinement passes 23 affected tests, type checking, lint and production
+build. A final tooltip clarification identifies cuts with no selected video;
+hover never silently selects an available unapproved take to fill that gap.

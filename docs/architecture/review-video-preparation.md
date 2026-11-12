@@ -2,7 +2,8 @@
 
 Viewing derivatives reduce transfer and decoding without changing source media,
 selected takes, identity evidence, conditioning or export inputs. The current
-implementation is source-only; public deployment and UI consumption remain open.
+implementation includes timeline/take hover consumption; public deployment,
+proactive ingestion/backfill and populated-film acceptance remain open.
 
 `GET /api/storage/review-video?bucket=...&objectKey=...` authenticates, validates
 the configured bucket/safe video object key and verifies source ownership before
@@ -57,3 +58,38 @@ and manifest pointer tampering. Route/dispatch tests cover auth, input bounds,
 read-only GET, ignored forged owner/version fields, safe diagnostics, session
 tags and intent/source-version idempotency. These checks do not establish live
 RustFS, production worker, populated-film first-frame or hover acceptance.
+
+## Focused hover consumption
+
+Timeline cuts and exact-shot take cards use the shared `ReviewVideoHover`.
+It creates no video and makes no preparation request while idle. Pointer dwell
+or keyboard focus waits 280 ms before requesting the source's prepared media.
+Only same-origin `/api/storage/media` references are eligible. Missing derivatives
+dispatch the CPU-only preparation path using a bounded reusable intent map; this
+does not regenerate source footage. Observation checks authorized Trigger state
+and stored readiness, with failure/cancellation reported without claiming success.
+
+One global coordinator cancels previous observation and immediately pauses,
+detaches and unloads its video when the card changes. Leave, focus change,
+source/view change, page hide and window blur stop observation/playback. Keyboard
+focus can retain the preview after the pointer leaves; a pointer click does not
+turn it into a sticky keyboard preview. Any preparation already dispatched may
+finish into durable storage after observation stops. It never modifies the cut.
+
+Only the active card mounts a muted video from the prepared proxy. Narrow timeline
+cuts open a clamped 320×180 floating preview without resizing the filmstrip;
+larger take cards play in place. Floating previews ignore pointer input, keep
+the shot label visible, and close on scroll, resize or scope change. Source
+trims map through the recorded timestamp offset and clamp to available frames;
+the hover loops that viewing window at normal speed. It never falls back to
+loading an original video on hover. Unsupported/unavailable sources retain the
+explicit original inspection path. A card with no still thumbnail uses a labeled
+placeholder until focused preparation is ready; proactive poster delivery is
+still part of ingestion/backfill work.
+
+Playback ownership registers this video as passive. Silent browsing cannot pause
+the master transport or claim playback in another tab. A master/native playback
+claim stops it; it also refuses to start while normal media is playing. Frame
+time stays native to the video element; React receives no frame-by-frame state.
+Timeline clicks, modifier selection, seek, inspection and explicit Use semantics
+remain separate from hover. No timing, selected take or approval changes on hover.
