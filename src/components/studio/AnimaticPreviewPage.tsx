@@ -10,7 +10,7 @@ import { StillAnimaticPreview } from "./StillAnimaticPreview";
 import { AnimaticImageViewer } from "./AnimaticImageViewer";
 import { AnimaticReviewPanel } from "./AnimaticReviewPanel";
 import { Button, Surface } from "./ui";
-import { readReviewPreviewContext } from "./reviewPreviewContext";
+import { readReviewPreviewContext, studioReviewHref, type ReviewStage } from "./reviewPreviewContext";
 import { selectSongRange, type SongRange, type SongSelection } from "./reviewSelection";
 
 const CutReviewPlayer = dynamic(() => import("./CutReviewPlayer").then(module => module.CutReviewPlayer), {
@@ -27,10 +27,12 @@ export function AnimaticPreviewPage({ projectId }: { projectId: string }) {
   const [mode, setMode] = useState<"video" | "images" | "timing">("video");
   const [selection, setSelection] = useState<SongSelection | null>(null), [multiSelect, setMultiSelect] = useState(false);
   const [initialRanges, setInitialRanges] = useState<SongRange[]>([]);
+  const [returnStage, setReturnStage] = useState<ReviewStage>("story");
   const [watch, setWatch] = useState<{ nonce: number; ranges: SongRange[] } | null>(null);
   const knownImages = useRef<Map<string, string> | null>(null);
   useEffect(() => {
     const incoming = readReviewPreviewContext(window.location.search);
+    setReturnStage(new URLSearchParams(window.location.search).get("stage") === "draft" ? "draft" : "story");
     setSelected(incoming.shotId ?? ""); setInitialRanges(incoming.ranges);
     setSelection(incoming.ranges.length ? { ranges: incoming.ranges, anchor: incoming.ranges[0] } : null);
     setSnapshot(null); knownImages.current = null; setArrivals([]); setImageOpen(false); setWatch(null); setPreview(null);
@@ -75,7 +77,7 @@ export function AnimaticPreviewPage({ projectId }: { projectId: string }) {
   const position = shot && plan ? plan.shots.indexOf(shot) : 0;
   const requested = plan?.shots.filter(s => s.record && !currentImages.get(s.id)).map(s => s.id) ?? [];
   return <main className="min-h-screen bg-ink-0 px-3 py-6 text-fg-1 sm:px-6"><div className="mx-auto max-w-6xl space-y-5">
-    <header className="flex flex-wrap items-start justify-between gap-3"><div><Link href="/" className="text-xs text-fg-3 hover:text-accent">Back to studio</Link>
+    <header className="flex flex-wrap items-start justify-between gap-3"><div><Link href={studioReviewHref(projectId, { stage: returnStage, shotId: selected, ranges: selection?.ranges })} className="text-xs text-fg-3 hover:text-accent">Back to studio</Link>
       <h1 className="mt-3 font-display text-3xl text-fg-0">Preview</h1><p className="mt-1 text-sm text-fg-2">{snapshot?.name ?? "Loading project…"}</p></div>
       <p role="status" className="pt-3 font-mono text-xs text-fg-3">{plan ? `${ready}/${plan.shots.length} images` : "Waiting for the shot plan"}</p></header>
     <p className="max-w-3xl text-sm text-fg-3">Review the current video cut with the master song. Missing video stays labeled as a still or timing gap; completed media is separate from cut approval.</p>

@@ -41,6 +41,7 @@ import {
   type RuntimeStudioProjectDraft,
 } from "./studio/projectPersistence";
 import { loadStudioProjectSelection, readStudioProjectSelection, rememberStudioProjectSelection } from "./studio/projectSelection";
+import { readStudioReviewContext } from "./studio/reviewPreviewContext";
 import { ProjectSaveSession } from "./studio/projectSaveSession";
 import { saveVersionedStudioProject } from "./studio/preparedProjectSave";
 import type { StudioProjectSummary } from "@/lib/studioProjectStore";
@@ -149,6 +150,7 @@ export default function StudioApp() {
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isShortcutSheetOpen, setIsShortcutSheetOpen] = useState(false);
   const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
+  const restoredReviewContext = useRef(false);
   const [playhead] = useState(0.08);
   const [activeClip, setActiveClip] = useState(2);
   const [roughCutSelection, setRoughCutSelection] = useState<ReviewSelection | null>(null);
@@ -258,7 +260,8 @@ export default function StudioApp() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const savedTab = window.localStorage.getItem("svs.studio.activeTab");
+    const incoming = readStudioReviewContext(window.location.search);
+    const savedTab = incoming ? (incoming.stage === "draft" ? "generate" : "story") : window.localStorage.getItem("svs.studio.activeTab");
     if (savedTab && NAV.some((item) => item.key === savedTab)) {
       setTab(savedTab as Tab);
     }
@@ -303,7 +306,8 @@ export default function StudioApp() {
   useEffect(() => {
     let cancelled = false;
 
-    const selection = readStudioProjectSelection();
+    const incoming = readStudioReviewContext(window.location.search);
+    const selection = incoming ? { projectId: incoming.projectId, explicitlyCleared: false } : readStudioProjectSelection();
     type RestoredSelection = { project: StudioProjectSummary | null; draft: RuntimeStudioProjectDraft; revision?: string };
     const restore = loadStudioProjectSelection<RestoredSelection>(selection, {
       named: async (id) => {
@@ -2780,6 +2784,20 @@ export default function StudioApp() {
     [draftPreviewSegments, generatedAssets, musicVideoProject, storyPreviewSegments, tab],
   );
   const selectedSlot = useMemo(() => spineSlots.find((slot) => slot.id === selectedSlotId) ?? null, [selectedSlotId, spineSlots]);
+  useEffect(() => {
+    if (restoredReviewContext.current || !draftRestored || !beatJoinAnalysis) return;
+    const incoming = readStudioReviewContext(window.location.search);
+    restoredReviewContext.current = true;
+    if (!incoming || incoming.projectId !== activeProjectId) return;
+    const ranges = incoming.ranges.flatMap(range => {
+      const end = Math.min(range.end, beatJoinAnalysis.duration);
+      return end > range.start ? [{ start: range.start, end }] : [];
+    });
+    setSongSelectionState({ context: reviewContext, selection: ranges.length ? { ranges, anchor: ranges[0] } : null });
+    const slot = spineSlots.find(slot => slot.animaticShotId === incoming.shotId)
+      ?? spineSlots.find(slot => ranges[0] && slot.end > ranges[0].start && slot.start < ranges[0].end);
+    if (slot) { setSelectedSlotId(slot.id); setActiveClip(slot.index); }
+  }, [activeProjectId, beatJoinAnalysis, draftRestored, reviewContext, spineSlots]);
   const slotEvidence = useMemo(
     () => (selectedSlot ? describeSlot(selectedSlot, { project: musicVideoProject, generatedAssets }) : null),
     [generatedAssets, musicVideoProject, selectedSlot],
@@ -2849,6 +2867,7 @@ export default function StudioApp() {
               previewProjectId={activeProjectId}
               previewShotId={selectedSlot?.animaticShotId}
               previewRanges={songSelection?.ranges}
+              previewStage={tab === "generate" ? "draft" : "story"}
             />
 
             {beatJoinAnalysis && !monitorFocused ? (

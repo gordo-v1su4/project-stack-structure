@@ -168,3 +168,19 @@ Still open: project return-context restoration, raw-take review/adoption, durabl
 thumbnail/proxy preparation and hover scanning, public populated-film performance,
 and complete narrow-layout/legacy selection acceptance. No deployment or film
 mutation was performed for this slice.
+
+### Explicit return viewing context
+
+Studio Preview links now carry Story/Draft stage as well as shot and ranges.
+Back to studio encodes the exact project and the current viewing selection.
+The editor's existing owner-checked named-project loader restores that project
+without substituting a global local draft. Once the matching project/audio is
+restored, ranges clamp to song duration and focus resolves against current spine
+slots. Context is consumed once per mount and cannot autoplay, adopt a take or
+change timing. Invalid project identifiers are rejected; unknown stages resolve
+to Story. Existing save-conflict/identity gates remain in the normal loader.
+
+Verification: 15 affected URL-context, project-selection and playback-subscription
+tests pass, typecheck and production build pass; lint has two existing StudioApp
+warnings and no errors. This is route/state-model evidence; populated-app return
+navigation and unsaved-window behavior remain part of final browser acceptance.

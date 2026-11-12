@@ -10,10 +10,28 @@ export function readReviewPreviewContext(search: string): { shotId?: string; ran
   return { shotId: /^[\w-]{1,96}$/.test(shot) ? shot : undefined, ranges: normalizeSongRanges(ranges) };
 }
 
-export function reviewPreviewHref(projectId: string, context: { shotId?: string; ranges?: SongRange[] } = {}) {
+export type ReviewStage = "story" | "draft";
+export type ReviewLinkContext = { shotId?: string; ranges?: SongRange[]; stage?: ReviewStage };
+
+export function reviewPreviewHref(projectId: string, context: ReviewLinkContext = {}) {
   const params = new URLSearchParams();
   if (context.shotId && /^[\w-]{1,96}$/.test(context.shotId)) params.set("shot", context.shotId);
   const ranges = normalizeSongRanges(context.ranges ?? []).filter(r => r.end <= 3600).slice(0, 32);
   if (ranges.length) params.set("ranges", ranges.map(r => `${r.start}-${r.end}`).join(","));
+  if (context.stage === "story" || context.stage === "draft") params.set("stage", context.stage);
   return `/preview/${encodeURIComponent(projectId)}${params.size ? `?${params}` : ""}`;
+}
+
+/** Only viewing context crosses routes. No playback, save or adoption instruction. */
+export function studioReviewHref(projectId: string, context: ReviewLinkContext = {}) {
+  const href = reviewPreviewHref(projectId, context);
+  const params = new URLSearchParams(href.split("?")[1] ?? "");
+  params.set("reviewProject", projectId);
+  return `/?${params}`;
+}
+
+export function readStudioReviewContext(search: string) {
+  const params = new URLSearchParams(search), projectId = params.get("reviewProject") ?? "";
+  if (!/^[\w-]{1,128}$/.test(projectId)) return null;
+  return { projectId, ...readReviewPreviewContext(search), stage: params.get("stage") === "draft" ? "draft" as const : "story" as const };
 }
