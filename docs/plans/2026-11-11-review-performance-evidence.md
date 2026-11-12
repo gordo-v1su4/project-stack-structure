@@ -347,3 +347,61 @@ The final combined check/build includes the fractional-width adjustment above.
 `bun run check`: 2,092 passed, 27 fixture skips, zero failures; lint/typecheck
 completed with the two previously noted StudioApp warnings. Production build
 passed. These checks do not replace real-film production acceptance.
+
+## Populated-film CPU and API diagnosis
+
+A fresh authenticated GET of the finishing project with the existing gzip
+transport header returned 200: approximately 799ms to headers, 497ms to consume
+the decoded body, and 20ms to parse 14,204,363 expanded bytes. This is one public
+read, not a latency distribution. Without the required transport header the same
+large response returns the expected 413; the app's client already supplies it.
+
+The open public Story window shows Save failed. It was not reloaded, navigated,
+saved or otherwise edited. Read-only diagnostics found that its source-context
+signature matches its current project while the durable saved draft's inputs
+have a different signature. Both versions remain intact. Separate ignored local
+diagnostic copies preserve the saved response and the open tab's film fields.
+No auth state or credentials were copied. The open tab's film fields serialize
+to 81,285,691 bytes, including 72,740,105 bytes of generated-asset projections
+versus 5,656,814 bytes in the saved asset bank. Current-reference policy/evidence
+accounts for most of the difference. These are serialized sizes, not measured
+retained heap: shared object references may repeat in JSON.
+
+An isolated Bun harness mounts the actual production-mode StudioApp with a
+persistable copy of that open film: 21 sources, 90 captioned moments, 108 shots,
+174 bank assets. Every non-GET request is rejected locally, connected generation
+services are absent, and media returns 404. This permits real populated metadata
+CPU diagnosis without film writes, generation, actual playback or downloads. It
+does not measure the Next route bundle, production auth, media latency or video
+decode. The existing public tab remains untouched.
+
+Chromium CPU profiling identified repeated placement-input JSON hashing and
+export SHA calculation during stage changes. Coverage also recomputed the whole
+placement signature inside its per-chunk loop. The correction:
+
+- Prepares persistent content separately from sanitized workflow/view settings.
+  Stage, panel and timing-suggestion view changes retain prepared content and
+  export content hashes. Content, reference, cut, audio and shader changes still
+  invalidate their relevant bindings; action/server revalidation is unchanged.
+- Reuses placement freshness for root rendering, while action checks stay fresh.
+- Reuses pipeline evidence across stage changes; the active-stage projection
+  remains separate. Coverage computes placement freshness once per synchronous
+  traversal rather than once per timing chunk. No global mutable-object cache.
+
+On the identical isolated snapshot, click-to-second-animation-frame for the
+first Story → Draft change was 1,369ms before and 811ms after (about 41% lower).
+This is a diagnostic frame interval, not a production INP or acceptance target.
+The CPU-heavy long task fell from 1,321ms to 648ms in those samples. Draft → Story
+still measured 6,418ms after this slice: its profile is dominated by repeated
+keyword semantic matching while constructing story previews. Rapid navigation
+is not yet achieved. An additional baseline round trip measured about 1,347ms
+into Draft and 8,856ms back to Story; limited samples are not a distribution.
+
+Evidence is ignored under `.tmp/review-performance/`: `serve-populated.ts`,
+`populated*.json*`, `story-draft-before.cpuprofile`, `story-draft-final.cpuprofile`,
+`draft-story-final.cpuprofile`, `story-draft-final.json`. These private diagnostic
+snapshots must not enter the PR. Final `bun run check`: 2,093 passed, 27 fixture
+skips, zero failures; typecheck/lint completed (two existing StudioApp warnings),
+and production build passed. A regression verifies workflow sanitization,
+content-reference reuse and preserved export invalidation on shader/cut changes.
+V1S-458/464 remain open; no production release or framework decision is implied.

@@ -193,6 +193,11 @@ export function createPersistableStudioProjectDraft(params: {
   };
 }
 
+/** View changes reuse prepared content; all workflow values still pass the save sanitizer. */
+export function withPersistedWorkflowUiSettings(draft: PersistedStudioProjectDraft, settings: PersistedWorkflowUiSettings | undefined): PersistedStudioProjectDraft {
+  return { ...draft, workflowUiSettings: sanitizeWorkflowUiSettings(settings) };
+}
+
 export function hydrateStudioProjectDraft(params: {
   draft: PersistedStudioProjectDraft;
   audioUrl?: string | null;

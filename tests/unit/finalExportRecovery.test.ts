@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { assertFinalExportReplayAllowed, finalExportSnapshotSha256, isFinalExportIntentCurrent, normalizeFinalExportIntent, rebindFinalExportAfterMigration, releaseStaleFinalExportPreview, waitForCurrentFinalExport, type FinalExportIntent } from "@/components/studio/finalExportRecovery";
-import { createPersistableStudioProjectDraft, hydrateStudioProjectDraft } from "@/components/studio/projectPersistence";
+import { createPersistableStudioProjectDraft, hydrateStudioProjectDraft, withPersistedWorkflowUiSettings } from "@/components/studio/projectPersistence";
 import { createSectionRecomputeState, startSectionRecompute } from "@/components/studio/sectionRecompute";
 import { OWNED_FINAL_EXPORT_PREFIX, OWNED_CAPTURE_EXPORT_PREFIX, isOwnedExportRequestKey } from "@/components/studio/exportDispatchProtocol";
 
@@ -14,6 +14,25 @@ function fixture() {
 }
 
 describe("durable final export recovery", () => {
+  test("view settings reuse prepared content without changing the export binding; shader and content changes still invalidate it", () => {
+    const { draft, intent } = fixture();
+    const before = JSON.stringify(draft);
+    const viewed = withPersistedWorkflowUiSettings(draft, { ...draft.workflowUiSettings, activeTab: "generate",
+      isPreviewExpanded: true, matchOnsetDensity: 1000 });
+    expect(viewed.videoSources).toBe(draft.videoSources);
+    expect(viewed.storyState).toBe(draft.storyState);
+    expect(viewed.generatedAssets).toBe(draft.generatedAssets);
+    expect(viewed.workflowUiSettings?.matchOnsetDensity).toBe(100);
+    expect(JSON.stringify(draft)).toBe(before);
+    expect(isFinalExportIntentCurrent(intent, "film-a", viewed)).toBe(true);
+    expect(isFinalExportIntentCurrent(intent, "film-a", withPersistedWorkflowUiSettings(viewed, {
+      ...viewed.workflowUiSettings, shaderPresetId: "changed",
+    }))).toBe(false);
+    expect(isFinalExportIntentCurrent(intent, "film-a", { ...viewed,
+      generatedDraft: { planSignature: "new-cut", revision: 2, assetIds: [] },
+    })).toBe(false);
+  });
+
   test("reload reattaches the saved run and exact request without dispatching again", async () => {
     const { draft, intent } = fixture();
     draft.workflowUiSettings!.finalExportIntent = intent;

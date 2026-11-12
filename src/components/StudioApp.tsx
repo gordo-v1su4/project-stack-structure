@@ -32,6 +32,7 @@ import {
   STUDIO_AUTOSAVE_INTERVAL_MS,
   buildVideoMediaKey,
   createPersistableStudioProjectDraft,
+  withPersistedWorkflowUiSettings,
   hydrateStudioProjectDraft,
   loadSavedStudioProject,
   loadStudioProjectDraft,
@@ -302,6 +303,7 @@ export default function StudioApp() {
       ? { ...storedMusicVideoProject.placementPlan, inputSignature: `stale-source:${sourceContextSignature}` }
       : undefined };
   }, [storedMusicVideoProject, sourceContextSignature]);
+  const placementPlanCurrent = useMemo(() => Boolean(musicVideoProject && isPlacementPlanCurrent(musicVideoProject)), [musicVideoProject]);
   // Current-reference eligibility is a projection; historical bank records stay intact.
   const generatedAssets = useMemo(() => withCurrentReferenceIdentity(rawGeneratedAssets, musicVideoProject?.currentIdentity),
     [rawGeneratedAssets, musicVideoProject?.currentIdentity]);
@@ -2159,7 +2161,7 @@ export default function StudioApp() {
     return { sceneCount, captionReady, captionTotal };
   }, [videoSources]);
 
-  const persistableProjectDraft = useMemo(() => discardStaleCompletedExport(createPersistableStudioProjectDraft({
+  const persistableProjectContent = useMemo(() => createPersistableStudioProjectDraft({
     analysis: beatJoinAnalysis,
     videoSources,
     storyState,
@@ -2170,7 +2172,8 @@ export default function StudioApp() {
     generatedDraft,
     clipAudioSettings,
     captionSettings: buildSceneCaptionSettings(captionMode, beatJoinAnalysis, storyState, referenceAssets),
-    workflowUiSettings: {
+  }), [beatJoinAnalysis, videoSources, storyState, musicVideoProject, referenceAssets, aestheticReferences, rawGeneratedAssets, generatedDraft, clipAudioSettings, captionMode]);
+  const persistableProjectDraft = useMemo(() => discardStaleCompletedExport(withPersistedWorkflowUiSettings(persistableProjectContent, {
       activeTab: tab,
       splitMode,
       matchMode,
@@ -2184,10 +2187,12 @@ export default function StudioApp() {
       committedSplit: committedBeatSplit ?? undefined,
       finalExportIntent,
       finalExport: finalExportUrl ? { videoUrl: finalExportUrl, downloadFileName: finalExportName ?? "stack-structure-final.mp4", cueCount: finalExportCueCount, status: finalExportStatus } : undefined,
-    },
-  }), activeProjectId), [activeProjectId, beatJoinAnalysis, clipAudioSettings, captionMode, colorGradient, committedBeatSplit, finalExportIntent, finalExportCueCount, finalExportName, finalExportStatus, finalExportUrl, rawGeneratedAssets, generatedDraft, isPreviewExpanded, matchLyricCueBlend, matchLyricMergeWindow, matchMode, matchOnsetDensity, musicVideoProject, referenceAssets, aestheticReferences, shaderAccentKinds, shaderPresetId, splitMode, storyState, tab, videoSources]);
-  const currentFinalExport = currentCompletedExport(persistableProjectDraft, activeProjectId);
-  const exportSnapshotKey = `${activeProjectId ?? ""}:${finalExportSnapshotSha256(persistableProjectDraft)}`;
+  }), activeProjectId), [persistableProjectContent, activeProjectId, colorGradient, committedBeatSplit, finalExportIntent, finalExportCueCount, finalExportName, finalExportStatus, finalExportUrl, isPreviewExpanded, matchLyricCueBlend, matchLyricMergeWindow, matchMode, matchOnsetDensity, shaderAccentKinds, shaderPresetId, splitMode, tab]);
+  const currentFinalExport = useMemo(() => currentCompletedExport(persistableProjectDraft, activeProjectId), [persistableProjectDraft, activeProjectId]);
+  const exportContentSha256 = useMemo(() => finalExportSnapshotSha256(withPersistedWorkflowUiSettings(persistableProjectContent, {
+    shaderPresetId, shaderAccentKinds,
+  })), [persistableProjectContent, shaderPresetId, shaderAccentKinds]);
+  const exportSnapshotKey = `${activeProjectId ?? ""}:${exportContentSha256}`;
   useLayoutEffect(() => {
     if (exportSnapshotEpochRef.current.key !== exportSnapshotKey) {
       exportSnapshotEpochRef.current = { key: exportSnapshotKey, epoch: exportSnapshotEpochRef.current.epoch + 1 };
@@ -2196,8 +2201,9 @@ export default function StudioApp() {
 
   const activeStoryTreatment = storyState.confirmedTreatmentSnapshot
     ?? selectedTreatment(storyState.treatments, storyState.selectedTreatmentId);
-  const pipeline = useMemo(() => buildPipelineState(buildStudioPipelineInput({
-    activeTab: tab,
+  // Coverage evidence does not change when only the selected stage changes.
+  const pipelineInput = useMemo(() => buildStudioPipelineInput({
+    activeTab: "review",
     hasAudioAnalysis: beatJoinAnalysis !== null,
     hasLyricTranscript: Boolean(storyState.transcriptSummary?.chunks.length),
     referenceAssets,
@@ -2210,7 +2216,7 @@ export default function StudioApp() {
     storyPlanConfirmed: storyState.storyGenerated
       && Boolean(storyState.confirmedTreatmentId)
       && Boolean(storyState.storyContentSignature)
-      && Boolean(musicVideoProject && isPlacementPlanCurrent(musicVideoProject)),
+      && placementPlanCurrent,
     musicVideoProject,
     generatedAssets,
     generatedDraft,
@@ -2219,8 +2225,7 @@ export default function StudioApp() {
     hasCommittedSplit: isCommittedSplitCurrent,
     shaderPresetLabel: shaderPresetSummary.preset.label,
     finalExportReady: Boolean(currentFinalExport) && storyState.storyGenerated,
-  })), [
-    tab,
+  }), [
     beatJoinAnalysis,
     storyState.storyGenerated,
     storyState.selectedTreatmentId,
@@ -2232,6 +2237,7 @@ export default function StudioApp() {
     videoSources.length,
     ingestStats,
     musicVideoProject,
+    placementPlanCurrent,
     storyPreviewSegments.length,
     draftPreviewSegments,
     isCommittedSplitCurrent,
@@ -2240,6 +2246,7 @@ export default function StudioApp() {
     generatedAssets,
     generatedDraft,
   ]);
+  const pipeline = useMemo(() => buildPipelineState({ ...pipelineInput, activeTab: tab }), [pipelineInput, tab]);
   const activePipelineStage = pipeline.stages.find((stage) => stage.active) ?? null;
   const activeStageBlocked = Boolean(activePipelineStage && !activePipelineStage.available);
 
@@ -2811,7 +2818,7 @@ export default function StudioApp() {
   const shotTakeTarget = useMemo(() => resolveShotTakeTarget(selectedSlot, baseStoryPreviewSegments), [selectedSlot, baseStoryPreviewSegments]);
   const replacementReviewTargets = useMemo(() => replacementTargets(activeProjectId ?? "", baseStoryPreviewSegments), [activeProjectId, baseStoryPreviewSegments]);
   const canSelectShotTake = storyState.storyGenerated && Boolean(storyState.confirmedTreatmentId)
-    && Boolean(storyState.storyContentSignature) && Boolean(musicVideoProject && isPlacementPlanCurrent(musicVideoProject));
+    && Boolean(storyState.storyContentSignature) && placementPlanCurrent;
   const useShotTake = (assetId: string, expectedTargetKey: string, expectedRevision: number) => {
     if (!activeProjectId || !shotTakeTarget || !canSelectShotTake) return;
     if (selectShotTake({ projectId: activeProjectId, target: shotTakeTarget, segments: baseStoryPreviewSegments,
@@ -2988,7 +2995,7 @@ export default function StudioApp() {
               confirmedTreatment={storyState.confirmedTreatmentSnapshot}
               sceneProofPlan={storyState.sceneProofPlan} sceneProofReviewRequired={storyState.sceneProofReviewRequired} storyBeats={storyState.storyBeats}
               storyApproved={storyState.storyGenerated && Boolean(storyState.confirmedTreatmentId)
-                && Boolean(storyState.storyContentSignature) && Boolean(musicVideoProject && isPlacementPlanCurrent(musicVideoProject))}
+                && Boolean(storyState.storyContentSignature) && placementPlanCurrent}
               assets={generatedAssets} draft={generatedDraft} referenceAssets={referenceAssets}
               onEnsureSavedProject={ensureH3ProjectSaved} onGeneratedAsset={receiveGeneratedAsset}
               onReviewDraft={reviewGeneratedDraft} onAcceptDraft={acceptGeneratedDraft}
@@ -2996,7 +3003,7 @@ export default function StudioApp() {
               onRejectAsset={rejectGeneratedShot} onSelectAsset={asset => receiveGeneratedAsset(asset, generatedDraft?.revision ?? 0)} /> : null}
             {activeStageBlocked ? null : <>
             {(tab === "story" || tab === "generate") && musicVideoProject
-              && (musicVideoProject.currentIdentity || (!isPlacementPlanCurrent(musicVideoProject) && generatedAssets.length > 0)) ?
+              && (musicVideoProject.currentIdentity || (!placementPlanCurrent && generatedAssets.length > 0)) ?
               <CurrentReferenceReviewPanel key={activeProjectId} migrated={Boolean(musicVideoProject.currentIdentity)}
                 assets={currentReferenceReviewAssets}
                 disabled={!activeProjectId || isFinalExporting || Boolean(previewState.activeRequestKey)}
