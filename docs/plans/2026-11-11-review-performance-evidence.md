@@ -473,3 +473,35 @@ integration test and typecheck pass afterward. Desktop runtime storage variables
 are not set in this shell, so no live bucket write was attempted. Live RustFS
 verification remains a release gate. V1S-459 remains open for proactive image
 preparation, video proxies/scrub assets, hover and populated media/decode proof.
+
+## Bounded viewing-only video encoder
+
+An internal worker helper now prepares a silent 640×360 H.264 proxy, 320×180
+WebP poster and 32-cell 160×90 JPEG scrub sheet. The recipe preserves source
+frame cadence and pads the complete upright image to 16:9. It records hashes,
+frame count, source timestamp offset and nominal scrub sample times. These are
+viewing derivatives; originals remain the inputs for conditioning, identity
+checks and export. The helper has no HTTP route, dispatch or UI consumer yet.
+
+Inputs are private local files materialized by an authorized worker caller,
+bounded to 512 MiB / ten minutes / 40 MP / 120 fps / 72,000 frames. Processing
+uses existing FFmpeg/FFprobe and Sharp, bounded subprocess time/output and
+threads, restricted input protocols/formats, per-call temporary directories and
+cleanup on failure/cancellation. Tagged HDR and non-orthogonal rotation are
+explicitly unsupported rather than silently producing misleading review color.
+Frame count/duration, codec, square pixels, rotation and output dimensions are
+verified before returning artifacts. Expected source hashes are checked first.
+
+Three real FFmpeg integration tests pass (48 assertions): variable frame cadence
+and every decoded timestamp retained to 0.1 ms, audio stripped, original bytes
+unchanged, artifact hashes/dimensions, upright rotated input with black side
+padding, stale source hash rejection, cancellation/cleanup and HDR rejection.
+The rotated fixture uses FFmpeg's display-rotation input option; writing a
+`rotate` metadata tag alone did not create a rotation matrix on this desktop's
+FFmpeg. The test now proves an actual matrix is present before judging output.
+
+The existing canonical 9.88-second preview fixture produced a 532,609-byte proxy
+from a 1,102,327-byte source, retaining 295 frames and its 0.046029-second source
+offset; poster 2,760 bytes, scrub sheet 83,001 bytes. This local artifact check
+does not establish populated-film transfer, browser playback, production worker
+or RustFS acceptance. No media generation, live project write or deployment ran.
