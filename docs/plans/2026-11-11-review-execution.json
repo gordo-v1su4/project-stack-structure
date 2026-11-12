@@ -63,6 +63,20 @@
       "budgetMisses": "300ms warm-stage target missed;100ms Story selection and one109.5ms Draft sample missed;459 prepared-hover500ms target unchanged",
       "releaseAcceptance": "Separate final public release gate remains open"
     },
+    "V1S-460": {
+      "commit": "07bc3e5929569847eca77d9dfbe35b0a364492df",
+      "trackerReceipt": "Linear get_issue read-back: V1S-460 Done, updatedAt 2026-11-12T07:20:19.667Z, completedAt 2026-11-12T07:20:19.657Z; evidence comment 3bcb1b67-e512-4a54-9933-b9d4ab1bcc9c",
+      "criteria": {
+        "Click, Shift range, toggle and visible multiselect support add/remove; whole graph block height responds.": "07bc3e5 and f64bf87; docs/operations/review-selection-460.md. Public real clicks, Ctrl/Shift and visible multi-select add/remove; native top+2px/bottom-2px graph clicks selected14.750–16.347/16.347–17.715. Raw460-final-public-interactions and460-exact-bands receipts.",
+        "Section focus zooms corresponding views; selected ranges/duration remain visible; selecting does not mutate or autoplay.": "Public adjacent Intro+Verse1 0–29.300s, Shift A006→A009 14.750–24.458333333333332s; disjoint A006/A009 14.75–17.125/22–24.458333333333332. Exact viewport14.75–29.3 and focusedA009 survive actual Preview/Back. Selection remains paused. One exact1.368s white band matches all3lane pixel edges at normal/1125CSS width; native460-narrow-public screenshot, closed borders/collapsed optional source row.",
+        "Play selected ranges in song order with matching master audio; show skipped ranges and distinguish comparison jumps from actual cut transitions.": "07bc3e5 public run43173696389 exacthealth. Disjoint gap/still master14.75→22→pause24.472; skipped ranges explicitly comparison jumps. Original real video0–14.75/74.74–89.29: seek541.1ms awaited, video plays0.8ms after audio, source end10.942863(~26ms sample), master89.297415. One unmuted master; videos muted; contiguous cuts do not reseek.460-repaired-source-public.json;85 affected tests include delayed-seek/stop cancellation.",
+        "Highlight focused shot consistently; missing coverage differs from selected blocks and musical accents.": "Shared ◆ focus in cut strip/graph/details, white exact time vs orange musical accents, green filled coverage vs dashed gaps. Public finishing103available/0selected honest still/gap fallback, no adoption. Distinct sibling keys prevent refresh panel accumulation. Native460-complete-public.jpg and460-narrow-public.jpg.",
+        "Preserve saved cut and approval state; verify adjacent and separated section selections in browser.": "Final complete finishing draft SHA matches460-public-before; story/review/assets hashes unchanged. Original complete draft and e4833a39ffeac77a83e7a6657b3923f1 revision unchanged; finishing cc65ad585238c4398526b995005e8822 unchanged. Actual adjacent/separated section checks and original playback, checkbox checked then off without approval, enlarged A013→A014 loaded2048x1152→closed. No generation/save/adoption/original overwrite."
+      },
+      "environment": "Visible signed-in public in-app browser on exact published revision07bc3e5; actual CSS1125x1000 narrow plus normal viewport. Native Chrome not claimed. Overrides reset.",
+      "verification": "Final hosted full check2143pass/27fixture skips/0fail; production build/deploy exact revision/auth/rollback gates passed. Local85affected playback tests/typecheck/lint pass; real public selection/layout/navigation/playback and protected-state readback.",
+      "releaseAcceptance": "460 public browser acceptance complete. Remaining per-ticket acceptance and final combined batch PR/worker qualification follow461–464."
+    },
     "V1S-459": {
       "commit": "9699cbc",
       "trackerReceipt": "Linear get_issue read-back V1S-459 Done, updatedAt 2026-11-12T05:59:01.825Z, completedAt 2026-11-12T05:59:01.817Z; evidence comment fa740a57-73e7-4cb6-bbce-4d1838883621",

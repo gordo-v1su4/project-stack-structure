@@ -176,5 +176,11 @@ original's complete draft fingerprint also matched the pre-repair observation.
 No cut, approval or media adoption was saved. Browser acceptance is complete;
 the next bounded ticket is461 on the same accumulated worktree.
 
+Linear Done was read back at2026-11-12T07:20:19.667Z (completedAt
+2026-11-12T07:20:19.657Z), evidence comment3bcb1b67-e512-4a54-9933-b9d4ab1bcc9c.
+A fresh native Linear snapshot of458–464 passed the ticket-execution boundary
+checker with no errors, no active primary and nextV1S-461. The execution plan
+maps all five exact criteria to evidence and the published implementation SHA.
+
 Baseline project fingerprints are retained privately in
 `.tmp/review-performance/460-public-before.json`.
