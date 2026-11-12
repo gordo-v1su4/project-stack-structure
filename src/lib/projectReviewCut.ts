@@ -31,7 +31,9 @@ export function projectReviewCut(projectId: string, draft: PersistedStudioProjec
   const deliveredSegments = segments.flatMap(segment => {
     if (segment.kind !== "gap" && segment.videoUrl) return [segment];
     const overlaid = applyGeneratedAssetOverlays([segment], candidates);
-    if (overlaid.some(part => part.kind !== "gap" && part.videoUrl)) return overlaid;
+    if (overlaid.some(part => part.kind !== "gap" && part.videoUrl)) return overlaid.map(part => ({
+      ...part, thumbnailUrl: part.thumbnailUrl ?? segment.thumbnailUrl,
+    }));
     const retained = plan?.projectId === projectId ? plan.shots.find(shot => shot.id === segment.animaticShotId)?.sourceFrame : undefined;
     const source = retained && runtime.videoSources.find(source => source.id === retained.sourceId);
     const duration = segment.musicEnd - segment.musicStart;

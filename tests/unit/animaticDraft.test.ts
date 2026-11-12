@@ -96,6 +96,8 @@ test("shared Preview shows selected pending video without adopting available ren
   expect(available.availableVideoCount).toBe(1); expect(available.selectedVideoCount).toBe(0);
   expect(available.deliveredVideoCount).toBe(1);
   expect(available.deliveredSegments?.[0].generatedAssetId).toBe(asset.id);
+  expect(available.deliveredSegments?.[0].thumbnailUrl).toBe(available.segments[0].thumbnailUrl);
+  expect(available.deliveredSegments?.[0].thumbnailUrl).toBeTruthy();
   expect(available.segments[0].kind).toBe("gap");
   expect(available.coverage?.[0]).toEqual({ shotId: f.plan.shots[0].id, availableTakeIds: [asset.id], selectedVideoCount: 0, approvedTakeCount: 0 });
   f.saved.draft.generatedDraft.assetIds = [asset.id];
