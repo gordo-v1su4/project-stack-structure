@@ -43,6 +43,7 @@ import {
 import { loadStudioProjectSelection, readStudioProjectSelection, rememberStudioProjectSelection } from "./studio/projectSelection";
 import { readStudioReviewContext } from "./studio/reviewPreviewContext";
 import { resolveSourceSuggestionPreview } from "./studio/sourceSuggestionPreview";
+import { resolveShotTakeTarget, selectShotTake } from "./studio/shotTakeReview";
 import { ProjectSaveSession } from "./studio/projectSaveSession";
 import { saveVersionedStudioProject } from "./studio/preparedProjectSave";
 import type { StudioProjectSummary } from "@/lib/studioProjectStore";
@@ -2804,6 +2805,21 @@ export default function StudioApp() {
     () => (selectedSlot ? describeSlot(selectedSlot, { project: musicVideoProject, generatedAssets }) : null),
     [generatedAssets, musicVideoProject, selectedSlot],
   );
+  const shotTakeTarget = useMemo(() => resolveShotTakeTarget(selectedSlot, baseStoryPreviewSegments), [selectedSlot, baseStoryPreviewSegments]);
+  const canSelectShotTake = storyState.storyGenerated && Boolean(storyState.confirmedTreatmentId)
+    && Boolean(storyState.storyContentSignature) && Boolean(musicVideoProject && isPlacementPlanCurrent(musicVideoProject));
+  const useShotTake = (assetId: string, expectedTargetKey: string, expectedRevision: number) => {
+    if (!activeProjectId || !shotTakeTarget || !canSelectShotTake) return;
+    if (selectShotTake({ projectId: activeProjectId, target: shotTakeTarget, segments: baseStoryPreviewSegments,
+      assets: generatedAssets, draft: generatedDraft, assetId, expectedTargetKey, expectedRevision }) === generatedDraft) return;
+    setGeneratedReviewState(current => {
+      const assets = withCurrentReferenceIdentity(current.assets, musicVideoProject?.currentIdentity);
+      const draft = selectShotTake({ projectId: activeProjectId, target: shotTakeTarget, segments: baseStoryPreviewSegments,
+        assets, draft: current.draft, assetId, expectedTargetKey, expectedRevision });
+      return draft === current.draft ? current : { ...current, draft };
+    });
+    invalidateArrangementOutput();
+  };
   const sourcePreview = useMemo(() => sourceSuggestion?.context === reviewContext && sourceSuggestion.slotId === selectedSlot?.id && slotEvidence
     ? resolveSourceSuggestionPreview(slotEvidence, sourceSuggestion.momentId, videoSources) : null,
   [reviewContext, selectedSlot?.id, slotEvidence, sourceSuggestion, videoSources]);
@@ -3232,6 +3248,8 @@ export default function StudioApp() {
                 }}
                 onPreviewSource={handlePreviewSource}
                 sourcePreview={sourcePreview}
+                shotTakeReview={activeProjectId && shotTakeTarget ? { projectId: activeProjectId, target: shotTakeTarget,
+                  assets: generatedAssets, draft: generatedDraft, canEdit: canSelectShotTake, onUse: useShotTake } : undefined}
                 sourcePreviewUnavailable={Boolean(!sourcePreview && sourceSuggestion?.context === reviewContext && sourceSuggestion.slotId === selectedSlot?.id)}
                 onReopenGenerated={handleReopenGenerated}
                 onOpenGenerate={() => handleSelectTab("generate")}

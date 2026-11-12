@@ -5,6 +5,7 @@ import { Button, Kicker, TONE_TEXT } from "../ui";
 import type { SlotEvidence } from "./spineSlots";
 import { SourceSuggestionViewer } from "../SourceSuggestionViewer";
 import type { SourceSuggestionPreview } from "../sourceSuggestionPreview";
+import { ShotTakesPanel, type ShotTakesPanelProps } from "../ShotTakesPanel";
 
 type SlotInspectorProps = {
   evidence: SlotEvidence;
@@ -13,6 +14,7 @@ type SlotInspectorProps = {
   onPreviewSource: (sectionId: string, momentId: string) => void;
   sourcePreview?: SourceSuggestionPreview | null;
   sourcePreviewUnavailable?: boolean;
+  shotTakeReview?: ShotTakesPanelProps;
   /** Send an approved generated shot back to review; the slot falls back to footage. */
   onReopenGenerated: (assetId: string) => void;
   onOpenGenerate: () => void;
@@ -23,7 +25,7 @@ type SlotInspectorProps = {
  * under it, and section-wide source suggestions. Inspecting a source never
  * invokes the Match placement action.
  */
-export function SlotInspector({ evidence, onClose, onPlayFrom, onPreviewSource, sourcePreview, sourcePreviewUnavailable, onReopenGenerated, onOpenGenerate }: SlotInspectorProps) {
+export function SlotInspector({ evidence, onClose, onPlayFrom, onPreviewSource, sourcePreview, sourcePreviewUnavailable, shotTakeReview, onReopenGenerated, onOpenGenerate }: SlotInspectorProps) {
   const { slot, moment, caption, lyrics, match, takes, generated } = evidence;
   const alternates = takes.filter((take) => !take.selected);
 
@@ -109,6 +111,7 @@ export function SlotInspector({ evidence, onClose, onPlayFrom, onPreviewSource, 
           <p className="text-[12px] leading-5 text-fg-3">No matched footage for this cut yet. Run Match, or generate a shot.</p>
         )}
 
+        {shotTakeReview ? <ShotTakesPanel {...shotTakeReview} /> : null}
         {alternates.length ? (
           <div>
             <Kicker>Source suggestions</Kicker>

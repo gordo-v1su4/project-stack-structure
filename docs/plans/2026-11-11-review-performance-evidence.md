@@ -215,3 +215,33 @@ the fallback; the selected cut remains A001. Evidence:
 V1S-462 remains open for actual same-shot take comparison, explicit destination-
 bound adoption, durable multi-shot replacement marks and submission reconciliation.
 The harness does not verify these future actions or production film acceptance.
+
+### Exact-shot take comparison and explicit Draft selection
+
+The inspector now separately lists completed video takes for the selected planned
+shot. The displayed segment retains its original target metadata; resolving a
+partial selected-media window requires one unambiguous containing base shot.
+Inventory requires the exact target song range, plan, section, destination and
+animatic reference/review binding. Neighboring, overlapping or stale-plan takes
+are not mislabeled as variants. Rejected or identity-blocked takes stay viewable
+with their block reason; they cannot be selected through this panel.
+
+Inspect take mounts one existing native saved-take viewer without selecting,
+approving or fetching media. Use for this shot explicitly changes only the Draft
+selection through the existing identity/selection rules, guarded by project,
+exact current target and draft revision. Rejected/stale gestures preserve the
+current draft rather than replacing it with an empty old-plan selection. The
+asset bank and prior take remain intact, and pending approval stays pending.
+
+Full check: 2,084 passed, 27 fixture skips, zero failures; production build passed.
+Four regressions verify exact inventory/ref binding, selection/history/approval
+separation, stale project/target/revision protection and split-window resolution.
+Actual mounted panel under StrictMode: inspecting Take B leaves Take A selected
+at revision 1, creates one paused video and makes zero media requests. Explicit
+Use changes selection to Take B at revision 2; both assets remain banked/pending.
+Playing and pausing uses the existing MP4. Evidence:
+`.tmp/review-performance/takes.tsx`, `shot-takes.png`. No film writes or generation.
+
+V1S-462 still needs durable multi-shot replacement marks, explicit submission
+reconciliation and populated-film browser acceptance. These checks do not claim
+the saved film has been selected, reviewed or approved through the new controls.

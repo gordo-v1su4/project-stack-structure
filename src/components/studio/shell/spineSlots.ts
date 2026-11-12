@@ -12,6 +12,7 @@ export type SpineSlotKind = "footage" | "generated";
  * generated shots, which are labeled rather than hidden.
  */
 export interface SpineSlot {
+  previewSegment?: EditPlanPreviewSegment;
   animaticShotId?: string;
   id: string;
   index: number;
@@ -64,6 +65,7 @@ export function buildSpineSlots(params: {
   return segments.map((segment, index) => {
     const generated = generatedByUrl.get(segment.videoUrl) ?? null;
     return {
+      previewSegment: segment,
       animaticShotId: segment.animaticShotId,
       id: slotId(segment, index),
       index,
