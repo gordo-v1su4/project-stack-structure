@@ -61,6 +61,12 @@
       "related": "V1S-459",
       "reason": "458 records existing-media/first-frame baselines; final prepared-hover delivery and its under-500-ms check belong to 459, which supplies that feature. Do not expand preview/backfill implementation while closing navigation work.",
       "stopWhen": "458 has equivalent populated-film navigation/selection measurements and its own evidence; 459 retains prepared-hover acceptance. Reconcile these ownership boundaries in Linear before closure."
+    },
+    {
+      "primary": "V1S-464",
+      "related": "V1S-459",
+      "reason": "Robert explicitly authorized publishing and qualifying the missing review task bundle. Its first image build rejected a generated controller import variant; exact deployed-body comparison permits one additional whole-file checksum pair without changing containment, runtime or infrastructure.",
+      "stopWhen": "Exact committed worker task bundle registers both review tasks, immutable syntax/manifest/runtime gates pass, the two existing CPU requests yield verified durable derivatives and public playback; no AI dispatch or service tuning."
     }
   ],
   "completion": {

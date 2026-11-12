@@ -97,3 +97,39 @@ Both protected full-draft hashes and quoted revisions matched the inherited
 baseline before diagnostics. Original opened through GET only, never its editor.
 No service restart, upgrade, framework replacement, credential/configuration
 change, BWS mutation, Swarm dispatch or film adoption was performed.
+
+## Authorized task-bundle qualification
+
+Robert explicitly approved publishing the task bundle and qualifying the two
+existing CPU requests, retaining worker runtime and infrastructure settings.
+The public test build `a2c1d8236f84bfdc78c2bc7dd2fe611e947d8789`, Actions
+run `43186752617`, passed 2151 tests / 27 fixture skips / 0 failures, full lint
+and type checking, production build, image checksum and authenticated/exact
+public revision gates. Independent public health matched the committed revision.
+
+Before activation, the candidate encoder also passed three real synthetic-media
+tests (47 assertions) inside the existing immutable production worker image,
+Bun 1.3.3, no network/credentials: exact VFR PTS/frame count and source hash,
+rotation/aspect ratio, and hash mismatch/cancellation/unsupported-media cleanup.
+This is runtime compatibility evidence, not a production stored-result receipt.
+
+The first worker release attempt failed at the controller-containment image
+gate before publication (08:59:03–08:59:48 UTC). No image was activated and
+neither existing request started. A retained dry-run bundle was compared against
+the exact deployed immutable image: only three generated chunk imports differed,
+plus the one expected log statement before containment. Rebinding those three
+literal import filenames and applying the allowlisted log replacement produced
+byte-identical deployed controller text. The application now admits only that
+exact source/patched SHA pair in addition to its two prior reviewed pairs.
+Unknown bodies/imports/whitespace still fail closed; manifest, syntax, credential
+containment and runtime pins are unchanged. Actual candidate idempotent patching
+and three drift-rejection probes passed; 13 focused tests passed (6 unavailable
+fixture/config-loader checks skipped), typecheck and affected ESLint passed.
+
+Public existing-source playback was exercised in the original's read-only
+Preview, without its editor or any adoption: explicit selection of
+3.750–7.73199987411499 seconds, Play selection, visible cave-entry frame,
+source video muted/rate 1 at 3.866088, sole audible master at 3.793719 seconds.
+Full-cut playback also emitted native frame callbacks, including 7.2 ms decoder
+processing; preloaded/hidden callbacks are not claimed as visible-first-frame
+latency. Native screenshot and samples remain private under `464-*`.
