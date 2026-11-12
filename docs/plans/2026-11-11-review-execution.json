@@ -16,9 +16,15 @@
   "readinessMessage": "Seven items are tracked in Linear. Starting with V1S-458 only in the existing worktree; verify its acceptance and conclude in Linear before 459. Necessary coupled work needs an explicit reason and stopping point. One combined PR/GrepTile review after the batch; public release remains separate.",
   "contextByIssue": {
     "V1S-458": "01a1c36a-2e37-7260-9204-378380cc385f-current-ticket",
-    "V1S-459": "subagent:/root/review_media_459"
+    "V1S-459": "01a1ce3e-3217-74a0-a93a-3d8eb179eaa7"
   },
   "coupledWork": [
+    {
+      "primary": "V1S-459",
+      "related": "V1S-462",
+      "reason": "Visible 1280x720 media review found the fixed replacement-review row plus the new preparation row squeezing Story content to zero height. Place both auxiliary panels inside the existing stage scroll region so the thumbnail board remains reachable.",
+      "stopWhen": "Only panel placement is adjusted and browser scrolling/board/enlarge work; replacement marking, persistence and submission behavior remain for 462."
+    },
     {
       "primary": "V1S-458",
       "related": "V1S-459",

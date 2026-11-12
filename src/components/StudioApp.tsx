@@ -94,6 +94,8 @@ import { useSongTransport } from "./studio/shell/useSongTransport";
 import { useStudioKeyboard } from "./studio/shell/useStudioKeyboard";
 import { deriveDisplayBpm, fmt } from "./studio/math";
 import { buildStageHeaderModel } from "./studio/stageActions";
+import { ReviewPreparationPanel } from "./studio/ReviewPreparationPanel";
+import { reviewPreparationSources } from "./studio/reviewPreparationSources";
 import { createSaveState, type SaveState } from "./studio/saveState";
 import type { StatusTone } from "./studio/ui";
 import { buildStudioPipelineInput } from "./studio/buildStudioPipelineInput";
@@ -227,6 +229,7 @@ export default function StudioApp() {
   const [aestheticReferences, setAestheticReferences] = useState<AestheticLibrary>(EMPTY_AESTHETIC_REFERENCES);
   const [generatedReviewState, setGeneratedReviewState] = useState<{ assets: GeneratedStudioAsset[]; draft: GeneratedDraftSelection | null }>({ assets: [], draft: null });
   const { assets: rawGeneratedAssets, draft: generatedDraft } = generatedReviewState;
+  const reviewSources = useMemo(() => reviewPreparationSources(videoSources, rawGeneratedAssets), [videoSources, rawGeneratedAssets]);
   const setGeneratedAssets = useCallback((update: SetStateAction<GeneratedStudioAsset[]>) => {
     setGeneratedReviewState(current => ({ ...current, assets: typeof update === "function" ? update(current.assets) : update }));
   }, []);
@@ -2930,8 +2933,6 @@ export default function StudioApp() {
               auditioning={Boolean(activeReviewAudition)} auditionRanges={activeReviewAudition ? reviewAudition?.ranges : undefined}
               onFullSong={() => { previewPlayer.pause(); setReviewAudition(null); setGeneratePreviewRange(null); setRoughCutPreviewRange(null); setGeneratedAuditionSegments(null); }} /> : null}
 
-            {activeProjectId && beatJoinAnalysis && ["story", "generate", "join"].includes(tab) ? <ReplacementReviewPanel key={activeProjectId}
-              projectId={activeProjectId} targets={replacementReviewTargets} ranges={songSelection?.ranges ?? []} /> : null}
             {monitorGate && !monitorFocused ? <StageGateBanner gate={monitorGate} /> : null}
 
             {showProgramMonitor ? (
@@ -2954,6 +2955,9 @@ export default function StudioApp() {
             ) : null}
 
             <main className={`studio-review-scroll studio-fade-in min-h-0 flex-1 space-y-3 overflow-y-auto ${monitorFocused || (activeStageBlocked && !["story", "generate", "join"].includes(tab)) ? "hidden" : ""}`}>
+            {activeProjectId && ["story", "generate"].includes(tab) ? <ReviewPreparationPanel key={activeProjectId} projectId={activeProjectId} sources={reviewSources} /> : null}
+            {activeProjectId && beatJoinAnalysis && ["story", "generate", "join"].includes(tab) ? <ReplacementReviewPanel key={activeProjectId}
+              projectId={activeProjectId} targets={replacementReviewTargets} ranges={songSelection?.ranges ?? []} /> : null}
             {["story", "generate", "join"].includes(tab) ? <MusicCutExplorer
               analysis={beatJoinAnalysis} project={musicVideoProject}
               onsetDensity={matchOnsetDensity} lyricCueBlend={matchLyricCueBlend} lyricMergeWindow={matchLyricMergeWindow}

@@ -10,4 +10,5 @@ export type AnimaticPreviewSnapshot = {
   contextSha256: string; plan: StillAnimaticPlan | null;
   /** Older deployed snapshot routes may not include the motion projection yet. */
   cut?: PreviewReviewCut;
+  reviewSources?: import("./reviewBackfill").ReviewBackfillInput[];
 };

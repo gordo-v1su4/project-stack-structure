@@ -100,7 +100,7 @@ export function ReviewVideoHover({ videoUrl, start = 0, end, children, className
   const content = <>
     {poster ? (
       // eslint-disable-next-line @next/next/no-img-element -- authenticated prepared WebP only
-      <img src={reviewArtifactUrl(poster, "poster")} alt="" loading="lazy" decoding="async" className="pointer-events-none absolute inset-0 h-full w-full object-contain" />
+      <img src={`/api/storage/media?${new URLSearchParams({ bucket: poster.bucket, objectKey: poster.posterKey })}`} alt="" loading="lazy" decoding="async" className="pointer-events-none absolute inset-0 h-full w-full object-contain" />
     ) : null}
     {floating ? floatingPreview : player}
     {!(prepared || poster) || !hideChildrenWhenReady ? children : null}

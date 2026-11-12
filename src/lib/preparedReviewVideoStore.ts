@@ -31,6 +31,10 @@ export function reviewVideoIdentity(source: ReviewVideoSource) {
 export function reviewVideoFolder(source: ReviewVideoSource) {
   return `media-uploads/projects/${normalizeStudioOwnerSegment(source.ownerId)}/review-video/${reviewVideoIdentity(source)}`;
 }
+export function reviewVideoManifestKey(source: ReviewVideoSource) {
+  // Existing shared Media API contract protects this entire metadata family.
+  return `media-uploads/studio-drafts/review-video/${reviewVideoIdentity(source)}.json`;
+}
 function connection(source: ReviewVideoSource, storage: Storage) {
   assertReviewVideoSource(source);
   const value = storage();
@@ -76,7 +80,7 @@ function artifactKeys(source: ReviewVideoSource, metadata: ReviewVideoMetadata) 
 export async function readPreparedReviewVideo(source: ReviewVideoSource, storage: Storage = studioMediaStorage): Promise<PreparedReviewVideo | null> {
   const { client, bucket } = connection(source, storage);
   try {
-    const response = await client.send(new GetObjectCommand({ Bucket: bucket, Key: `${reviewVideoFolder(source)}/ready.json` }), { abortSignal: AbortSignal.timeout(10_000) });
+    const response = await client.send(new GetObjectCommand({ Bucket: bucket, Key: reviewVideoManifestKey(source) }), { abortSignal: AbortSignal.timeout(10_000) });
     if (!response.Body) throw new Error("Review-video manifest has no body.");
     const stream = response.Body.transformToWebStream();
     if ((response.ContentLength ?? 0) > 32 * 1024) { await stream.cancel(); throw new Error("Review-video manifest exceeds its bound."); }
@@ -116,7 +120,7 @@ export async function storePreparedReviewVideo(source: ReviewVideoSource, prepar
     if (!result.ETag) throw new Error("Review artifact storage acknowledgment is missing.");
   }
   const record: PreparedReviewVideo = { version: 1, identity: reviewVideoIdentity(source), recipe: REVIEW_VIDEO_RECIPE, source, metadata, artifacts };
-  const result = await client.send(new PutObjectCommand({ Bucket: bucket, Key: `${reviewVideoFolder(source)}/ready.json`, Body: JSON.stringify(record), ContentType: "application/json", IfNoneMatch: "*" }), { abortSignal: AbortSignal.timeout(10_000) })
+  const result = await client.send(new PutObjectCommand({ Bucket: bucket, Key: reviewVideoManifestKey(source), Body: JSON.stringify(record), ContentType: "application/json", IfNoneMatch: "*" }), { abortSignal: AbortSignal.timeout(10_000) })
     .catch(async error => { if (status(error) !== 412) throw error; const existing = await readPreparedReviewVideo(source, storage); if (!existing) throw error; return { ETag: "existing-manifest", existing }; });
   if (!result.ETag) throw new Error("Review manifest storage acknowledgment is missing.");
   if ("existing" in result && result.existing) return result.existing;

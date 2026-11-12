@@ -57,7 +57,7 @@ export function StillAnimaticPanel(props: Props) {
     </details> : null}
     {plan && shot && binding ? <>
       <Button type="button" disabled={stale || busy || !props.audioUrl} className="rounded-md border border-accent px-3 py-2 text-sm text-accent" onClick={() => setPreview(true)}>Preview animatic</Button>
-      <ol aria-label="Timed still shots" className="grid max-h-[55vh] grid-cols-2 gap-2 overflow-y-auto pr-1 sm:grid-cols-4 lg:grid-cols-6">
+      <ol aria-label="Timed still shots" className="grid max-h-[55vh] grid-cols-2 gap-2 overflow-y-auto pr-1 sm:grid-cols-3 lg:grid-cols-4">
         {plan.shots.map(s => <AnimaticShotThumbnail key={s.id} shot={s} fps={plan.fps} image={animaticImage(plan, s, context)} selected={shot.id === s.id}
           onSelect={() => { setSelected(s.id); setImageOpen(true); setError(""); }} />)}
       </ol>

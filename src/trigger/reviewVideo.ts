@@ -12,7 +12,7 @@ export const reviewVideoTask = task({
   machine: "large-1x",
   maxDuration: 900,
   retry: { maxAttempts: 2, minTimeoutInMs: 5000, maxTimeoutInMs: 30_000 },
-  run: async (payload: { applicationUserId: string } & ({ source: ReviewVideoSource; input?: never } | { source?: never; input: { bucket: string; objectKey: string } })) => {
+  run: async (payload: { applicationUserId: string; projectId?: string } & ({ source: ReviewVideoSource; input?: never } | { source?: never; input: { bucket: string; objectKey: string } })) => {
     if (!payload.applicationUserId || payload.source && payload.applicationUserId !== payload.source.ownerId) throw new AbortTaskRunError("Invalid review-video owner.");
     try {
       let source = payload.source;
@@ -20,7 +20,8 @@ export const reviewVideoTask = task({
         if (!payload.input || !await canReadMediaObject({ userId: payload.applicationUserId, bucket: payload.input.bucket, objectKey: payload.input.objectKey })) throw new AbortTaskRunError("Review video does not belong to the current user.");
         source = await pinReviewVideoSource(payload.applicationUserId, payload.input.bucket, payload.input.objectKey);
       }
-      const result = await prepareStoredReviewVideo(source, { onStage: stage => markWorkRunning("preparing-review", stage, { progressMode: "indeterminate" }) });
+      const result = await prepareStoredReviewVideo(source, { ...(payload.projectId ? { authorize: args => canReadMediaObject({ ...args, projectId: payload.projectId }) } : {}),
+        onStage: stage => markWorkRunning("preparing-review", stage, { progressMode: "indeterminate" }) });
       markWorkCompleted("Review proxy and scrub sheet stored", { completedItems: 1, totalItems: 1 });
       return result;
     } catch (error) {

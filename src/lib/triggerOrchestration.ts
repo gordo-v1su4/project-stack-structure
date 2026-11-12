@@ -25,6 +25,7 @@ import { retrieveOwnedTriggerRun } from "@/lib/triggerRunAccess";
 import { normalizeTriggerRunStatus } from "@/lib/triggerRunStatus";
 import { H3_AUTOMATIC_RECOVERY_ATTEMPTS } from "@/lib/h3AutomaticRecovery";
 import type { reviewVideoTask } from "@/trigger/reviewVideo";
+import type { reviewBackfillTask } from "@/trigger/reviewBackfill";
 import { reviewVideoIdentity, type ReviewVideoSource } from "./preparedReviewVideoStore";
 
 export const STACK_STRUCTURE_TRIGGER_TASKS = {
@@ -47,7 +48,21 @@ export const STACK_STRUCTURE_TRIGGER_TASKS = {
   ffglitch: "ffglitch-transform",
   imageSplitter: "image-split-grid",
   reviewVideo: "prepare-review-video",
+  reviewBackfill: "prepare-project-review-videos",
 } as const;
+
+export async function triggerReviewBackfill(ownerId: string, projectId: string, jobId: string) {
+  assertTriggerConfigured();
+  if (!/^[\w-]{1,96}$/.test(projectId) || !/^[a-f0-9-]{36}$/i.test(jobId)) throw new Error("Invalid review preparation.");
+  const dispatch = await buildDispatchContext(["stack-structure", "review-preparation", `project:${projectId}`], {
+    stageLabel: "Waiting to prepare project review copies", progressMode: "exact",
+  });
+  if (dispatch.userId !== ownerId) throw new Error("Review preparation belongs to another user.");
+  return tasks.trigger<typeof reviewBackfillTask>(STACK_STRUCTURE_TRIGGER_TASKS.reviewBackfill, { ownerId, projectId, jobId }, {
+    idempotencyKey: createTriggerIdempotencyKey("review-project-preparation-v1", [ownerId, projectId, jobId]),
+    idempotencyKeyTTL: "30d", tags: dispatch.tags, metadata: dispatch.metadata,
+  }) as Promise<{ id: string }>;
+}
 
 export async function triggerReviewVideo(source: ReviewVideoSource, intentId: string) {
   assertTriggerConfigured();

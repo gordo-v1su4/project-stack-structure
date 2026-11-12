@@ -2,9 +2,10 @@
 
 Viewing derivatives reduce transfer and decoding without changing source media,
 selected takes, identity evidence, conditioning or export inputs. The current
-implementation includes timeline/take hover, visible posters and automatic
-video-ingest hooks. Public deployment, existing-film bulk backfill and
-populated-film acceptance remain open.
+implementation includes timeline/take hover, visible posters, automatic
+video-ingest hooks and owned-project bulk backfill. Candidate populated-film
+evidence is recorded in [V1S-459 verification](../operations/review-media-459.md).
+Public deployment and live worker/storage qualification remain a release gate.
 
 `GET /api/storage/review-video?bucket=...&objectKey=...` authenticates, validates
 the configured bucket/safe video object key and verifies source ownership before
@@ -39,8 +40,10 @@ Artifacts use the canonical RustFS S3 connection and bucket. Source identity
 includes exact owner, bucket, key, ETag, byte length and recipe. Its namespace is
 `media-uploads/projects/<owner>/review-video/<identity>/`. Each artifact key
 contains its content SHA-256; conditional create prevents a racing encoder from
-overwriting a different object's bytes. `ready.json` is created only after all
-three artifact writes are acknowledged. A duplicate publisher returns the
+overwriting a different object's bytes. The manifest is created only after all
+three artifact writes are acknowledged, under the existing private metadata
+family `media-uploads/studio-drafts/review-video/<identity>.json`, rather than
+the publicly readable artifact folder. A duplicate publisher returns the
 existing validated manifest. Failed partial preparation has no ready record.
 Manifest parsing checks a 32 KiB streamed bound, recipe/source/metadata and the
 exact content-addressed artifact pointers. Preparation failure preserves the
@@ -83,7 +86,10 @@ cuts open a clamped 320×180 floating preview without resizing the filmstrip;
 larger take cards play in place. Floating previews ignore pointer input, keep
 the shot label visible, and close on scroll, resize or scope change. Source
 trims map through the recorded timestamp offset and clamp to available frames;
-the hover loops that viewing window at normal speed. It never falls back to
+the hover loops that viewing window at normal speed. Every entry starts at the
+beginning of that source trim. Pointer motion never seeks: Robert's November 12
+visible review rejected simultaneous automatic playback and horizontal scrubbing.
+Scrub sheets are stored artifacts, with no implicit pointer-scrub UI. It never falls back to
 loading an original video on hover. Unsupported/unavailable sources retain the
 explicit original inspection path. Visible take cards request prepared posters;
 if none exists, a labeled placeholder preserves the explicit inspection path.
@@ -104,8 +110,45 @@ entry. Cancelled active work retains its slot until the real promise settles.
 The lookup is GET-only and loads only the stored WebP poster, never an original
 video or a new worker. A ready result is retained in component state for that
 exact source URL, and a successful focused preparation updates the same poster.
-Missing posters are checked again on visibility re-entry or hover; automatic
-completion notifications for an existing-project backfill remain open.
+Missing posters are checked again on visibility re-entry or hover. Queue-capacity
+overflow retries only while visible, retaining the two-active/64-pending bound.
+Compact project backfill receipts notify currently visible, exact-source
+subscribers; no full-project reload or global media-result cache is needed.
+
+## Existing-film backfill
+
+`GET/POST /api/studio/projects/[projectId]/review-preparation` authenticates first.
+POST fresh-reads the owned project and accepts one UUID intent with at most 256
+deduplicated stored video references. The configured bucket and safe video keys
+are enforced; legacy keys require a reference in the exact owned project. A
+reused intent cannot change its source list. The source inventory, cut, reviews
+and original media are never saved by this flow.
+
+Independent CAS records live under the already-private
+`media-uploads/studio-drafts/review-preparation/<owner-hash>/<project>/<intent>.json`.
+The parent `prepare-project-review-videos` runs on a concurrency-one queue and
+waits for sequential `prepare-review-video` children on their separate queue.
+Each row rechecks authorization, pins ETag/length and reuses matching durable
+derivatives before encoding. A successful child acknowledgment alone is not
+ready: the parent must read the stored, exact-source receipt. Completed rows and
+parent ownership are immutable. Partial/failed/cancelled jobs stay terminal;
+a fresh retry reuses ready artifacts and processes unfinished sources.
+
+An unknown dispatch acknowledgment reconnects the same durable intent, source
+list and Trigger idempotency key, including after the visible inventory changes.
+The panel retains that transport intent in versioned session storage, reads
+compact ETag receipts, suspends hidden observation and aborts on project/view
+change. Terminal Trigger state reconciles interrupted jobs without inventing
+missing output. Failed derivatives stay labeled and keep explicit original
+inspection available. Neither status polling nor poster arrival reloads or
+replaces the open film.
+
+The top timeline uses visible 320-pixel image derivatives with high fetch priority;
+offscreen still boards remain viewport gated. Missing timeline stills may show
+prepared video posters. Preparation and replacement-review panels live inside
+the stage scroll region so the fixed timeline cannot squeeze out Story content
+at 720-pixel height. Only the embedded Story board changes from six to four
+desktop columns; standalone Preview keeps its existing proportions.
 
 New uploaded videos request preparation after the scene manifest is persisted,
 before the caption batches. Chunked uploads use the reassembled single-file

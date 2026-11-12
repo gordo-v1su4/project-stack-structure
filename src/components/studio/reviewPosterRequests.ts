@@ -1,5 +1,9 @@
 import { readReadyReviewVideo, reviewVideoReference } from "./reviewHoverPreview";
 
+export class ReviewPosterQueueFullError extends Error {
+  constructor() { super("Review poster queue is full."); }
+}
+
 /** Visible-card readiness uses two storage lookups, with a bounded cancellable wait list. */
 export class ReviewPosterRequests {
   private active = 0;
@@ -7,7 +11,7 @@ export class ReviewPosterRequests {
   constructor(private readonly concurrency = 2, private readonly maxPending = 64) {}
   run<T>(work: () => Promise<T>, signal: AbortSignal): Promise<T> {
     signal.throwIfAborted();
-    if (this.active >= this.concurrency && this.pending.length >= this.maxPending) return Promise.reject(new Error("Review poster queue is full."));
+    if (this.active >= this.concurrency && this.pending.length >= this.maxPending) return Promise.reject(new ReviewPosterQueueFullError());
     return new Promise<T>((resolve, reject) => {
       const cancel = () => {
         const index = this.pending.indexOf(item);

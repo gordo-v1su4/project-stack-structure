@@ -6,7 +6,8 @@ import { mkdir, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { pinReviewVideoSource, readPreparedReviewVideo, storePreparedReviewVideo, reviewVideoIdentity } from "@/lib/preparedReviewVideoStore";
+import { pinReviewVideoSource, readPreparedReviewVideo, storePreparedReviewVideo, reviewVideoIdentity, reviewVideoManifestKey } from "@/lib/preparedReviewVideoStore";
+import { isCanonicalStudioMetadata } from "@/lib/studioMetadataPrivacy";
 import { prepareStoredReviewVideo } from "@/lib/prepareStoredReviewVideo";
 import { prepareReviewVideo } from "@/lib/prepareReviewVideo";
 import { studioMediaStorage } from "@/lib/studioProjectObjectStore";
@@ -75,7 +76,7 @@ const available = await execute(ffmpeg, ["-version"]).then(() => true, () => fal
     const changedOwner = { ...source, ownerId: "github-other" };
     failSuffix = ".jpg";
     await expect(storePreparedReviewVideo(changedOwner, encoded!, storage)).rejects.toThrow();
-    expect([...objects.keys()].filter(key => key.includes("/github-other/") && key.endsWith("ready.json"))).toEqual([]);
+    expect(objects.has(`/stack-structure/${reviewVideoManifestKey(changedOwner)}`)).toBe(false);
     failSuffix = "";
     // A duplicate publisher keeps the existing manifest and all content-addressed objects.
     expect(await storePreparedReviewVideo(source, encoded!, storage)).toEqual(result);
@@ -83,7 +84,8 @@ const available = await execute(ffmpeg, ["-version"]).then(() => true, () => fal
     objects.set(proxyKey, { ...proxy, metadata: {} });
     await expect(storePreparedReviewVideo(source, encoded!, storage)).rejects.toThrow("content binding");
     objects.set(proxyKey, proxy);
-    const manifestKey = [...objects.keys()].find(key => key.endsWith("ready.json"))!;
+    const manifestKey = `/stack-structure/${reviewVideoManifestKey(source)}`;
+    expect(isCanonicalStudioMetadata("stack-structure", reviewVideoManifestKey(source))).toBe(true);
     const manifest = objects.get(manifestKey)!;
     const malicious = JSON.parse(manifest.bytes.toString()); malicious.artifacts.proxy = sourceKey;
     objects.set(manifestKey, { ...manifest, bytes: Buffer.from(JSON.stringify(malicious)) });

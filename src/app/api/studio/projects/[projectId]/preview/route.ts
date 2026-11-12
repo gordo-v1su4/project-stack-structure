@@ -3,6 +3,7 @@ import { readStudioProject } from "@/lib/studioProjectStore";
 import { animaticContextSha256, normalizeStillAnimaticPlan } from "@/components/studio/stillAnimatic";
 import type { AnimaticPreviewSnapshot } from "@/components/studio/animaticPreviewSnapshot";
 import { projectReviewCut } from "@/lib/projectReviewCut";
+import { reviewPreparationSources } from "@/components/studio/reviewPreparationSources";
 
 export const runtime = "nodejs";
 
@@ -26,6 +27,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ proj
   const snapshot: AnimaticPreviewSnapshot = { projectId, name: saved.project.name, revision: saved.revision ?? "",
     songLabel: audio?.sourceLabel ?? "Original master", audioUrl, plan,
     cut: projectReviewCut(projectId, d, plan),
+    reviewSources: reviewPreparationSources(d.videoSources ?? [], d.generatedAssets ?? []),
     contextSha256: project && story.confirmedTreatmentSnapshot && story.sceneProofPlan
       ? animaticContextSha256({ projectId, project, treatment: story.confirmedTreatmentSnapshot,
         storyBeats: story.storyBeats, references: d.referenceAssets ?? [], sceneProofPlan: story.sceneProofPlan }) : "" };

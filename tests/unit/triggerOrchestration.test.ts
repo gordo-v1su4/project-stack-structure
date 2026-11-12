@@ -79,6 +79,7 @@ describe("Trigger orchestration", () => {
       ffglitch: "ffglitch-transform",
       imageSplitter: "image-split-grid",
       reviewVideo: "prepare-review-video",
+      reviewBackfill: "prepare-project-review-videos",
     });
   });
 

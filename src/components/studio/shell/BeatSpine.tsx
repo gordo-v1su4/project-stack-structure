@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSongRangeDrag } from "../useSongRangeDrag";
 import type { SelectionGesture, SongRange } from "../reviewSelection";
 import { buildSongSectionReview } from "../songSectionReview";
@@ -12,6 +12,30 @@ import type { BeatJoinAnalysis } from "../types";
 import type { SpineSlot } from "./spineSlots";
 import { clipSpineRange, getSpineViewport, type SpineZoomMode } from "./spineViewport";
 import { ReviewVideoHover } from "../ReviewVideoHover";
+import { viewingThumbnailUrl } from "../mediaThumbnailUrl";
+
+/** The top filmstrip has priority over the scrolling board, but no offscreen originals. */
+function SpineThumbnail({ url, active }: { url: string; active: boolean }) {
+  const root = useRef<HTMLSpanElement>(null);
+  const [visible, setVisible] = useState(false), [failed, setFailed] = useState("");
+  const src = viewingThumbnailUrl(url);
+  useEffect(() => {
+    if (typeof IntersectionObserver === "undefined") {
+      const frame = requestAnimationFrame(() => setVisible(true));
+      return () => cancelAnimationFrame(frame);
+    }
+    const observer = new IntersectionObserver(entries => setVisible(entries.some(entry => entry.isIntersecting)));
+    if (root.current) observer.observe(root.current);
+    return () => observer.disconnect();
+  }, []);
+  return <span ref={root} className="block h-full w-full">
+    {visible && src && failed !== src ? (
+      // eslint-disable-next-line @next/next/no-img-element -- small viewing derivative, visible top timeline first
+      <img src={src} alt="" fetchPriority="high" decoding="async" onError={() => setFailed(src)}
+        className={`h-full w-full object-cover ${active ? "" : "opacity-80 group-hover:opacity-100"}`} />
+    ) : <span className="block h-full w-full bg-[repeating-linear-gradient(135deg,oklch(1_0_0/0.05)_0_4px,transparent_4px_10px)]" />}
+  </span>;
+}
 
 type BeatSpineProps = {
   analysis: BeatJoinAnalysis;
@@ -126,6 +150,7 @@ export function BeatSpine({ analysis, bpm, playhead, onSeek, onSelectSection, se
                 start={slot.previewSegment?.startTime ?? 0}
                 end={slot.previewSegment?.endTime}
                 floating contextKey={`${view.start}:${view.end}`} previewLabel={slot.label}
+                posterWhenVisible={!slot.thumbnailUrl}
                 showStatus={wide}
                 buttonProps={{ type: "button", role: "option", "aria-selected": isSelected,
                   onClick: event => { setFocusedSection(null); onSelectSlot(onSelectSection ? slot : isSelected ? null : slot, event.shiftKey, event.ctrlKey || event.metaKey); },
@@ -141,8 +166,7 @@ export function BeatSpine({ analysis, bpm, playhead, onSeek, onSelectSection, se
                 }`}
               >
                 {slot.thumbnailUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element -- object URLs and gateway thumbnails
-                  <img src={slot.thumbnailUrl} alt="" className={`h-full w-full object-cover ${isSelected || isLive ? "" : "opacity-80 group-hover:opacity-100"}`} />
+                  <SpineThumbnail url={slot.thumbnailUrl} active={isSelected || isLive} />
                 ) : (
                   <span className="block h-full w-full bg-[repeating-linear-gradient(135deg,oklch(1_0_0/0.05)_0_4px,transparent_4px_10px)]" />
                 )}

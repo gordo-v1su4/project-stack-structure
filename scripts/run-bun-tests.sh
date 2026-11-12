@@ -24,6 +24,7 @@ readonly isolated_tests=(
   "tests/unit/projectWorkRoute.test.ts"
   "tests/unit/replacementReviewRoute.test.ts"
   "tests/unit/reviewVideoRoute.test.ts"
+  "tests/unit/reviewBackfillRoute.test.ts"
   "tests/unit/reviewVideoDispatch.test.ts"
   "tests/unit/reviewVideoTask.test.ts"
   "tests/unit/automaticReviewVideoDispatch.test.ts"

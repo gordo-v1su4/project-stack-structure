@@ -12,6 +12,7 @@ import { AnimaticReviewPanel } from "./AnimaticReviewPanel";
 import { Button, Surface } from "./ui";
 import { readReviewPreviewContext, studioReviewHref, type ReviewStage } from "./reviewPreviewContext";
 import { selectSongRange, type SongRange, type SongSelection } from "./reviewSelection";
+import { ReviewPreparationPanel } from "./ReviewPreparationPanel";
 
 const CutReviewPlayer = dynamic(() => import("./CutReviewPlayer").then(module => module.CutReviewPlayer), {
   ssr: false, loading: () => <p className="py-8 text-sm text-fg-3">Loading cut player…</p>,
@@ -85,6 +86,7 @@ export function AnimaticPreviewPage({ projectId }: { projectId: string }) {
     {checked ? <p className="text-xs text-fg-3">Live · Checked {checked}{requested.length ? ` · Requested: ${requested.join(", ")}` : ""}</p> : null}
     {arrivals.length ? <p role="status" className="text-sm text-accent">New images: {arrivals.join(", ")}</p> : null}
     {error ? <p role="alert" className="text-sm text-warn">{error}</p> : null}
+    {snapshot?.reviewSources ? <ReviewPreparationPanel key={projectId} projectId={projectId} sources={snapshot.reviewSources} /> : null}
     {snapshot ? <div className="flex flex-wrap items-center gap-2" aria-label="Preview modes">
       <Button aria-pressed={mode === "video"} onClick={() => { setMode("video"); setWatch(null); setPreview(null); }}>Current video cut</Button>
       <Button aria-pressed={mode === "images"} disabled={!plan || !snapshot.audioUrl} onClick={() => { setMode("images"); setPreview("images"); }}>Watch images</Button>
