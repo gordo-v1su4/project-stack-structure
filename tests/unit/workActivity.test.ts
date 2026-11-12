@@ -21,12 +21,23 @@ describe("work activity", () => {
     ]);
     const before = JSON.stringify(items);
     const recent = recentActivityRuns(items);
-    expect(recent.visible.map((item) => item.id)).toEqual(["parent", "old-queued", "old-running", "done-39", "done-38", "done-37"]);
+    expect(recent.visible.map((item) => item.id)).toEqual(["parent", "old-running", "old-queued", "done-39", "done-38", "done-37"]);
     expect(recent.visible[0]?.children[0]?.id).toBe("child");
     expect(recent.visible[3]?.failed).toBe(true);
     expect(recent.hiddenCount).toBe(37);
     expect(items).toHaveLength(43);
     expect(JSON.stringify(items)).toBe(before);
+  });
+  test("an 80-shot waiting batch cannot bury the current render and next waiting shot", () => {
+    const items = groupActivityRuns([
+      ...Array.from({ length: 80 }, (_, index) => ({ id: `waiting-${index}`, taskIdentifier: "local-ai-generation",
+        status: "QUEUED", createdAt: new Date(2000 + index * 1000) })),
+      { id: "rendering", taskIdentifier: "local-ai-generation", status: "EXECUTING", createdAt: new Date(1000) },
+    ]);
+    const recent = recentActivityRuns(items);
+    expect(recent.visible.slice(0, 3).map(item => item.id)).toEqual(["rendering", "waiting-0", "waiting-1"]);
+    expect(recent.visible).toHaveLength(81);
+    expect(recent.hiddenCount).toBe(0);
   });
   test("scopes realtime reads to exactly the authenticated user tag", () => {
     expect(workActivityTagForUser("github-123")).toBe("user:github-123");

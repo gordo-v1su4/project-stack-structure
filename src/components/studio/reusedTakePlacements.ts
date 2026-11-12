@@ -3,6 +3,7 @@ import { effectiveGenerationScope, generationScopeSha256, generationSemanticSha2
 import { currentIdentityReviewSha256, currentReferenceIdentityApprovalSha256 } from "./currentReferenceIdentity";
 import { currentIdentityEvidenceSha256 } from "./issuedIdentityPolicy";
 import { placementInputSignature, type EditPlanPreviewSegment, type MusicVideoProject } from "./musicVideoProject";
+import { sameAnimaticMotionBinding } from "./animaticMotionBinding";
 
 /** A lookup coordinate, never authority. Server readers retrieve the canonical same-project record. */
 export type ReuseSourceBaseline = { scopeSignature: string; semanticSha256: string; receiptId?: string };
@@ -83,6 +84,7 @@ function reusedTakeOriginMatches(row: ReusedTakePlacement, asset: GeneratedStudi
 function reusedTakeWindowMatches(row: ReusedTakePlacement, segment: EditPlanPreviewSegment): boolean {
   const target = row.target;
   return target.planSignature === segment.planSignature && target.sectionId === segment.sectionId && target.timelineItemId === segment.timelineItemId
+    && sameAnimaticMotionBinding(target.animaticMotion, segment.animaticMotion)
     && target.requirementId === segment.requirementId && target.narrativeMomentId === segment.narrativeMomentId
     && target.songStart < segment.musicEnd - 1e-6 && target.songEnd > segment.musicStart + 1e-6;
 }
@@ -91,15 +93,19 @@ export function reusedTakePlacementMatches(row: ReusedTakePlacement, asset: Gene
 }
 
 /** Validate every saved row, including unused/stale rows, before a server boundary consumes it. */
-export function assertCurrentReusedTakePlacements(project: MusicVideoProject, rows: unknown) {
+export function assertCurrentReusedTakePlacements(project: MusicVideoProject, rows: unknown, currentSegments?: EditPlanPreviewSegment[]) {
   const placements = sanitizeReusedTakePlacements(rows) ?? [];
   const scope = effectiveGenerationScope(project);
   for (const row of placements) {
     const item = project.editPlan.timelineItems.find(item => item.id === row.target.timelineItemId);
+    const animatic = row.target.animaticMotion && currentSegments?.find(segment => segment.animaticShotId
+      && reusedTakeWindowMatches(row, segment) && near(row.target.songStart, segment.musicStart) && near(row.target.songEnd, segment.musicEnd));
     const origin = project.generationScope?.body.reuseOrigins?.find(origin => origin.assetId === row.assetId && origin.jobId === row.jobId);
-    if (!item || row.target.planSignature !== scope || row.target.sectionId !== item.sectionId
-      || row.target.requirementId !== item.requirementId || row.target.narrativeMomentId !== item.narrativeMomentId
-      || row.target.songStart < item.start - 1e-6 || row.target.songEnd > item.end + 1e-6
+    const currentTarget = row.target.animaticMotion ? Boolean(animatic)
+      : Boolean(item && !row.target.timelineItemId.startsWith("animatic:") && row.target.sectionId === item.sectionId
+        && row.target.requirementId === item.requirementId && row.target.narrativeMomentId === item.narrativeMomentId
+        && row.target.songStart >= item.start - 1e-6 && row.target.songEnd <= item.end + 1e-6);
+    if (!currentTarget || row.target.planSignature !== scope
       || !origin || origin.assetSha256 !== row.originSha256) throw new Error("A reused placement no longer matches the current story and canonical origin baseline.");
   }
   const sorted = [...placements].sort((a, b) => a.target.songStart - b.target.songStart);
@@ -110,16 +116,19 @@ export function assertCurrentReusedTakePlacements(project: MusicVideoProject, ro
 /** Explicit owner selection for the current target. The canonical baseline names eligible origins. */
 export function selectReusedTakePlacement<T extends { planSignature: string; revision: number; assetIds: string[]; reusedTakePlacements?: ReusedTakePlacement[] }>(
   draft: T, project: MusicVideoProject, asset: GeneratedStudioAsset, segment: EditPlanPreviewSegment, sourceStart = asset.trimStart ?? 0): T {
+  if (segment.animaticShotId && !segment.animaticMotion) throw new Error("Review the current complete animatic before placing footage.");
   const scope = effectiveGenerationScope(project), origin = project.generationScope?.body.reuseOrigins?.find(origin => origin.assetId === asset.id && origin.jobId === asset.jobId);
   if (!scope || draft.planSignature !== scope || segment.planSignature !== scope || !segment.timelineItemId || !origin
     || origin.assetSha256 !== reuseOriginAssetSha256(asset) || origin.scopeSignature !== asset.target?.planSignature) throw new Error("Confirm the revised story and its canonical origin footage before reusing this take.");
   const target: GeneratedStudioAssetTarget = { planSignature: scope, timelineItemId: segment.timelineItemId, sectionId: segment.sectionId,
+    ...(segment.animaticMotion ? { animaticMotion: segment.animaticMotion } : {}),
     sectionLabel: project.storySections.find(section => section.id === segment.sectionId)?.label ?? segment.sectionId,
     ...(segment.requirementId ? { requirementId: segment.requirementId } : {}),
     ...(segment.narrativeMomentId ? { narrativeMomentId: segment.narrativeMomentId } : {}), songStart: segment.musicStart,
     songEnd: Math.min(segment.musicEnd, segment.musicStart + asset.target!.songEnd - asset.target!.songStart - sourceStart + (asset.trimStart ?? 0)) };
   const body = { version: 1 as const, assetId: asset.id, jobId: asset.jobId!, originSha256: origin.assetSha256, target,
     sourceStart, sourceEnd: sourceStart + target.songEnd - target.songStart };
+  if (segment.animaticShotId && !near(target.songEnd, segment.musicEnd)) throw new Error("Choose a verified source trim that covers this whole animatic shot.");
   const row: ReusedTakePlacement = { ...body, id: `reuse-${generationScopeSha256(body)}` };
   if (!reusedTakePlacementMatches(row, asset, segment)) throw new Error("This take cannot cover the selected window within its verified original source selection.");
   const reusedTakePlacements = [...(draft.reusedTakePlacements ?? []).filter(previous => previous.target.songEnd <= target.songStart || previous.target.songStart >= target.songEnd), row];

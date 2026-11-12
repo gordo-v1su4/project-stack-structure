@@ -39,6 +39,10 @@ test("projection returns current context and durable master without unrelated dr
   expect(response.status).toBe(200); expect(body.plan.shots).toHaveLength(1); expect(body.plan.priorVersions).toBe(undefined);
   expect(body.audioUrl).toBe("/api/storage/media?bucket=studio&objectKey=media-uploads%2Fgithub-test%2Fmaster.wav");
   expect(body.contextSha256).toBe(animaticContextSha256(input)); expect(body.draft).toBe(undefined); expect(body.referenceAssets).toBe(undefined);
+  expect(body.cut.segments).toHaveLength(1);
+  expect(body.cut.segments[0].kind).toBe("gap");
+  expect(body.cut.selectedVideoCount).toBe(0);
+  expect(body.cut.fingerprint).toMatch(/^[a-f0-9]{64}$/);
   expect(JSON.stringify(saved)).toBe(before);
   f.saved.draft.storyState.stillAnimaticPlan.shots[0].endFrame = 239;
   expect((await GET(request(), context)).status).toBe(503);

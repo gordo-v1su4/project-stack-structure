@@ -112,6 +112,9 @@ export function buildCoverageSlots(
 
   const approvedVideos = listApprovedGeneratedVideoAssets(approvedReplacements);
   const generationScope = effectiveGenerationScope(project);
+  // The project is unchanged throughout this synchronous traversal. Hash it once,
+  // rather than serializing the complete media evidence for every timing chunk.
+  const stalePlacements = project.placementPlan && !isPlacementPlanCurrent(project);
 
   const momentsById = new Map(project.videoMoments.map((moment) => [moment.id, moment]));
   const originalItemIds = new Map<string, string>();
@@ -140,7 +143,6 @@ export function buildCoverageSlots(
     });
     let assessment = moment ? assess(moment) : undefined;
     let score = item.semanticMatch?.score ?? 0;
-    const stalePlacements = project.placementPlan && !isPlacementPlanCurrent(project);
     const placements = stalePlacements ? [] : project.placementPlan?.placements.filter((placement) =>
       placement.timelineItemId === (originalItemIds.get(item.id) ?? item.id) && placement.sectionId === item.sectionId && placement.songStart < item.end && placement.songEnd > item.start);
     let supported = !stalePlacements && isUsableStoryMatch(assessment);

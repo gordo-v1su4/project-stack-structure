@@ -9,6 +9,13 @@ const id = (v: unknown): v is string => typeof v === "string" && /^[A-Za-z0-9_-]
 export interface H3StillTransport { baseUrl: string; fetchImpl?: typeof fetch; timeoutMs?: number; signal?: AbortSignal }
 export interface PreparedH3StillProvider { jobId: string; descriptor: H3StillDescriptor; workflow: H3StillWorkflow; workflowSha256: string }
 export interface H3StillSubmissionReceipt { jobId: string; descriptorSha256: string; workflowSha256: string; schemaSha256: string }
+/** Fixed diagnostics only: backend bodies can contain paths or credentials. */
+export class H3StillUploadError extends Error {
+  constructor(status: number) {
+    const http = Number.isInteger(status) && status >= 100 && status <= 599 ? ` (HTTP ${status})` : "";
+    super(`SwarmUI could not store an input reference${http}. Check the local backend and available disk space. No GPU submission was made.`);
+  }
+}
 export class H3StillSubmissionError extends Error {
   constructor(public readonly disposition: "rejected" | "unknown") { super(disposition === "rejected" ? "SwarmUI rejected the H3 still submission." : "The H3 still submission outcome is unknown; reconcile it before any further submission."); }
 }
@@ -87,7 +94,7 @@ export async function prepareH3StillProvider(descriptor: H3StillDescriptor, opti
     const form = new FormData(); form.set("subfolder", "stack-stills"); form.set("type", "input"); form.set("overwrite", "true");
     form.set("image", new File([new Uint8Array(raw.bytes)], `${ref.rawSha256}.png`, { type: raw.mime }));
     const response = await request(t, "upload/image", { method: "POST", body: form });
-    if (!response.ok) { void response.body?.cancel(); throw new Error("Still reference upload failed."); }
+    if (!response.ok) { void response.body?.cancel(); throw new H3StillUploadError(response.status); }
     const result = await json(response, 16_384, t.signal);
     if (result.name !== `${ref.rawSha256}.png` || result.subfolder !== "stack-stills" || result.type !== "input") throw new Error("Still reference upload binding changed.");
   }

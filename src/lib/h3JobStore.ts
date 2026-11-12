@@ -170,11 +170,13 @@ export async function downloadH3ReferenceImage(reference: H3ReferenceSnapshot) {
   return { bytes: new Uint8Array(bytes).buffer, mime: response.ContentType?.split(";")[0]?.trim() ?? "", etag: response.ETag };
 }
 
-async function readVersion(ownerId: string, projectId: string, jobId: string) {
+async function readVersion(ownerId: string, projectId: string, jobId: string, signal?: AbortSignal) {
+  signal?.throwIfAborted();
   const { client, bucket } = storage();
   try {
-    const result = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key(ownerId, projectId, jobId) }), { abortSignal: AbortSignal.timeout(15_000) });
+    const result = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key(ownerId, projectId, jobId) }), { abortSignal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000) });
     const job = JSON.parse(await result.Body!.transformToString()) as H3GenerationJob;
+    signal?.throwIfAborted();
     if (job.version !== 1 || job.id !== jobId || job.ownerId !== ownerId || job.projectId !== projectId) {
       throw new Error("Generation job ownership does not match.");
     }
@@ -255,19 +257,23 @@ export async function updateH3Job(ownerId: string, projectId: string, jobId: str
   throw new Error("Generation job changed concurrently; retry its status lookup.");
 }
 
-export async function listH3Jobs(ownerId: string, projectId: string) {
+export async function listH3Jobs(ownerId: string, projectId: string, signal?: AbortSignal) {
+  signal?.throwIfAborted();
   const { client, bucket } = storage();
   const jobs: H3GenerationJob[] = [];
   let token: string | undefined;
   do {
+    signal?.throwIfAborted();
     const page = await client.send(new ListObjectsV2Command({ Bucket: bucket,
-      Prefix: h3JobPrefix(ownerId, projectId), ContinuationToken: token, MaxKeys: 1000 }), { abortSignal: AbortSignal.timeout(15_000) });
+      Prefix: h3JobPrefix(ownerId, projectId), ContinuationToken: token, MaxKeys: 1000 }), { abortSignal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000) });
+    signal?.throwIfAborted();
     const ids = (page.Contents ?? []).flatMap(object => {
       const id = object.Key?.split("/").at(-1)?.replace(/\.json$/, "");
       return id && /^h3-[a-f0-9]{64}$/.test(id) ? [id] : [];
     });
     for (let offset = 0; offset < ids.length; offset += 8) {
-      const batch = await Promise.all(ids.slice(offset, offset + 8).map(id => readH3Job(ownerId, projectId, id)));
+      signal?.throwIfAborted();
+      const batch = await Promise.all(ids.slice(offset, offset + 8).map(async id => (await readVersion(ownerId, projectId, id, signal))?.job ?? null));
       for (const job of batch) if (job) jobs.push(job);
     }
     token = page.NextContinuationToken;

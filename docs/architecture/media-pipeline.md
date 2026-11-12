@@ -8,6 +8,27 @@ The core rule is simple:
 - **motion continuity is the default visual mode**,
 - preview playback must use **ready assets**, not partially computed state.
 
+## Prepared review thumbnails
+
+The authenticated image-thumbnail route reuses source-versioned WebP objects in
+RustFS, after authorizing the original source on every request. Durable keys live
+under `media-uploads/projects/<owner>/review-thumbnails/<identity>/<width>.webp`.
+The identity binds owner, bucket, original object key, source SHA-256, requested
+320/640 bound and resize recipe. These are disposable viewing derivatives; they
+never replace reference, conditioning, approval or export inputs.
+
+A durable miss verifies the original bytes against the claimed SHA-256 before
+resizing. Reads validate bounded bytes, WebP type/signature, source/recipe metadata
+and output digest. Invalid or unavailable derivative storage falls back to the
+bounded runtime preparation path; `x-thumbnail-storage` identifies whether the
+returned pixels are durably stored. Images without a verified SHA-256 retain the
+runtime-only path. Existing canonical RustFS connection variables are reused;
+there is no filesystem production fallback or new credential.
+
+This supports durable read-through backfill. Proactive ingest/generated-media
+preparation, video proxies/sprites and bounded hover playback remain a separate
+implementation step; this thumbnail path does not claim those are finished.
+
 ## Baseline Architecture Choice
 ### Chosen baseline
 **Web-first UI + FFmpeg/FFprobe-backed section-precompute pipeline**.

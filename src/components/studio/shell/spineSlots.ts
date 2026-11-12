@@ -12,6 +12,8 @@ export type SpineSlotKind = "footage" | "generated";
  * generated shots, which are labeled rather than hidden.
  */
 export interface SpineSlot {
+  previewSegment?: EditPlanPreviewSegment;
+  animaticShotId?: string;
   id: string;
   index: number;
   sectionId: string;
@@ -35,7 +37,7 @@ export interface SlotEvidence {
   caption: string | null;
   lyrics: string[];
   match: SemanticClipMatch | null;
-  /** Alternate takes for the slot's section, ranked, with the current one flagged. */
+  /** Section-wide source suggestions, ranked, with the current source flagged. */
   takes: MatchCandidateRailItem[];
   generated: GeneratedStudioAsset | null;
 }
@@ -63,6 +65,8 @@ export function buildSpineSlots(params: {
   return segments.map((segment, index) => {
     const generated = generatedByUrl.get(segment.videoUrl) ?? null;
     return {
+      previewSegment: segment,
+      animaticShotId: segment.animaticShotId,
       id: slotId(segment, index),
       index,
       sectionId: segment.sectionId,

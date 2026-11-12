@@ -2,6 +2,7 @@ import type { MediaGatewayUploadResult } from "@/lib/mediaGateway";
 import type { GeneratedStudioAsset, GeneratedStudioAssetTarget } from "./generatedAssets";
 import type { EditPlanPreviewSegment } from "./musicVideoProject";
 import { createImportedVideoAsset, type ExternalClipImportKind } from "./externalClipImport";
+import { sameAnimaticMotionBinding } from "./animaticMotionBinding";
 
 export type ExternalImportRange = { songStart: number; songEnd: number };
 const overlaps = (a: ExternalImportRange, b: ExternalImportRange) => a.songStart < b.songEnd && a.songEnd > b.songStart;
@@ -15,6 +16,7 @@ export function externalImportWindows(segment: EditPlanPreviewSegment, resolved:
     const target = asset.target;
     if (!target) throw new Error("A selected take has no target. Restore the current draft before importing.");
     if (target.planSignature !== segment.planSignature) return [];
+    if (!sameAnimaticMotionBinding(target.animaticMotion, segment.animaticMotion)) return [];
     if (!valid(target)) throw new Error("A selected take has an invalid target. Restore the current draft before importing.");
     return overlaps(target, cut) ? [{ songStart: target.songStart, songEnd: target.songEnd }] : [];
   });
@@ -39,7 +41,11 @@ export function externalImportTarget(segment: EditPlanPreviewSegment, range: Ext
   if (!valid(range) || !valid({ songStart: segment.musicStart, songEnd: segment.musicEnd }) || !segment.planSignature
     || range.songStart < segment.musicStart || range.songEnd > segment.musicEnd) throw new Error("Import start and end must stay inside the selected resolved cut.");
   if (reserved.some(used => !valid(used) || overlaps(range, used))) throw new Error("This interval overlaps a selected take. Choose an uncovered interval; existing selected takes stay intact.");
+  if (segment.animaticShotId && (!segment.animaticMotion || range.songStart !== segment.musicStart || range.songEnd !== segment.musicEnd)) {
+    throw new Error("Import footage for the complete reviewed animatic shot.");
+  }
   return { timelineItemId: segment.timelineItemId ?? timelineItemId, planSignature: segment.planSignature, requirementId: segment.requirementId,
+    ...(segment.animaticMotion ? { animaticMotion: { ...segment.animaticMotion } } : {}),
     narrativeMomentId: segment.narrativeMomentId, sectionId: segment.sectionId, sectionLabel: segment.label, parentMomentId: segment.momentId, ...range };
 }
 
@@ -48,7 +54,7 @@ export async function importExternalClipCandidate(params: { file: File; kind: Ex
   isCurrent: () => boolean; readDuration: (file: File) => Promise<number>; upload: (file: File) => Promise<MediaGatewayUploadResult>;
   deliver: (asset: GeneratedStudioAsset) => void }) {
   const assertCurrent = () => { if (!params.isCurrent()) throw new Error("The project, selected cut or import interval changed. The clip was not added to the bank."); };
-  const target = { ...params.target };
+  const target = { ...params.target, ...(params.target.animaticMotion ? { animaticMotion: { ...params.target.animaticMotion } } : {}) };
   if (!valid(target) || !target.planSignature) throw new Error("Choose a valid current import target.");
   assertCurrent();
   const durationSeconds = await params.readDuration(params.file);

@@ -6,6 +6,8 @@ disable-model-invocation: true
 
 You have been provided a spec. This spec should have tickets associated with it, describing how to implement the spec.
 
+First read `ticket-execution` and the repo execution plan. Concurrency steps below apply only when parallel execution was explicitly selected. Otherwise run one fresh ticket implementer at a time on the existing worktree with one writer; verify and update the tracker before dispatching the next. No worktree per ticket is required in sequential mode. Announce the mode and run the boundary checker before advancing.
+
 The issue tracker should have been provided to you. If not, tell the user to run `/setup-matt-pocock-skills`.
 
 The goal is the entire spec implemented on a single **integration branch**, with every ticket resolved the way the issue tracker closes work.

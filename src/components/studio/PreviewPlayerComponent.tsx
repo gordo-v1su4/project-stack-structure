@@ -519,13 +519,6 @@ export function PreviewPlayer({
         </span>
       </div>
 
-      <div className={`${isExpanded ? "block" : "hidden"} h-[3px] overflow-hidden rounded-full bg-[#141414]`}>
-        <div
-          className="h-full bg-[#e05c00] rounded-full transition-all duration-150"
-          style={{ width: `${progressPct}%` }}
-        />
-      </div>
-
       {currentSegment && isExpanded && (
         <div className="flex justify-between text-[9px]">
           <span className="font-mono text-[#666]">{currentSegment.label}</span>

@@ -1,0 +1,12 @@
+{
+  "tracker": "configured tracker",
+  "project": "configured project",
+  "mode": "sequential",
+  "maxActive": 1,
+  "order": ["EXAMPLE-1", "EXAMPLE-2"],
+  "authorization": "Reference to the user's instruction to implement",
+  "readinessMessage": "Two tickets ready. Starting EXAMPLE-1, one at a time in the existing worktree, verify and close before advancing; combined PR at the end.",
+  "contextByIssue": { "EXAMPLE-1": "current-owner-context" },
+  "coupledWork": [],
+  "completion": {}
+}

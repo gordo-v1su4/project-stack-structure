@@ -91,4 +91,20 @@ describe("existing authenticated metadata readers survive the anonymous deny", (
       "media-uploads/projects/github-owner/index.json", "media-uploads/analysis/owned.json"]);
     expect(isCanonicalStudioMetadata("stack-structure", paths[2])).toBe(false);
   });
+
+  test("owned named-project wrappers contribute legacy keys; foreign folders and owners do not", async () => {
+    const good = buildProjectStorageFolder("github-owner", "good", "Owned"), foreign = buildProjectStorageFolder("github-other", "foreign", "Foreign");
+    const paths: string[] = [];
+    globalThis.fetch = mock(async (input: string | URL | Request) => {
+      const key = new URL(String(input)).pathname.split("/files/stack-structure/")[1]; paths.push(key);
+      if (key.endsWith("index.json")) return Response.json({ projects: [{ id: "good", storageFolder: good }, { id: "foreign", storageFolder: foreign }] });
+      if (key === resolveProjectObjectPath(good)) return Response.json({ project: { ownerId: "github-owner" }, draft: { videoSources: [{ storagePath: "media-uploads/legacy-owned.mp4" }] } });
+      if (key === resolveLegacyProjectObjectPath("github-owner", "foreign")) return Response.json({ project: { ownerId: "github-other" }, draft: { videoSources: [{ storagePath: "media-uploads/foreign.mp4" }] } });
+      return new Response(null, { status: 404 });
+    }) as unknown as typeof fetch;
+    const keys = await loadUserOwnedMediaKeys("github-owner");
+    expect(keys.has("media-uploads/legacy-owned.mp4")).toBe(true);
+    expect(keys.has("media-uploads/foreign.mp4")).toBe(false);
+    expect(paths).not.toContain(resolveProjectObjectPath(foreign));
+  });
 });

@@ -2,6 +2,8 @@ import { getSessionUser, unauthorizedResponse } from "@/lib/session";
 import { readStudioProject } from "@/lib/studioProjectStore";
 import { animaticContextSha256, normalizeStillAnimaticPlan } from "@/components/studio/stillAnimatic";
 import type { AnimaticPreviewSnapshot } from "@/components/studio/animaticPreviewSnapshot";
+import { projectReviewCut } from "@/lib/projectReviewCut";
+import { reviewPreparationSources } from "@/components/studio/reviewPreparationSources";
 
 export const runtime = "nodejs";
 
@@ -23,7 +25,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ proj
   const audioUrl = audio?.storageBucket && audio.storagePath
     ? `/api/storage/media?${new URLSearchParams({ bucket: audio.storageBucket, objectKey: audio.storagePath })}` : "";
   const snapshot: AnimaticPreviewSnapshot = { projectId, name: saved.project.name, revision: saved.revision ?? "",
-    songLabel: audio?.sourceLabel ?? "Original master", audioUrl, plan,
+    songLabel: audio?.sourceLabel ?? "Original master", audioUrl, plan, analysis: audio ? { ...audio, audioUrl } : undefined,
+    cut: projectReviewCut(projectId, d, plan),
+    reviewSources: reviewPreparationSources(d.videoSources ?? [], d.generatedAssets ?? []),
     contextSha256: project && story.confirmedTreatmentSnapshot && story.sceneProofPlan
       ? animaticContextSha256({ projectId, project, treatment: story.confirmedTreatmentSnapshot,
         storyBeats: story.storyBeats, references: d.referenceAssets ?? [], sceneProofPlan: story.sceneProofPlan }) : "" };

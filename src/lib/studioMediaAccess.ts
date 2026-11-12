@@ -9,6 +9,7 @@ import {
   ownerProjectsIndexPath,
   resolveLegacyProjectObjectPath,
   resolveProjectObjectPath,
+  normalizeStudioOwnerSegment,
 } from "@/lib/studioStoragePaths";
 
 /**
@@ -27,9 +28,11 @@ type StoredDraftLike = {
   } | null>;
 } | null;
 
-async function collectOwnedKeysFromObject(config: NonNullable<ReturnType<typeof getMediaGatewayConfig>>, objectKey: string, owned: Set<string>) {
+async function collectOwnedKeysFromObject(config: NonNullable<ReturnType<typeof getMediaGatewayConfig>>, objectKey: string, owned: Set<string>, userId: string) {
   try {
-    const draft = await downloadJsonFromMediaGateway<StoredDraftLike>({ bucket: config.bucket, objectKey });
+    const record = await downloadJsonFromMediaGateway<StoredDraftLike & { draft?: StoredDraftLike; project?: { ownerId?: string } }>({ bucket: config.bucket, objectKey });
+    if (record?.draft && record.project?.ownerId !== normalizeStudioOwnerSegment(userId)) return;
+    const draft = record?.draft ?? record;
     if (draft?.analysis?.storagePath) owned.add(normalizeMediaPath(draft.analysis.storagePath));
     for (const source of draft?.videoSources ?? []) {
       if (!source) continue;
@@ -48,7 +51,7 @@ export async function loadUserOwnedMediaKeys(userId: string): Promise<Set<string
   const owned = new Set<string>();
   if (!config) return owned;
 
-  await collectOwnedKeysFromObject(config, `media-uploads/studio-drafts/${encodeURIComponent(userId)}.json`, owned);
+  await collectOwnedKeysFromObject(config, `media-uploads/studio-drafts/${encodeURIComponent(userId)}.json`, owned, userId);
 
   try {
     const index = await downloadJsonFromMediaGateway<{ projects?: Array<{ id?: string; storageFolder?: string }> }>({
@@ -62,7 +65,7 @@ export async function loadUserOwnedMediaKeys(userId: string): Promise<Set<string
         resolveLegacyProjectObjectPath(userId, entry.id),
       ].filter((value): value is string => Boolean(value));
       for (const objectKey of objectKeys) {
-        await collectOwnedKeysFromObject(config, objectKey, owned);
+        if (mediaUploadBelongsToOwner(objectKey, userId)) await collectOwnedKeysFromObject(config, objectKey, owned, userId);
       }
     }
   } catch {
@@ -72,12 +75,21 @@ export async function loadUserOwnedMediaKeys(userId: string): Promise<Set<string
   return owned;
 }
 
-export async function canReadMediaObject(args: { userId: string; bucket: string; objectKey: string }): Promise<boolean> {
+export async function canReadMediaObject(args: { userId: string; bucket: string; objectKey: string; projectId?: string }): Promise<boolean> {
   const objectKey = normalizeMediaPath(args.objectKey);
   if (mediaUploadBelongsToOwner(objectKey, args.userId)) return true;
 
   const config = getMediaGatewayConfig();
-  if (!config) return false;
+  if (!config || args.bucket !== config.bucket) return false;
+  if (args.projectId) {
+    // A bulk job may target a project beyond the bounded discovery list.
+    // Resolve the exact owned record; a client project ID alone proves nothing.
+    const { readStudioProject } = await import("./studioProjectStore");
+    const { reviewPreparationSources } = await import("@/components/studio/reviewPreparationSources");
+    const saved = await readStudioProject(args.userId, args.projectId, { fresh: true });
+    if (saved && reviewPreparationSources(saved.draft.videoSources ?? [], saved.draft.generatedAssets ?? [])
+      .some(source => source.bucket === args.bucket && source.objectKey === objectKey)) return true;
+  }
   const owned = await loadUserOwnedMediaKeys(args.userId);
   return owned.has(objectKey);
 }

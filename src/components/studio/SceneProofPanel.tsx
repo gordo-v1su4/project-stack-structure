@@ -1,4 +1,5 @@
 "use client";
+import { mediaThumbnailUrl } from "./mediaThumbnailUrl";
 
 import { useRef, useState } from "react";
 import { MiniMaxStillPanel } from "./panels/MiniMaxStillPanel";
@@ -79,7 +80,7 @@ export function SceneProofPanel(props: Props) {
             <Button type="button" className="mb-2 text-sm text-fg-1" onClick={() => setRole(m.role)}>{ROLE_LABELS[m.role]}</Button>
             {m.proof && !stale && m.record?.context === sceneMomentBinding(plan, scene, m).bindingSha256 ? <a href={stillMediaUrl(m.proof.result.master)} target="_blank" rel="noreferrer" aria-label={`Inspect full-quality ${ROLE_LABELS[m.role]} image`}>
               {/* eslint-disable-next-line @next/next/no-img-element -- authenticated immutable media, master remains inspectable */}
-              <img loading="lazy" src={stillMediaUrl(m.proof.result.master)} alt={`${scene.title}: ${ROLE_LABELS[m.role]}`} className="aspect-video w-full rounded-sm object-contain bg-ink-0" />
+              <img loading="lazy" decoding="async" src={mediaThumbnailUrl(m.proof.result.master, 640)} alt={`${scene.title}: ${ROLE_LABELS[m.role]}`} className="aspect-video w-full rounded-sm object-contain bg-ink-0" />
             </a> : <div className="flex aspect-video items-center justify-center bg-ink-0 text-xs text-fg-4">{m.proof ? "Previous image is stale" : m.record ? "Recover saved proof job" : "Image not prepared"}</div>}
           </div>)}
         </div>

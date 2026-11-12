@@ -1,5 +1,6 @@
 "use client";
-/* eslint-disable @next/next/no-img-element -- Review the actual stored pixels through the authenticated media route, without image optimization. */
+/* eslint-disable @next/next/no-img-element -- Authenticated viewing derivatives; links preserve full-quality inspection. */
+import { mediaThumbnailUrl } from "../mediaThumbnailUrl";
 import { useEffect, useRef, useState } from "react";
 import type { H3GenerationRequest } from "../h3Generation";
 import type { H3FirstFrameChoice } from "../h3FirstFrame";
@@ -177,7 +178,7 @@ export function MiniMaxStillPanel(props: MiniMaxStillPanelProps) {
         {!isCurrentRecord ? <p role="status">This saved still belongs to an earlier shot context. Review or cancel it; it cannot be applied here.</p> : null}
         <div className="flex flex-wrap gap-2"><Button size="sm" variant="ghost" disabled={busy} onClick={() => void observe("GET")}>Refresh status</Button>
           {record.jobId && job && !isStillTerminal(job.state) ? <><Button size="sm" variant="ghost" disabled={busy} onClick={() => void observe("PATCH")}>Reconcile existing render</Button><Button size="sm" variant="ghost" disabled={busy} onClick={() => void observe("DELETE")}>Cancel this still</Button></> : null}</div>
-        {job?.state === "ready" && job.result ? <><div className="grid gap-2 sm:grid-cols-2">{([['Master', job.result.master], ['Video input', job.result.native]] as const).map(([label, image]) => <a key={label} href={stillMediaUrl(image)} target="_blank" rel="noreferrer" className="block"><span>{label}</span><img src={stillMediaUrl(image)} alt={`${label} MiniMax still for this shot`} className="mt-1 w-full rounded-sm" /></a>)}</div>
+        {job?.state === "ready" && job.result ? <><div className="grid gap-2 sm:grid-cols-2">{([['Master', job.result.master], ['Video input', job.result.native]] as const).map(([label, image]) => <a key={label} href={stillMediaUrl(image)} target="_blank" rel="noreferrer" className="block"><span>{label} · open full image</span><img src={mediaThumbnailUrl(image, 640)} loading="lazy" decoding="async" alt={`${label} MiniMax still preview for this shot`} className="mt-1 aspect-video w-full rounded-sm object-contain" /></a>)}</div>
           {!props.hideVideoAction && onUse ? <><p>Review both images. Using this frame prepares the frozen video request; identity screening and video generation remain separate.</p>
           <Button size="sm" disabled={disabled || busy || !isCurrentRecord} onClick={() => { try { onUse(buildStillContinuation(record, job, context)); } catch (failure) { setError((failure as Error).message); } }}>{labels?.use ?? "Use for this shot"}</Button></> : null}</> : null}
       </div> : null}

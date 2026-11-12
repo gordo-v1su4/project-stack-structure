@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
+mock.module("@/lib/automaticReviewVideo", () => ({ queueReviewVideoAfterIngest: async () => ({ status: "unavailable" }) }));
 import { createHash } from "node:crypto";
 import type { H3GenerationJob } from "@/components/studio/h3Generation";
 import { materializeH3Job } from "@/lib/h3GenerationServer";

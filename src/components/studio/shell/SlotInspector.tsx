@@ -3,12 +3,18 @@
 import { fmt } from "../math";
 import { Button, Kicker, TONE_TEXT } from "../ui";
 import type { SlotEvidence } from "./spineSlots";
+import { SourceSuggestionViewer } from "../SourceSuggestionViewer";
+import type { SourceSuggestionPreview } from "../sourceSuggestionPreview";
+import { ShotTakesPanel, type ShotTakesPanelProps } from "../ShotTakesPanel";
 
 type SlotInspectorProps = {
   evidence: SlotEvidence;
   onClose: () => void;
   onPlayFrom: (seconds: number) => void;
-  onSelectTake: (sectionId: string, momentId: string) => void;
+  onPreviewSource: (sectionId: string, momentId: string) => void;
+  sourcePreview?: SourceSuggestionPreview | null;
+  sourcePreviewUnavailable?: boolean;
+  shotTakeReview?: ShotTakesPanelProps;
   /** Send an approved generated shot back to review; the slot falls back to footage. */
   onReopenGenerated: (assetId: string) => void;
   onOpenGenerate: () => void;
@@ -16,10 +22,10 @@ type SlotInspectorProps = {
 
 /**
  * Evidence for the selected cut: what plays, why it was chosen, the lyric
- * under it, and the takes that could replace it. Actions are the same ones
- * Match and Generate expose — this is a faster door, not a new model.
+ * under it, and section-wide source suggestions. Inspecting a source never
+ * invokes the Match placement action.
  */
-export function SlotInspector({ evidence, onClose, onPlayFrom, onSelectTake, onReopenGenerated, onOpenGenerate }: SlotInspectorProps) {
+export function SlotInspector({ evidence, onClose, onPlayFrom, onPreviewSource, sourcePreview, sourcePreviewUnavailable, shotTakeReview, onReopenGenerated, onOpenGenerate }: SlotInspectorProps) {
   const { slot, moment, caption, lyrics, match, takes, generated } = evidence;
   const alternates = takes.filter((take) => !take.selected);
 
@@ -80,9 +86,10 @@ export function SlotInspector({ evidence, onClose, onPlayFrom, onSelectTake, onR
         {match ? (
           <div>
             <div className="flex items-baseline justify-between">
-              <Kicker>Why it was chosen</Kicker>
-              <span className="font-mono text-[12px] text-fg-0">{Math.round(match.score * 100)}%</span>
+              <Kicker>Source matching fit</Kicker>
+              <span className="font-mono text-[12px] text-fg-0">{Math.round(match.score * 100)}% fit</span>
             </div>
+            <p className="mt-1 text-[11px] text-fg-3">Combined matching signals for this section; this percentage does not rate render quality.</p>
             <ul className="mt-1.5 flex flex-col gap-1">
               {[
                 ["Lyric ↔ caption", match.lyricCaptionScore],
@@ -104,15 +111,18 @@ export function SlotInspector({ evidence, onClose, onPlayFrom, onSelectTake, onR
           <p className="text-[12px] leading-5 text-fg-3">No matched footage for this cut yet. Run Match, or generate a shot.</p>
         )}
 
+        {shotTakeReview ? <ShotTakesPanel {...shotTakeReview} /> : null}
         {alternates.length ? (
           <div>
-            <Kicker>Other takes</Kicker>
+            <Kicker>Source suggestions</Kicker>
+            <p className="mt-1 text-[11px] text-fg-3">Section-wide footage suggestions. Percentages measure matching fit, not take or render quality. Click to inspect; your selected cut stays in place.</p>
             <ul className="mt-1.5 flex flex-col">
               {alternates.map((take) => (
                 <li key={take.moment.id}>
                   <button
                     type="button"
-                    onClick={() => onSelectTake(slot.sectionId, take.moment.id)}
+                    onClick={() => onPreviewSource(slot.sectionId, take.moment.id)}
+                    aria-label={`Preview source: ${take.moment.label}`}
                     className="flex w-full items-center gap-2.5 border-b border-line py-1.5 text-left last:border-b-0 hover:bg-ink-2"
                   >
                     {take.frameUrl ? (
@@ -125,13 +135,15 @@ export function SlotInspector({ evidence, onClose, onPlayFrom, onSelectTake, onR
                       <span className="block truncate text-[12px] text-fg-1">{take.moment.label}</span>
                       <span className="block truncate text-[11px] text-fg-3">{take.reason}</span>
                     </span>
-                    <span className="shrink-0 font-mono text-[11px] text-fg-2">{take.scorePercent}%</span>
+                    <span className="shrink-0 font-mono text-[11px] text-fg-2">{take.scorePercent}% fit</span>
                   </button>
                 </li>
               ))}
             </ul>
           </div>
         ) : null}
+        {sourcePreview ? <SourceSuggestionViewer preview={sourcePreview} /> : null}
+        {sourcePreviewUnavailable ? <p role="alert" className="text-xs text-warn">This source or its saved playback range is unavailable. Your cut has not changed.</p> : null}
       </div>
     </section>
   );

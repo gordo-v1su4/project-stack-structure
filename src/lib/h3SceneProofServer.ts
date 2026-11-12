@@ -9,6 +9,7 @@ import { buildH3StillDescriptor, parseH3StillRequest, type H3StillRequest } from
 import { assertH3StillJob, readH3StillJob, type H3StillJob } from "./h3StillJobStore";
 import { pinH3JobReferences } from "./h3JobStore";
 import { currentSceneProofPlanningPlan, sceneProofWindowScope } from "@/components/studio/sceneProofPlanning";
+import { assertAnimaticMotionApproved } from "./h3AnimaticMotionApproval";
 
 const same = (a: unknown, b: unknown) => generationScopeSha256(a) === generationScopeSha256(b);
 const conflict = () => new H3RequestError("Save and approve all current whole-song scene previews before generating video.", 409);
@@ -65,6 +66,7 @@ const defaults: ReviewDependencies = { read: readH3StillJob, pin: pinH3JobRefere
  */
 export async function assertH3SceneProofsApproved(ownerId: string, saved: SavedStudioProject, bucket: string,
   dependencies: ReviewDependencies = defaults, request?: H3GenerationRequest) {
+  if (request?.animaticMotion) return assertAnimaticMotionApproved(ownerId, saved, bucket, request, dependencies);
   if (saved.draft.storyState.sceneProofPlan === undefined && !saved.draft.storyState.sceneProofReviewRequired) {
     if (request?.sceneProofScopeSha256 !== undefined) throw conflict();
     return; // Historical projects retain their workflow.

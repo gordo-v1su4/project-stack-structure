@@ -3,6 +3,8 @@
 import { useRef, useState } from "react";
 import { MiniMaxStillPanel } from "./panels/MiniMaxStillPanel";
 import { StillAnimaticPreview } from "./StillAnimaticPreview";
+import { AnimaticShotThumbnail } from "./AnimaticShotThumbnail";
+import { AnimaticImageViewer } from "./AnimaticImageViewer";
 import { animaticContextSha256, animaticImage, animaticShotBinding, attachAnimaticJob, importStillAnimatic,
   refreshStillAnimaticContext, replaceStillAnimatic, stillAnimaticShotRequest, type AnimaticContext, type StillAnimaticPlan } from "./stillAnimatic";
 import { stillMediaUrl } from "./h3StillClient";
@@ -14,6 +16,7 @@ type Props = AnimaticContext & { plan?: StillAnimaticPlan; audioUrl: string;
 
 export function StillAnimaticPanel(props: Props) {
   const [selected, setSelected] = useState(""), [preview, setPreview] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState("");
+  const [imageOpen, setImageOpen] = useState(false);
   const live = useRef(props); live.current = props;
   const plan = props.plan, context = animaticContextSha256(props), stale = Boolean(plan && plan.contextSha256 !== context);
   const shot = plan?.shots.find(s => s.id === selected) ?? plan?.shots[0];
@@ -54,12 +57,9 @@ export function StillAnimaticPanel(props: Props) {
     </details> : null}
     {plan && shot && binding ? <>
       <Button type="button" disabled={stale || busy || !props.audioUrl} className="rounded-md border border-accent px-3 py-2 text-sm text-accent" onClick={() => setPreview(true)}>Preview animatic</Button>
-      <ol aria-label="Timed still shots" className="flex max-h-52 flex-wrap gap-2 overflow-y-auto">
-        {plan.shots.map(s => { const image = animaticImage(plan, s, context); return <li key={s.id} className="shrink-0"><button type="button" aria-pressed={shot.id === s.id} className={`block w-24 rounded-md border p-2 text-left focus-visible:outline-2 focus-visible:outline-accent ${shot.id === s.id ? "border-accent" : "border-line"}`} onClick={() => { setSelected(s.id); setError(""); }}>
-          {/* eslint-disable-next-line @next/next/no-img-element -- inspect exact immutable owned pixels */}
-          {image && Math.abs(plan.shots.indexOf(s) - plan.shots.indexOf(shot)) <= 3 ? <img src={stillMediaUrl(image)} loading="lazy" alt="" className="mb-1 aspect-video w-full object-contain" /> : <span className="mb-1 flex aspect-video items-center justify-center bg-ink-0 text-xs text-fg-4">{image ? "Ready" : s.record ? "Job saved" : "Missing"}</span>}
-          <span className="block font-mono text-xs text-fg-1">{s.id}</span><span className="block font-mono text-xs text-fg-3">{((s.endFrame - s.startFrame) / plan.fps).toFixed(2)}s</span>
-        </button></li>; })}
+      <ol aria-label="Timed still shots" className="grid max-h-[55vh] grid-cols-2 gap-2 overflow-y-auto pr-1 sm:grid-cols-3 lg:grid-cols-4">
+        {plan.shots.map(s => <AnimaticShotThumbnail key={s.id} shot={s} fps={plan.fps} image={animaticImage(plan, s, context)} selected={shot.id === s.id}
+          onSelect={() => { setSelected(s.id); setImageOpen(true); setError(""); }} />)}
       </ol>
       <div className="text-sm text-fg-2">{shot.id} · {shot.title} · frames {shot.startFrame}–{shot.endFrame}</div>
       {shot.sourceFrame ? <p className="text-sm text-fg-3">Retained source frame at {shot.sourceFrame.sourceSecond.toFixed(2)}s. Its stored PNG remains a source image, without a generated-job or approval claim.</p> : <MiniMaxStillPanel key={`${plan.projectId}:${shot.id}`} projectId={plan.projectId} context={binding.bindingSha256}
@@ -77,6 +77,9 @@ export function StillAnimaticPanel(props: Props) {
         onJob={async (job, record) => { const current = live.current.plan; if (!current) throw new Error("Timed still plan is unavailable.");
           const next = attachAnimaticJob(current, binding, record, job); if (next !== current) await persist(next, current); }} />}
       {preview ? <StillAnimaticPreview key={plan.projectId} plan={plan} context={context} audioUrl={props.audioUrl} onClose={() => setPreview(false)} /> : null}
+      {imageOpen ? <AnimaticImageViewer shot={shot} image={animaticImage(plan, shot, context)} fps={plan.fps} position={plan.shots.indexOf(shot)} count={plan.shots.length}
+        onPrevious={() => setSelected(plan.shots[Math.max(0, plan.shots.indexOf(shot) - 1)].id)}
+        onNext={() => setSelected(plan.shots[Math.min(plan.shots.length - 1, plan.shots.indexOf(shot) + 1)].id)} onClose={() => setImageOpen(false)} /> : null}
     </> : null}
   </Surface>;
 }

@@ -1,5 +1,6 @@
 import type { GeneratedStudioAsset, GeneratedStudioAssetTarget } from "./generatedAssets";
 import type { H3IdentityPolicyFamilyId, H3IssuedDraftPolicyBinding } from "./issuedIdentityPolicy";
+import type { AnimaticMotionBinding } from "./animaticMotionBinding";
 import { H3_FIRST_FRAME_PROFILE, H3_FIRST_FRAME_PREPARATION, type H3FirstFrameChoice, type H3FirstFrameArtifact, type H3FirstFrameAssessment } from "./h3FirstFrame";
 
 /** Browser input contains project identities, never provider paths or workflow JSON. */
@@ -23,6 +24,8 @@ export type H3GenerationRequest = {
   conditioning?: H3FirstFrameChoice;
   /** Exact reviewed scene intersections for new scene-proof production. Omitted on immutable legacy jobs. */
   sceneProofScopeSha256?: string;
+  /** Explicit reviewed full-song cut; legacy timeline IDs remain provenance. */
+  animaticMotion?: AnimaticMotionBinding;
 };
 
 export type H3ReferenceSnapshot = {

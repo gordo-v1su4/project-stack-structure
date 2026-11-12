@@ -174,6 +174,12 @@ explicit task writes, missing approval markers, and failure preservation.
 
 ## Failure, retry, and time limits
 
+- Owned H3 video dispatch supports bounded automatic recovery of typed transient
+  reads on the same Trigger run. It preserves the job/intent and existing prompt
+  ID, keeps reconnecting work cancellable, and never retries an uncertain prompt
+  POST. Generic local and paid generation remain single-attempt. See the
+  [H3 recovery policy and explicit power-loss limits](../plans/2026-11-11-h3-automatic-recovery.md).
+
 - A semantic review rejection raises `AbortTaskRunError` with safe actionable
   feedback. Do not automatically regenerate the identical request inside the
   worker merely because review rejected it.

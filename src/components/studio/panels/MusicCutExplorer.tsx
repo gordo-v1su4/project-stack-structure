@@ -1,12 +1,14 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { preparePacingProposal, type PacingProposal } from "../pacingProposal";
 import { buildAdaptiveCueMap } from "../adaptiveCueMap";
 import type { MusicVideoProject, StoryEditSettings } from "../musicVideoProject";
 import type { BeatJoinAnalysis } from "../types";
 import { ParamSlider } from "../ParamSlider";
 import { Button, Surface } from "../ui";
 import { MatchMusicCueTimeline } from "./MatchMusicCueTimeline";
+import type { SelectionGesture, SongRange } from "../reviewSelection";
 
 export type MusicCutExplorerProps = {
   analysis: BeatJoinAnalysis | null;
@@ -20,11 +22,26 @@ export type MusicCutExplorerProps = {
   onOpenMatch?: () => void;
   matchReady?: boolean;
   editSettings?: StoryEditSettings;
+  selectedRanges?: SongRange[];
+  focusedShot?: { start: number; end: number; label: string } | null;
+  visibleRange?: SongRange | null;
+  multiSelect?: boolean;
+  onSelectRange?: (range: SongRange, gesture: SelectionGesture) => void;
+  coverage?: Array<SongRange & { filled: boolean }>;
+  pacingContext?: string;
+  protectedRanges?: SongRange[];
+  onApplyPacing?: (proposal: PacingProposal) => string | null;
+  onUndoPacing?: () => void;
+  canUndoPacing?: boolean;
+  pacingBusy?: boolean;
 };
 
-/** Suggestion settings only: this component has no placement, approval or dispatch callback. */
+/** Sliders are suggestions; only explicit Apply can change reviewed gap timing. */
 export function MusicCutExplorer(props: MusicCutExplorerProps) {
   const [selectedChunkId, setSelectedChunkId] = useState<string | null>(null);
+  const [proposal, setProposal] = useState<PacingProposal | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [preparing, setPreparing] = useState(false);
   const [paceOverride, setPaceOverride] = useState<"saved" | "fast" | "balanced" | "relaxed">("saved");
   const { analysis, project, onsetDensity, lyricCueBlend, lyricMergeWindow } = props;
   const savedPace = project?.placementPlan?.settings ?? props.editSettings;
@@ -34,13 +51,28 @@ export function MusicCutExplorer(props: MusicCutExplorerProps) {
     lyricBlend: lyricCueBlend / 100, lyricMergeWindowSeconds: lyricMergeWindow, editSettings: pace }),
   [analysis, project, onsetDensity, lyricCueBlend, lyricMergeWindow, pace]);
   const selected = cueMap.chunks.find(chunk => chunk.id === selectedChunkId) ?? cueMap.chunks[0];
+  const settingsKey = JSON.stringify([paceOverride, onsetDensity, lyricCueBlend, lyricMergeWindow]);
+  const [preparedSettings, setPreparedSettings] = useState("");
+  const projectSnapshot = useMemo(() => JSON.stringify(project), [project]);
+  const stale = Boolean(proposal && (proposal.snapshot !== projectSnapshot || proposal.context !== (props.pacingContext ?? "") || preparedSettings !== settingsKey));
+  async function prepare() {
+    if (!project) return;
+    setPreparing(true); setMessage(null);
+    // Yield a paint without unloading or replacing the current player/cut.
+    await new Promise<void>(resolve => requestAnimationFrame(() => { setTimeout(resolve, 0); }));
+    try {
+      setProposal(preparePacingProposal(project, cueMap.chunks.flatMap(c => [c.start, c.end]), props.protectedRanges ?? [], props.pacingContext ?? ""));
+      setPreparedSettings(settingsKey);
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Pacing could not be prepared."); }
+    finally { setPreparing(false); }
+  }
   const boundaryLabel = (time: number) => {
     const markers = cueMap.markers.filter(marker => marker.active && Math.abs(marker.time - time) < 1e-6);
     const beat = (analysis ?? project?.song)?.beats.some(value => Math.abs(value - time) < 0.001);
     return [markers.some(marker => marker.kind === "onset") ? "onset" : "", beat ? "beat" : "",
       markers.some(marker => marker.kind === "lyric") ? "lyric phrase" : ""].filter(Boolean).join(" + ") || "section or spacing boundary";
   };
-  return <Surface as="section" aria-label="Music and cut timing">
+  return <Surface as="section" aria-label="Music and cut timing" className="min-w-0 max-w-full">
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div>
         <h2 className="text-sm font-medium text-fg-0">Music and cut timing</h2>
@@ -59,15 +91,42 @@ export function MusicCutExplorer(props: MusicCutExplorerProps) {
         <option value="fast">Fast · 1–3s</option><option value="balanced">Balanced · 4s minimum</option><option value="relaxed">Relaxed · 4s minimum</option>
       </select>
     </label>
-    <div className="my-3 grid gap-3 md:grid-cols-3">
+    <div className="my-3 grid grid-cols-[repeat(auto-fit,minmax(min(100%,12rem),1fr))] gap-3">
       <ParamSlider label="Cue density" value={onsetDensity} min={5} max={100} step={5} unit="%" layout="stack" accent="var(--color-accent)" onChange={props.onOnsetDensity} />
       <ParamSlider label="Lyric influence" value={lyricCueBlend} min={0} max={100} step={5} unit="%" layout="stack" accent="var(--color-accent)" onChange={props.onLyricCueBlend} />
       <ParamSlider label="Combine nearby cues" value={lyricMergeWindow} min={0} max={5} step={0.5} unit="s" layout="stack" accent="var(--color-accent)" onChange={props.onLyricMergeWindow} />
     </div>
     <p className="mb-2 text-xs text-fg-3" aria-live="polite">{cueMap.chunks.length} suggested blocks · {cueMap.onsetActiveCount} music cues · {cueMap.lyricActiveCount} lyric cues. {fast ? "Fast targets 1–3 seconds using actual music cues; sparse cues may leave longer blocks." : "Suggested pace is 4–6 seconds; short section edges remain visible."}</p>
-    <MatchMusicCueTimeline cueMap={cueMap} project={project} selectedChunkId={selected?.id} onSelectChunk={setSelectedChunkId} />
+    <MatchMusicCueTimeline cueMap={cueMap} project={project} selectedChunkId={selected?.id} onSelectChunk={setSelectedChunkId}
+      selectedRanges={props.selectedRanges} focusedRange={props.focusedShot} visibleRange={props.visibleRange} onSelectRange={props.onSelectRange} multiSelect={props.multiSelect} coverage={props.coverage} />
+    {props.focusedShot ? <p className="mt-2 break-words font-mono text-xs text-accent">◆ Focused shot: {props.focusedShot.label} · {props.focusedShot.start.toFixed(2)}–{props.focusedShot.end.toFixed(2)}s</p> : null}
     {selected ? <p className="mt-2 font-mono text-xs text-fg-1" aria-live="polite">Selected suggestion: {selected.start.toFixed(3)}–{selected.end.toFixed(3)}s · {(selected.end - selected.start).toFixed(3)}s · starts on {boundaryLabel(selected.start)}</p> : null}
     <p className="mt-1 text-xs text-fg-3">Choose a block to inspect its exact timing. Onsets and phrases use their detected timestamps; section and spacing boundaries may fall between beats. Pace changes here only explore suggestions; saved Story settings remain unchanged.</p>
     <p className="mt-2 text-xs leading-5 text-fg-3">Orange marks musical accents; cyan marks lyric phrases. Without timed lyrics, musical cues still work. Footage semantics remain in Match review; this graph does not rerank or apply footage.</p>
+    {props.onApplyPacing ? <div className="mt-3 border-t border-line pt-3" aria-label="Pacing proposal">
+      <h3 className="text-sm text-fg-0">Prepare pacing for review</h3>
+      <p className="mt-1 text-xs leading-5 text-fg-2">Keep all selected takes, source trims, manually opened holes and bound shots. Only unbound gaps can change timing. Conflicting suggestions stay unapplied. Existing footage stays at normal speed and in story order; gaps need targeted replacement review. No footage is generated.</p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <Button disabled={!project?.placementPlan || preparing || props.pacingBusy} onClick={() => void prepare()}>{preparing ? "Preparing pacing…" : "Prepare pacing proposal"}</Button>
+        <Button disabled={!props.canUndoPacing || props.pacingBusy} onClick={props.onUndoPacing}>Undo pacing</Button>
+      </div>
+      {preparing ? <p role="status" className="mt-2 text-xs text-fg-2">Preparing separately. The current cut remains available for playback.</p> : null}
+      {proposal ? <div className="mt-3 rounded-md border border-review-lo bg-review-tint p-3">
+        <h4 className="text-sm text-fg-0">Review proposed pacing</h4>
+        <p className="mt-1 text-xs text-fg-2">{proposal.changed ? `${proposal.placements.length} proposed cut windows. Only uncovered windows change; all retained footage stays exact.` : "No safe timing changes. Retained takes and shot bindings are kept exact."} {proposal.conflicts.length} conflicts · {proposal.gaps.length} gaps needing review.</p>
+        <div className="mt-2 max-h-64 overflow-y-auto text-xs leading-5 text-fg-2" aria-label="Proposed changes and conflicts">
+          {proposal.conflicts.map((row, i) => <p key={`conflict:${i}`} className="text-warn">{row}</p>)}
+          {proposal.gaps.map((row, i) => <p key={`gap:${i}`}>{row}</p>)}
+        </div>
+        {stale ? <p role="alert" className="mt-2 text-xs text-warn">The cut, selections or suggestion settings changed. Prepare again before applying.</p> : null}
+        <div className="mt-3 flex gap-2">
+          <Button disabled={stale || !proposal.changed || props.pacingBusy || preparing} onClick={() => {
+            const error = props.onApplyPacing?.(proposal); setMessage(error ?? "Pacing applied. Previous cut is available with Undo pacing."); if (!error) setProposal(null);
+          }}>Apply pacing proposal</Button>
+          <Button onClick={() => { setProposal(null); setMessage(null); }}>Cancel pacing proposal</Button>
+        </div>
+      </div> : null}
+      {message ? <p role="status" className="mt-2 text-xs text-fg-1">{message}</p> : null}
+    </div> : null}
   </Surface>;
 }

@@ -17,6 +17,11 @@ import { STORY_BIBLE_ADAPTER } from "@/components/studio/storyBible";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ReusedFootagePanel } from "@/components/studio/panels/ReusedFootagePanel";
+import { prepareSceneProofPlan } from "@/components/studio/sceneProofs";
+import { animaticShotBinding, importStillAnimatic, stillAnimaticShotRequest } from "@/components/studio/stillAnimatic";
+import { animaticReviewBinding, reviewAnimatic } from "@/components/studio/animaticReview";
+import { buildStoryDraftSegments } from "@/components/studio/animaticDraft";
+import { parseH3StillRequest } from "@/lib/h3StillRequest";
 
 let saved: SavedStudioProject, jobs: H3GenerationJob[], bytesIntact: boolean, signedIn: boolean, writes: number;
 const receipts = new Map<string, GenerationScopeReceipt>(), baselines = new Map<string, GenerationScopeReceipt>();
@@ -52,10 +57,13 @@ const { sourceSha, storySha, validateSavedGenerationScope } = await import("@/li
 const { reconcileProjectFinalExport } = await import("@/lib/projectExportValidation");
 const { POST } = await import("@/app/api/studio/projects/source-confirmation/route");
 
-function revise() {
+function revise(forAnimatic = false) {
   const previous = saved.draft.musicVideoProject!, story = saved.draft.storyState;
   story.storyBeats = [{ ...story.storyBeats[0], prompt: "The empty club anticipates a new arrival." }];
   story.confirmedTreatmentSnapshot = { ...story.confirmedTreatmentSnapshot!, title: "Revised", logline: "The place anticipates an arrival." };
+  if (forAnimatic) story.confirmedTreatmentSnapshot.anchors = [{ id: "club-wait", title: "Club waits", description: "The empty club waits.",
+    purpose: "Establish the location", generationPrompt: "[Static] The empty Club.", songWindow: { start: 0, end: 4 },
+    coverage: "missing", candidates: [], selectedCandidateId: null, resolution: "generate" }];
   story.storyContentSignature = buildStoryContentSignature(story.confirmedTreatmentSnapshot, story.storyBeats);
   const prepared = prepareStoryTabPlacements({ project: createMusicVideoProject({ id: "project", analysis: previous.song, duration: 4, storyDrafts: story.storyBeats }), videoSources: [],
     editSettings: story.editSettings }, story.confirmedSourceContextSignature, sourceSha(saved.draft), storySha(saved.draft));
@@ -69,6 +77,33 @@ async function rebaseline() {
   return candidate;
 }
 function base() { return buildEditPlanPreviewSegments({ project: saved.draft.musicVideoProject, videoSources: [] }); }
+function reviewedAnimaticBase() {
+  const d = saved.draft, project = d.musicVideoProject!, story = d.storyState;
+  if (!story.stillAnimaticPlan) {
+    const context = { projectId: saved.project.id, project, treatment: story.confirmedTreatmentSnapshot!, storyBeats: story.storyBeats, references: d.referenceAssets! };
+    const sceneProofPlan = prepareSceneProofPlan(context); story.sceneProofPlan = sceneProofPlan;
+    const input = { ...context, sceneProofPlan };
+    let plan = importStillAnimatic(input, { projectId: saved.project.id, fps: 24, masterDuration: 4, totalFrames: 96,
+      slots: [0, 1, 2, 3].map(i => ({ id: `A00${i + 1}`, sceneId: sceneProofPlan.scenes[0].id, sceneTitle: "Club",
+        timelineItemId: project.editPlan.timelineItems[0].id, startFrame: i * 24, endFrame: (i + 1) * 24,
+        prompt: "[Static] The empty Club.", referenceAssetIds: ["club"] })) });
+    for (const shot of plan.shots) {
+      const binding = animaticShotBinding(plan, shot), jobId = `h3-still-${"b".repeat(64)}`;
+      const request = parseH3StillRequest({ shot: stillAnimaticShotRequest(input, plan, shot), animaticShot: binding,
+        creativePrompt: shot.prompt, seed: 42, requestIntentId: crypto.randomUUID(), attempt: 0 });
+      shot.record = { version: 1, projectId: plan.projectId, context: binding.bindingSha256, request, jobId };
+      const image = { bucket: "media", objectKey: `media-uploads/owner/${shot.id}.png`, sha256: "c".repeat(64), byteLength: 100, width: 2048, height: 1152 };
+      shot.proof = { jobId, descriptorSha256: "d".repeat(64), result: { master: image, native: { ...image, width: 1344, height: 768 },
+        artifactId: `h3-frame-${"e".repeat(64)}`, artifactSha256: "e".repeat(64) } };
+    }
+    const audioUrl = `/api/storage/media?${new URLSearchParams({ bucket: d.analysis!.storageBucket!, objectKey: d.analysis!.storagePath! })}`;
+    plan = reviewAnimatic(plan, plan.contextSha256, audioUrl, animaticReviewBinding(plan, plan.contextSha256, audioUrl)!, "approved", "Synthetic review fixture");
+    story.stillAnimaticPlan = plan;
+  }
+  const runtime = hydrateStudioProjectDraft({ draft: d });
+  return buildStoryDraftSegments({ projectId: saved.project.id, project: runtime.musicVideoProject, videoSources: runtime.videoSources,
+    referenceAssets: runtime.referenceAssets, storyState: runtime.storyState, audio: runtime.analysis });
+}
 function selectOrigin() {
   saved.draft.generatedDraft = selectReusedTakePlacement(saved.draft.generatedDraft!, saved.draft.musicVideoProject!, saved.draft.generatedAssets![0], base()[0]);
 }
@@ -95,8 +130,8 @@ function accept() {
   expect(result.error).toBeNull();
   saved.draft.generatedAssets = result.assets; saved.draft.generatedDraft = result.draft;
 }
-function exportInput() {
-  const project = saved.draft.musicVideoProject!, preview = applyAcceptedGeneratedDraft(base(), saved.draft.generatedAssets!, saved.draft.generatedDraft);
+function exportInput(segments = base()) {
+  const project = saved.draft.musicVideoProject!, preview = applyAcceptedGeneratedDraft(segments, saved.draft.generatedAssets!, saved.draft.generatedDraft);
   const videos = preview.map(segment => { const asset = saved.draft.generatedAssets!.find(asset => asset.id === segment.generatedAssetId)!;
     return { bucket: "media", objectKey: asset.fullStorage!.objectKey!, fileName: "shot.mp4", mimeType: "video/mp4" }; });
   return { ownerId: "owner", context: { projectId: "project", planSignature: project.placementPlan!.inputSignature,
@@ -111,6 +146,44 @@ beforeEach(() => {
 });
 
 describe("same-project revised-story footage reuse", () => {
+  test("reviewed animatic cuts reuse explicit verified source trims through acceptance and canonical export", async () => {
+    revise(true); await rebaseline();
+    const segments = reviewedAnimaticBase(), project = saved.draft.musicVideoProject!, assets = saved.draft.generatedAssets!, originBefore = JSON.stringify(assets[0]);
+    for (const segment of segments) saved.draft.generatedDraft = selectReusedTakePlacement(saved.draft.generatedDraft!, project, assets[0], segment, 1.25);
+    const pending = saved.draft.generatedDraft!;
+    expect(await validateSavedGenerationScope("owner", saved)).toBe(effectiveGenerationScope(project)!);
+    expect(applyDraftGeneratedAssets(segments, assets, pending).map(s => [s.musicStart, s.musicEnd, s.startTime, s.endTime]))
+      .toEqual([[0, 1, 1.25, 2.25], [1, 2, 1.25, 2.25], [2, 3, 1.25, 2.25], [3, 4, 1.25, 2.25]]);
+    expect(applyAcceptedGeneratedDraft(segments, assets, pending).every(s => s.kind === "gap")).toBe(true);
+    const review = captureGeneratedDraftReview(segments, assets, pending)!;
+    const accepted = approveGeneratedDraft({ draft: pending, assets, segments, review }); expect(accepted.error).toBeNull();
+    saved.draft.generatedDraft = accepted.draft; saved.draft.generatedAssets = accepted.assets;
+    const input = exportInput(segments);
+    input.context.draftRevision = accepted.draft.revision;
+    input.videos = segments.map(() => ({ bucket: "media", objectKey: assets[0].fullStorage!.objectKey!, fileName: "shot.mp4", mimeType: "video/mp4" }));
+    input.segments = segments.map((segment, sourceIndex) => ({ sourceIndex, startTime: 1.25, endTime: 2.25,
+      musicStart: segment.musicStart, musicEnd: segment.musicEnd, useClipAudio: false }));
+    const result = await reconcileProjectFinalExport(input);
+    expect(result.segments.map(s => [s.startTime, s.endTime])).toEqual(Array.from({ length: 4 }, () => [1.25, 2.25]));
+    expect(result.videos).toHaveLength(1); expect(result.videos[0].expectedSha256).toBe(assets[0].mediaSha256!);
+    expect(JSON.stringify(saved.draft.generatedAssets![0])).toBe(originBefore);
+  });
+
+  for (const mutation of ["image", "review", "target", "partial", "missing binding"] as const) test(`animatic reuse rejects stale or forged ${mutation}`, async () => {
+    revise(true); await rebaseline(); const [segment] = reviewedAnimaticBase(), project = saved.draft.musicVideoProject!;
+    const assets = saved.draft.generatedAssets!;
+    if (mutation === "partial") {
+      expect(() => selectReusedTakePlacement(saved.draft.generatedDraft!, project, assets[0], segment, 2.5)).toThrow("whole animatic shot"); return;
+    }
+    saved.draft.generatedDraft = selectReusedTakePlacement(saved.draft.generatedDraft!, project, assets[0], segment, 1.25);
+    const row = saved.draft.generatedDraft.reusedTakePlacements![0];
+    if (mutation === "image") row.target.animaticMotion!.imageSha256 = "f".repeat(64);
+    if (mutation === "review") saved.draft.storyState.stillAnimaticPlan!.review!.status = "revise";
+    if (mutation === "target") { row.target.songStart += 0.25; row.target.songEnd += 0.25; }
+    if (mutation === "missing binding") delete row.target.animaticMotion;
+    await expect(validateSavedGenerationScope("owner", saved)).rejects.toThrow("reused placement");
+  });
+
   test("a failed project save recovers its issued current-story baseline after an origin is rejected", async () => {
     revise();
     const first = await prepareCreativeRebaseline({ ownerId: "owner", saved, expectedRevision: saved.revision!, jobs });
@@ -279,6 +352,7 @@ describe("same-project revised-story footage reuse", () => {
     await rebaseline(); selectOrigin();
     const markup = render();
     expect(markup).toContain("Reuse story window"); expect(markup).toContain("Reuse original take");
+    expect(markup).toContain('aria-label="Reuse source in"'); expect(markup).toContain("Source 1.000");
     expect(markup).toContain("1 current reuse placements"); expect(markup).not.toContain("<video");
   });
 

@@ -67,6 +67,10 @@ Scale local checks to the change: diff/links/commands for docs, affected tests a
 
 ## Agent skills
 
+### Planning and ticket execution
+
+When a substantial plan settles, use `.agents/skills/ticket-execution/SKILL.md`: proactively offer/publish tickets in the configured tracker, visibly announce readiness/start using existing authorization, and run its checker at ticket boundaries. Default to one primary ticket and fresh implementation context at a time, reusing the existing worktree. Record bounded coupling before crossing ticket scope; conclude and read back each ticket in Linear before advancing. Do not accumulate the batch's implementations in one chat or create worktrees per ticket by default.
+
 ### Issue tracker
 
 Current completion issues and specs live in Linear project `P-V1S-11`, under `V1S-436`. See `docs/agents/issue-tracker.md` and `docs/agents/matt-pocock-workflow.md`. Historical GitHub issues are reference material. For this effort, commit changes but open no PR until Robert asks.

@@ -273,22 +273,62 @@ export function scoreMomentForSection(params: {
   };
 }
 
+type CandidateLexicon = { tokens: string[]; exact: Set<string>; matches: Map<string, 0 | 1 | 2>; chars: number };
+// Primitive text only: never cache project objects, eligibility or approvals.
+// Retained key/token characters are bounded to ~4 MiB of UTF-16, plus bounded maps.
+const candidateLexicons = new Map<string, CandidateLexicon>();
+const MAX_LEXICON_CHARS = 2 * 1024 * 1024;
+let lexiconChars = 0;
+
+function trimCandidateLexicons() {
+  while (candidateLexicons.size > 256 || lexiconChars > MAX_LEXICON_CHARS) {
+    const oldest = candidateLexicons.entries().next().value;
+    if (!oldest) break;
+    candidateLexicons.delete(oldest[0]);
+    lexiconChars -= oldest[1].chars;
+  }
+}
+
+function candidateLexicon(text: string): CandidateLexicon {
+  const cached = candidateLexicons.get(text);
+  if (cached) {
+    candidateLexicons.delete(text);
+    candidateLexicons.set(text, cached);
+    return cached;
+  }
+  const tokens = meaningfulTokens(text);
+  const entry: CandidateLexicon = { tokens, exact: new Set(tokens), matches: new Map(),
+    chars: text.length + tokens.reduce((sum, token) => sum + token.length, 0) };
+  if (text.length <= 8192) {
+    candidateLexicons.set(text, entry);
+    lexiconChars += entry.chars;
+    trimCandidateLexicons();
+  }
+  return entry;
+}
+
 export function keywordSemanticScore(query: string, candidate: string): number {
   const queryTokens = meaningfulTokens(query);
-  const candidateTokens = meaningfulTokens(candidate);
+  const lexicon = candidateLexicon(candidate);
+  const candidateTokens = lexicon.tokens;
   if (!queryTokens.length || !candidateTokens.length) return 0;
 
-  const candidateSet = new Set(candidateTokens);
   let exact = 0;
   let fuzzy = 0;
   for (const token of queryTokens) {
-    if (candidateSet.has(token) || candidateTokens.some((candidateToken) => candidateToken.startsWith(token) || token.startsWith(candidateToken))) {
-      exact += 1;
-      continue;
+    let match = lexicon.matches.get(token);
+    if (match === undefined) {
+      match = lexicon.exact.has(token) || candidateTokens.some((word) => word.startsWith(token) || token.startsWith(word))
+        ? 2 : candidateTokens.some((word) => tokenSimilarity(token, word) >= 0.66) ? 1 : 0;
+      if (token.length <= 64 && lexicon.matches.size < 256 && candidateLexicons.get(candidate) === lexicon) {
+        lexicon.matches.set(token, match);
+        lexicon.chars += token.length;
+        lexiconChars += token.length;
+        trimCandidateLexicons();
+      }
     }
-    if (candidateTokens.some((candidateToken) => tokenSimilarity(token, candidateToken) >= 0.66)) {
-      fuzzy += 1;
-    }
+    if (match === 2) exact += 1;
+    else if (match === 1) fuzzy += 1;
   }
 
   const coverage = (exact + fuzzy * 0.72) / queryTokens.length;

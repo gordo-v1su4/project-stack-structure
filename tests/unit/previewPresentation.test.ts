@@ -49,6 +49,17 @@ async function fixture(run: (f: {
 }
 
 describe("bounded preview presentation", () => {
+  test("source zero accepts the first positive video PTS without admitting a later interior seek", async () => {
+    await fixture(async ({ presenter, front, visible }) => {
+      presenter.observe(front.video, 0, 1, 1, new AbortController().signal, true, 0);
+      const ready = presenter.ready(front.video); front.frame(.046029); await ready;
+      expect(visible).toEqual([.046029]);
+      presenter.observe(front.video, 0, 1, 1, new AbortController().signal, true, .5);
+      front.frame(.6); expect(visible).toEqual([.046029]);
+      front.frame(.5); await presenter.ready(front.video);
+      expect(visible.at(-1)).toBe(.5);
+    });
+  });
   test("a future decoded snapshot waits for the musical presentation clock", async () => {
     await fixture(async ({ presenter, front, visible, due }) => {
       due(0); presenter.observe(front.video, 0, 1, 1, new AbortController().signal, true);

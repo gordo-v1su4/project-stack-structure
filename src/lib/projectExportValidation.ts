@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto";
 import { validateSavedGenerationScope } from "./generationScopeServer";
 import { buildGeneratedAssetPlaybackUrl, generatedAssetDraftIdentityBlockReason, type GeneratedStudioAsset } from "@/components/studio/generatedAssets";
-import { buildEditPlanPreviewSegments, isPlacementPlanCurrent } from "@/components/studio/musicVideoProject";
+import { isPlacementPlanCurrent } from "@/components/studio/musicVideoProject";
+import { buildStoryDraftSegments } from "@/components/studio/animaticDraft";
+import { findH3TargetSegment } from "@/components/studio/h3DraftPlan";
+import { assertCurrentSourceClipCandidate } from "@/components/studio/sourceClipSelection";
 import { hydrateStudioProjectDraft } from "@/components/studio/projectPersistence";
 import { finalExportSnapshotSha256 } from "@/components/studio/finalExportRecovery";
 import { buildStudioSourceContextSignature } from "@/components/studio/studioSourceContext";
@@ -74,6 +77,11 @@ export async function reconcileProjectFinalExport(params: {
     throw new ProjectExportError("The accepted project snapshot changed. Save and review the current draft before exporting.");
   }
   const runtime = hydrateStudioProjectDraft({ draft });
+  const base = buildStoryDraftSegments({ projectId: context.projectId, project: runtime.musicVideoProject, videoSources: runtime.videoSources,
+    storyState: runtime.storyState, referenceAssets: runtime.referenceAssets, audio: runtime.analysis ?? project.song }).map(segment => {
+      const source = runtime.videoSources.find(source => source.videoUrl === segment.videoUrl);
+      return { ...segment, useClipAudio: segment.kind !== "gap" && usesClipAudio(normalizeClipAudioSettings(runtime.clipAudioSettings), source ? clipAudioKey(source) : undefined) };
+    });
   let generationScope: string | undefined;
   try { generationScope = await validateSavedGenerationScope(ownerId, saved); }
   catch { throw new ProjectExportError("The canonical source confirmation changed. Review and confirm the current sources before exporting."); }
@@ -83,8 +91,9 @@ export async function reconcileProjectFinalExport(params: {
   }
   if(project.currentIdentity&&draft.generatedDraft?.currentIdentityApprovalSha256!==currentIdentityReviewSha256(project.currentIdentity))throw new ProjectExportError("Review and accept the current-reference assessment context before exporting.");
   const assets: GeneratedStudioAsset[] = [];
-  const currentUsedUrls=project.currentIdentity?new Set(applyAcceptedGeneratedDraft(buildEditPlanPreviewSegments({project:runtime.musicVideoProject,videoSources:runtime.videoSources,editSettings:draft.storyState.editSettings}),runtime.generatedAssets,draft.generatedDraft).map(segment=>segment.videoUrl)):undefined;
+  const currentUsedUrls = project.currentIdentity ? new Set(applyAcceptedGeneratedDraft(base, runtime.generatedAssets, draft.generatedDraft).map(segment => segment.videoUrl)) : undefined;
   const canonicalByKey = new Map<string, GeneratedStudioAsset>();
+  const canonicalSourceByAssetId = new Map<string, (typeof runtime.videoSources)[number]>();
   const environmentOnlyNativeBounds = new Set<string>();
   const receipts: NonNullable<FinalExportPayload["projectSnapshot"]>["h3"] = [];
   if (draft.generatedDraft?.reusedTakePlacements?.some(row => !runtime.generatedAssets.some(asset => asset.id === row.assetId))) throw new ProjectExportError("Reused footage is missing from the current saved bank.");
@@ -100,12 +109,21 @@ export async function reconcileProjectFinalExport(params: {
     if (asset.reviewStatus !== "approved" && !reuseRows.length) { assets.push(asset); continue; }
     // Retained superseded approvals are history. Only actual current overlays need new-context consent/evidence.
     if(currentUsedUrls&&!currentUsedUrls.has(buildGeneratedAssetPlaybackUrl(asset)??""))continue;
+    // Match only target coordinates here; never use client identity/hash claims
+    // to decide which canonical media evidence must be read below.
+    if (base.some(segment => segment.animaticShotId) && !reuseRows.length && (!asset.target || !findH3TargetSegment(base, asset.target))) continue;
     // Approved history from another plan is retained in the project but cannot overlay this cut.
     if (asset.target?.planSignature && asset.target.planSignature !== generationScope && !reuseRows.length) continue;
     const objectKey = asset.fullStorage?.objectKey ?? asset.fullStorage?.storagePath ?? "";
     const identity = h3ExportMediaIdentity(objectKey);
     const h3 = identity || asset.jobId?.startsWith("h3-") || /^h3-ref2va-/.test(asset.model);
-    if (!h3) { assets.push(asset); continue; }
+    if (!h3) {
+      if (asset.sourceClip || asset.model === "original-source-selection") {
+        try { canonicalSourceByAssetId.set(asset.id, assertCurrentSourceClipCandidate(asset, runtime.videoSources)); }
+        catch { throw new ProjectExportError("The accepted source clip or trim no longer matches the project source inventory."); }
+      }
+      assets.push(asset); continue;
+    }
     const jobId = identity?.jobId ?? asset.jobId;
     if (!jobId || !/^h3-[a-f0-9]{64}$/.test(jobId) || (identity && (identity.owner !== normalizeStudioOwnerSegment(ownerId) || identity.projectId !== context.projectId))) {
       throw new ProjectExportError("An approved generated take has no canonical project job.");
@@ -183,11 +201,6 @@ export async function reconcileProjectFinalExport(params: {
       throw new ProjectExportError("The song, references or story changed after generated-shot approval.");
     }
   }
-  const base = buildEditPlanPreviewSegments({ project: runtime.musicVideoProject, videoSources: runtime.videoSources, editSettings: runtime.storyState.editSettings })
-    .map(segment => {
-      const source = runtime.videoSources.find(source => source.videoUrl === segment.videoUrl);
-      return { ...segment, useClipAudio: segment.kind !== "gap" && usesClipAudio(normalizeClipAudioSettings(runtime.clipAudioSettings), source ? clipAudioKey(source) : undefined) };
-    });
   const preview = applyAcceptedGeneratedDraft(base, assets, draft.generatedDraft);
   if (draft.generatedDraft?.reusedTakePlacements?.some(row => !preview.some(segment => segment.reusedTakePlacementId === row.id))) throw new ProjectExportError("A reused placement no longer belongs to the accepted cut.");
   if (preview.length !== params.segments.length || preview.some(segment => segment.kind === "gap" || !segment.videoUrl)) {
@@ -199,8 +212,9 @@ export async function reconcileProjectFinalExport(params: {
   const segments: FinalExportPayload["segments"] = [];
   let songCursor = 0;
   for (const [index, segment] of preview.entries()) {
-    const source = runtime.videoSources.find(source => source.videoUrl === segment.videoUrl);
-    const generated = assets.find(asset => buildGeneratedAssetPlaybackUrl(asset) === segment.videoUrl);
+    const generated = assets.find(asset => asset.id === segment.generatedAssetId)
+      ?? assets.find(asset => buildGeneratedAssetPlaybackUrl(asset) === segment.videoUrl);
+    const source = (generated && canonicalSourceByAssetId.get(generated.id)) ?? runtime.videoSources.find(source => source.videoUrl === segment.videoUrl);
     const key = generated?.fullStorage?.objectKey ?? generated?.fullStorage?.storagePath ?? source?.storagePath;
     const bucket = generated?.fullStorage?.bucket ?? source?.storageBucket;
     const expected = resolveDurableInput({ bucket, objectKey: key, ...(source?.uploadChunks?.chunks?.length ? { chunks: source.uploadChunks.chunks } : {}) }, "video/mp4");
@@ -216,7 +230,13 @@ export async function reconcileProjectFinalExport(params: {
       throw new ProjectExportError("Export media or trim timing changed after draft acceptance.");
     }
     let sourceIndex = videos.findIndex(video => mediaKey(video) === mediaKey(expected));
-    if (sourceIndex < 0) { sourceIndex = videos.length; videos.push({ ...expected, ...(canonical ? { expectedSha256: canonical.mediaSha256 } : {}) }); }
+    if (sourceIndex < 0) {
+      sourceIndex = videos.length;
+      const sourceSha = source && project.generationScope?.body.sourceMediaVersions.find(version => version.id === `video:${source.id}`
+        && version.bucket === expected.bucket && version.objectKey === expected.objectKey)?.sha256;
+      const expectedSha256 = canonical?.mediaSha256 ?? sourceSha;
+      videos.push({ ...expected, ...(expectedSha256 ? { expectedSha256 } : {}) });
+    }
     let sourceFrameWindow: FinalExportPayload["segments"][number]["sourceFrameWindow"];
     if (canonical) {
       const proof = canonical.identityVerification;

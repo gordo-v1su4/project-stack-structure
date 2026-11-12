@@ -4,6 +4,7 @@ import type { GeneratedStudioAssetTarget } from "./generatedAssets";
 import type { EditPlanPreviewSegment } from "./musicVideoProject";
 import type { ReferenceAsset } from "./referenceAssets";
 import { STUDIO_JSON_TRANSPORT_HEADERS } from "@/lib/studioJsonTransport";
+import { sameAnimaticMotionBinding } from "./animaticMotionBinding";
 
 /** Generation covers editorial holes; inference handles never extend song time. */
 export function planH3DraftWindows(segments: EditPlanPreviewSegment[]) {
@@ -24,6 +25,9 @@ export function planH3DraftWindows(segments: EditPlanPreviewSegment[]) {
   }
   return windows.flatMap(segment => {
     const duration = segment.musicEnd - segment.musicStart;
+    // An animatic binding describes the whole reviewed shot. Subdividing it
+    // would manufacture targets that the canonical admission gate rejects.
+    if (segment.animaticShotId) return duration <= H3_MAX_SHOT_SECONDS ? [segment] : [];
     const count = Math.ceil(duration / H3_MAX_SHOT_SECONDS);
     // Equal subdivision avoids a nearly-empty final shot after a 12s take.
     return Array.from({ length: count }, (_, index) => ({
@@ -36,9 +40,11 @@ export function planH3DraftWindows(segments: EditPlanPreviewSegment[]) {
   });
 }
 
-export function h3WindowKey(segment: Pick<EditPlanPreviewSegment, "planSignature" | "requirementId" | "timelineItemId" | "sectionId" | "musicStart" | "musicEnd">) {
-  return JSON.stringify([segment.planSignature, segment.requirementId, segment.timelineItemId, segment.sectionId,
-    Number(segment.musicStart.toFixed(6)), Number(segment.musicEnd.toFixed(6))]);
+export function h3WindowKey(segment: Pick<EditPlanPreviewSegment, "planSignature" | "requirementId" | "timelineItemId" | "sectionId" | "musicStart" | "musicEnd" | "animaticMotion">) {
+  const key = [segment.planSignature, segment.requirementId, segment.timelineItemId, segment.sectionId,
+    Number(segment.musicStart.toFixed(6)), Number(segment.musicEnd.toFixed(6))];
+  const motion = segment.animaticMotion;
+  return JSON.stringify(motion ? [...key, [motion.shotId, motion.bindingSha256, motion.reviewBindingSha256, motion.imageSha256]] : key);
 }
 
 export function h3RequestWindowKey(request: H3GenerationRequest) {
@@ -55,6 +61,7 @@ export function selectH3PickupWindow(windows: EditPlanPreviewSegment[], key: str
 /** Editorial coverage is a prefix of one current placement, independent of native render handles. */
 export function createH3PickupWindow(window: EditPlanPreviewSegment, duration: number): EditPlanPreviewSegment {
   const available = window.musicEnd - window.musicStart;
+  if (window.animaticShotId && Math.abs(duration - available) > 0.000001) throw new Error("Use the reviewed animatic shot's complete frame window.");
   const minimum = Math.min(1, available);
   const maximum = Math.min(H3_MAX_SHOT_SECONDS, available);
   if (!window.planSignature || !Number.isFinite(window.musicStart) || window.musicStart < 0
@@ -95,6 +102,7 @@ export async function enqueueH3DraftRequest(request: H3GenerationRequest, jobs: 
 /** A generated take may span several display fragments after partial overlays. */
 export function findH3TargetSegment(segments: EditPlanPreviewSegment[], target: GeneratedStudioAssetTarget): EditPlanPreviewSegment | null {
   const matching = segments.filter(segment => segment.planSignature === target.planSignature && segment.sectionId === target.sectionId
+    && sameAnimaticMotionBinding(segment.animaticMotion, target.animaticMotion)
     && (target.requirementId ? segment.requirementId === target.requirementId : segment.timelineItemId === target.timelineItemId)
     && segment.musicEnd > target.songStart + 0.001 && segment.musicStart < target.songEnd - 0.001).sort((a, b) => a.musicStart - b.musicStart);
   let end = target.songStart;
@@ -133,6 +141,7 @@ export function selectH3ReferenceAssetIds(assets: ReferenceAsset[], direction: s
 /** Only the same ordered packet and conditioning mode continue a pickup's retry chain. */
 export function prepareH3PickupRequest(request: H3GenerationRequest, previous: H3GenerationJob | undefined, siblings: H3GenerationJob[], mode: "references" | "first-frame"): H3GenerationRequest {
   if (previous && Boolean(previous.request.conditioning) === (mode === "first-frame")
+    && sameAnimaticMotionBinding(previous.request.animaticMotion, request.animaticMotion)
     && JSON.stringify(previous.request.referenceAssetIds) === JSON.stringify(request.referenceAssetIds)) {
     return nextH3Attempt(previous, siblings, request.draftRevision ?? 0, request.prompt);
   }
@@ -148,7 +157,8 @@ export function nextH3Attempt(job: H3GenerationJob, siblings: H3GenerationJob[],
   return { ...job.request, attempt, draftRevision, prompt };
 }
 
-export type H3DraftBatch = { version: 1; projectId: string; planSignature: string; requests: H3GenerationRequest[]; paused: boolean; pauseAfterRequest?: string };
+export type H3DraftBatch = { version: 1; projectId: string; planSignature: string; requests: H3GenerationRequest[]; paused: boolean; pauseAfterRequest?: string;
+  replacementReview?: { revision: string; keys: string[] } };
 export function h3DraftBatchStorageKey(projectId: string) { return `stack-structure:h3-draft-batch:v1:${projectId}`; }
 export function parseH3DraftBatch(raw: string | null, projectId: string): H3DraftBatch | null {
   if (!raw) return null;
@@ -162,6 +172,10 @@ export function parseH3DraftBatch(raw: string | null, projectId: string): H3Draf
         || !Number.isInteger(request.attempt ?? 0) || (request.attempt ?? 0) < 0 || (request.attempt ?? 0) > 2)) return null;
     if (value.pauseAfterRequest !== undefined && (typeof value.pauseAfterRequest !== "string"
       || value.pauseAfterRequest !== `${value.requests[0]?.requestIntentId}:${value.requests[0]?.attempt ?? 0}`)) return null;
+    if (value.replacementReview && (typeof value.replacementReview.revision !== "string" || !value.replacementReview.revision
+      || !Array.isArray(value.replacementReview.keys) || !value.replacementReview.keys.length || value.replacementReview.keys.length > 512
+      || value.replacementReview.keys.some(key => typeof key !== "string" || key.length > 4096)
+      || value.requests.some(request => request.draftRevision !== undefined))) return null;
     return { ...value, paused: Boolean(value.paused) };
   } catch { return null; }
 }

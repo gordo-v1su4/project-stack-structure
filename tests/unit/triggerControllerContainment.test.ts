@@ -13,10 +13,11 @@ import { patchTriggerControllerSource, replaceAttemptLogStatement, SAFE_ATTEMPT_
   TRIGGER_CONTROLLER_REVIEWED_PAIRS, isReviewedPatchedControllerSha256 } from "../../scripts/trigger-controller-patch-core";
 
 describe("app-image Trigger controller log containment", () => {
-  test("only the two exact input/output pairs are admitted; safe-looking unknown controllers remain rejected", () => {
+  test("only reviewed exact input/output pairs are admitted; safe-looking unknown controllers remain rejected", () => {
     expect(TRIGGER_CONTROLLER_REVIEWED_PAIRS).toEqual({
       "06f44ebdc32828b1e65259c749e5ecd8c4e4d38daacdbdeb3d9e9d1799d9065b": "601eefa76f120098c948bb11adbd80dec88e7c5b10a6fc6923cd5e2e1fd1b152",
       "48744f08e1b31704279ff6245208e4ef6520299401480dafd96e4b6f33fd3e62": "9fa7a554fafd1c8798d9f2b816d724e3ce0b40391029a4a5f4e63a1825475a42",
+      "e835280f746a18c40dce3692bc5e59fb573397d5c40d21e0f00d8c8e1535774c": "69e8d9923ced1213f0c277dda8521cacf63f7a113f183660e14b04e421d3fac4",
     });
     expect(Object.isFrozen(TRIGGER_CONTROLLER_REVIEWED_PAIRS)).toBe(true);
     for (const value of Object.keys(TRIGGER_CONTROLLER_REVIEWED_PAIRS)) expect(isReviewedPatchedControllerSha256(value)).toBe(false);

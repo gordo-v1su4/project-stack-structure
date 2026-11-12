@@ -19,7 +19,7 @@ export function LiveDraftTakeViewer({ asset, playbackUrl }: { asset: GeneratedSt
     const element = video.current;
     if (!element || !valid) return;
     return attachLiveDraftTakePlayback(player, element,
-      { videoUrl: playbackUrl, startTime: start, endTime: end, label: asset.title ?? "Saved take", useClipAudio: true }, setState);
+      { videoUrl: playbackUrl, startTime: start, endTime: end, label: asset.title ?? "Saved take", useClipAudio: false }, setState);
   }, [player, playbackUrl, start, end, valid, asset.title]);
   if (!valid) return <p className="text-xs text-fg-3">This take needs a valid saved playback window.</p>;
   return <div className="mt-2 space-y-2">
@@ -29,6 +29,6 @@ export function LiveDraftTakeViewer({ asset, playbackUrl }: { asset: GeneratedSt
       <Button onClick={() => player.pause()}>Pause take</Button>
     </div>
     {state.errorMessage ? <p role="alert" className="text-xs text-danger">{state.errorMessage}</p> : null}
-    <p className="text-xs text-fg-3">Viewing only · {duration.toFixed(2)}s edit window · selection and identity checks stay separate.</p>
+    <p className="text-xs text-fg-3">Silent viewing only · {duration.toFixed(2)}s edit window · selection and identity checks stay separate.</p>
   </div>;
 }

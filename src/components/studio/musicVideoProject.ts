@@ -79,6 +79,11 @@ export interface SemanticClipMatch {
 }
 
 export interface EditPlanPreviewSegment {
+  animaticShotId?: string;
+  animaticMotion?: import("./animaticMotionBinding").AnimaticMotionBinding;
+  animaticReferenceAssetIds?: string[];
+  animaticRetainedSource?: boolean;
+  animaticFirstFrame?: import("./h3FirstFrame").H3FirstFrameChoice;
   reusedTakePlacementId?: string;
   /** Exact applied overlay provenance; never inferred from a playback URL. */
   generatedAssetId?: string;

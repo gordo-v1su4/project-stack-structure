@@ -13,9 +13,15 @@ export const TRIGGER_CONTROLLER_PATCHED_SHA256 = "601eefa76f120098c948bb11adbd80
 // replacing three reviewed generated chunk names. No generic normalization.
 export const TRIGGER_CONTROLLER_REBOUND_SOURCE_SHA256 = "48744f08e1b31704279ff6245208e4ef6520299401480dafd96e4b6f33fd3e62";
 export const TRIGGER_CONTROLLER_REBOUND_PATCHED_SHA256 = "9fa7a554fafd1c8798d9f2b816d724e3ce0b40391029a4a5f4e63a1825475a42";
+// V1S-464 review-task bundle: byte-identical deployed controller body after
+// exactly CEB7UULU -> NPA5XLGE, 7Q5UQ7TD -> I3EONRL4 and FT6LMJRK -> C5NT3V3B
+// generated import rebinding. Admit this whole-file pair, never arbitrary imports.
+export const TRIGGER_CONTROLLER_REVIEW_SOURCE_SHA256 = "e835280f746a18c40dce3692bc5e59fb573397d5c40d21e0f00d8c8e1535774c";
+export const TRIGGER_CONTROLLER_REVIEW_PATCHED_SHA256 = "69e8d9923ced1213f0c277dda8521cacf63f7a113f183660e14b04e421d3fac4";
 export const TRIGGER_CONTROLLER_REVIEWED_PAIRS: Readonly<Record<string, string>> = Object.freeze({
   [TRIGGER_CONTROLLER_SOURCE_SHA256]: TRIGGER_CONTROLLER_PATCHED_SHA256,
   [TRIGGER_CONTROLLER_REBOUND_SOURCE_SHA256]: TRIGGER_CONTROLLER_REBOUND_PATCHED_SHA256,
+  [TRIGGER_CONTROLLER_REVIEW_SOURCE_SHA256]: TRIGGER_CONTROLLER_REVIEW_PATCHED_SHA256,
 });
 export function isReviewedPatchedControllerSha256(hash: string): boolean {
   return Object.values(TRIGGER_CONTROLLER_REVIEWED_PAIRS).includes(hash);

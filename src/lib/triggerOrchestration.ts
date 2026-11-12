@@ -22,6 +22,11 @@ import type { H3StillJob } from "./h3StillJobStore";
 import { createTriggerIdempotencyKey } from "@/lib/triggerIdempotency";
 import { EXPORT_DISPATCH_UPGRADE_MESSAGE, isOwnedExportRequestKey } from "@/components/studio/exportDispatchProtocol";
 import { retrieveOwnedTriggerRun } from "@/lib/triggerRunAccess";
+import { normalizeTriggerRunStatus } from "@/lib/triggerRunStatus";
+import { H3_AUTOMATIC_RECOVERY_ATTEMPTS } from "@/lib/h3AutomaticRecovery";
+import type { reviewVideoTask } from "@/trigger/reviewVideo";
+import type { reviewBackfillTask } from "@/trigger/reviewBackfill";
+import { reviewVideoIdentity, type ReviewVideoSource } from "./preparedReviewVideoStore";
 
 export const STACK_STRUCTURE_TRIGGER_TASKS = {
   mediaVideoPipeline: "media-video-pipeline",
@@ -42,7 +47,37 @@ export const STACK_STRUCTURE_TRIGGER_TASKS = {
   shaderCaptureExport: "ffmpeg-shader-capture-export",
   ffglitch: "ffglitch-transform",
   imageSplitter: "image-split-grid",
+  reviewVideo: "prepare-review-video",
+  reviewBackfill: "prepare-project-review-videos",
 } as const;
+
+export async function triggerReviewBackfill(ownerId: string, projectId: string, jobId: string) {
+  assertTriggerConfigured();
+  if (!/^[\w-]{1,96}$/.test(projectId) || !/^[a-f0-9-]{36}$/i.test(jobId)) throw new Error("Invalid review preparation.");
+  const dispatch = await buildDispatchContext(["stack-structure", "review-preparation", `project:${projectId}`], {
+    stageLabel: "Waiting to prepare project review copies", progressMode: "exact",
+  });
+  if (dispatch.userId !== ownerId) throw new Error("Review preparation belongs to another user.");
+  return tasks.trigger<typeof reviewBackfillTask>(STACK_STRUCTURE_TRIGGER_TASKS.reviewBackfill, { ownerId, projectId, jobId }, {
+    idempotencyKey: createTriggerIdempotencyKey("review-project-preparation-v1", [ownerId, projectId, jobId]),
+    idempotencyKeyTTL: "30d", tags: dispatch.tags, metadata: dispatch.metadata,
+  }) as Promise<{ id: string }>;
+}
+
+export async function triggerReviewVideo(source: ReviewVideoSource, intentId: string) {
+  assertTriggerConfigured();
+  if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(intentId)) throw new Error("Invalid review-video intent.");
+  const identity = reviewVideoIdentity(source);
+  const dispatch = await buildDispatchContext(["stack-structure", "review-preparation"], {
+    stageLabel: "Waiting to prepare video review media", progressMode: "indeterminate",
+  });
+  if (dispatch.userId !== source.ownerId) throw new Error("Review preparation belongs to another user.");
+  return tasks.trigger<typeof reviewVideoTask>(STACK_STRUCTURE_TRIGGER_TASKS.reviewVideo,
+    { applicationUserId: dispatch.userId, source }, {
+      idempotencyKey: createTriggerIdempotencyKey("review-video-v1", [dispatch.userId, identity, intentId]),
+      idempotencyKeyTTL: "1d", tags: dispatch.tags, metadata: dispatch.metadata,
+    }) as Promise<{ id: string }>;
+}
 
 export async function triggerH3Still(job: H3StillJob) {
   assertTriggerConfigured();
@@ -284,7 +319,7 @@ export async function triggerH3Generation(job: H3GenerationJob, resumeIntentId?:
   return tasks.trigger<typeof localGenerationTask>(STACK_STRUCTURE_TRIGGER_TASKS.localGeneration, {
     request: { provider: "swarmui", kind: "video", prompt: job.request.prompt },
     h3Job: { ownerId: job.ownerId, projectId: job.projectId, jobId: job.id },
-  }, { idempotencyKey, idempotencyKeyTTL: "30d", maxAttempts: 1,
+  }, { idempotencyKey, idempotencyKeyTTL: "30d", maxAttempts: H3_AUTOMATIC_RECOVERY_ATTEMPTS,
     tags: [...dispatch.tags, `project:${job.projectId}`, `h3:${job.id}`], metadata: dispatch.metadata }) as Promise<{ id: string }>;
 }
 
@@ -502,7 +537,8 @@ export async function triggerImageSplitter(payload: ImageSplitterPayload) {
 export async function retrieveTriggerRun(runId: string) {
   assertTriggerConfigured();
   const userId = await currentApplicationUserId();
-  return retrieveOwnedTriggerRun(runId, userId, (id) => runs.retrieve(id));
+  const run = await retrieveOwnedTriggerRun(runId, userId, (id) => runs.retrieve(id));
+  return normalizeTriggerRunStatus(run);
 }
 
 export function assertTriggerConfigured(

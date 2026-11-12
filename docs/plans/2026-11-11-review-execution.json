@@ -1,0 +1,174 @@
+{
+  "tracker": "Linear",
+  "project": "P-V1S-11",
+  "mode": "sequential",
+  "maxActive": 1,
+  "order": [
+    "V1S-458",
+    "V1S-459",
+    "V1S-460",
+    "V1S-461",
+    "V1S-462",
+    "V1S-463",
+    "V1S-464"
+  ],
+  "authorization": "Robert's November 11 instruction in chat 01a1cdf6-feb5-77c1-8853-f056c1e8a62c: write the workflow changes, then make the existing execution owner execute one at a time; necessary coupled work is allowed.",
+  "readinessMessage": "Seven items are tracked in Linear. Execute one primary ticket per fresh chat on the existing worktree. Commit and publish each ticket, then verify final acceptance through actual visible interactions/screenshots on the public app before Linear Done. One combined PR/GrepTile at the end after464.",
+  "publicationAuthorization": "Robert explicitly corrected the boundary in chat01a1ce58-ea5d-7930-b126-90e74f3c417b on November12: publish every section and run final tests on the public app, no PR until the very end. He selected adding manual exact-revision deployment so implementation commits remain unmerged for the combined PR. This supersedes the previous no-deployment instruction for this batch.",
+  "successorModel": "Robert clarified the goal edit changes only new-chat model settings: GPT6.1Sol, Medium. Publication and public visible browser acceptance remain authorized per ticket; stale no-deployment prose in the copied goal is superseded by his explicit clarification.",
+  "contextByIssue": {
+    "V1S-458": "01a1c36a-2e37-7260-9204-378380cc385f-current-ticket",
+    "V1S-459": "01a1ce3e-3217-74a0-a93a-3d8eb179eaa7",
+    "V1S-460": "01a1ce58-ea5d-7930-b126-90e74f3c417b",
+    "V1S-461": "01a1cea3-3a8e-76f3-bace-c00af2ac8e9d",
+    "V1S-462": "01a1cec2-da14-7562-b9fe-364d6d53cde3",
+    "V1S-463": "01a1ced8-376e-77a2-8bcd-0595772d7743",
+    "V1S-464": "01a1cef1-6f94-7703-a839-3e19f54e71a5"
+  },
+  "coupledWork": [
+    {
+      "primary": "V1S-461",
+      "related": "V1S-459",
+      "reason": "Robert observed Preview thumbnails disappearing and loading again during return scrolling. The shared card removed its image on every viewport exit. Retain viewed derivatives and prefetch nearby cards within the board scroll area, while keeping initially unseen boards lazy.",
+      "stopWhen": "Public scroll away/back retains the same loaded image nodes without repeat thumbnail requests or colored-placeholder flashes; originals and master ownership remain intact."
+    },
+    {
+      "primary": "V1S-461",
+      "related": "V1S-460",
+      "reason": "Inherited public screenshot shows cue settings using viewport breakpoints despite a narrow center column. Wrap controls by available panel width as part of stage usability.",
+      "stopWhen": "Controls wrap without horizontal overflow at the public narrow viewport; preserve exact selection overlays and master seek/play barrier."
+    },
+    {
+      "primary": "V1S-460",
+      "related": "V1S-459",
+      "reason": "The first public test build stopped in hosted Linux checks because the existing VFR review proxy lost a decoded frame. Diagnose and repair this accumulated-code publication blocker without weakening timing or original-preservation gates. Robert also reported the public review checkbox visibility; strengthen its themed control.",
+      "stopWhen": "The unchanged frame-count and PTS assertions pass on the deployment FFmpeg runtime, the public test build publishes, and the checkbox and460 browser criteria are visibly verified."
+    },
+    {
+      "primary": "V1S-460",
+      "related": "V1S-461",
+      "reason": "460 requires shared cut/section selection, focused shot and viewport in standalone Preview. Add that selection lane and route context now; retain existing preview partials.",
+      "stopWhen": "Cut/section selection and viewing context work across Studio/Preview; queue, media arrivals and remaining unified media behavior stay with461."
+    },
+    {
+      "primary": "V1S-459",
+      "related": "V1S-462",
+      "reason": "Visible 1280x720 media review found the fixed replacement-review row plus the new preparation row squeezing Story content to zero height. Place both auxiliary panels inside the existing stage scroll region so the thumbnail board remains reachable.",
+      "stopWhen": "Only panel placement is adjusted and browser scrolling/board/enlarge work; replacement marking, persistence and submission behavior remain for 462."
+    },
+    {
+      "primary": "V1S-458",
+      "related": "V1S-459",
+      "reason": "458 records existing-media/first-frame baselines; final prepared-hover delivery and its under-500-ms check belong to 459, which supplies that feature. Do not expand preview/backfill implementation while closing navigation work.",
+      "stopWhen": "458 has equivalent populated-film navigation/selection measurements and its own evidence; 459 retains prepared-hover acceptance. Reconcile these ownership boundaries in Linear before closure."
+    },
+    {
+      "primary": "V1S-464",
+      "related": "V1S-459",
+      "reason": "Robert explicitly authorized publishing and qualifying the missing review task bundle. Its first image build rejected a generated controller import variant; exact deployed-body comparison permits one additional whole-file checksum pair without changing containment, runtime or infrastructure.",
+      "stopWhen": "Exact committed worker task bundle registers both review tasks, immutable syntax/manifest/runtime gates pass, the two existing CPU requests yield verified durable derivatives and public playback; no AI dispatch or service tuning."
+    }
+  ],
+  "completion": {
+    "V1S-458": {
+      "commit": "c4b8a37",
+      "trackerReceipt": "Linear get_issue read-back: V1S-458 Done, updatedAt 2026-11-12T05:05:06.687Z, completedAt 2026-11-12T05:05:06.680Z; evidence comment 38c9afed-e4f6-4cb6-b7c9-698ba8389f6c",
+      "criteria": {
+        "Record cold/warm public-browser baselines for stage switching, selected-shot feedback, visible thumbnail readiness and first video frame; separate network/transfer, decoding, React commits and synchronous model work.": "docs/operations/review-performance-458.md browser verification: real public document/project, partial image-readiness observation, native first presented frame 1162.8ms after Play via requestVideoFrameCallback; separate raw CPU/React stacks/model SSR. Public first/repeat Draft2334.7/2981.9ms, Story7186.3ms, A013Story1649.3ms. Private raw recordings in .tmp/review-performance; partial observations explicitly bounded.",
+        "Repair demonstrated navigation/selection bottlenecks and compare the same interactions under the same conditions; proposed budgets: selection feedback under 100 ms, warm stage change under 300 ms. Report misses rather than relaxing them silently. <issue id=\"010e2ff8-5f26-4bdb-95fb-5240c2afc021\" label=\"V1S-459\" href=\"https://linear.app/v1su4/issue/V1S-459/load-prepared-169-thumbnails-and-fast-hover-previews-without-original\" /> owns the prepared-hover implementation and its under-500-ms first-frame acceptance.": "c4b8a37, fc099ef, 8e5fd59, 0b053d6. Same controlled populated harness before Draft898.9/959ms, Story783.3/751.9ms; final warm Draft346.8/389.2ms, Story597.7/625.6ms. Story selection293.3ms; Draft83.5/109.5/73ms. Proposed budgets MISSED as documented, not labeled passed. Repairs: root model/context reuse, no duplicate autosave sanitation, deferred12186 hidden advanced nodes, memoized display evidence.",
+        "Navigation stays interactive while media loads; bounded media/player lifetime, no stale playback or duplicate master audio.": "media-loading-liveness.json: six deliberately delayed media requests before/after A013 paint286.4ms; not decoder throughput proof. Browser verified advanced initialsummary1node→open12186→close retains12186. Public saved-take inspection then navigation: savedTakePlayers0, playing0. Candidate activeMedia0. Ownership/transport lifecycle regressions passed.",
+        "Preserve saved cut, references, review state and ownership. Use existing media without new generation.": "Public diagnostic project/draft writes blocked before view changes; candidate blocks all writes and generation. No creative adoption/reference/review changes. Epoch, revision/unknownACK guards retained;13save-session tests passed. Existing-input hash invariant and Story markup equality recorded for fc099ef. No AI/GPU generation or release.",
+        "No React→Svelte migration unless profiling establishes a remaining framework bottleneck and a bounded comparison justifies it.": "No framework migration or server upgrade. CPU profiles demonstrate repeated model/policy hashing and eager hidden controls. Remaining proposed-budget misses are recorded; no inference that React requires replacing."
+      },
+      "environment": "1280x720 in-app browser; public deployed app baseline versus isolated populated production-React/Bun candidate, media delivery excluded in candidate timing; no deployment acceptance claim",
+      "verification": "Full check2130pass/27skip/0fail; buildpassed; final6live-draft +13save-session +typecheckpassed",
+      "budgetMisses": "300ms warm-stage target missed;100ms Story selection and one109.5ms Draft sample missed;459 prepared-hover500ms target unchanged",
+      "releaseAcceptance": "Separate final public release gate remains open"
+    },
+    "V1S-460": {
+      "commit": "07bc3e5929569847eca77d9dfbe35b0a364492df",
+      "trackerReceipt": "Linear get_issue read-back: V1S-460 Done, updatedAt 2026-11-12T07:20:19.667Z, completedAt 2026-11-12T07:20:19.657Z; evidence comment 3bcb1b67-e512-4a54-9933-b9d4ab1bcc9c",
+      "criteria": {
+        "Click, Shift range, toggle and visible multiselect support add/remove; whole graph block height responds.": "07bc3e5 and f64bf87; docs/operations/review-selection-460.md. Public real clicks, Ctrl/Shift and visible multi-select add/remove; native top+2px/bottom-2px graph clicks selected14.750–16.347/16.347–17.715. Raw460-final-public-interactions and460-exact-bands receipts.",
+        "Section focus zooms corresponding views; selected ranges/duration remain visible; selecting does not mutate or autoplay.": "Public adjacent Intro+Verse1 0–29.300s, Shift A006→A009 14.750–24.458333333333332s; disjoint A006/A009 14.75–17.125/22–24.458333333333332. Exact viewport14.75–29.3 and focusedA009 survive actual Preview/Back. Selection remains paused. One exact1.368s white band matches all3lane pixel edges at normal/1125CSS width; native460-narrow-public screenshot, closed borders/collapsed optional source row.",
+        "Play selected ranges in song order with matching master audio; show skipped ranges and distinguish comparison jumps from actual cut transitions.": "07bc3e5 public run43173696389 exacthealth. Disjoint gap/still master14.75→22→pause24.472; skipped ranges explicitly comparison jumps. Original real video0–14.75/74.74–89.29: seek541.1ms awaited, video plays0.8ms after audio, source end10.942863(~26ms sample), master89.297415. One unmuted master; videos muted; contiguous cuts do not reseek.460-repaired-source-public.json;85 affected tests include delayed-seek/stop cancellation.",
+        "Highlight focused shot consistently; missing coverage differs from selected blocks and musical accents.": "Shared ◆ focus in cut strip/graph/details, white exact time vs orange musical accents, green filled coverage vs dashed gaps. Public finishing103available/0selected honest still/gap fallback, no adoption. Distinct sibling keys prevent refresh panel accumulation. Native460-complete-public.jpg and460-narrow-public.jpg.",
+        "Preserve saved cut and approval state; verify adjacent and separated section selections in browser.": "Final complete finishing draft SHA matches460-public-before; story/review/assets hashes unchanged. Original complete draft and e4833a39ffeac77a83e7a6657b3923f1 revision unchanged; finishing cc65ad585238c4398526b995005e8822 unchanged. Actual adjacent/separated section checks and original playback, checkbox checked then off without approval, enlarged A013→A014 loaded2048x1152→closed. No generation/save/adoption/original overwrite."
+      },
+      "environment": "Visible signed-in public in-app browser on exact published revision07bc3e5; actual CSS1125x1000 narrow plus normal viewport. Native Chrome not claimed. Overrides reset.",
+      "verification": "Final hosted full check2143pass/27fixture skips/0fail; production build/deploy exact revision/auth/rollback gates passed. Local85affected playback tests/typecheck/lint pass; real public selection/layout/navigation/playback and protected-state readback.",
+      "releaseAcceptance": "460 public browser acceptance complete. Remaining per-ticket acceptance and final combined batch PR/worker qualification follow461–464."
+    },
+    "V1S-459": {
+      "commit": "9699cbc",
+      "trackerReceipt": "Linear get_issue read-back V1S-459 Done, updatedAt 2026-11-12T05:59:01.825Z, completedAt 2026-11-12T05:59:01.817Z; evidence comment fa740a57-73e7-4cb6-bbce-4d1838883621",
+      "criteria": {
+        "Prepare/cache durable thumbnails and video proxies/scrub assets; existing film can be backfilled without rerendering source media.": "9699cbc; docs/architecture/review-video-preparation.md and docs/operations/review-media-459.md: authenticated owned-project route, private CAS intents and manifests, sequential parent/child queues, exact source/version stored receipts, ready reuse, immutable completed rows. Actual SDK/FFmpeg wire integration plus auth/runner/unknown-ACK tests pass. Visible194-source reconnect retains identical intent/list. No source-media generation/project replacement; public worker/storage release gate separate.",
+        "Load visible cards first; no eager full-original gallery downloads or one active player per card.": "9699cbc; visible real-film StudioApp:108/108 top slices actual320x180 high-priority version-bound thumbnails,592162B vs237334433B source stills; offscreen board0images; no original still browser requests until explicit inspection; monitor2paused buffers without src, no per-card players. Readiness2active/64queued, compact exact-source arrival. Screenshots459-timeline-loaded.jpg and459-story-gallery.jpg.",
+        "Silent hover plays from the preview beginning on each entry, pointer movement does not seek, and click-to-enlarge works with cancellation on leave/change/navigation; master playback ownership is preserved.": "9699cbc; Robert live-corrected play+scrub conflict. Actual pointer left/right/left:seeks12->12,media+53.827ms over53.8ms. Leave0videos; re-entry mediaTime0. Keyboard master-play event:audio playing,hover0. Actual A001 click modal146.2ms/image194.2ms, next original1280x720 and close. Missing derivative honest unavailable/inspect,0videos. Screenshots459-tiny-cut-hover.jpg,459-card-playing.jpg,459-image-enlarged.jpg; raw pointer/master/frame receipts under.tmp/review-performance.",
+        "Enlarge only embedded Story still gallery toward standalone Preview reference proportions; 16:9 throughout, compact metadata.": "9699cbc; embedded Story4desktop columns181.67px at1280x720,16:9 and compact metadata; standalone Preview unchanged. Visible zero-height stage failure repaired by auxiliary panel placement only,234px stage scroll height final; wheel reachability and real card click checked. Bounded462 coupling recorded; screenshot459-story-gallery.jpg.",
+        "Record transfer/decode/first-frame improvement on populated film, including prepared hover first frame against the under-500-ms target with cold/warm conditions and misses reported explicitly; originals remain intact; derivative failure has an honest fallback.": "9699cbc; docs/operations/review-media-459.md: final prepared hover cold348.3ms,warm332.8-354.6ms incl280ms dwell,all<500ms. Still cold first preparation7.516s explicitly slow; warm108ready57.2ms,cache transfer0. Proxy165506B vs1797090B original; decode6-10.1ms vs7.1ms similar, no universal speedup/zero-latency claim. Original SHA unchanged. Visible IAB checks; Chrome adapter navigation failed, native Chrome not claimed. Candidate/mock transport/local durable fixtures distinct from public release."
+      },
+      "environment": "Visible in-app browser, comparable1280x720; real finishing-film108stillbindings/194video inventory plus isolated actual-media components; no deployed claim; native Chrome adapter navigation unavailable",
+      "verification": "Full check2139pass/27skip/0fail; final affected tests, lint0errors/5existingwarnings, typecheck and build pass after final layout/hover correction",
+      "budgetMisses": "Cold first thumbnail preparation7.516s; populated-app startup~2.8s separate458cost; prepared-hover<500ms passed all samples; no zero-latency claim",
+      "releaseAcceptance": "Compatible web/worker and public signed-in Trigger/RustFS/playback qualification remain separate final release gate"
+    },
+    "V1S-461": {
+      "commit": "3e359e7a7c7d47f4f5a4c6c401d9224c1f83be78",
+      "trackerReceipt": "Linear get_issue read-back V1S-461 Done, updatedAt 2026-11-12T07:55:25.147Z, completedAt 2026-11-12T07:55:25.120Z; evidence comment90bb3852-b0f1-452c-b1dd-4ce6789298de",
+      "criteria": {
+        "Default to current video cut with labeled still/gap fallbacks; optional still/timing modes.": "3e359e7 and4580748; docs/operations/review-preview-461.md. Public default Current video cut0/108selected/103available, labeled still fallback with one master advancing9.843s; optional images/timing played and modal close removed media. Read-only original13/35selected, muted1280x720source7.033759s with sole audible master7.035160s.",
+        "One discoverable detailed queue connected to right activity; actual waiting/running/failed/complete states linked to exact shots.": "Public right activity actual link opened shared queue expanded and carriedA012/29.3–43.84s/viewport/stage.206current ready,0waiting/running/failed/unknown; retained275ready/2failed labeled Earlier plan and durable failure job/run/time expanded. VideoA103receipt→exact2048x1152still→NextA104→Close. No live job created for nonzero active states; canonical state/route fixtures cover waiting/running.",
+        "Ready, selected and approved are distinct; current coverage/table updates from current selection and generated media.": "Current-shot table separates ready/selected/currently approved; A0041/0/0. Browser-only existingA103visibility fixture then real response updates103available and arrival notice while SAME master node keeps playing. Not a live new-render claim. Snapshot regression preserves segments only, refreshes metadata; pending selected video stays unapproved in projection tests.",
+        "Back navigation preserves context; stage remains usable while media loads.": "Actual Story and Draft returns restoreA012/selection29.3–43.84s/viewport; remain paused.970CSS panel2columns,clientWidth=scrollWidth487. SeparateQA5000mslatency A052→A053 both complete=false,width0; Next/Close work, finally removes overrides. User scroll defect fixed3e359e7: first18same connected320x180nodes,requests18→18; middleA043–A060 retained,requests36→36 atscrollTop923.333. Native461-final-public.jpg.",
+        "Keep scene-direction, take and exact-cut approval distinct; no duplicate render submission or local-only queue.": "Scene-direction/take/exact-cut receipts remain separate; no dispatch/retry/newgeneration/adoption/approval/originaleditor. Final full protected draft hashes/revisions exactly match460handoff. Queue reads durable canonical receipts. Browser guard blocked test-control autosave; discarded local changes. No PR/GrepTile or worker/server upgrade."
+      },
+      "environment": "Visible signed-in public in-app browser;1280x720default and measured970x900narrow. Native Chrome not claimed. Temporary network/cache/viewport overrides removed. Controlled metadata arrival fixture distinguished from real queue data.",
+      "verification": "Final hosted2145pass/27fixture skips/0fail, production build/deploy and independent exact public health3e359e7.28focused tests/typecheck/affectedlint pass. Public real scrolling, queue,modal,playback,context,narrow layout and final protected readback.",
+      "releaseAcceptance": "461public acceptance complete.462–464retain own acceptance and final combined PR/worker qualification."
+    },
+    "V1S-463": {
+      "commit": "77ae7c572b52c27e26bccd2f87df9c571f4a6e41",
+      "trackerReceipt": "Linear get_issue readback V1S-463 Done, updatedAt 2026-11-12T08:45:51.979Z, completedAt 2026-11-12T08:45:51.958Z; evidence comment18b19e6a-b785-4f4e-89f2-8f2ae947db96; all5acceptance checkboxes checked individually during QA",
+      "criteria": {
+        "Sliders never rewrite the live cut; Prepare → review proposed changes/conflicts → Apply.": "77ae7c5; docs/operations/review-pacing-463.md. Public real finishing sliders/Prepare keep108cuts. Labeled browser-only actual-media fixture separate141window proposal; actual Apply35→141blocks, Undo restores.463-real-film-proposal.png,463-fixture-applied.png.",
+        "Preserve hand-picked takes/manual trims, normal video speed and story-beat order automatically.": "Public fixture source13retained after141/146window pacing; manual3.750–7.73199987411499s exact range remains. Actual selected-range cave-entry footage master3.846951/source3.894184s,source muted/rate1; end native master7.736296/source7.783245s. Undo exact label/title list. Pure exact3.25–8.25trim/editPlan order regression.463-retained-playback.png/json.",
+        "Show gaps and unsuitable coverage for targeted replacement; no auto generation, stretching or speed ramps.": "Real finishing Prepare30protected conflicts/27underlying gaps with unsuitable/replacement reasons; all bound windows retained/Apply disabled. Fixture lists exact proposed gap ranges. No dispatch/generation/stretch/speed changes; all project/dispatch writes guarded and final protected hashes/revisions unchanged.",
+        "Intentional cross-beat user moves require warning/explicit action and undo; no automatic cross-beat shuffle.": "Actual public fixture cross-story-item Review swap warning, Apply disabled→check enabled→uncheck disabled→check + Apply changescut→Undo arrangement restores exact aria-label/title list.463-cross-beat-warning.png. Automatic pacing never moves source placements.",
+        "Current cut remains available during preparation; stale proposals cannot overwrite newer edits; demonstrate on existing media.": "Same native master node plays13.773823→14.074096s through actual Prepare, current cuts unchanged. Slider change and real newer manual Remove disable stale Apply with alert; Undo restores footage. Model rejects same-revision/project/take/reference/tampered proposal changes.463-stale-proposal.png,463-preparation-playback.json."
+      },
+      "environment": "Visible signed-in public in-app browser actual2432x1592; real finishing view-only and labeled browser-only existing-media response fixture. Final read-only finishing Preview0/108selected/103available; no guard/fixture/observer/local fixture storage or viewport/cache/network overrides. Native Chrome not claimed.",
+      "verification": "Published run43183551633:2151pass/27unique fixture skips/0fail,production build/deploy/transfer/auth/exacthealth77ae7c5. Local23model+4affected component tests/typecheck/lint0errors(2existingwarnings). Protected full hashes/revisions identical before/after. Evidence48a1d1a.",
+      "releaseAcceptance": "463public acceptance complete.464owns diagnostic topology/queue follow-up, final batch check/build, app-worker qualification and ONE combined PR/GrepTile. No generation/runtime tuning/worker upgrade."
+    },
+    "V1S-462": {
+      "commit": "d248a61cd0866582ce339d759208d555baed9858",
+      "trackerReceipt": "Linear get_issue readback V1S-462 Done, updatedAt 2026-11-12T08:18:33.083Z, completedAt 2026-11-12T08:18:33.069Z; evidence comment80710069-b6ac-402e-8195-9fcbc7e2bb8d",
+      "criteria": {
+        "Separate actual Shot takes from section-wide Source suggestions; matching scores explained as fit, not quality.": "d248a61/fbf6266; docs/operations/review-replacements-462.md public A006 exact take14.75–17.13s Available/pending separated from six section Source suggestions; visible fit-not-quality explanation.",
+        "Preview alternatives without adoption; explicit Use for this shot binds exact destination and respects pending approval.": "Real public Inspect/Play/Close A006+A103; native silent frame playback2.335074s/2.728351s; pending identity disables exact Use. Source preview5.96–15.04s leaves A006 selected. Four model regressions verify successful exact Use plus stale project/target/revision rejection without protected-film adoption.",
+        "Mark/unmark multiple exact shots for replacement without generation; explicit batch submission uses existing authorized generation/review gates and preserves prior takes.": "Real Ctrl multi-selection marks A006+A007 exact ranges, saved note, reload recovery. Public two-shot modal Submit disabled→checked enabled→unchecked disabled→Cancel; never submitted. Bank-only exact H3 packets through existing gates, old takes preserved, reloaded queue paused; focused tests.",
+        "Inspector shows corresponding media, current take/source and next action near review context; no enabled ambiguous section-wide adoption.": "Public inspector displays corresponding saved take media, Available/pending, exact range and explicit Use/identity reason; separate section source viewer and Generate next action; no ambiguous adoption.",
+        "Persist marks safely across reload and reconcile stale project/shot bindings before explicit submission; browser verify without paid generation.": "Real public reload recovered both marks/note. Controlled browser-only saved-target removal rejects entire Prepare as stale, finally restored. Real unmark leaves zero durable marks. Both protected full hashes/revisions unchanged; no overrides, no AI/GPU/paid generation. Explicit playback worked; two queued CPU viewing derivatives not a prepared-hover startup claim."
+      },
+      "environment": "Visible signed-in public IAB1280x720 then actual resized1490x1307; no native Chrome claim; final guard/stale overrides absent.",
+      "verification": "Public run43180294913:2147pass/27fixture skips/0fail,build/deploy/checksum/auth/exacthealth d248a61. 30focused+11affected tests/typecheck/lint pass. Native screenshots .tmp/review-performance/462-*.",
+      "releaseAcceptance": "462public acceptance complete;463–464own criteria and final combined PR/GrepTile/check/build/app-worker qualification remain."
+    },
+    "V1S-464": {
+      "commit": "273c5e75694bbe2c8b5aaa1e8f98365a48ba7674",
+      "trackerReceipt": "Linear get_issue readback V1S-464 Done, updatedAt 2026-11-12T09:24:20.180Z, completedAt 2026-11-12T09:24:20.151Z; completion commentf7e089f0-5cdd-4604-8b13-fb3aaba843ac; all5checkboxes individually updated",
+      "criteria": {
+        "Inventory application API/Trigger call sites, configured host/VM, runtime/framework/server, storage and GPU responsibilities for captioning, audio analysis, media processing and SwarmUI-managed generation.": "docs/operations/review-topology-464.md; source/API/Trigger inventory plus live VM100 Node24.22.2/Next16.2.1/React19.2.4, Essentia and caption/video Python/FastAPI/Uvicorn, VM114 Node22.23.3/Express4.22.3/Sharp0.34.5/storage verified. Swarm configured topology explicitly source/index only, no excluded inspection.",
+        "Distinguish source/configuration evidence from live running-container/process verification. No secrets in records.": "Live SSH commands/container package versions/health, native Trigger deployment readback20261112.2/8fxjzhh7/21tasks; exact immutable image472182c4...90pre-copy hash/syntax file proof, Bun1.3.3/SDK4.5.16retained. Code273c5e7/evidence77b6946 distinguish configuration from live proof and exclude secrets.",
+        "Separate browser network/transfer, media decoding/rendering, API response, Trigger wait and service processing measurements; do not regenerate media to test review.": "Public project headers/body/parse separated; exact originalPENDING_VERSION/TASK_NEVER_REGISTERED/fallbackqueue waits from zero service usage. Authorized cancel-before-replay recovered run_cmwdc1h9a00q53zoe0nqq3w2h and run_cmwdc2z6c00qa3zoely2p8q6s:132/224msqueue,1852/2212mswall,758/1073msusage. Exact8durable byte/hash reads and124/124frames. Actual public A006 hover844.4/958.9ms anddecoder8.0/1.6ms,500msmisses explicit. Native read-only original selected3.750–7.732playback normalrate/mutedsource/master; no AI generation.",
+        "Record endpoint/runtime findings and unresolved checks in Linear, linked to performance <issue id=\"43ee5d67-6b06-4856-bb56-aa6ad4c9a156\" label=\"V1S-458\" href=\"https://linear.app/v1su4/issue/V1S-458/measure-and-repair-populated-film-navigation-and-review-latency\" />.": "Linear completion commentf7e089f0-5cdd-4604-8b13-fb3aaba843ac;458follow-up20a47be3-9cb4-45fe-97af-58935f5f9289 and459follow-upb12c9a1c-34fc-4b71-9851-75e733594ee9. Both ready child results resolved; full194sourceparentbackfill notexecuted, parent registration/syntax/unit evidence only. Public hovertarget misses retained honestly.",
+        "Preserve current services, credentials and film; diagnostic only, no upgrades/restarts/framework replacement.": "Final464-protected-final.json matches both exact baseline full hashes/revisions; finishing0/108selected/103available/0marks. Original READ-ONLY Preview only. Guarded Studio writesblockednone, discardedtoPreview; guard/observer/hover undefined; nofixturestorage orviewport/cache/networkoverride. No credentials/config/platform/runtime upgrade/restart/framework replacement; explicitly authorized task-bundle release only."
+      },
+      "environment": "Visible signed-in public IAB actual2432x1592 then naturally1483x1140; no nativeChrome claim. Final read-only finishingPreview with temporary state removed.",
+      "verification": "Final hosted43188424113:2151pass/27fixture skips/0fail/fullcheck/build/deploy/checksum/auth/exactpublichealth273c5e7. Exactworker20261112.2/8fxjzhh7 immutable90file proof and two real CPUchild results/durable readbacks. Three real media tests on prior exact Bun1.3.3image;13focusedcontroller tests/typecheck/lint. Protectedfilm exact unchanged.",
+      "releaseAcceptance": "V1S-464 diagnostic and exercised child app-worker path complete; full194sourceparentbackfill notdispatched and actualhover500mstargetmisses recorded. ONE combined PR/GrepTile follows fresh checker."
+    }
+  }
+}

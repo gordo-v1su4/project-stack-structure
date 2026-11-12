@@ -6,6 +6,8 @@ import { generatedAssetDraftIdentityBlockReason, normalizeGeneratedAssetIdentity
 import { currentIdentityEvidenceSha256, isIdentityPolicySha256 } from "./issuedIdentityPolicy";
 import { normalizeH3FirstFrameReceipt, type H3FirstFrameReceipt } from "./h3FirstFrame";
 import {currentReferenceIdentityApprovalSha256} from "./currentReferenceIdentity";
+import { sameAnimaticMotionBinding } from "./animaticMotionBinding";
+import { normalizeSourceClipSelection, type SourceClipSelection } from "./sourceClipSelection";
 export { generatedAssetIdentityBlockReason, generatedAssetDraftIdentityBlockReason } from "./generatedAssetIdentity";
 export type { GeneratedAssetIdentityVerification } from "./generatedAssetIdentity";
 
@@ -13,6 +15,7 @@ export type GeneratedStudioAssetProvider = "higgsfield" | "swarmui" | "editorial
 export type GeneratedStudioAssetReviewStatus = "pending" | "approved" | "rejected";
 
 export type GeneratedStudioAssetTarget = {
+  animaticMotion?: import("./animaticMotionBinding").AnimaticMotionBinding;
   planSignature?: string;
   requirementId?: string;
   narrativeMomentId?: string;
@@ -25,6 +28,7 @@ export type GeneratedStudioAssetTarget = {
 };
 
 export type GeneratedStudioAsset = {
+  sourceClip?: SourceClipSelection;
   /** Derived from the project current-reference context; deliberately never stored in the bank. */
   currentReferenceIdentity?: import("./currentReferenceIdentity").CurrentIdentityRuntimeBinding;
   id: string;
@@ -201,6 +205,7 @@ export function sanitizeGeneratedStudioAssetForStorage(asset: GeneratedStudioAss
     mediaKind: asset.mediaKind,
     durationSeconds: asset.durationSeconds,
     trimStart: asset.trimStart,
+    ...(asset.sourceClip ? { sourceClip: normalizeSourceClipSelection(asset.sourceClip) } : {}),
     reviewStatus: rejected ? "rejected" : !currentApproval && asset.reviewStatus === "approved" ? "pending" : asset.reviewStatus,
     reviewNotes: asset.reviewNotes,
     target: asset.target,
@@ -233,12 +238,14 @@ function stripRuntimeUrl(value: string | undefined) {
 }
 
 export type GeneratedTargetWindow = {
+  animaticMotion?: import("./animaticMotionBinding").AnimaticMotionBinding;
   planSignature?: string; requirementId?: string; timelineItemId?: string; sectionId: string; songStart: number; songEnd: number;
 };
 
 export function generatedAssetWindow(asset: GeneratedStudioAsset, window: GeneratedTargetWindow) {
   const target = asset.target;
-  if (!target || !target.planSignature || target.planSignature !== window.planSignature || target.sectionId !== window.sectionId) return null;
+  if (!target || !target.planSignature || target.planSignature !== window.planSignature || target.sectionId !== window.sectionId
+    || !sameAnimaticMotionBinding(target.animaticMotion, window.animaticMotion)) return null;
   if (target.requirementId || window.requirementId) {
     if (!target.requirementId || target.requirementId !== window.requirementId) return null;
   } else if (!window.timelineItemId || target.timelineItemId !== window.timelineItemId) return null;

@@ -16,6 +16,7 @@ export type StagePreviewRun = {
   completedLabel: string;
 };
 import { WorkActivity } from "../WorkActivity";
+import { reviewPreviewHref, type ReviewLinkContext } from "../reviewPreviewContext";
 
 type InspectorProps = {
   model: StageHeaderModel | null;
@@ -27,6 +28,7 @@ type InspectorProps = {
   saveState: SaveState;
   projectDraft: PersistedStudioProjectDraft;
   activeProjectId: string | null;
+  reviewContext?: ReviewLinkContext;
   activeProjectName: string;
   onNewProject: (name: string) => Promise<boolean>;
   onProjectSelected: (project: StudioProjectSummary, draft: RuntimeStudioProjectDraft, revision?: string) => void;
@@ -53,6 +55,7 @@ export function Inspector({
   saveState,
   projectDraft,
   activeProjectId,
+  reviewContext,
   activeProjectName,
   onNewProject,
   onProjectSelected,
@@ -91,6 +94,8 @@ export function Inspector({
       </div>
 
       <WorkActivity layout="inline" />
+      {activeProjectId ? <a href={`${reviewPreviewHref(activeProjectId, reviewContext)}#queue`} target="_blank" rel="noopener noreferrer"
+        className="border-b border-line px-5 py-2 text-xs text-accent hover:underline">Open project render queue</a> : null}
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {model ? (

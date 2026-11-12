@@ -15,6 +15,7 @@ import {
 } from "@/components/studio/localGeneration";
 import { downloadMediaGatewayFile, uploadFileToMediaGateway, type MediaGatewayUploadResult } from "@/lib/mediaGateway";
 import { runH3Generation, type H3JobReference } from "@/lib/h3GenerationRunner";
+import { isH3RecoverableReadError } from "@/lib/h3AutomaticRecovery";
 import type { GeneratedStudioAsset } from "@/components/studio/generatedAssets";
 
 import { vm100HeavyQueue } from "./queues";
@@ -54,12 +55,24 @@ export const localGenerationTask = task({
   machine: "small-2x",
   queue: vm100HeavyQueue,
   maxDuration: 1_800,
-  // Provider requests have side effects. A replay must be an explicit user
-  // action with a new idempotency scope, not an automatic duplicate generation.
-  retry: { maxAttempts: 1 },
+  // Generic generation stays single-attempt. Owned H3 dispatches opt into a
+  // bounded retry budget; only replay-safe reads qualify in catchError below.
+  retry: { maxAttempts: 1, minTimeoutInMs: 60_000, maxTimeoutInMs: 300_000, factor: 2, randomize: false },
+  catchError: ({ payload, error, ctx }: { payload: LocalGenerationPayload; error: unknown; ctx: { attempt: { number: number } } }) => {
+    if (!payload.h3Job || payload.h3Job.mode || !isH3RecoverableReadError(error)) return { skipRetrying: true };
+    markWorkRunning("reconnecting", "Waiting to reconnect to the saved H3 job; generation is not repeated", {
+      progressMode: "provider", recoveryAttempt: ctx.attempt.number,
+    });
+    // runH3Generation rereads the same owned job: a stored prompt ID resumes
+    // polling; an uncertain POST is reconciled and is never submitted again.
+    return undefined;
+  },
   run: async (payload: LocalGenerationPayload, { ctx }): Promise<LocalGenerationOutput> => {
     validatePayload(payload);
     if (payload.h3Job) {
+      if (ctx.attempt.number > 1) markWorkRunning("reconnecting", "Automatically recovering the saved H3 job", {
+        progressMode: "provider", recoveryAttempt: ctx.attempt.number,
+      });
       const result = await runH3Generation(payload.h3Job, ctx.run.id, {
         wait: seconds => wait.for({ seconds }),
         stage: label => markWorkRunning("generating", label, { progressMode: "provider" }),
