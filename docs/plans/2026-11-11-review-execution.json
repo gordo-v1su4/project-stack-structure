@@ -119,6 +119,20 @@
       "environment": "Visible signed-in public in-app browser;1280x720default and measured970x900narrow. Native Chrome not claimed. Temporary network/cache/viewport overrides removed. Controlled metadata arrival fixture distinguished from real queue data.",
       "verification": "Final hosted2145pass/27fixture skips/0fail, production build/deploy and independent exact public health3e359e7.28focused tests/typecheck/affectedlint pass. Public real scrolling, queue,modal,playback,context,narrow layout and final protected readback.",
       "releaseAcceptance": "461public acceptance complete.462–464retain own acceptance and final combined PR/worker qualification."
+    },
+    "V1S-462": {
+      "commit": "d248a61cd0866582ce339d759208d555baed9858",
+      "trackerReceipt": "Linear get_issue readback V1S-462 Done, updatedAt 2026-11-12T08:18:33.083Z, completedAt 2026-11-12T08:18:33.069Z; evidence comment80710069-b6ac-402e-8195-9fcbc7e2bb8d",
+      "criteria": {
+        "Separate actual Shot takes from section-wide Source suggestions; matching scores explained as fit, not quality.": "d248a61/fbf6266; docs/operations/review-replacements-462.md public A006 exact take14.75–17.13s Available/pending separated from six section Source suggestions; visible fit-not-quality explanation.",
+        "Preview alternatives without adoption; explicit Use for this shot binds exact destination and respects pending approval.": "Real public Inspect/Play/Close A006+A103; native silent frame playback2.335074s/2.728351s; pending identity disables exact Use. Source preview5.96–15.04s leaves A006 selected. Four model regressions verify successful exact Use plus stale project/target/revision rejection without protected-film adoption.",
+        "Mark/unmark multiple exact shots for replacement without generation; explicit batch submission uses existing authorized generation/review gates and preserves prior takes.": "Real Ctrl multi-selection marks A006+A007 exact ranges, saved note, reload recovery. Public two-shot modal Submit disabled→checked enabled→unchecked disabled→Cancel; never submitted. Bank-only exact H3 packets through existing gates, old takes preserved, reloaded queue paused; focused tests.",
+        "Inspector shows corresponding media, current take/source and next action near review context; no enabled ambiguous section-wide adoption.": "Public inspector displays corresponding saved take media, Available/pending, exact range and explicit Use/identity reason; separate section source viewer and Generate next action; no ambiguous adoption.",
+        "Persist marks safely across reload and reconcile stale project/shot bindings before explicit submission; browser verify without paid generation.": "Real public reload recovered both marks/note. Controlled browser-only saved-target removal rejects entire Prepare as stale, finally restored. Real unmark leaves zero durable marks. Both protected full hashes/revisions unchanged; no overrides, no AI/GPU/paid generation. Explicit playback worked; two queued CPU viewing derivatives not a prepared-hover startup claim."
+      },
+      "environment": "Visible signed-in public IAB1280x720 then actual resized1490x1307; no native Chrome claim; final guard/stale overrides absent.",
+      "verification": "Public run43180294913:2147pass/27fixture skips/0fail,build/deploy/checksum/auth/exacthealth d248a61. 30focused+11affected tests/typecheck/lint pass. Native screenshots .tmp/review-performance/462-*.",
+      "releaseAcceptance": "462public acceptance complete;463–464own criteria and final combined PR/GrepTile/check/build/app-worker qualification remain."
     }
   }
 }
