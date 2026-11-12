@@ -2990,7 +2990,7 @@ export default function StudioApp() {
               onOnsetDensity={setMatchOnsetDensity} onLyricCueBlend={setMatchLyricCueBlend} onLyricMergeWindow={setMatchLyricMergeWindow}
               onOpenMatch={() => handleSelectTab("shuffle")} matchReady={storyState.storyGenerated}
               editSettings={storyState.editSettings}
-              pacingContext={pacingReviewContext} protectedRanges={baseStoryPreviewSegments.filter(segment => Boolean(segment.animaticShotId || segment.generatedAssetId || segment.reusedTakePlacementId)).map(segment => ({ start: segment.musicStart, end: segment.musicEnd }))}
+              pacingContext={pacingReviewContext} protectedRanges={[...baseStoryPreviewSegments, ...storyPreviewSegments, ...draftPreviewSegments].filter(segment => Boolean(segment.animaticShotId || segment.generatedAssetId || segment.reusedTakePlacementId)).map(segment => ({ start: segment.musicStart, end: segment.musicEnd }))}
               onApplyPacing={applyReviewedPacing} onUndoPacing={undoPacing}
               canUndoPacing={Boolean(pacingUndo && musicVideoProject && JSON.stringify(musicVideoProject) === pacingUndo.after && pacingReviewContext === pacingUndo.context)}
               pacingBusy={isFinalExporting || isShaderCaptureExporting || Boolean(previewState.activeRequestKey)}
