@@ -88,7 +88,7 @@ export function AnimaticPreviewPage({ projectId }: { projectId: string }) {
     {checked ? <p className="text-xs text-fg-3">Live · Checked {checked}{requested.length ? ` · Requested: ${requested.join(", ")}` : ""}</p> : null}
     {arrivals.length ? <p role="status" className="text-sm text-accent">New images: {arrivals.join(", ")}</p> : null}
     {error ? <p role="alert" className="text-sm text-warn">{error}</p> : null}
-    {snapshot?.reviewSources ? <ReviewPreparationPanel key={projectId} projectId={projectId} sources={snapshot.reviewSources} /> : null}
+    {snapshot?.reviewSources ? <ReviewPreparationPanel key={`preparation:${projectId}`} projectId={projectId} sources={snapshot.reviewSources} /> : null}
     {snapshot ? <div className="flex flex-wrap items-center gap-2" aria-label="Preview modes">
       <Button aria-pressed={mode === "video"} onClick={() => { setMode("video"); setWatch(null); setPreview(null); }}>Current video cut</Button>
       <Button aria-pressed={mode === "images"} disabled={!plan || !snapshot.audioUrl} onClick={() => { setMode("images"); setPreview("images"); }}>Watch images</Button>
@@ -101,8 +101,8 @@ export function AnimaticPreviewPage({ projectId }: { projectId: string }) {
         analysis={snapshot.analysis} focusedShotId={selected} onFocusShot={setSelected} initialViewport={initialViewport} onViewportChange={setViewport}
         selection={selection} onSelectionChange={setSelection} multiSelect={multiSelect} onMultiSelect={() => setMultiSelect(value => !value)} /></div>
     </Surface> : null}
-    {snapshot?.cut?.targets ? <ReplacementReviewPanel key={projectId} projectId={projectId} targets={snapshot.cut.targets} ranges={selection?.ranges ?? []} /> : null}
-    {snapshot ? <ProjectRenderQueue key={projectId} projectId={projectId} revision={snapshot.revision} shotIds={plan?.shots.map(s => s.id) ?? []}
+    {snapshot?.cut?.targets ? <ReplacementReviewPanel key={`replacement:${projectId}`} projectId={projectId} targets={snapshot.cut.targets} ranges={selection?.ranges ?? []} /> : null}
+    {snapshot ? <ProjectRenderQueue key={`queue:${projectId}`} projectId={projectId} revision={snapshot.revision} shotIds={plan?.shots.map(s => s.id) ?? []}
       onInspectShot={id => { setSelected(id); setImageOpen(true); }} /> : null}
     {plan && snapshot ? <>
       <details className="rounded-md border border-line p-3"><summary className="cursor-pointer text-sm text-fg-2">Still direction review</summary>

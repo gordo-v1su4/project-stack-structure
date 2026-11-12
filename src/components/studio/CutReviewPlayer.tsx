@@ -52,6 +52,10 @@ export function CutReviewPlayer({ segments, audioUrl, plan, context, initialRang
   const isGap = !current?.videoUrl || current.kind === "gap";
   return <section aria-label="Current video cut" className="space-y-2">
     {focusedShotId ? <p className="font-mono text-xs text-accent">Focused shot: {focusedShotId} · selection is for review only</p> : null}
+    <ReviewSelectionBar selection={selection} multiSelect={multiSelect} onMultiSelect={() => onMultiSelect?.()} hideMultiSelect={!onMultiSelect} onClear={() => onSelectionChange?.(null)}
+      onPlay={() => { if (selection) { setAudition(selection.ranges); setPlayRequest(n => n + 1); } }}
+      auditioning={Boolean(audition)} auditionRanges={audition ?? undefined}
+      onFullSong={() => { player.pause(); setAudition(null); }} />
     {analysis ? <BeatSpine analysis={analysis} bpm={analysis.bpm ?? 120} playhead={(time ?? 0) / Math.max(analysis.duration, .001)}
       caption="Current cut · song time" slots={slots} takes={[]} onPreviewSource={() => {}}
       selectedSlotId={slots.find(s => s.animaticShotId === focusedShotId)?.id ?? null}
@@ -80,10 +84,6 @@ export function CutReviewPlayer({ segments, audioUrl, plan, context, initialRang
       <Button aria-pressed={labels} onClick={() => setLabels(value => !value)}>Shot labels {labels ? "on" : "off"}</Button>
       <span className="text-xs text-fg-3">Draft viewing only · ready media and cut approval are separate.</span>
     </div>
-    <ReviewSelectionBar selection={selection} multiSelect={multiSelect} onMultiSelect={() => onMultiSelect?.()} hideMultiSelect={!onMultiSelect} onClear={() => onSelectionChange?.(null)}
-      onPlay={() => { if (selection) { setAudition(selection.ranges); setPlayRequest(n => n + 1); } }}
-      auditioning={Boolean(audition)} auditionRanges={audition ?? undefined}
-      onFullSong={() => { player.pause(); setAudition(null); }} />
     {state.errorMessage ? <p role="alert" className="text-xs text-danger">{state.errorMessage}</p> : null}
   </section>;
 }

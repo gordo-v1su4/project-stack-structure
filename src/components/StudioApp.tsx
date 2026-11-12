@@ -2959,8 +2959,8 @@ export default function StudioApp() {
             ) : null}
 
             <main className={`studio-review-scroll studio-fade-in min-h-0 flex-1 space-y-3 overflow-y-auto ${monitorFocused || (activeStageBlocked && !["story", "generate", "join"].includes(tab)) ? "hidden" : ""}`}>
-            {activeProjectId && ["story", "generate"].includes(tab) ? <ReviewPreparationPanel key={activeProjectId} projectId={activeProjectId} sources={reviewSources} /> : null}
-            {activeProjectId && beatJoinAnalysis && ["story", "generate", "join"].includes(tab) ? <ReplacementReviewPanel key={activeProjectId}
+            {activeProjectId && ["story", "generate"].includes(tab) ? <ReviewPreparationPanel key={`preparation:${activeProjectId}`} projectId={activeProjectId} sources={reviewSources} /> : null}
+            {activeProjectId && beatJoinAnalysis && ["story", "generate", "join"].includes(tab) ? <ReplacementReviewPanel key={`replacement:${activeProjectId}`}
               projectId={activeProjectId} targets={replacementReviewTargets} ranges={songSelection?.ranges ?? []} /> : null}
             {["story", "generate", "join"].includes(tab) ? <MusicCutExplorer
               analysis={beatJoinAnalysis} project={musicVideoProject}
@@ -2971,9 +2971,9 @@ export default function StudioApp() {
               selectedRanges={songSelection?.ranges ?? []} visibleRange={reviewViewport} onSelectRange={handleReviewRange} multiSelect={multiSelect} coverage={reviewCoverage}
               focusedShot={selectedSlot}
             /> : null}
-            {tab === "generate" ? <AnimaticSourceFootagePanel key={activeProjectId ?? "unsaved"} sources={videoSources} segments={baseStoryPreviewSegments}
+            {tab === "generate" ? <AnimaticSourceFootagePanel key={`sources:${activeProjectId ?? "unsaved"}`} sources={videoSources} segments={baseStoryPreviewSegments}
               plan={storyState.stillAnimaticPlan} onSelect={asset => { invalidateArrangementOutput(); receiveGeneratedAsset(asset, generatedDraft?.revision ?? 0); }} /> : null}
-            {tab === "generate" && musicVideoProject ? <ReusedFootagePanel key={activeProjectId ?? "unsaved"} project={musicVideoProject} assets={generatedAssets}
+            {tab === "generate" && musicVideoProject ? <ReusedFootagePanel key={`reuse:${activeProjectId ?? "unsaved"}`} project={musicVideoProject} assets={generatedAssets}
               segments={baseStoryPreviewSegments} draft={generatedDraft} onConfirm={() => confirmAppendedSources("creative-rebaseline")}
               onSelect={(asset, segment, sourceStart) => {
                 if (!generatedDraft) throw new Error("Confirm the revised story first.");
@@ -2995,7 +2995,7 @@ export default function StudioApp() {
             {activeStageBlocked ? null : <>
             {(tab === "story" || tab === "generate") && musicVideoProject
               && (musicVideoProject.currentIdentity || (!placementPlanCurrent && generatedAssets.length > 0)) ?
-              <CurrentReferenceReviewPanel key={activeProjectId} migrated={Boolean(musicVideoProject.currentIdentity)}
+              <CurrentReferenceReviewPanel key={`reference-review:${activeProjectId}`} migrated={Boolean(musicVideoProject.currentIdentity)}
                 assets={currentReferenceReviewAssets}
                 disabled={!activeProjectId || isFinalExporting || Boolean(previewState.activeRequestKey)}
                 onMigrate={adoptUpdatedReferences} onAssess={assessUpdatedReferences} /> : null}
@@ -3037,7 +3037,7 @@ export default function StudioApp() {
                 onVocalStemTranscriptComplete={handleVocalStemTranscriptComplete}
                 onVocalStemTranscriptFailed={handleVocalStemTranscriptFailed}
               />
-              <AestheticReferenceLibrary key={activeProjectId ?? "unsaved"} value={aestheticReferences} onChange={update => { referenceAutosaveRequestedRef.current = true; setAestheticReferences(update); }}
+              <AestheticReferenceLibrary key={`aesthetic:${activeProjectId ?? "unsaved"}`} value={aestheticReferences} onChange={update => { referenceAutosaveRequestedRef.current = true; setAestheticReferences(update); }}
                 sections={(musicVideoProject?.storySections ?? []).map(section => ({ id: section.id, label: section.label }))}
                 shots={(musicVideoProject?.editPlan.timelineItems ?? []).map(item => ({ id: item.id, label: item.label }))} />
               </>
