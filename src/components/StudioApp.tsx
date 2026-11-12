@@ -42,6 +42,7 @@ import {
 } from "./studio/projectPersistence";
 import { loadStudioProjectSelection, readStudioProjectSelection, rememberStudioProjectSelection } from "./studio/projectSelection";
 import { readStudioReviewContext } from "./studio/reviewPreviewContext";
+import { resolveSourceSuggestionPreview } from "./studio/sourceSuggestionPreview";
 import { ProjectSaveSession } from "./studio/projectSaveSession";
 import { saveVersionedStudioProject } from "./studio/preparedProjectSave";
 import type { StudioProjectSummary } from "@/lib/studioProjectStore";
@@ -151,6 +152,7 @@ export default function StudioApp() {
   const [isShortcutSheetOpen, setIsShortcutSheetOpen] = useState(false);
   const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
   const restoredReviewContext = useRef(false);
+  const [sourceSuggestion, setSourceSuggestion] = useState<{ context: string; slotId: string; momentId: string } | null>(null);
   const [playhead] = useState(0.08);
   const [activeClip, setActiveClip] = useState(2);
   const [roughCutSelection, setRoughCutSelection] = useState<ReviewSelection | null>(null);
@@ -2802,6 +2804,13 @@ export default function StudioApp() {
     () => (selectedSlot ? describeSlot(selectedSlot, { project: musicVideoProject, generatedAssets }) : null),
     [generatedAssets, musicVideoProject, selectedSlot],
   );
+  const sourcePreview = useMemo(() => sourceSuggestion?.context === reviewContext && sourceSuggestion.slotId === selectedSlot?.id && slotEvidence
+    ? resolveSourceSuggestionPreview(slotEvidence, sourceSuggestion.momentId, videoSources) : null,
+  [reviewContext, selectedSlot?.id, slotEvidence, sourceSuggestion, videoSources]);
+  const handlePreviewSource = (sectionId: string, momentId: string) => {
+    if (selectedSlot?.sectionId !== sectionId || !slotEvidence?.takes.some(item => item.moment.id === momentId)) return;
+    setSourceSuggestion({ context: reviewContext, slotId: selectedSlot.id, momentId });
+  };
   const seekSong = (seconds: number) => {
     if (!beatJoinAnalysis) return;
     songTransport.seek(Math.max(0, Math.min(1, seconds / Math.max(beatJoinAnalysis.duration, 0.001))));
@@ -2901,7 +2910,7 @@ export default function StudioApp() {
                 selectedSlotId={selectedSlotId}
                 onSelectSlot={handleSelectSlot}
                 takes={slotEvidence?.takes ?? []}
-                onSelectTake={handleSelectSemanticCandidate}
+                onPreviewSource={handlePreviewSource}
               />
             ) : null}
 
@@ -3221,7 +3230,9 @@ export default function StudioApp() {
                   seekSong(seconds);
                   if (transportModel.source === "song" && !songTransport.isPlaying) songTransport.toggle();
                 }}
-                onSelectTake={handleSelectSemanticCandidate}
+                onPreviewSource={handlePreviewSource}
+                sourcePreview={sourcePreview}
+                sourcePreviewUnavailable={Boolean(!sourcePreview && sourceSuggestion?.context === reviewContext && sourceSuggestion.slotId === selectedSlot?.id)}
                 onReopenGenerated={handleReopenGenerated}
                 onOpenGenerate={() => handleSelectTab("generate")}
               />

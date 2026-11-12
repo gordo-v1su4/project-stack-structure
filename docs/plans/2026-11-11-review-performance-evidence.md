@@ -184,3 +184,34 @@ Verification: 15 affected URL-context, project-selection and playback-subscripti
 tests pass, typecheck and production build pass; lint has two existing StudioApp
 warnings and no errors. This is route/state-model evidence; populated-app return
 navigation and unsaved-window behavior remain part of final browser acceptance.
+
+## Source suggestions are inspection, not section-wide adoption
+
+The spine/inspector's old Takes and Other takes controls were section-wide
+semantic source candidates wired directly to the Match mutation. They now say
+Sources / Source suggestions, label scores as matching fit, and open a viewing-only
+inspector instead. The Match placement action remains in its explicit Match flow.
+Inspection resolves only the selected section's current candidate and source,
+rejects missing/invalid/out-of-bounds ranges and is scoped to project/audio and
+focused slot. It cannot change the saved match, draft selection or approvals.
+Unavailable source inspection shows a clear message instead of silently doing
+nothing. Source-strip images preserve 16:9 and overflow scrolls within the strip.
+
+Only an explicitly opened suggestion mounts a single bounded native player;
+it does not request media until Play source. It uses existing playback ownership
+and cleanup, with no warm-source cache or presentation raster. Its source-audio
+mode is labeled separately from current-cut master-song playback.
+
+Full check: 2,080 passed, 27 fixture skips, zero failures; production build passed.
+New tests prove current-candidate/source binding, range validation, immutability,
+fit labeling and no eager media mount. Browser harness mounts the real inspector
+and viewer under StrictMode with the existing MP4: zero media nodes/requests
+before inspection; opening creates one paused video with zero media requests;
+Play requests one source and stops before the exclusive two-second out-point
+(native time 1.973079). Opening an unavailable source removes the video and shows
+the fallback; the selected cut remains A001. Evidence:
+`.tmp/review-performance/sources.tsx` and `source-suggestion.png`.
+
+V1S-462 remains open for actual same-shot take comparison, explicit destination-
+bound adoption, durable multi-shot replacement marks and submission reconciliation.
+The harness does not verify these future actions or production film acceptance.

@@ -58,14 +58,14 @@ describe("buildSpineSlots", () => {
     expect(draftSlot?.label).not.toContain("Missing footage");
     const inspector = renderToStaticMarkup(createElement(SlotInspector, {
       evidence: describeSlot(draftSlot!, { project: null, generatedAssets: [take] }),
-      onClose() {}, onPlayFrom() {}, onSelectTake() {}, onReopenGenerated() {}, onOpenGenerate() {},
+      onClose() {}, onPlayFrom() {}, onPreviewSource() {}, onReopenGenerated() {}, onOpenGenerate() {},
     }));
     expect(inspector).toContain("Pending draft review");
     expect(inspector).not.toContain(">Revert<");
     expect(inspector).not.toContain("No matched footage");
     const approvedInspector = renderToStaticMarkup(createElement(SlotInspector, {
       evidence: describeSlot(draftSlot!, { project: null, generatedAssets: [{ ...take, reviewStatus: "approved" }] }),
-      onClose() {}, onPlayFrom() {}, onSelectTake() {}, onReopenGenerated() {}, onOpenGenerate() {},
+      onClose() {}, onPlayFrom() {}, onPreviewSource() {}, onReopenGenerated() {}, onOpenGenerate() {},
     }));
     expect(approvedInspector).toContain(">Revert<");
     for (const activeTab of ["story", "join", "compose", "ramp"] as const) {

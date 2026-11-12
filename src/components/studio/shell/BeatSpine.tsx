@@ -30,9 +30,9 @@ type BeatSpineProps = {
   slots: SpineSlot[];
   selectedSlotId: string | null;
   onSelectSlot: (slot: SpineSlot | null, extend?: boolean, toggle?: boolean) => void;
-  /** Alternate takes for the selected slot's section; hang under the slot. */
+  /** Section-wide source suggestions, not alternate generated shot takes. */
   takes: MatchCandidateRailItem[];
-  onSelectTake: (sectionId: string, momentId: string) => void;
+  onPreviewSource: (sectionId: string, momentId: string) => void;
 };
 
 /**
@@ -41,7 +41,7 @@ type BeatSpineProps = {
  * takes under the selected slot, then the waveform with the beat ruler and a
  * playhead the transport bar drives.
  */
-export function BeatSpine({ analysis, bpm, playhead, onSeek, onSelectSection, selectedRange, selectedRanges, onSelectRange, onVisibleRangeChange, caption, slots, selectedSlotId, onSelectSlot, takes, onSelectTake }: BeatSpineProps) {
+export function BeatSpine({ analysis, bpm, playhead, onSeek, onSelectSection, selectedRange, selectedRanges, onSelectRange, onVisibleRangeChange, caption, slots, selectedSlotId, onSelectSlot, takes, onPreviewSource }: BeatSpineProps) {
   const [zoomMode, setZoomMode] = useState<SpineZoomMode>("fit");
   const [focusedSection, setFocusedSection] = useState<{ start: number; selectionAnchor: number | undefined } | null>(null);
   const duration = Math.max(analysis.duration, 0.001);
@@ -159,27 +159,27 @@ export function BeatSpine({ analysis, bpm, playhead, onSeek, onSelectSection, se
       ) : null}
 
       {selected && takes.length > 1 ? (
-        <div aria-label={`Takes for ${selected.sectionLabel}`} className="relative flex h-11 items-center gap-1 border-b border-line bg-ink-1 px-1.5">
+        <div aria-label={`Source suggestions for ${selected.sectionLabel}`} className="relative flex h-11 items-center gap-1 overflow-x-auto border-b border-line bg-ink-1 px-1.5">
           <span aria-hidden className="absolute top-0 h-full w-px bg-accent/60" style={{ left: pct(selected.start) }} />
-          <span className="shrink-0 pl-1 pr-2 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-3">Takes</span>
+          <span title="Section-wide source suggestions. Percentages show matching fit, not render quality. Click to preview without changing the cut." className="shrink-0 pl-1 pr-2 font-mono text-[10px] text-fg-3">Sources · fit</span>
           {takes.map((take) => (
             <button
               key={take.moment.id}
               type="button"
-              disabled={take.selected}
-              onClick={() => onSelectTake(selected.sectionId, take.moment.id)}
-              title={`${take.caption}\n${take.reason}`}
+              onClick={() => onPreviewSource(selected.sectionId, take.moment.id)}
+              aria-label={`Preview source: ${take.moment.label}`}
+              title={`Preview only · ${take.scorePercent}% matching fit\n${take.caption}\n${take.reason}`}
               className={`group flex h-8 shrink-0 items-center gap-1.5 overflow-hidden rounded-[5px] pr-2 text-left transition-[box-shadow] ${
                 take.selected ? "bg-ink-3 shadow-[0_0_0_1.5px_var(--color-accent)]" : "bg-ink-2 shadow-[0_0_0_1px_oklch(1_0_0/0.1)] hover:shadow-[0_0_0_1px_var(--color-fg-2)]"
               }`}
             >
               {take.frameUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element -- gateway thumbnails
-                <img src={take.frameUrl} alt="" className="h-8 w-[52px] object-cover" />
+                <img src={take.frameUrl} alt="" className="aspect-video h-8 w-auto object-cover" />
               ) : (
-                <span className="h-8 w-[52px] bg-ink-3" />
+                <span className="aspect-video h-8 shrink-0 bg-ink-3" />
               )}
-              <span className="font-mono text-[10.5px] text-fg-1">{take.scorePercent}%</span>
+              <span className="font-mono text-[10.5px] text-fg-1">{take.scorePercent}% fit</span>
               <span className="max-w-[16ch] truncate text-[11px] text-fg-3 group-hover:text-fg-1">{take.moment.label}</span>
             </button>
           ))}

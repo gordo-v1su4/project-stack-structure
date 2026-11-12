@@ -36,7 +36,7 @@ export interface SlotEvidence {
   caption: string | null;
   lyrics: string[];
   match: SemanticClipMatch | null;
-  /** Alternate takes for the slot's section, ranked, with the current one flagged. */
+  /** Section-wide source suggestions, ranked, with the current source flagged. */
   takes: MatchCandidateRailItem[];
   generated: GeneratedStudioAsset | null;
 }

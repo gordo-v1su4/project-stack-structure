@@ -128,7 +128,7 @@ describe("playback leaves server rendering", () => {
     expect(monitor.match(/<video/g)).toHaveLength(2);
     const spine = renderToStaticMarkup(createElement(PreviewBeatSpine, {
       player, songPlayhead: 0, analysis: makeBeatJoinAnalysis(), bpm: 120, onSeek: noop,
-      caption: null, slots: [], selectedSlotId: null, onSelectSlot: noop, takes: [], onSelectTake: noop,
+      caption: null, slots: [], selectedSlotId: null, onSelectSlot: noop, takes: [], onPreviewSource: noop,
     }));
     expect(spine).toContain('aria-label="Beat spine"');
     expect(spine).toContain("Intro");
