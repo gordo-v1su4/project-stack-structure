@@ -2,11 +2,24 @@ import { describe, expect, test } from "bun:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { createDefaultStoryTabState, prepareStoryTabPlacements, StoryTab } from "@/components/studio/panels/StoryTab";
+import { createDefaultStoryTabState, prepareStoryTabPlacements, StoryTab, useStoryTabPreview } from "@/components/studio/panels/StoryTab";
 
 import { createMusicVideoProject, isPlacementPlanCurrent } from "@/components/studio/musicVideoProject";
 
 describe("StoryTab section map", () => {
+  test("parent-owned preview preserves Story output and never publishes a project on render", () => {
+    const state = createDefaultStoryTabState();
+    const props = { analysis: null, audioStatus: "Ready", videoSources: [], segmentPreviews: [], state, onStateChange: () => {},
+      onProjectChange: () => { throw new Error("Rendering must not publish a project"); } };
+    const before = JSON.stringify(props.state);
+    function PreparedStory() {
+      const prepared = useStoryTabPreview(props);
+      return createElement(StoryTab, { ...props, preparedPreview: prepared });
+    }
+    expect(renderToStaticMarkup(createElement(PreparedStory)))
+      .toBe(renderToStaticMarkup(createElement(StoryTab, props)));
+    expect(JSON.stringify(props.state)).toBe(before);
+  });
   test("binds confirmed evidence before hashing placements, and later evidence changes invalidate them", () => {
     const project = createMusicVideoProject({ analysis: null, duration: 8, lyricChunks: [], storyDrafts: [{ id: "opening", label: "Opening", prompt: "Establish the jungle entrance", start: 0, end: 8 }], videoSources: [], segmentPreviews: [] });
     const prepared = prepareStoryTabPlacements({ project, videoSources: [] }, "approved-reference-revision");

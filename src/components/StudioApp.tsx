@@ -74,7 +74,7 @@ import { MusicCutExplorer } from "./studio/panels/MusicCutExplorer";
 import { ReviewSelectionBar } from "./studio/ReviewSelectionBar";
 import { buildSelectedPlayback, previewOffsetAtSongTime, selectSongRange, type SongSelection, type SongRange, type SelectionGesture } from "./studio/reviewSelection";
 import { SplitTab } from "./studio/panels/SplitTab";
-import { createDefaultStoryTabState, StoryTab } from "./studio/panels/StoryTab";
+import { createDefaultStoryTabState, StoryTab, useStoryTabPreview } from "./studio/panels/StoryTab";
 import { prepareSceneProofSave } from "./studio/sceneProofPersistence";
 import { animaticContextSha256, prepareAnimaticSave, type StillAnimaticPlan } from "./studio/stillAnimatic";
 import type { SceneProofPlan } from "./studio/sceneProofs";
@@ -754,6 +754,7 @@ export default function StudioApp() {
     [videoSources, sourceClips, workingBeatSplitSegments]
   );
 
+  const preparedStoryPreview = useStoryTabPreview({ analysis: beatJoinAnalysis, videoSources, segmentPreviews, state: storyState });
   const baseStoryPreviewSegments = useMemo<EditPlanPreviewSegment[]>(() => {
     if (!storyState.storyGenerated) return [];
     const resolved = buildStoryDraftSegments({
@@ -3068,6 +3069,7 @@ export default function StudioApp() {
 
             {tab === "story" && (
               <StoryTab
+                preparedPreview={preparedStoryPreview}
                 savedProjectId={activeProjectId}
                 savedProjectRevision={projectSaveSessionRef.current!.currentRevision ?? null}
                 onPrepareStoryContext={prepareStoryContext}

@@ -75,6 +75,7 @@ export type StoryTabState = StoryTreatmentState & {
 };
 
 type StoryTabProps = {
+  preparedPreview?: ReturnType<typeof useStoryTabPreview>;
   referenceRevision?: string;
   referenceAssets?: ReferenceAsset[];
   analysis: BeatJoinAnalysis | null;
@@ -127,14 +128,36 @@ export function createDefaultStoryTabState(): StoryTabState {
   };
 }
 
-export function StoryTab({ referenceRevision, referenceAssets, analysis, audioStatus, videoSources, segmentPreviews, state, existingProject, hasExistingGeneratedFootage, onStateChange, onProjectChange, onConfirmAppendedSources, sourceReviewRequired, savedProjectId, savedProjectRevision, onPrepareStoryContext, onEnsureSavedProject, onPersistSceneProofPlan, onPersistStillAnimatic }: StoryTabProps) {
-  const { transcriptSummary, storyBeats, activeBeatId, storyGenerated } = state;
+/** Owned by StudioApp so leaving Story does not discard its expensive pure model. */
+export function useStoryTabPreview({ analysis, videoSources, segmentPreviews, state }: Pick<StoryTabProps, "analysis" | "videoSources" | "segmentPreviews" | "state">,
+  prepared?: StoryTabPreview) {
+  const { transcriptSummary, storyBeats, storyGenerated, confirmedTreatmentSnapshot, confirmedSourceContextSignature } = state;
+  const editSettings = useMemo(() => normalizeStoryEditSettings(state.editSettings), [state.editSettings]);
+  return useMemo(() => {
+    if (prepared) return prepared;
+    const totalDuration = (analysis?.duration && analysis.duration > 0 ? analysis.duration : null)
+      ?? (transcriptSummary?.duration && transcriptSummary.duration > 0 ? transcriptSummary.duration : null)
+      ?? videoSources.reduce((sum, source) => sum + source.duration, 0);
+    const plannedStoryBeats = reconcileDetectedStorySongMap(storyBeats, analysis, totalDuration);
+    const songMapNeedsReconciliation = plannedStoryBeats !== storyBeats;
+    const musicVideoProject = prepareStoryTabPlacements({ videoSources, editSettings, project: applyTreatmentCoverageToProject(
+      createMusicVideoProject({ analysis, duration: totalDuration || 0, lyricChunks: transcriptSummary?.chunks ?? [],
+        storyDrafts: plannedStoryBeats, videoSources, segmentPreviews }),
+      storyGenerated && !songMapNeedsReconciliation ? confirmedTreatmentSnapshot : null,
+    ) }, confirmedSourceContextSignature);
+    return { totalDuration, plannedStoryBeats, songMapNeedsReconciliation, musicVideoProject, editSettings };
+  }, [prepared, analysis, transcriptSummary, videoSources, storyBeats, segmentPreviews, storyGenerated, confirmedTreatmentSnapshot, confirmedSourceContextSignature, editSettings]);
+}
+type StoryTabPreview = { totalDuration: number; plannedStoryBeats: StoryPlanDraft[]; songMapNeedsReconciliation: boolean; musicVideoProject: MusicVideoProject; editSettings: StoryEditSettings };
+
+export function StoryTab({ preparedPreview, referenceRevision, referenceAssets, analysis, audioStatus, videoSources, segmentPreviews, state, existingProject, hasExistingGeneratedFootage, onStateChange, onProjectChange, onConfirmAppendedSources, sourceReviewRequired, savedProjectId, savedProjectRevision, onPrepareStoryContext, onEnsureSavedProject, onPersistSceneProofPlan, onPersistStillAnimatic }: StoryTabProps) {
+  const { transcriptSummary, activeBeatId, storyGenerated } = state;
   const [confirmationError, setConfirmationError] = useState<string | null>(null);
   const [confirmationNotice, setConfirmationNotice] = useState<string | null>(null);
   const [confirmingSources, setConfirmingSources] = useState(false);
   const liveSourceContext = buildStudioSourceContextSignature({ analysis, videoSources, referenceAssets, referenceRevision });
   const appendedSourcesNeedReview = state.storyGenerated && existingProject && state.confirmedSourceContextSignature !== liveSourceContext;
-  const editSettings = useMemo(() => normalizeStoryEditSettings(state.editSettings), [state.editSettings]);
+  const { editSettings, totalDuration, plannedStoryBeats, songMapNeedsReconciliation, musicVideoProject } = useStoryTabPreview({ analysis, videoSources, segmentPreviews, state }, preparedPreview);
 
   function updateState(patch: Partial<StoryTabState>) {
     onStateChange((current) => ({ ...current, ...patch }));
@@ -154,31 +177,7 @@ export function StoryTab({ referenceRevision, referenceAssets, analysis, audioSt
     });
   }
 
-  const transcriptDuration = transcriptSummary?.duration && transcriptSummary.duration > 0 ? transcriptSummary.duration : null;
-  const analysisDuration = analysis?.duration && analysis.duration > 0 ? analysis.duration : null;
-  const videoDuration = videoSources.reduce((sum, source) => sum + source.duration, 0);
-  const totalDuration = analysisDuration ?? transcriptDuration ?? videoDuration;
   const srtChunkCount = transcriptSummary?.chunks.length ?? 0;
-  const plannedStoryBeats = useMemo(
-    () => reconcileDetectedStorySongMap(storyBeats, analysis, totalDuration),
-    [analysis, storyBeats, totalDuration],
-  );
-  const songMapNeedsReconciliation = plannedStoryBeats !== storyBeats;
-
-  const musicVideoProject = useMemo(
-    () => prepareStoryTabPlacements({ videoSources, editSettings, project: applyTreatmentCoverageToProject(
-      createMusicVideoProject({
-        analysis,
-        duration: totalDuration || 0,
-        lyricChunks: transcriptSummary?.chunks ?? [],
-        storyDrafts: plannedStoryBeats,
-        videoSources,
-        segmentPreviews,
-      }),
-      storyGenerated && !songMapNeedsReconciliation ? state.confirmedTreatmentSnapshot : null,
-    ) }, state.confirmedSourceContextSignature),
-    [state.confirmedSourceContextSignature, analysis, plannedStoryBeats, segmentPreviews, state.confirmedTreatmentSnapshot, songMapNeedsReconciliation, storyGenerated, totalDuration, transcriptSummary?.chunks, videoSources, editSettings],
-  );
 
   const storyRail = musicVideoProject.storySections;
   const liveSourceContextSignature = buildStudioSourceContextSignature({ analysis, videoSources, referenceRevision });
