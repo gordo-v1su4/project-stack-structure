@@ -18,6 +18,8 @@ Tokens live in `src/app/globals.css` under `@theme` and are the only source of c
 - Accent: burnt orange `accent` (`#e05c00`) for the current stage, the primary action, selected controls, and semantic attention. `accent-hi` / `accent-lo` / `accent-tint` for hover, borders, and fills.
 - Status tones are one closed set, `StatusTone` in `src/components/studio/ui.tsx`: `ready` (ok), `processing` (warn/amber, pulses), `failed` (danger), `waiting` (fg-3), `review` (purple). Every indicator in the app uses `StatusDot`/`TONE_*` from that file so a state means the same thing everywhere.
 - Shape: `rounded-md` panels and controls; `rounded-sm` for inline tags. Tiny status lights are round.
+- Parameter sliders use a thin rail, a tall narrow rectangular handle and a subtle directional gradient. Never use circular slider knobs. Time-position controls use a thin vertical playhead instead of a parameter handle.
+- Song lanes share explicit time coordinates and matching horizontal boundaries: clips, waveform and cut blocks align at the same timestamps. The master song position always spans the full song; scoped section views share their viewport and identify that scope. Avoid redundant progress bars and playheads on every lane.
 - Type: Geist Sans for UI, Geist Mono for numbers, ids, timings, and file names. Sentence case for headings and buttons. `Kicker` is the only uppercase-tracked style and is reserved for section labels.
 - Density: compact but breathable. Panels use 16px padding; evidence rows use 12px.
 

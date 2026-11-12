@@ -274,7 +274,7 @@ dialog.studio-pop:not([open])::backdrop { opacity: 0; }
   position: absolute;
   inset-inline: 0;
   top: 50%;
-  height: 6px;
+  height: 3px;
   transform: translateY(-50%);
   overflow: visible;
   border: 1px solid #242424;
@@ -288,7 +288,7 @@ dialog.studio-pop:not([open])::backdrop { opacity: 0; }
   left: -1px;
   width: var(--slider-pct, 0%);
   border-radius: 2px;
-  background: var(--slider-accent, #e05c00);
+  background: linear-gradient(to right, color-mix(in srgb, var(--slider-accent, #e05c00) 55%, var(--color-ink-0)), var(--slider-accent, #e05c00));
 }
 
 .studio-range-thumb,
@@ -301,7 +301,7 @@ dialog.studio-pop:not([open])::backdrop { opacity: 0; }
   transform: translate(-50%, -50%);
   border: 1px solid #606060;
   border-radius: 2px;
-  background: #2c2c2c;
+  background: linear-gradient(to right, #202020, #454545);
   box-shadow: 0 0 0 2px #050505;
 }
 
@@ -325,6 +325,49 @@ dialog.studio-pop:not([open])::backdrop { opacity: 0; }
 
 .studio-window-thumb {
   border-color: #55c5e5;
+}
+
+/* Native time-position controls use a fine playhead, never the browser's ball. */
+input[type="range"] {
+  appearance: none;
+  -webkit-appearance: none;
+  height: 28px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 2px;
+  border: 0;
+  border-radius: 0;
+  background: var(--color-line-3);
+}
+
+input[type="range"]::-moz-range-track {
+  height: 2px;
+  border: 0;
+  border-radius: 0;
+  background: var(--color-line-3);
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 2px;
+  height: 20px;
+  margin-top: -9px;
+  border: 0;
+  border-radius: 0;
+  background: var(--color-accent);
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 2px;
+  height: 20px;
+  border: 0;
+  border-radius: 0;
+  background: var(--color-accent);
 }
 
 * {
