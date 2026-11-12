@@ -5,6 +5,7 @@ import { h3ProjectFixture } from "../helpers/h3Project";
 import { FakeSwarmSocket } from "../helpers/fakeSwarmSocket";
 
 const fixture = h3ProjectFixture();
+mock.module("@/lib/automaticReviewVideo", () => ({ queueReviewVideoAfterIngest: async () => ({ status: "unavailable" }) }));
 const authorized = new WeakSet<SavedStudioProject>();
 const reads: SavedStudioProject[] = [], validations: SavedStudioProject[] = [];
 const sockets: FakeSwarmSocket[] = [];

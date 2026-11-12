@@ -26,6 +26,15 @@ export function reviewVideoReference(value: string, origin: string) {
 export function reviewArtifactUrl(prepared: PreparedReviewVideo, kind: "proxy" | "poster" | "sprite") {
   return `/api/storage/media?${new URLSearchParams({ bucket: prepared.source.bucket, objectKey: prepared.artifacts[kind] })}`;
 }
+export function readReadyReviewVideo(body: unknown, source: { bucket: string; objectKey: string }): PreparedReviewVideo | null {
+  const value = body as { status?: string; prepared?: PreparedReviewVideo } | null;
+  if (value?.status !== "ready") return null;
+  const ready = value.prepared;
+  if (!ready || ready.version !== 1 || ready.recipe !== REVIEW_VIDEO_RECIPE || ready.metadata?.recipe !== REVIEW_VIDEO_RECIPE
+    || ready.source?.bucket !== source.bucket || ready.source.objectKey !== source.objectKey
+    || !ready.metadata?.proxy || !ready.artifacts?.proxy || !ready.artifacts.poster || !ready.artifacts.sprite) throw new Error("Review preview does not match this source.");
+  return ready;
+}
 export function reviewProxyWindow(metadata: ReviewVideoMetadata, start: number, end?: number) {
   if (!Number.isFinite(start) || !Number.isFinite(metadata.proxy.duration) || metadata.proxy.duration <= 0 || !Number.isFinite(metadata.proxy.sourceTimeOffset)
     || (end !== undefined && (!Number.isFinite(end) || end <= start))) return null;
@@ -61,11 +70,7 @@ export async function loadHoverReviewVideo(videoUrl: string, origin: string, sig
     if (!response.ok) throw new Error("Lightweight preview is unavailable. Inspect the original clip instead.");
     const body = await response.json();
     if (body.status === "ready") {
-      const ready = body.prepared as PreparedReviewVideo;
-      if (!ready || ready.version !== 1 || ready.recipe !== REVIEW_VIDEO_RECIPE || ready.metadata?.recipe !== REVIEW_VIDEO_RECIPE
-        || ready.source?.bucket !== source!.bucket || ready.source.objectKey !== source!.objectKey
-        || !ready.metadata?.proxy || !ready.artifacts?.proxy || !ready.artifacts.poster || !ready.artifacts.sprite) throw new Error("Review preview does not match this source.");
-      return ready;
+      return readReadyReviewVideo(body, source!);
     }
     if (!["unprepared", "queued"].includes(body.status)) throw new Error("Lightweight preview is unavailable.");
     if (body.status === "queued") {

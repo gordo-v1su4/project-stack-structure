@@ -12,6 +12,9 @@ import { reviewedScenePlanningFixture } from "../helpers/sceneProofPlanning";
 import { sceneProofScopeSha256 } from "@/components/studio/sceneProofPlanning";
 
 const fixture = h3ProjectFixture();
+const reviewStates: string[] = [];
+const reviewQueue = mock(async () => { reviewStates.push(job.state); return { status: "unavailable" as const }; });
+mock.module("@/lib/automaticReviewVideo", () => ({ queueReviewVideoAfterIngest: reviewQueue }));
 let job: H3GenerationJob;
 const originalFetch = globalThis.fetch;
 const originalWebSocket = globalThis.WebSocket;
@@ -79,6 +82,7 @@ afterEach(() => {
 });
 
 function setup() {
+  reviewQueue.mockClear(); reviewStates.length = 0;
   delete fixture.saved.draft.storyState.sceneProofPlan;
   job = materializeH3Job("github-test", fixture.saved, structuredClone(fixture.request), "studio");
   process.env.SWARMUI_URL = "http://swarm.test:7861";
@@ -250,6 +254,7 @@ describe("durable native H3 execution", () => {
     setup(); const count = providerFetch(false, false, "normal", true);
     await runH3Generation({ ownerId: job.ownerId, projectId: job.projectId, jobId: job.id }, "run-1", { wait: async () => {}, stage: () => {} });
     expect(job.state).toBe("ready"); expect(job.promptId).toBe("provider-1"); expect(count()).toBe(1); expect(sockets[0].closeCalls).toBe(1);
+    expect(reviewQueue).toHaveBeenCalledTimes(1); expect(reviewStates).toEqual(["ready"]);
   });
 
   test("a rendering job resumes by real prompt ID using HTTP without websocket registration or another POST", async () => {

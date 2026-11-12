@@ -1,6 +1,7 @@
 import { buildSceneCaptionPrompt } from "@/components/studio/sceneCaptionPrompt";
 import { normalizeServerCaptionPayload } from "@/components/studio/sceneCaptioningServer";
 import { createHash } from "node:crypto";
+import { queueReviewVideoAfterIngest } from "@/lib/automaticReviewVideo";
 import { logger, metadata, task, tasks, wait } from "@trigger.dev/sdk";
 
 import {
@@ -45,6 +46,7 @@ type SceneDetectionOutput = {
   sceneCount: number;
   /** Durable single-file source ref — present only when a chunked upload was reassembled. */
   sourceStorage?: { bucket: string; objectKey: string };
+  reviewPreparation?: Awaited<ReturnType<typeof queueReviewVideoAfterIngest>>;
 };
 
 type CaptionBatchReference = {
@@ -92,6 +94,8 @@ export const mediaSceneDetectionTask = task({
       fileName: durableManifestName(payload.objectKey, sourceContentHash, "scenes"),
       folder: "media-uploads/analysis/v2/scene-manifests",
     });
+    const reviewPreparation = payload.applicationUserId ? await queueReviewVideoAfterIngest({ ownerId: payload.applicationUserId,
+      bucket: payload.bucket, objectKey: payload.objectKey, versionHint: sourceContentHash }) : { status: "unavailable" as const };
 
     logger.info("Scene detection completed", {
       triggerRunId: ctx.run.id,
@@ -110,6 +114,7 @@ export const mediaSceneDetectionTask = task({
       manifestStorage,
       sourceContentHash,
       sceneCount,
+      reviewPreparation,
       ...(usesChunkedUpload ? { sourceStorage: { bucket: payload.bucket, objectKey: payload.objectKey } } : {}),
     };
   },
@@ -315,6 +320,7 @@ export const mediaVideoPipelineTask = task({
         objectKey: payload.objectKey,
       },
       childRuns: {
+        reviewPreparation: sceneOutput.reviewPreparation ?? { status: "unavailable" },
         sceneDetection: sceneRun.id,
         captionBatchCount: captionBatches.length,
         finalization: finalized.id,

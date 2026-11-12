@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { queueReviewVideoAfterIngest } from "./automaticReviewVideo";
 import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -148,6 +149,13 @@ function completedOutput(job: H3GenerationJob): LocalGenerationOutput {
       providerUrl: asset.resultUrl!, storage: asset.fullStorage! }] };
 }
 
+async function queueRetainedReview(job: H3GenerationJob) {
+  const asset = job.result?.asset, storage = asset?.fullStorage;
+  if (!storage) return;
+  await queueReviewVideoAfterIngest({ ownerId: job.ownerId, projectId: job.projectId, bucket: storage.bucket,
+    objectKey: storage.objectKey || storage.storagePath, versionHint: asset?.mediaSha256 || job.id });
+}
+
 export async function runH3Generation(reference: H3JobReference, runId: string,
   options: { wait: (seconds: number) => Promise<unknown>; stage: (label: string) => void; timeoutSeconds?: number;
     identityDiagnostic?: (event: H3IdentityDiagnostic) => void }) {
@@ -166,7 +174,7 @@ export async function runH3Generation(reference: H3JobReference, runId: string,
   const storedJob = await preparationRead("Reading the saved H3 shot", () => readH3Job(ownerId, projectId, jobId));
   if (!storedJob) throw new Error("Generation job not found.");
   let job: H3GenerationJob = storedJob;
-  if (job.state === "ready" && job.result) return completedOutput(job);
+  if (job.state === "ready" && job.result) { await queueRetainedReview(job); return completedOutput(job); }
   if (job.state === "cancelled") throw new Error("This generation job was cancelled.");
   const baseUrl = (process.env.LOCAL_SWARMUI_URL || process.env.SWARMUI_URL || "").replace(/\/+$/, "");
   const temp = await mkdtemp(path.join(tmpdir(), "stack-h3-"));
@@ -363,6 +371,7 @@ export async function runH3Generation(reference: H3JobReference, runId: string,
       return { ...current, state: "ready", result: { asset }, error: undefined };
     });
     if (!job.result || job.state !== "ready") throw new Error("H3 output was cancelled before draft acceptance.");
+    await queueRetainedReview(job);
     return completedOutput(job);
   } catch (error) {
     // A stalled storage read may ignore its transport abort. End this worker

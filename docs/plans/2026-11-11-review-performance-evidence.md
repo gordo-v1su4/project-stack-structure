@@ -595,3 +595,52 @@ state so a changed source does not reuse the previous card's prepared pixels.
 The final refinement passes 23 affected tests, type checking, lint and production
 build. A final tooltip clarification identifies cuts with no selected video;
 hover never silently selects an available unapproved take to fill that gap.
+
+## Visible take posters and automatic new-video preparation
+
+Exact-shot take cards now read prepared WebP posters when entering the viewport
+(120-pixel margin), independently of hover. The shared read-only queue permits
+two active lookups / 64 pending, removes cancelled waiters, retains active slots
+until their promises settle, and cannot restart work after observer disposal.
+No original video, decoder or worker submission is used for poster readiness.
+Focused preparation can update the poster; old URL results never become a
+different card's image. Missing prepared posters retain labeled placeholders.
+
+A real-browser fixture mounts 100 actual BeatSpine slots and 40 poster-enabled
+cards. Initial 1280×720 observation: the first 12 cards have posters; other cards
+have not been requested. Fixture telemetry records 12 readiness requests with a
+peak of two in flight, zero POSTs and zero video requests. Scrolling 1200 pixels
+loads later visible cards while skipped cards remain unrequested. Removing and
+reopening the view, then removing it before poster loading finishes, leaves
+zero cards/videos and no late reappearance. Final telemetry records 46 total
+readiness requests, peak two, zero active requests, zero POSTs/video requests.
+The fixture supplies ready derivatives and has no connected services; this is
+browser/laziness/cancellation proof, not public worker or populated-film proof.
+Ignored evidence: `poster-visible-before.json`, `poster-visible-after.json` under
+`.tmp/review-performance/`. Its tab/server were closed after verification.
+
+New-video source hooks now submit the same CPU task after the uploaded source's
+scene manifest is durable (before captioning) and after a generated H3 clip is
+canonically ready. They do not wait for encoding, modify source media/approval,
+or add a provider submission. A regression observes the H3 job already ready
+when the preview hook runs, with its original single provider submission intact.
+An unavailable preview dispatch does not fail the completed source. Internal
+references are authorized before worker-side storage pinning; interactive HTTP
+requests retain their existing pinned-source contract. The original content hash
+is only a dispatch-version hint; actual bytes are independently hashed.
+
+Primary configuration inspection found no TRIGGER variables in the worker's
+synced environment list. Consequently automatic child dispatch uses the SDK's
+configured worker context, without assuming web-only env names exist. An
+isolated mocked-SDK regression clears those env names and proves the tagged dispatch
+still occurs. No secret values were retrieved and no configuration changed.
+An eight-second observation deadline is unconfirmed, never grounds for a second
+dispatch or a failed source. Stable keys separate users/source versions/recipes.
+
+The full check passed 2,124 tests with 27 fixture skips, zero failures and a
+production build. After the observer-disposal and SDK-context refinements,
+affected tests, lint/typecheck and production build pass; the additional isolated
+SDK regression passes separately. Existing-project bulk backfill, image-ingest
+prewarming, live completion delivery, public worker/RustFS and populated-film
+transfer/decode/first-frame acceptance remain open. No generation or deployment
+was run; public project tabs and the film's persisted state remain unchanged.

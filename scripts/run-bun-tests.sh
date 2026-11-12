@@ -25,6 +25,8 @@ readonly isolated_tests=(
   "tests/unit/replacementReviewRoute.test.ts"
   "tests/unit/reviewVideoRoute.test.ts"
   "tests/unit/reviewVideoDispatch.test.ts"
+  "tests/unit/reviewVideoTask.test.ts"
+  "tests/unit/automaticReviewVideoDispatch.test.ts"
   "tests/unit/animaticReviewRoute.test.ts"
   "tests/unit/sourceStorageCheck.test.ts"
   # Next's experimental server test helpers patch global console methods.

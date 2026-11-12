@@ -55,6 +55,12 @@ The source-candidate review-preparation task is CPU-only, uses the existing
 FFmpeg/Sharp worker image and a separate concurrency-one queue. It permits two
 safe preparation attempts and has a 15-minute task limit. It never generates
 new creative media or selects/approves takes. See [review video preparation](../architecture/review-video-preparation.md).
+New uploaded videos and retained H3 clips request this CPU preparation after
+durable source completion. The child uses the configured worker SDK context;
+it does not require duplicating the web app's Trigger variables into worker
+configuration. Its eight-second dispatch observation deadline is unconfirmed,
+not a failed source or permission to submit twice. Existing-film bulk backfill
+and live production qualification remain open.
 
 Verified through the production worker API on 2026-09-07: worker
 `20260907.2` (`worker_cmtqvhk7x00me3is05myhu6b6`) uses SDK/CLI `4.5.16`

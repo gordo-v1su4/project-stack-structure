@@ -4,19 +4,22 @@ import { createPortal } from "react-dom";
 import type { PreparedReviewVideo } from "@/lib/preparedReviewVideoStore";
 import { canStartPassiveMediaPlayback, registerPassiveMediaPlayback } from "./mediaPlaybackOwnership";
 import { hoverPreview, loadHoverReviewVideo, reviewArtifactUrl, reviewProxyWindow } from "./reviewHoverPreview";
+import { useReviewPoster } from "./useReviewPoster";
 
-/** No media element or network work until pointer/focus dwell; one active card across views. */
-export function ReviewVideoHover({ videoUrl, start = 0, end, children, className = "", showStatus = true, buttonProps, hideChildrenWhenReady = false, floating = false, contextKey, previewLabel }: {
+/** Video waits for dwell; optional visible posters use bounded read-only lookups. */
+export function ReviewVideoHover({ videoUrl, start = 0, end, children, className = "", showStatus = true, buttonProps, hideChildrenWhenReady = false, floating = false, contextKey, previewLabel, posterWhenVisible = false }: {
   videoUrl: string; start?: number; end?: number; children: ReactNode; className?: string; showStatus?: boolean;
   buttonProps?: Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children" | "className" | "onPointerEnter" | "onPointerLeave" | "onFocusCapture" | "onBlurCapture">;
   hideChildrenWhenReady?: boolean;
   floating?: boolean; contextKey?: string; previewLabel?: string;
+  posterWhenVisible?: boolean;
 }) {
   const owner = useRef({}), root = useRef<HTMLElement>(null), video = useRef<HTMLVideoElement>(null), stop = useRef<() => void>(() => {});
   const [hovered, setHovered] = useState(false), [focused, setFocused] = useState(false);
   const [result, setResult] = useState<{ url: string; value: PreparedReviewVideo } | null>(null), [status, setStatus] = useState("");
   const [anchor, setAnchor] = useState<{ left: number; top: number; width: number } | null>(null);
   const prepared = result?.url === videoUrl ? result.value : null;
+  const { poster, remember } = useReviewPoster(videoUrl, posterWhenVisible, root);
   const wanted = hovered || focused;
   useEffect(() => {
     if (!wanted || !videoUrl) return;
@@ -47,6 +50,7 @@ export function ReviewVideoHover({ videoUrl, start = 0, end, children, className
       void loadHoverReviewVideo(videoUrl, window.location.origin, controller.signal, () => { if (!controller.signal.aborted) setStatus("Preparing preview"); }).then(value => {
         if (controller.signal.aborted) return;
         if (!canStartPassiveMediaPlayback()) { setStatus("Song playback active"); return; }
+        if (value) remember(value);
         setResult(value ? { url: videoUrl, value } : null); setStatus(value ? "Preview ready" : "Preview not ready · inspect clip");
       }).catch(() => { if (!controller.signal.aborted) setStatus("Preview unavailable · inspect clip"); });
     }, 280);
@@ -56,7 +60,7 @@ export function ReviewVideoHover({ videoUrl, start = 0, end, children, className
       window.removeEventListener("resize", pause); document.removeEventListener("scroll", pause, true);
       document.removeEventListener("focusin", focusChanged);
     };
-  }, [wanted, videoUrl, floating, contextKey]);
+  }, [wanted, videoUrl, floating, contextKey, remember]);
 
   useEffect(() => {
     const element = video.current;
@@ -94,8 +98,12 @@ export function ReviewVideoHover({ videoUrl, start = 0, end, children, className
     {player}<span className="absolute inset-x-0 bottom-0 truncate bg-ink-0/85 px-2 py-1 text-xs text-fg-1">{previewLabel ? `${previewLabel} · ` : ""}{displayStatus}</span>
   </span>, document.body) : null;
   const content = <>
+    {poster ? (
+      // eslint-disable-next-line @next/next/no-img-element -- authenticated prepared WebP only
+      <img src={reviewArtifactUrl(poster, "poster")} alt="" loading="lazy" decoding="async" className="pointer-events-none absolute inset-0 h-full w-full object-contain" />
+    ) : null}
     {floating ? floatingPreview : player}
-    {!prepared || !hideChildrenWhenReady ? children : null}
+    {!(prepared || poster) || !hideChildrenWhenReady ? children : null}
     {showStatus && displayStatus ? <span className="pointer-events-none absolute inset-x-0 bottom-0 truncate bg-ink-0/85 px-1 py-0.5 text-[10px] text-fg-2">{displayStatus}</span> : null}
   </>;
   return buttonProps ? <button {...buttonProps} {...handlers} ref={element => { root.current = element; }} className={`overflow-hidden ${className}`}>{content}</button>
