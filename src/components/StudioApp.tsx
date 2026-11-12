@@ -41,7 +41,7 @@ import {
   type RuntimeStudioProjectDraft,
 } from "./studio/projectPersistence";
 import { loadStudioProjectSelection, readStudioProjectSelection, rememberStudioProjectSelection } from "./studio/projectSelection";
-import { readStudioReviewContext } from "./studio/reviewPreviewContext";
+import { readStudioReviewContext, restoredReviewTab } from "./studio/reviewPreviewContext";
 import { resolveSourceSuggestionPreview } from "./studio/sourceSuggestionPreview";
 import { resolveShotTakeTarget, selectShotTake } from "./studio/shotTakeReview";
 import { ProjectSaveSession } from "./studio/projectSaveSession";
@@ -620,7 +620,8 @@ export default function StudioApp() {
     setAestheticReferences(draft.aestheticReferences ?? EMPTY_AESTHETIC_REFERENCES);
     setGeneratedReviewState({ assets: draft.generatedAssets ?? [], draft: draft.generatedDraft ?? null });
     const workflowUi = draft.workflowUiSettings;
-    if (workflowUi?.activeTab && NAV.some((item) => item.key === workflowUi.activeTab)) setTab(workflowUi.activeTab);
+    const restoredTab = restoredReviewTab(projectId, workflowUi?.activeTab, restoredReviewContext.current ? "" : window.location.search);
+    if (restoredTab && NAV.some((item) => item.key === restoredTab)) setTab(restoredTab);
     if (workflowUi?.colorGradient) setColorGradient(workflowUi.colorGradient);
     if (workflowUi?.matchOnsetDensity !== undefined) setMatchOnsetDensity(workflowUi.matchOnsetDensity);
     if (workflowUi?.matchLyricCueBlend !== undefined) setMatchLyricCueBlend(workflowUi.matchLyricCueBlend);

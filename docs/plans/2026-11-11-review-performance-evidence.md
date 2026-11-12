@@ -245,3 +245,11 @@ Playing and pausing uses the existing MP4. Evidence:
 V1S-462 still needs durable multi-shot replacement marks, explicit submission
 reconciliation and populated-film browser acceptance. These checks do not claim
 the saved film has been selected, reviewed or approved through the new controls.
+
+Follow-up restore ordering: the editor's persisted workflow activeTab was applied
+after the initial URL-stage effect, so it could override an explicit return stage.
+The project-bound return stage is now resolved after persisted UI settings and
+only until viewing context is consumed. A regression covers saved Story → requested
+Draft, the reverse, other-project isolation and ordinary saved-tab restoration.
+Ten affected URL/project-selection tests, typecheck and affected lint pass (two
+existing StudioApp warnings). This does not replace populated-browser acceptance.

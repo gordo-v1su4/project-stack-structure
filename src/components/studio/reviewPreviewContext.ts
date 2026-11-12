@@ -1,4 +1,5 @@
 import { normalizeSongRanges, type SongRange } from "./reviewSelection";
+import type { Tab } from "./types";
 
 export function readReviewPreviewContext(search: string): { shotId?: string; ranges: SongRange[] } {
   const params = new URLSearchParams(search);
@@ -34,4 +35,10 @@ export function readStudioReviewContext(search: string) {
   const params = new URLSearchParams(search), projectId = params.get("reviewProject") ?? "";
   if (!/^[\w-]{1,128}$/.test(projectId)) return null;
   return { projectId, ...readReviewPreviewContext(search), stage: params.get("stage") === "draft" ? "draft" as const : "story" as const };
+}
+
+/** Apply return stage after persisted UI settings, and only for that project. */
+export function restoredReviewTab(projectId: string | null, savedTab: Tab | undefined, search: string): Tab | undefined {
+  const incoming = readStudioReviewContext(search);
+  return incoming && incoming.projectId === projectId ? incoming.stage === "draft" ? "generate" : "story" : savedTab;
 }

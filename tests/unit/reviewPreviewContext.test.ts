@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { readReviewPreviewContext, reviewPreviewHref, studioReviewHref, readStudioReviewContext } from "@/components/studio/reviewPreviewContext";
+import { readReviewPreviewContext, reviewPreviewHref, studioReviewHref, readStudioReviewContext, restoredReviewTab } from "@/components/studio/reviewPreviewContext";
 
 test("Preview links carry the focused shot and disjoint song ranges without autoplay or edit instructions", () => {
   const href = reviewPreviewHref("project-1", { shotId: "A013", ranges: [{ start: 30, end: 40 }, { start: 10, end: 20 }] });
@@ -21,4 +21,11 @@ test("invalid and excessive URL ranges cannot become arbitrary media or an unbou
   const many = Array.from({ length: 50 }, (_, i) => `${i * 3}-${i * 3 + 1}`).join(",");
   expect(readReviewPreviewContext(`?ranges=${many}`).ranges).toHaveLength(32);
   expect(reviewPreviewHref("a/b")).toBe("/preview/a%2Fb");
+});
+
+test("explicit return stage survives persisted workflow restore without changing another project", () => {
+  expect(restoredReviewTab("project-1", "story", "?reviewProject=project-1&stage=draft")).toBe("generate");
+  expect(restoredReviewTab("project-1", "generate", "?reviewProject=project-1&stage=story")).toBe("story");
+  expect(restoredReviewTab("other", "review", "?reviewProject=project-1&stage=draft")).toBe("review");
+  expect(restoredReviewTab("project-1", "join", "")).toBe("join");
 });
